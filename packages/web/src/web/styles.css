@@ -173,3 +173,118 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Weeber product theme (ADR-032) — scoped via `.theme-weeber`, applied at
+ * the root layout of /dashboard (admin panel) and /app (merchant
+ * dashboard) ONLY. Deliberately separate from the `:root`/`.dark` tokens
+ * above, which belong to the public OpenVent OSS landing page/marketing
+ * site (editorial serif, paper/ink/ember) — that page isn't part of
+ * Weeber's product surface and is left untouched. Every actual Weeber
+ * screen should have `.theme-weeber` (or `.theme-weeber.dark` for dark
+ * mode) on its root element.
+ *
+ * Direction, per the confirmed UI/UX round: Arc-browser-like warm/calm
+ * paper background (not stark white), grayscale + a small semantic set
+ * (error/success/warning) + one distinct brand accent, moderate rounding,
+ * serif for headings only (reusing the same Fraunces/Inter Tight/JetBrains
+ * Mono font stack already loaded above — no new font imports needed).
+ */
+.theme-weeber {
+  --radius: 0.625rem; /* 10px — mid-range of the confirmed 8-12px moderate-rounding direction */
+
+  /* Warm paper surfaces — off-white, not stark white */
+  --weeber-paper: oklch(0.98 0.012 85);
+  --weeber-paper-2: oklch(0.955 0.014 82);
+  --weeber-ink: oklch(0.22 0.012 60);
+  --weeber-ink-soft: oklch(0.48 0.012 60);
+  --weeber-border: oklch(0.9 0.012 80);
+
+  /* Brand accent — indigo/violet, deliberately a different hue from the
+     semantic red/green/amber below so status colors never get confused
+     with brand/CTA colors. */
+  --weeber-accent: oklch(0.53 0.19 275);
+  --weeber-accent-soft: oklch(0.92 0.035 275);
+  --weeber-accent-foreground: oklch(0.98 0.01 85);
+
+  /* Semantic status set — small, deliberate, on top of the brand accent */
+  --weeber-success: oklch(0.55 0.14 150);
+  --weeber-success-soft: oklch(0.93 0.04 150);
+  --weeber-warning: oklch(0.75 0.15 80);
+  --weeber-warning-soft: oklch(0.94 0.05 80);
+  --weeber-error: oklch(0.55 0.2 25);
+  --weeber-error-soft: oklch(0.93 0.045 25);
+
+  --background: var(--weeber-paper);
+  --foreground: var(--weeber-ink);
+  --card: oklch(0.99 0.008 85);
+  --card-foreground: var(--weeber-ink);
+  --popover: oklch(0.99 0.008 85);
+  --popover-foreground: var(--weeber-ink);
+  --primary: var(--weeber-accent);
+  --primary-foreground: var(--weeber-accent-foreground);
+  --secondary: var(--weeber-paper-2);
+  --secondary-foreground: var(--weeber-ink);
+  --muted: var(--weeber-paper-2);
+  --muted-foreground: var(--weeber-ink-soft);
+  --accent: var(--weeber-accent-soft);
+  --accent-foreground: var(--weeber-ink);
+  --destructive: var(--weeber-error);
+  --border: var(--weeber-border);
+  --input: var(--weeber-border);
+  --ring: var(--weeber-accent);
+  --sidebar: var(--weeber-paper-2);
+  --sidebar-foreground: var(--weeber-ink);
+  --sidebar-primary: var(--weeber-accent);
+  --sidebar-primary-foreground: var(--weeber-accent-foreground);
+  --sidebar-accent: var(--weeber-accent-soft);
+  --sidebar-accent-foreground: var(--weeber-ink);
+  --sidebar-border: var(--weeber-border);
+  --sidebar-ring: var(--weeber-accent);
+}
+
+.theme-weeber.dark {
+  --weeber-paper: oklch(0.19 0.014 60);
+  --weeber-paper-2: oklch(0.23 0.015 60);
+  --weeber-ink: oklch(0.95 0.01 85);
+  --weeber-ink-soft: oklch(0.68 0.012 70);
+  --weeber-border: oklch(0.32 0.015 60);
+
+  --weeber-accent: oklch(0.68 0.16 275);
+  --weeber-accent-soft: oklch(0.32 0.06 275);
+  --weeber-accent-foreground: oklch(0.15 0.012 60);
+
+  --weeber-success: oklch(0.65 0.14 150);
+  --weeber-success-soft: oklch(0.28 0.05 150);
+  --weeber-warning: oklch(0.78 0.14 80);
+  --weeber-warning-soft: oklch(0.3 0.05 80);
+  --weeber-error: oklch(0.65 0.19 25);
+  --weeber-error-soft: oklch(0.3 0.06 25);
+
+  --background: var(--weeber-paper);
+  --foreground: var(--weeber-ink);
+  --card: oklch(0.23 0.015 60);
+  --card-foreground: var(--weeber-ink);
+  --popover: oklch(0.23 0.015 60);
+  --popover-foreground: var(--weeber-ink);
+  --primary: var(--weeber-accent);
+  --primary-foreground: var(--weeber-accent-foreground);
+  --secondary: oklch(0.26 0.015 60);
+  --secondary-foreground: var(--weeber-ink);
+  --muted: oklch(0.26 0.015 60);
+  --muted-foreground: var(--weeber-ink-soft);
+  --accent: var(--weeber-accent-soft);
+  --accent-foreground: var(--weeber-ink);
+  --destructive: var(--weeber-error);
+  --border: var(--weeber-border);
+  --input: var(--weeber-border);
+  --ring: var(--weeber-accent);
+  --sidebar: oklch(0.21 0.015 60);
+  --sidebar-foreground: var(--weeber-ink);
+  --sidebar-primary: var(--weeber-accent);
+  --sidebar-primary-foreground: var(--weeber-accent-foreground);
+  --sidebar-accent: var(--weeber-accent-soft);
+  --sidebar-accent-foreground: var(--weeber-ink);
+  --sidebar-border: var(--weeber-border);
+  --sidebar-ring: var(--weeber-accent);
+}
