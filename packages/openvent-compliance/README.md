@@ -2,9 +2,9 @@
 
 Framework-agnostic compliance primitives for voice agents — automatic TCPA calling-window checks,
 Do-Not-Call enforcement, recording/AI consent disclosure, a HIPAA boot-time guardrail, and GDPR
-retention/erasure. Extracted from [OpenVent](https://github.com/I-invincib1e/vent), a self-hosted voice
-agent pipeline, so the compliance layer can be adopted independently — in an OpenVent-style Twilio pipeline, a
-Pipecat pipeline, a LiveKit Agents pipeline, or anything else that places phone calls.
+retention/erasure. Internal Weeber package, kept deliberately dependency-free (no Twilio, no Bun, no
+specific database) so it stays testable and portable in isolation from the rest of `packages/web` — see
+`CLAUDE.md`'s "Compliance package" note for why this gets a higher correctness bar than average.
 
 **No Twilio, no Bun, no specific database required.** Bring your own storage by implementing two small
 adapter interfaces (see [Storage adapters](#storage-adapters)) — or use the in-memory reference adapters to
@@ -18,14 +18,7 @@ audio/STT/LLM/TTS, full stop. None of them ship Do-Not-Call enforcement, TCPA ca
 automatic consent disclosure, or a HIPAA-readiness gate as a built-in concern. This package is that missing
 layer, designed to sit in front of *any* telephony/voice pipeline.
 
-## Install
-
-```bash
-bun add @openvent/compliance
-# or: npm install @openvent/compliance
-```
-
-## Quickstart
+## Usage (workspace-internal)
 
 ```ts
 import {
@@ -147,7 +140,3 @@ await eraseCallerData(myCallLogAdapter, "+15551234567");
   Account Number from the FTC (telemarketing.donotcall.gov). This package's `dnc` module fully enforces an
   internal list automatically; syncing the national registry is a matter of populating that same list via
   a periodic job (`source: "national-registry"` is reserved for exactly this).
-
-## License
-
-MIT

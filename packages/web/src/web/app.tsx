@@ -1,5 +1,4 @@
-  import { Route, Switch } from "wouter";                                                                                
-   import Index from "./pages/index";                                                                                     
+  import { Redirect, Route, Switch } from "wouter";                                                                                
    import DocsPage from "./pages/docs";                                                                                   
    import { Provider } from "./components/provider";                                                                      
    import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
@@ -23,7 +22,7 @@
      return (                                                                                                             
        <Provider>                                                                                                         
          <Switch>                                                                                                         
-           <Route path="/" component={Index} />                                                                           
+           <Route path="/"><Redirect to="/dashboard" /></Route>                                                                           
            <Route path="/docs" component={DocsPage} />
            <Route path="/dashboard">
              <Dashboard><CallsListPage /></Dashboard>

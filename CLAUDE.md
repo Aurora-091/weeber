@@ -41,6 +41,9 @@ before assuming it's a mistake or before changing it.
   enabled** — do this in GitHub repo settings before multiple people push here.
 - `cd packages/openvent-compliance && bun run typecheck` / `bun run test` — the standalone compliance
   package; same bar applies, arguably higher (see "Compliance package" below).
+- `bun test <path>` — run a single test file directly (both packages use plain `bun:test`, no separate
+  runner/mocking library; tests live next to the code as `foo.test.ts`). See `docs/testing.md` for the full
+  convention (stubbing `fetch`, resetting module-level state between tests, etc.).
 - `bun run lint` (repo root) — oxlint, zero warnings required.
 - `cd packages/web && bun run db:push` — applies `src/api/database/schema.ts` changes to the live DB (Turso/
   libSQL). Additive-only migrations — never rename or drop existing columns (repo-wide convention, see any
@@ -48,14 +51,16 @@ before assuming it's a mistake or before changing it.
 
 ## Repo structure (top level)
 
-```
+```text
 openvent/  (this repo)
 ├── CLAUDE.md                    # this file — read first
 ├── WEEBER-PLAN.md                # what's built, Phase 2 backlog, sized workstreams
 ├── CLAUDE-BUILD-BRIEF.md         # dashboard scope + file tree for packages/web/src/web additions
 ├── UI-DESIGN-BRIEF.md            # design system spec
 ├── DECISIONS.md                  # every ADR, in order (ADR-030+ are Weeber-specific)
-├── ROADMAP.md, CHANGELOG.md      # inherited from base OpenVent — still accurate for the base framework
+├── docs/                         # base OpenVent docs (architecture, state-engine, api-reference,
+│                                  # configuration, testing, security, dashboard) — still accurate for the
+│                                  # underlying framework; Weeber-specific product docs are the 4 files above
 ├── .mcp.json                     # MCP servers for Claude Code (see below)
 ├── railway.json                  # backend hosting config — NOT FINALIZED, see STOP AND ASK #3
 ├── supabase/
@@ -70,11 +75,50 @@ openvent/  (this repo)
 │   │   │   └── voice/                # call handling, workflows/scheduler, tools, compliance adapters
 │   │   ├── src/web/                 # frontend — see CLAUDE-BUILD-BRIEF.md §3 for the /dashboard + /app tree
 │   │   └── components.json          # shadcn config
-│   ├── openvent-compliance/        # standalone compliance package — DNC/TCPA/HIPAA/GDPR, tested independently
-│   ├── mobile/, desktop/          # unbuilt scaffold shells, not part of Weeber's product surface (see Notes)
+│   └── openvent-compliance/        # framework-agnostic compliance package — DNC/TCPA/HIPAA/GDPR, tested
+│                                    # independently, dependency-free by design; Weeber-private (see below)
 ├── .github/workflows/ci.yml       # typecheck + test + build + lint on every push/PR to main
 └── .env.example                   # full env var reference with inline comments
 ```
+
+## The call pipeline (base OpenVent — read this before touching anything in `voice/`)
+
+This is the one piece of architecture the Weeber-specific docs above assume you already know. Full detail
+in `docs/architecture.md`, `docs/state-engine.md`, `docs/configuration.md`, `docs/api-reference.md`; the
+shape of it:
+
+```text
+Inbound:  Caller -> Twilio number -> POST /api/voice/incoming (TwiML) -> wss connect
+Outbound: POST /api/voice/calls/outbound -> compliance gates -> Twilio places call -> same TwiML/stream flow
+
+Twilio Media Stream (bidirectional WS, base64 mu-law 8kHz audio frames)
+  -> Deepgram Live STT (nova-3, buffered through reconnects)
+  -> LLM Agent (AI Gateway or Groq, streamed, tool-calling) — src/api/voice/agent.ts, routes.ts, stream.ts
+  -> TTS (ElevenLabs or Cartesia, mulaw/8000, no re-encoding)
+  -> back to Twilio Media Stream
+
+Barge-in: new speech detected while the agent is talking -> Twilio gets a "clear" event, in-flight LLM/TTS
+aborts immediately.
+
+On call end: disposition + Twilio status feed workflows/ (retry scheduling, DNC add, webhook firing) —
+no manual step required.
+```
+
+Two things worth knowing before editing `voice/agent.ts` or anything that reads/writes call state:
+
+- **State is not the transcript.** The agent calls the `captureField` tool the moment a caller states
+  something durable (email, order ID, name); that gets persisted to `calls.capturedState` immediately and
+  re-injected into the system prompt every turn as a "known facts" block — not re-derived from scrollback.
+  Every integrations/tools file under `voice/` (`tools/`, `integrations/`) is wrapped in a shared
+  resilience layer (`resilient-fetch.ts` — timeout, retry, per-integration circuit breaker) so a slow
+  third-party API can't stall a live call turn.
+- **`callerMemory` is separate from `capturedState`** — one row per phone number, persisted across calls
+  (not just within one), merged in on `finalizeCall` and injected as a lower-confidence "from a previous
+  call" block. Which number counts as "the human" flips by call direction (`fromNumber` inbound,
+  `toNumber` outbound).
+
+None of this is Weeber-specific — it's the base OpenVent framework the Weeber product logic (org scoping,
+Shopify agents, compliance gates) is built on top of.
 
 ## Architecture summary
 
@@ -95,9 +139,11 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
 - **The 3 Shopify agents** (cart-recovery, cod-confirmation, feedback) are plain `scheduledCalls` rows — no
   bespoke scheduling infrastructure. The existing DNC + TCPA-calling-window compliance gate
   (`voice/workflows/scheduler.ts`) already runs for every one of them, same as any other call.
-- **Compliance package** (`packages/openvent-compliance`) is standalone, published-package-quality code —
-  DNC, calling-window, HIPAA guardrail, GDPR retention/erasure, audit-trail export. Treat any change here
-  with more care than average; it's the actual product differentiator, not incidental plumbing.
+- **Compliance package** (`packages/openvent-compliance`) is standalone, dependency-free code (no Twilio/
+  Bun/database coupling) kept to publish-quality standards even though it's Weeber-private now, not an
+  external npm package — DNC, calling-window, HIPAA guardrail, GDPR retention/erasure, audit-trail export.
+  Treat any change here with more care than average; it's the actual product differentiator, not incidental
+  plumbing.
 
 ## Config surfaces that must stay in sync
 
@@ -163,11 +209,21 @@ unresolved product/business decisions:
 
 ## Notes
 
-- `packages/mobile` and `packages/desktop` are unbuilt scaffold shells inherited from the base OpenVent
-  template ("not voice-specific yet," per its own `docs/architecture.md`) — not part of Weeber's product
-  surface. Don't build features into them unless explicitly asked.
-- The public OpenVent landing page (`src/web/components/landing/`) and its `:root`/`.dark` CSS tokens belong
-  to the unrelated open-source marketing site — don't reuse or modify them for Weeber product UI; use
-  `.theme-weeber` instead (see `UI-DESIGN-BRIEF.md`).
+- **This repo used to be OpenVent's open-source scaffolding; it now isn't one.** The unbuilt `packages/
+  mobile`/`packages/desktop` shells, the public marketing landing page (`src/web/components/landing/`,
+  `design.md`), and the OSS project files (LICENSE, NOTICE, TRADEMARK.md, README.md, ROADMAP.md,
+  CHANGELOG.md, CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md, `brand/`, issue/PR templates) have all
+  been removed — Weeber is a private startup, not an OSS project soliciting external contributors or
+  publishing a marketing site under the OpenVent name. Don't recreate any of these unless explicitly asked;
+  their absence is deliberate, not an oversight. `docs/` and the ADR history in `DECISIONS.md` were kept
+  as-is since they document the underlying framework's design, not OpenVent's public-facing OSS identity.
+- The root `/` route now redirects straight to `/dashboard` (`packages/web/src/web/app.tsx`) since there's
+  no landing page to serve — update this once a real Weeber marketing site or `/app` onboarding entry point
+  exists.
+- `.theme-weeber` (see `UI-DESIGN-BRIEF.md`) is the only theme that should apply to Weeber product UI; there
+  are no more competing `:root`/`.dark` landing-page tokens to accidentally reuse.
+- `packages/openvent-compliance` is no longer framed as an externally-publishable npm package (no `license`/
+  `keywords` fields, marked `private: true`) — it's Weeber-internal code, just held to a higher bar. If the
+  business decides to open-source it again later, that's a deliberate call to revisit, not a default.
 - `ADMIN_API_KEY`/`admin_keys` (internal ops auth) and the planned Supabase-Auth-based merchant login are two
   separate, intentionally non-unified auth systems for two different audiences — don't merge them.

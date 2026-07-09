@@ -1,7 +1,7 @@
 {
     "id": "website",
-    "name": "OpenVent",
-    "description": "Open-core, self-hosted voice AI orchestration framework.",
-    "url": "https://openvent.dev",
+    "name": "Weeber",
+    "description": "Voice AI for Shopify merchants — cart-recovery, COD-confirmation, and feedback calls.",
+    "url": "",
     "port": 8080
 }

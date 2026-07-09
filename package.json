@@ -1,5 +1,5 @@
 {
-  "name": "openvent",
+  "name": "weeber",
   "private": true,
   "packageManager": "bun@1.3.14",
   "workspaces": [
@@ -7,8 +7,6 @@
   ],
   "scripts": {
     "dev": "cd packages/web && bunx vite",
-    "dev:desktop": "cd packages/desktop && bunx vite",
-    "dev:mobile": "cd packages/mobile && bunx expo start",
     "start": "pm2 delete web-app 2>/dev/null || true; pm2 start ecosystem.config.cjs --update-env",
     "start:railway": "cd packages/web && bun run src/server.ts",
     "build": "turbo build",
