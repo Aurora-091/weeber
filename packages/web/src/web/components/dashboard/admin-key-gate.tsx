@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { getAdminKey, setAdminKey, adminHeaders } from "../../lib/admin-key";
+import { apiFetch } from "../../lib/api";
 
 /**
  * Gates dashboard access behind the same ADMIN_API_KEY used by ops
@@ -20,7 +21,7 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
       // Plain fetch rather than the typed RPC client here — this check only
       // cares about the HTTP status, not the response shape, and sidesteps a
       // TS inference quirk on this particular route's generated client type.
-      const res = await fetch("/api/voice/calls", { headers: adminHeaders() });
+      const res = await apiFetch("/api/voice/calls", { headers: adminHeaders() });
       if (res.status === 401) throw new Error("unauthorized");
       if (!res.ok) throw new Error(`unexpected status ${res.status}`);
       return true;

@@ -1,0 +1,9 @@
+{
+  "buildCommand": "bun install && cd packages/web && bunx vite build",
+  "outputDirectory": "packages/web/dist",
+  "installCommand": "echo skip",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

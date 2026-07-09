@@ -1274,5 +1274,135 @@ one, so Clinic/Hotel agents get the same branching capability without a second i
 
 ---
 
-*Next entry number: ADR-034. Add new entries above this line, keeping numbering sequential and dates
+## ADR-034 — Stack finalization: Supabase Postgres as the primary DB, Railway + Vercel confirmed, Razorpay-first billing (India GTM)
+
+**Date:** 2026-07-10
+
+**Context:** Three items from `CLAUDE.md`'s STOP-AND-ASK gate list (hosting platform, payment gateway) plus
+the Turso-vs-Postgres question raised in the post-cleanup stack review were resolved by explicit user
+direction in one round. The stack review's core argument on the database: ADR-030 kept Turso/libSQL because
+migrating had "zero functional benefit right now" — true for the MVP fork, but Weeber is now a startup whose
+Phase 2 roadmap (per-org DNC lists, per-org billing entities, RBAC) is exactly the relational multi-tenant
+modeling Postgres is built for, Supabase is already in the stack for Auth/Storage/Functions (so this
+*removes* a database rather than adding one), and Postgres row-level security can enforce org isolation at
+the database layer instead of relying on `WHERE orgId = ?` discipline in every query. Same asymmetric-cost
+logic ADR-030 itself used for `orgId` scoping: cheap before real merchant data exists, expensive to
+retrofit after.
+
+**Decision:**
+
+1. **Supabase Postgres is the primary relational DB, from the start — supersedes ADR-030's "core DB stays
+   on Turso" call.** The full Drizzle schema migrates `sqliteTable` → `pgTable` (`dialect: "turso"` →
+   `"postgresql"` in `drizzle.config.ts`), and Supabase is used to its full extent: Postgres (+ RLS for
+   org scoping), Auth (merchant login, per ADR-031), Storage (KB documents), Edge Functions, and whatever
+   else earns its place (Realtime for live call status on the dashboard is a natural candidate, not
+   committed). No data migration burden exists yet — no production merchant data is in Turso — which is
+   precisely why now. **Blocked on:** the Supabase project itself does not exist yet; create it first, then
+   the schema migration is a normal workstream (sized in `WEEBER-PLAN.md`).
+2. **Hosting: Railway for the backend, Vercel for the frontend — resolves STOP-AND-ASK #3.** Fly.io's HIPAA
+   BAA argument is moot for now: first vertical is Shopify (India GTM), not clinics. `railway.json` stands.
+   Both platforms' official MCP servers are wired into `.mcp.json` (`railway` via `@railway/mcp-server` +
+   `RAILWAY_API_TOKEN` env var; `vercel` via the hosted HTTP MCP at `mcp.vercel.com`, OAuth at connect
+   time). `vercel.json` — deleted in error during the OSS cleanup on the assumption it existed only for the
+   OpenVent marketing site — is restored: it is the production deploy config for the dashboard frontend.
+3. **Payments: Razorpay first — resolves STOP-AND-ASK #5, with a sequencing twist.** First GTM is
+   India-based, which is exactly the market Razorpay is strongest in; Dodo Payments (Merchant-of-Record,
+   cross-border tax handling) is the planned addition **when** international expansion happens — a "when,"
+   not an "if," per explicit direction ("we are going global too"). Consequence for the billing
+   integration whenever it's built: put a thin gateway abstraction in front (same provider-seam pattern as
+   LLM/TTS), so adding Dodo later is an adapter, not a rework. Do not build the Dodo adapter now.
+
+**Consequences:** The Turso → Supabase Postgres migration becomes the top structural workstream and should
+land **before** merchant-facing features build up more schema surface on the SQLite dialect. `db:push`
+against Turso remains the working reality until that lands — every doc reference to Turso/libSQL is
+accurate-but-terminal. The `@tursodatabase/api` and `@libsql/client` dependencies go away with the
+migration. Env surface changes: `DATABASE_URL` will point at Supabase Postgres (pooled connection string),
+and `RAILWAY_API_TOKEN` joins the shell-env list for MCP use. India-first GTM also means the TCPA
+calling-window/DNC model (US-centric, NANP area codes) needs an India-aware compliance review — TRAI's
+DND registry and calling-hour norms are a different regime; flagged as a required follow-up in
+`WEEBER-PLAN.md`, not silently assumed equivalent.
+
+---
+
+## ADR-035 — Backend separation: prepare the seam now, split later
+
+**Date:** 2026-07-10
+
+**Context:** Explicit user direction: separating the backend into its own unit will pay off in the future
+but not now — start preparing for it. Today `packages/web` is one package holding both the Hono API
+(`src/api`) and the React dashboard (`src/web`), served by one Bun process in the single-deploy story but
+already deployed as two artifacts in production (Railway runs the full server; Vercel serves only the
+static frontend build). An audit of the actual coupling found it small: exactly one frontend→backend
+import, and it's type-only (`AppType` for the Hono RPC client — erased at build time, survives any split
+as a package-name change); the real coupling was that every API call assumed same-origin (`hc("/")` plus
+three raw `fetch("/api/...")` call sites).
+
+**Decision:** Do not split into separate packages/repos yet — build and enforce the seam so the eventual
+split is mechanical:
+
+1. **`src/web/lib/api.ts` is the single point of contact with the backend's location.** It reads
+   `VITE_API_BASE_URL` (build-time, Vite): unset = same-origin (single-deploy, today's default), set = all
+   API traffic targets that origin. It exports the typed RPC client (`api`), plus `apiFetch`/`apiUrl` for
+   the few raw-HTTP call sites (status checks, text/blob downloads). **Boundary rule from now on: frontend
+   code never calls global `fetch` with a hardcoded `/api/...` path, and never imports anything from
+   `src/api` except types.** All three existing raw call sites were migrated.
+2. **CORS allowlist, env-gated:** `CORS_ALLOWED_ORIGINS` (comma-separated) on the backend. Unset preserves
+   the previous reflect-any-origin behavior (acceptable while auth is header-based, no cookies); it must be
+   set to the real dashboard origin(s) before the Vercel frontend goes live on a real domain.
+3. **The future split shape**, when it earns its cost (own release cadence, separate teams, or backend
+   reuse by a non-dashboard client): `src/api` moves to a `packages/api` workspace package (or its own
+   repo), the frontend's `AppType` import becomes a package import, and nothing else changes — that's the
+   point of the seam. Not scheduled; revisit when one of those triggers is actually true.
+
+Also this round: the `railway` MCP entry corrected to Railway's hosted HTTP MCP (`mcp.railway.com/mcp`,
+OAuth on connect — same pattern as Vercel's), replacing the stdio/`RAILWAY_API_TOKEN` wiring from earlier
+in the day.
+
+**Consequences:** Workstream E's code half (WEEBER-PLAN) is done ahead of the Vercel deploy — what remains
+is setting `VITE_API_BASE_URL` in Vercel's build env and `CORS_ALLOWED_ORIGINS` on Railway once real URLs
+exist. `RAILWAY_API_TOKEN` is no longer needed for MCP use.
+
+---
+
+## ADR-036 — Backend split executed: `packages/api` (@weeber/api) + `packages/web` (@weeber/web)
+
+**Date:** 2026-07-10
+
+**Context:** ADR-035 built the seam and deferred the physical split until a trigger arrived. The user then
+decided to do it immediately — "both times we have to spend time, so go for it now" — reasoning that the
+mechanical cost is the same today as later, and today the seam is fresh. Fair: the split was several hours
+either way, and doing it with zero production traffic removes all deploy risk.
+
+**Decision:** `packages/web/src/api` + `src/server.ts` + `drizzle.config.ts` moved (via `git mv`, history
+preserved) into a new **`packages/api`** workspace package, `@weeber/api`:
+
+- **`@weeber/api`** owns everything server-side: the Hono app (`src/index.ts`, exports `AppType`), the Bun
+  server entry (`src/server.ts` — Twilio Media Stream WebSocket, boot checks, sweeps), the Drizzle schema +
+  config, all voice/integration/database code, and all backend tests (`bun test src/`). Backend deps
+  (drizzle, twilio, ai/groq, ioredis, ws, libsql, @openvent/compliance) moved here.
+- **`@weeber/web`** (renamed from `@template/web`) is frontend-only: React dashboard, Vite build. It keeps
+  `hono` (for `hono/client`) and gains `"@weeber/api": "workspace:*"` — used exclusively for the type-only
+  `AppType` import in `lib/api.ts`. The package-level `exports` map (which used to export the API from the
+  web package — the tell that the boundary was inverted) moved to `@weeber/api` where it belongs.
+- **Single-deploy still works:** `@weeber/api`'s server serves the frontend's built assets from the sibling
+  package (`../../web/dist` relative to `src/`) when they exist — `bun run start` (PM2) behaves exactly as
+  before. In the split deploy the dist simply never exists on Railway and only `/api/*` + the WebSocket
+  matter there.
+- **Vite dev `/api` proxying preserved:** `hono-dev-plugin` now loads the Hono app cross-package via
+  `/@fs/`-prefixed `ssrLoadModule` — dashboard dev experience unchanged.
+- **Config/CI updates:** `ecosystem.config.cjs` + root `start:railway` point at `packages/api/src/server.ts`;
+  CI typechecks all three packages and runs the api + compliance test suites; `db:*` scripts live in
+  `packages/api` now.
+
+**Consequences:** The repo now has three packages with one-directional dependencies:
+`web → api (types only) → compliance`. Backend work and frontend work no longer share a `package.json`,
+which is the future-proofing the user asked for — a separate backend repo, if ever wanted, is now a
+`git filter-repo` away rather than a refactor. Costs accepted: `bun install` must be re-run (lockfile
+changes), and anyone's muscle memory of `cd packages/web && bun run test` must become `packages/api`.
+`docs/architecture.md`'s "where things live" tree predates this and reads `packages/web/src/api` — the
+`docs/` folder is deliberately unmodified (user direction), so treat `CLAUDE.md`'s tree as current.
+
+---
+
+*Next entry number: ADR-037. Add new entries above this line, keeping numbering sequential and dates
 accurate to when the decision was actually made.*

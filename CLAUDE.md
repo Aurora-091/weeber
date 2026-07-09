@@ -19,7 +19,7 @@ not background reading:
 2. `CLAUDE-BUILD-BRIEF.md` — admin panel + merchant dashboard scope, codebase structure, API conventions.
 3. `UI-DESIGN-BRIEF.md` — the confirmed design system (Arc-like warm paper theme, tokens already implemented
    in `styles.css`'s `.theme-weeber`).
-4. `DECISIONS.md` — every consequential decision, in order, with full reasoning (ADR-030 through ADR-033 are
+4. `DECISIONS.md` — every consequential decision, in order, with full reasoning (ADR-030 onward are
    Weeber-specific; ADR-001 through ADR-029 are the base OpenVent project's history — still relevant for
    understanding *why* the underlying framework works the way it does).
 
@@ -34,20 +34,25 @@ before assuming it's a mistake or before changing it.
   for UI/dashboard work; not fine for testing an actual phone call.
 - `bun run start` (from repo root) — production server via PM2 (`ecosystem.config.cjs`) — required for
   testing live call audio locally.
-- `bun run start:railway` — direct `bun run src/server.ts`, no PM2 — used for platform-supervised hosting
-  (see "Hosting — not yet decided" below).
-- `cd packages/web && bun run typecheck` / `bun run build` / `bun run test` — must all be clean before any
-  PR. CI (`.github/workflows/ci.yml`) already enforces this; **branch protection on `main` is not yet
-  enabled** — do this in GitHub repo settings before multiple people push here.
+- `bun run start:railway` — direct `bun run src/server.ts`, no PM2 — this is how the backend runs in
+  production on Railway (confirmed platform, ADR-034); Railway's container supervisor handles restarts.
+- `cd packages/api && bun run typecheck` / `bun run test` and `cd packages/web && bun run typecheck` /
+  `bun run build` — must all be clean before any PR. CI (`.github/workflows/ci.yml`) already enforces this;
+  **branch protection on `main` is not yet enabled** — do this in GitHub repo settings before multiple
+  people push here.
 - `cd packages/openvent-compliance && bun run typecheck` / `bun run test` — the standalone compliance
   package; same bar applies, arguably higher (see "Compliance package" below).
-- `bun test <path>` — run a single test file directly (both packages use plain `bun:test`, no separate
-  runner/mocking library; tests live next to the code as `foo.test.ts`). See `docs/testing.md` for the full
-  convention (stubbing `fetch`, resetting module-level state between tests, etc.).
+- `bun test <path>` — run a single test file directly (all packages use plain `bun:test`, no separate
+  runner/mocking library; tests live next to the code as `foo.test.ts`). Backend tests are in
+  `packages/api/src/`. See `docs/testing.md` for the full convention (stubbing `fetch`, resetting
+  module-level state between tests, etc.).
 - `bun run lint` (repo root) — oxlint, zero warnings required.
-- `cd packages/web && bun run db:push` — applies `src/api/database/schema.ts` changes to the live DB (Turso/
-  libSQL). Additive-only migrations — never rename or drop existing columns (repo-wide convention, see any
-  ADR touching the schema for examples).
+- `cd packages/api && bun run db:push` — applies `src/database/schema.ts` changes to the live DB.
+  **Currently Turso/libSQL, but the decided direction is Supabase Postgres (ADR-034)** — the
+  `sqliteTable` → `pgTable` migration is the top structural workstream and hasn't landed yet; don't add
+  new SQLite-dialect-specific schema surface without checking whether the migration should come first.
+  Additive-only migrations — never rename or drop existing columns (repo-wide convention, see any ADR
+  touching the schema for examples).
 
 ## Repo structure (top level)
 
@@ -62,18 +67,22 @@ openvent/  (this repo)
 │                                  # configuration, testing, security, dashboard) — still accurate for the
 │                                  # underlying framework; Weeber-specific product docs are the 4 files above
 ├── .mcp.json                     # MCP servers for Claude Code (see below)
-├── railway.json                  # backend hosting config — NOT FINALIZED, see STOP AND ASK #3
+├── railway.json                  # backend hosting config (Railway confirmed — ADR-034)
+├── vercel.json                   # frontend deploy config (Vercel serves the dashboard; Railway serves /api)
 ├── supabase/
 │   ├── config.toml               # Storage + Auth + Edge Functions config
 │   ├── migrations/                # KB document storage bucket, etc.
 │   └── functions/                 # gdpr-redact-notify (stub, not yet wired to the redact route)
 ├── packages/
-│   ├── web/                       # the actual app — Bun/Hono API + React dashboard, single deploy unit
-│   │   ├── src/api/                # backend — voice pipeline, Shopify integration, database
-│   │   │   ├── database/schema.ts   # Drizzle schema — org-lite tables, agentTemplates, Shopify tables
-│   │   │   ├── integrations/shopify/  # the weebersh contract implementation (routes, client, auth, idempotency)
-│   │   │   └── voice/                # call handling, workflows/scheduler, tools, compliance adapters
-│   │   ├── src/web/                 # frontend — see CLAUDE-BUILD-BRIEF.md §3 for the /dashboard + /app tree
+│   ├── api/                       # @weeber/api — the backend (ADR-036): Bun/Hono server, deployed to Railway
+│   │   ├── src/index.ts            # the Hono app — exports AppType for the frontend's typed client
+│   │   ├── src/server.ts           # Bun server entry — Twilio Media Stream WS, boot checks, sweeps
+│   │   ├── src/database/schema.ts   # Drizzle schema — org-lite tables, agentTemplates, Shopify tables
+│   │   ├── src/integrations/shopify/  # the weebersh contract implementation (routes, client, auth, idempotency)
+│   │   ├── src/voice/               # call handling, workflows/scheduler, tools, compliance adapters
+│   │   └── drizzle.config.ts        # db:* scripts live in this package
+│   ├── web/                       # @weeber/web — the frontend (React dashboard), deployed to Vercel
+│   │   ├── src/web/                 # see CLAUDE-BUILD-BRIEF.md §3 for the /dashboard + /app tree
 │   │   └── components.json          # shadcn config
 │   └── openvent-compliance/        # framework-agnostic compliance package — DNC/TCPA/HIPAA/GDPR, tested
 │                                    # independently, dependency-free by design; Weeber-private (see below)
@@ -129,6 +138,13 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
   (**must be audit-logged, no exceptions** — see `CLAUDE-BUILD-BRIEF.md` §4). `/app/*` (new) is the
   merchant-facing surface — onboarding wizard, agent config, call history, analytics, billing, Shopify
   connection status. Both live in `packages/web`, not separate packages.
+- **Frontend↔backend boundary rule (ADR-035/036 — the split is done):** the backend is `packages/api`
+  (`@weeber/api`), the frontend is `packages/web` (`@weeber/web`). Frontend code never imports anything
+  from `@weeber/api` except types (the `AppType` RPC type in `lib/api.ts`), and never calls global `fetch`
+  with a hardcoded `/api/...` path — all HTTP goes through `src/web/lib/api.ts` (`api` typed client, or
+  `apiFetch`/`apiUrl` for raw HTTP), which honors `VITE_API_BASE_URL`. Dependency direction is one-way:
+  `web → api (types only) → compliance`. In single-deploy mode the api server serves `packages/web/dist`
+  when it exists; on Railway it never does, and only `/api/*` + the Twilio WebSocket matter.
 - **Org-lite, not full multi-tenant** (ADR-030/031) — `orgId` scopes data (`calls`, `scheduledCalls`,
   `shopifyContacts`), but there's no per-org Twilio sub-account, no per-org DNC list, and no per-org
   billing entity yet. Don't build those without checking `WEEBER-PLAN.md`'s Phase 2 list first — they're
@@ -147,8 +163,9 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
 
 ## Config surfaces that must stay in sync
 
-- `packages/web/drizzle.config.ts` (`dialect: "turso"`) and `src/api/database/schema.ts` — schema changes
-  need `db:push` run against the real `DATABASE_URL` after editing.
+- `packages/api/drizzle.config.ts` (`dialect: "turso"` today; becomes `"postgresql"` when the ADR-034
+  Supabase migration lands) and `packages/api/src/database/schema.ts` — schema changes need `db:push` run
+  against the real `DATABASE_URL` after editing.
 - `weebersh`'s `docs/contract.md` and this repo's understanding of it — if you change a Shopify webhook
   payload shape or add an endpoint, the contract version must bump in **both** repos, not just this one.
 - `packages/web/components.json` — shadcn config; new components should be added via `bunx shadcn@latest add
@@ -165,7 +182,7 @@ per agent).
 
 ## MCP servers
 
-`.mcp.json` wires up three MCP servers for whoever's driving Claude Code in this repo:
+`.mcp.json` wires up five MCP servers for whoever's driving Claude Code in this repo:
 
 - **`shopify-dev-mcp`** (official, `@shopify/dev-mcp`) — live access to Shopify's Admin API/GraphQL schema
   docs. Same server `weebersh` uses; needs no credentials.
@@ -174,9 +191,11 @@ per agent).
   `${VAR}` substitution — **never replace these with literal values in the committed file**).
 - **`twilio`** (official, `@twilio-alpha/mcp`) — same pattern, needs `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`
   as shell env vars.
-
-Hosting-platform MCP (Railway's or Fly's) intentionally isn't wired up yet — see "STOP AND ASK" item 3
-below, add whichever MCP matches once that decision is made.
+- **`railway`** (official, hosted HTTP MCP at `mcp.railway.com` — the URL is the bare host, no `/mcp`
+  path) — no env var; authenticates via OAuth on first connect (tokens are short-lived, revocable from
+  Railway account settings).
+- **`vercel`** (official, hosted HTTP MCP at `mcp.vercel.com`) — no env var; authenticates via OAuth on
+  first connect.
 
 ## STOP AND ASK — do not decide these unilaterally
 
@@ -190,14 +209,14 @@ unresolved product/business decisions:
    plausible-sounding persona copy yourself.
 2. **Final brand assets** (logo, exact hex values beyond `UI-DESIGN-BRIEF.md`'s starting proposal) — that
    proposal is explicitly a placeholder, not a commitment.
-3. **Hosting platform: Railway vs. Fly.io is not finalized.** `railway.json` exists in this repo from an
-   earlier round; Fly.io was recommended in a later discussion for its no-spend-minimum HIPAA BAA and
-   multi-region story, but no final decision was confirmed. Ask before provisioning either.
+3. ~~Hosting platform~~ **RESOLVED (ADR-034): Railway for the backend, Vercel for the frontend.** Fly.io's
+   HIPAA BAA argument deferred until a clinic-type vertical is actually near-term.
 4. **Entry-condition branching ("trigger split," ADR-033):** config-driven-only, or visual-canvas-from-day-one
    (React Flow) — explicitly left open, ask before starting this workstream.
-5. **Payment gateway: Dodo Payments vs. Razorpay** — not finalized (Razorpay is India-first with weak
-   international support; Dodo is a Merchant-of-Record with better cross-border coverage) — ask before
-   building the billing integration.
+5. ~~Payment gateway~~ **RESOLVED (ADR-034): Razorpay first — GTM is India-based.** Dodo Payments is the
+   planned addition when international expansion happens (a "when," not an "if"). Build the billing
+   integration behind a thin gateway abstraction so Dodo lands later as an adapter; do not build the Dodo
+   adapter now.
 6. **Anything touching `packages/openvent-compliance`** — confirm the change with the user before merging,
    regardless of how small it looks. Correctness there matters more than usual.
 7. **Real credentials of any kind** (Twilio, Supabase, Deepgram, Cartesia/ElevenLabs, LLM provider, GitHub

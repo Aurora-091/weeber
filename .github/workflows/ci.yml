@@ -23,14 +23,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Typecheck (api)
+        run: cd packages/api && bun run typecheck
+
       - name: Typecheck (web)
         run: cd packages/web && bun run typecheck
 
       - name: Typecheck (openvent-compliance)
         run: cd packages/openvent-compliance && bun run typecheck
 
-      - name: Test (web) — voice pipeline, integrations, resilience layer
-        run: cd packages/web && bun run test
+      - name: Test (api) — voice pipeline, integrations, resilience layer
+        run: cd packages/api && bun run test
 
       - name: Test (openvent-compliance) — DNC, calling-window, HIPAA, GDPR, national-DNC adapter
         run: cd packages/openvent-compliance && bun run test

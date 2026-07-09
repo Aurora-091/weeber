@@ -6,9 +6,29 @@ import { resolveTtsProvider } from "./voice/tts";
 import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
 import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@openvent/compliance";
 
+// Cross-origin policy for the split deploy (frontend on Vercel, API on
+// Railway — ADR-035). CORS_ALLOWED_ORIGINS: comma-separated origin allowlist
+// (e.g. "https://app.weeber.example,https://admin.weeber.example"). Unset =
+// reflect any origin — today's single-deploy behavior, acceptable while auth
+// is header-based (no cookies), but set the allowlist before the Vercel
+// frontend goes live on a real domain.
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const app = new Hono()
   .basePath('api')
-  .use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }))
+  .use(
+    cors({
+      origin: (origin) => {
+        if (allowedOrigins.length === 0) return origin ?? "*";
+        return origin && allowedOrigins.includes(origin) ? origin : null;
+      },
+      credentials: true,
+      exposeHeaders: ["set-auth-token"],
+    }),
+  )
   .get('/ping', (c) => c.json({ message: `Pong! ${Date.now()}` }, 200))
   .get('/health', (c) =>
     c.json(

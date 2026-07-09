@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 
 export default function honoDevPlugin(): Plugin {
@@ -30,8 +31,13 @@ export default function honoDevPlugin(): Plugin {
   };
 }
 
+// The Hono app lives in the sibling @weeber/api package (ADR-036) — outside
+// this Vite root, so load it via /@fs/. Vite's fs.allow covers the workspace
+// root, which includes packages/api.
+const apiEntry = path.resolve(__dirname, "../../../api/src/index.ts").replaceAll("\\", "/");
+
 async function loadApp(server: ViteDevServer) {
-  const mod = await server.ssrLoadModule("/src/api/index.ts");
+  const mod = await server.ssrLoadModule(`/@fs/${apiEntry}`);
   return mod.default;
 }
 

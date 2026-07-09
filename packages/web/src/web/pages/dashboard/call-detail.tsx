@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { motion } from "motion/react";
 import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge } from "lucide-react";
-import { api } from "../../lib/api";
+import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 
 /**
@@ -14,7 +14,7 @@ import { adminHeaders } from "../../lib/admin-key";
  * this on demand, not another warning.
  */
 async function downloadAudit(callId: string) {
-  const res = await fetch(`/api/voice/calls/${callId}/audit?format=text`, { headers: adminHeaders() });
+  const res = await apiFetch(`/api/voice/calls/${callId}/audit?format=text`, { headers: adminHeaders() });
   if (!res.ok) return;
   const text = await res.text();
   const blob = new Blob([text], { type: "text/plain" });

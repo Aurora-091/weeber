@@ -54,16 +54,20 @@ from `process.env`). This is the actual prerequisite for the form UI, not the fo
 
 | Workstream | Depends on | Notes |
 |---|---|---|
-| **A. Config storage (env-var -> DB) + form-based agent config UI** | Nothing (can start immediately) | The actual bottleneck for merchant-facing onboarding. See above. |
+| **A. Config storage (env-var -> DB) + form-based agent config UI** | H (build the new tables on Postgres, not SQLite) | The actual bottleneck for merchant-facing onboarding. See above. |
 | **B. Persona/prompt copy for the 3 agents** | Nothing | Pure content work, fully parallel with everything else. |
-| **C. Wire real Supabase project** (Storage bucket, Auth) | Nothing | Create the project, run `supabase link` + `supabase db push` against `supabase/migrations/`, wire `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`. |
+| **C. Wire real Supabase project** (Storage bucket, Auth) | Nothing | Create the project, run `supabase link` + `supabase db push` against `supabase/migrations/`, wire `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`. **The project does not exist yet** — creating it is the first concrete action; the `supabase` MCP server is project-scoped and needs `SUPABASE_PROJECT_REF` from it. |
 | **D. Railway deploy** | Nothing | Point Railway at this repo, set env vars from `.env.example`, confirm `/api/health` responds, confirm the Twilio Media Stream WebSocket actually works from a real Railway URL (this is the one thing that must be tested live — WebSocket behavior through Railway's edge hasn't been verified yet). |
-| **E. Vercel deploy + frontend API base URL fix** | D (needs Railway's URL) | Add `VITE_API_BASE_URL`, update the dashboard's fetch calls from relative (`/api/...`) to absolute (`${VITE_API_BASE_URL}/api/...`) — grep for `fetch("/api` in `packages/web/src/web` to find every call site. |
+| **E. Vercel deploy** | D (needs Railway's URL) | **Code half done (ADR-035):** `lib/api.ts` reads `VITE_API_BASE_URL` and all call sites route through it; backend has env-gated `CORS_ALLOWED_ORIGINS`. Remaining: set `VITE_API_BASE_URL` in Vercel's build env, `CORS_ALLOWED_ORIGINS` on Railway, deploy, verify. |
 | **F. Get real `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` values in place in both repos** | Nothing | Coordinate with whoever owns the weebersh deploy — these must match exactly in both places or every webhook 401s. |
 | **G. End-to-end test against a real (dev-store) Shopify checkout** | D, F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. |
+| **H. Turso → Supabase Postgres migration (ADR-034)** | C (needs the Supabase project to exist) | `sqliteTable` → `pgTable` across `schema.ts`, `dialect: "postgresql"` in `drizzle.config.ts`, swap `@libsql/client` for the Postgres driver, point `DATABASE_URL` at Supabase's pooled connection string, regenerate migrations. No production data to migrate — that's why now. Consider RLS policies for `orgId` scoping while the tables are being recreated anyway. Size: 3-5 days including re-verifying every query + the with-retry wrapper. |
+| **I. India-compliance review of the calling-window/DNC model** | Nothing (research), before first real India merchant (enforcement) | ADR-034: first GTM is India. `@openvent/compliance`'s calling-window is TCPA/NANP-centric (8am-9pm, US area-code timezones) and the DNC model assumes the US regime. India is TRAI's territory: NDNC/DND registry, different calling-hour norms (9am-9pm IST), telemarketing registration (140-series headers for voice). Scope what "compliant outbound calling in India" actually requires **before** the first real merchant campaign, not after. Touches `packages/openvent-compliance` — per the gate list, confirm findings with the user before changing anything there. |
 
-A, B, C, D, F can all start in parallel with no dependency on each other — that's most of the list. E needs D
-done first (needs a real Railway URL to point at). G is the integration test, needs D and F both done.
+B, C, D, F can all start in parallel with no dependency on each other. H needs C (the Supabase project);
+A now waits on H so its new tables are born on Postgres instead of being migrated twice. E needs D (a real
+Railway URL). G is the integration test, needs D and F both done. I is research-first — parallel with
+everything, but its enforcement half is a hard gate before real India merchant calls.
 
 ## Phase 2 / explicitly deferred — don't build these now, don't forget them either
 

@@ -26,6 +26,14 @@
         "ACCOUNT_SID": "${TWILIO_ACCOUNT_SID}",
         "AUTH_TOKEN": "${TWILIO_AUTH_TOKEN}"
       }
+    },
+    "railway": {
+      "type": "http",
+      "url": "https://mcp.railway.com"
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com"
     }
   }
 }

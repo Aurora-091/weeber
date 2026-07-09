@@ -1,9 +1,9 @@
-import app from "./api";
-import { tryUpgradeVoiceSocket, voiceWebsocketHandlers } from "./api/voice/ws-route";
+import app from "./index";
+import { tryUpgradeVoiceSocket, voiceWebsocketHandlers } from "./voice/ws-route";
 import { assertHipaaPreflight, startRetentionSweep } from "@openvent/compliance";
-import { callLogAdapter } from "./api/voice/compliance/adapters";
-import { assertVoiceConfig } from "./api/voice/config-check";
-import { startScheduledCallSweep } from "./api/voice/workflows/scheduler";
+import { callLogAdapter } from "./voice/compliance/adapters";
+import { assertVoiceConfig } from "./voice/config-check";
+import { startScheduledCallSweep } from "./voice/workflows/scheduler";
 
 // Surface any otherwise-silent crash (e.g. an unawaited rejection deep in the
 // voice pipeline) in the process logs instead of letting PM2 restart the
@@ -36,7 +36,12 @@ startRetentionSweep(callLogAdapter, {
 startScheduledCallSweep();
 
 const port = Number(process.env.PORT ?? 3000);
-const distDir = `${import.meta.dir}/../dist`;
+// Single-deploy mode: serve the frontend's built assets from the sibling
+// web package (monorepo layout — ADR-036). In the split deploy (Vercel
+// frontend + Railway API) this dist never exists and every non-/api request
+// falls through to the "build output not found" response, which is fine:
+// nothing but Twilio and the dashboard should be talking to this origin.
+const distDir = `${import.meta.dir}/../../web/dist`;
 const indexPath = `${distDir}/index.html`;
 
 const server = Bun.serve({

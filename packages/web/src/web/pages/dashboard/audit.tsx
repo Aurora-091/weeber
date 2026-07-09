@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ShieldCheck, Download, Search } from "lucide-react";
 import { adminHeaders } from "../../lib/admin-key";
+import { apiFetch } from "../../lib/api";
 
 /**
  * Per-number compliance audit lookup — the more common real request
@@ -21,7 +22,7 @@ export function AuditPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/voice/callers/${encodeURIComponent(phoneNumber)}/audit?format=text`, {
+      const res = await apiFetch(`/api/voice/callers/${encodeURIComponent(phoneNumber)}/audit?format=text`, {
         headers: adminHeaders(),
       });
       if (!res.ok) throw new Error(`Failed (${res.status})`);
