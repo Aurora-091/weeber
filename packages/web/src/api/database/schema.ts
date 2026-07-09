@@ -182,6 +182,13 @@ export const scheduledCalls = sqliteTable("scheduled_calls", {
 export const orgs = sqliteTable("orgs", {
   id: text("id").primaryKey(),
   name: text("name"),
+  /**
+   * Vertical-agnostic data model, Shopify-only UI for now (ADR-031). Not
+   * enforced by an enum at the DB level on purpose — new verticals
+   * (clinic, hotel) shouldn't need a schema migration to exist, just a new
+   * value here and a new row in `agentTemplates`.
+   */
+  vertical: text("vertical").notNull().default("shopify"),
   planName: text("plan_name"),
   currency: text("currency"),
   countryCode: text("country_code"),
@@ -280,3 +287,27 @@ export const shopifyWebhookEvents = sqliteTable(
   },
   (table) => [uniqueIndex("shopify_webhook_events_dedupe_idx").on(table.shop, table.topic, table.idempotencyKey)],
 );
+
+/**
+ * Agent template catalog (ADR-031) — backs the admin panel's "Agent
+ * template catalog" feature and is the concrete seam for the
+ * vertical-agnostic data model: a new vertical (clinic, hotel) adds rows
+ * here, not a schema change. `key` is the stable identifier a
+ * `scheduledCalls.workflowName`/persona lookup resolves against (e.g.
+ * "shopify-cart-recovery"); `defaultTools` names which voice tools this
+ * template wires up, resolved to actual tool implementations in code, not
+ * stored as code here.
+ */
+export const agentTemplates = sqliteTable("agent_templates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  vertical: text("vertical").notNull(),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  defaultPersonaPrompt: text("default_persona_prompt"),
+  defaultTools: text("default_tools", { mode: "json" }).$type<string[]>().default([]),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
