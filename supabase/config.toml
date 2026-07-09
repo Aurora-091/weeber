@@ -1,0 +1,38 @@
+# Supabase project config for Weeber. Used ONLY for Storage (KB PDF
+# uploads), Auth (real merchant accounts — replacing labeled admin keys for
+# the merchant-facing dashboard, NOT for Weeber's own internal ops access,
+# which keeps using ADMIN_API_KEY/admin_keys), and Edge Functions
+# (low-frequency async jobs). The core relational DB stays on Turso/libSQL
+# — see WEEBER-PLAN.md for why this isn't a full Postgres migration.
+#
+# Run `supabase link --project-ref <ref>` after creating the project, then
+# `supabase db push` / `supabase functions deploy` as usual.
+
+project_id = "weeber"
+
+[api]
+enabled = true
+
+[db]
+# Not used for application data — Supabase's own Postgres here only backs
+# Auth and Storage's internal metadata tables, not Weeber's business data.
+port = 54322
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["https://app.weeber.ai"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+[functions.gdpr-redact-notify]
+verify_jwt = false

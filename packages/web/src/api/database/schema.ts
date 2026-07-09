@@ -1,8 +1,15 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const calls = sqliteTable("calls", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   twilioCallSid: text("twilio_call_sid").notNull().unique(),
+  /**
+   * Weeber org-lite scoping (additive, nullable) — see ADR-030. Null for
+   * plain self-hosted OpenVent usage (single-operator, no org concept).
+   * Populated for Weeber calls so the dashboard can eventually filter by
+   * org without a data migration once full multi-tenant UI is built.
+   */
+  orgId: text("org_id"),
   direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
   fromNumber: text("from_number").notNull(),
   toNumber: text("to_number").notNull(),
@@ -144,7 +151,132 @@ export const scheduledCalls = sqliteTable("scheduled_calls", {
   status: text("status", { enum: ["pending", "claimed", "executed", "canceled", "failed"] })
     .notNull()
     .default("pending"),
+  /**
+   * Weeber org-lite scoping (additive, nullable) — see ADR-030.
+   */
+  orgId: text("org_id"),
+  /**
+   * Free-form workflow context (additive, nullable) — e.g. the Shopify
+   * vertical stores { shop, checkoutToken, orderId } here so the call
+   * flow's tools (offerDiscount, confirmOrder, cancelOrder) know which
+   * Shopify entity they're acting on without a schema change per vertical.
+   * Generic on purpose — any future vertical/workflow can use this the
+   * same way instead of growing this table's column count per feature.
+   */
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, string | number>>(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+/**
+ * --- Weeber multi-org-lite + Shopify vertical (ADR-030) ---
+ *
+ * Deliberately lightweight: an org is just an id + display metadata, not a
+ * full tenant-isolation model (no per-org Twilio sub-account, no per-org
+ * DNC list, no per-org billing entity yet — see WEEBER-PLAN.md "Phase 2"
+ * for what's deferred and why). This is enough to (a) not leak one
+ * merchant's calls/contacts into another's queries and (b) not require a
+ * second painful migration when full tenant isolation gets built later.
+ */
+export const orgs = sqliteTable("orgs", {
+  id: text("id").primaryKey(),
+  name: text("name"),
+  planName: text("plan_name"),
+  currency: text("currency"),
+  countryCode: text("country_code"),
+  timezone: text("timezone"),
+  contactEmail: text("contact_email"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * One row per connected Shopify shop. Mirrors weebersh's own `ShopOrgLink`
+ * table (docs/contract.md endpoint 1) — Weeber needs the same shop -> org
+ * lookup on its side, since every inbound webhook payload from weebersh
+ * carries `shop`, not `org_id`, after the initial /connected call. One org
+ * can own multiple shops (matches weebersh's model).
+ */
+export const shopLinks = sqliteTable("shop_links", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shop: text("shop").notNull().unique(),
+  orgId: text("org_id")
+    .notNull()
+    .references(() => orgs.id, { onDelete: "cascade" }),
+  scopes: text("scopes"),
+  connectedAt: integer("connected_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  disconnectedAt: integer("disconnected_at", { mode: "timestamp" }),
+});
+
+/**
+ * Upserted from the customers/create|update webhook (contract endpoint 5).
+ * Idempotent by (orgId, e164) per the contract. `marketingConsent` is
+ * mapped from Shopify's `marketing_consent` field — this is a data point
+ * for the compliance layer, not a replacement for it; TCPA/DNC checks
+ * still run per-call via @openvent/compliance regardless of this flag.
+ */
+export const shopifyContacts = sqliteTable(
+  "shopify_contacts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    shop: text("shop").notNull(),
+    e164: text("e164").notNull(),
+    email: text("email"),
+    name: text("name"),
+    marketingConsent: integer("marketing_consent", { mode: "boolean" }).default(false),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [uniqueIndex("shopify_contacts_org_e164_idx").on(table.orgId, table.e164)],
+);
+
+/**
+ * Idempotency ledger for discount codes Weeber asks weebersh to create
+ * (contract endpoint 11 — POST /discounts/create). The contract requires a
+ * stable, retry-safe code (not a fresh random one per retry); this table is
+ * what makes "have we already issued a code for this checkout?" a lookup
+ * instead of a re-derivation.
+ */
+export const shopifyDiscountCodes = sqliteTable("shopify_discount_codes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shop: text("shop").notNull(),
+  code: text("code").notNull().unique(),
+  checkoutToken: text("checkout_token"),
+  discountId: text("discount_id"),
+  status: text("status", { enum: ["pending", "created", "already_exists", "failed"] })
+    .notNull()
+    .default("pending"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Idempotency ledger for inbound Shopify webhooks forwarded by weebersh.
+ * The contract is explicit that delivery is at-least-once and every
+ * endpoint must be idempotent (Shopify retries + weebersh's own retries) —
+ * this table is the shared mechanism every Shopify route checks before
+ * acting, instead of each route inventing its own dedupe logic.
+ */
+export const shopifyWebhookEvents = sqliteTable(
+  "shopify_webhook_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    shop: text("shop").notNull(),
+    topic: text("topic").notNull(),
+    /** e.g. checkout token, order id, or customer id depending on topic — whatever the contract names as the idempotency key for that endpoint. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    processedAt: integer("processed_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [uniqueIndex("shopify_webhook_events_dedupe_idx").on(table.shop, table.topic, table.idempotencyKey)],
+);

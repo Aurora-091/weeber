@@ -23,8 +23,17 @@ export async function runWorkflowForOutcome(params: {
   webhookUrl?: string | null;
   /** Set when this call was itself a scheduled retry — lets maxRetries be enforced across the chain. */
   previousAttempt?: number;
+  /**
+   * Weeber org-lite scoping + vertical workflow context (additive, ADR-030)
+   * — carried forward into a retry's own `scheduledCalls` row so a
+   * vertical workflow (e.g. Shopify COD confirmation) keeps its context
+   * (shop, orderId, checkoutToken) across every retry attempt, not just
+   * the first call.
+   */
+  orgId?: string;
+  metadata?: Record<string, string | number>;
 }) {
-  const { toNumber, outcome, persona, webhookUrl, previousAttempt } = params;
+  const { toNumber, outcome, persona, webhookUrl, previousAttempt, orgId, metadata } = params;
   const matches = getWorkflowsForNumber(toNumber);
 
   for (const workflow of matches) {
@@ -39,6 +48,17 @@ export async function runWorkflowForOutcome(params: {
             console.log(
               `[workflow:${workflow.name}] retry limit reached for ${toNumber} (${nextAttempt - 1}/${action.maxRetries}) — not scheduling another`,
             );
+            if (action.onExhausted?.action === "webhook") {
+              void dispatchWebhook(resolveWebhookUrl(action.onExhausted.url), "call.retries_exhausted", {
+                toNumber,
+                outcome,
+                workflow: workflow.name,
+                orgId,
+                metadata,
+              });
+            } else if (action.onExhausted?.action === "addToDnc") {
+              await addToDoNotCallList(dncAdapter, toNumber, `workflow:${workflow.name} retries-exhausted`, "agent");
+            }
             break;
           }
           await db.insert(scheduledCalls).values({
@@ -50,6 +70,8 @@ export async function runWorkflowForOutcome(params: {
             maxAttempts: action.maxRetries,
             runAt: new Date(Date.now() + action.delayMinutes * 60 * 1000),
             status: "pending",
+            orgId,
+            metadata,
           });
           console.log(
             `[workflow:${workflow.name}] scheduled retry ${nextAttempt}/${action.maxRetries} for ${toNumber} in ${action.delayMinutes}min`,

@@ -17,7 +17,22 @@ export type WorkflowOutcome =
   | "wrong-number";
 
 export type WorkflowAction =
-  | { action: "retry"; delayMinutes: number; maxRetries: number }
+  | {
+      action: "retry";
+      delayMinutes: number;
+      maxRetries: number;
+      /**
+       * Additive (ADR-030) — fires once when a retry chain is exhausted
+       * (nextAttempt > maxRetries) instead of silently giving up. E.g. the
+       * Shopify COD-confirmation workflow uses this to notify Weeber's own
+       * `/api/integrations/shopify` route to cancel the unconfirmed order
+       * after N unanswered attempts. Kept generic (webhook/addToDnc only,
+       * same as the top-level actions) rather than vertical-specific, so
+       * any future workflow can use the same "give up after N tries, then
+       * do X" shape.
+       */
+      onExhausted?: { action: "webhook"; url: string } | { action: "addToDnc" };
+    }
   | { action: "webhook"; url: string }
   | { action: "addToDnc" }
   | { action: "sendSms"; template: string } // sends via Twilio Messaging using TWILIO_PHONE_NUMBER as sender

@@ -70,6 +70,11 @@ export const voice = new Hono()
           status: "in-progress",
           agentPersona: session?.persona ?? null,
           webhookUrl: session?.webhookUrl ?? null,
+          // Weeber org-lite scoping (additive, ADR-030) — populated when
+          // this call originated from a scheduled call the scheduler
+          // stamped with orgId (e.g. a Shopify vertical workflow); null
+          // for plain inbound calls or self-hosted OpenVent usage.
+          orgId: session?.orgId ?? null,
         })
         .onConflictDoNothing()
         .catch(() => undefined as unknown);
@@ -176,6 +181,8 @@ export const voice = new Hono()
               persona: session?.persona,
               webhookUrl: session?.webhookUrl,
               previousAttempt: session?.workflowAttempt,
+              orgId: session?.orgId,
+              metadata: session?.workflowMetadata,
             }).catch((err) => console.error("[routes] workflow execution failed", err));
           }
         }

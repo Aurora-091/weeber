@@ -74,6 +74,10 @@ async function executeDueScheduledCalls() {
         webhookUrl: row.webhookUrl ?? undefined,
         workflowName: row.workflowName,
         workflowAttempt: row.attempt,
+        // Weeber org-lite scoping + vertical context (ADR-030) — carried
+        // through so a retry can rebuild it (see engine.ts).
+        orgId: row.orgId ?? undefined,
+        workflowMetadata: row.metadata ?? undefined,
       });
 
       console.log(`[scheduler] executed scheduled call to ${row.toNumber} (workflow: ${row.workflowName})`);

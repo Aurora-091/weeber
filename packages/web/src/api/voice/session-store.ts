@@ -29,6 +29,16 @@ export type CallSession = {
   workflowName?: string;
   workflowAttempt?: number;
   /**
+   * Weeber org-lite scoping + vertical workflow context (additive) — see
+   * ADR-030. Carried from `scheduledCalls.orgId`/`.metadata` through the
+   * session so a retry (via the workflow engine's "retry" action) can
+   * carry the same context forward instead of losing it on the next hop
+   * (e.g. the Shopify COD-confirmation workflow needs `shop`/`orderId` on
+   * every retry attempt, not just the first call).
+   */
+  orgId?: string;
+  workflowMetadata?: Record<string, string | number>;
+  /**
    * Structured, deterministic call state — facts captured via the
    * `captureField` tool during this call (email, order ID, name, etc).
    * This is read back into the system prompt every turn as ground truth

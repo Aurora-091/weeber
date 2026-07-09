@@ -12,7 +12,9 @@ export type VoiceWebhookEvent =
   | "call.transcript"
   | "call.tool_call"
   | "call.completed"
-  | "call.recording_ready";
+  | "call.recording_ready"
+  /** A retry chain (workflow "retry" action) gave up after maxRetries — see ADR-030's `onExhausted`. */
+  | "call.retries_exhausted";
 
 export function resolveWebhookUrl(perCallUrl?: string | null) {
   return perCallUrl || process.env.WEBHOOK_URL || null;
