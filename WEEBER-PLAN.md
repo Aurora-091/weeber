@@ -98,6 +98,22 @@ layer in compliance/completeness as you go). Listed here so it's a backlog, not 
   not a rebuild of the integrations themselves. Size: research spike (2-3 days) + integration (1-2 weeks) —
   not urgent until a merchant actually asks to connect their own CRM, but worth knowing the answer before
   that request arrives rather than scrambling then.
+- **Entry-condition branching ("trigger split") for workflows.** Researched against Klaviyo's and Shopify
+  Flow's flow-builder models (see ADR-033). Today's `WorkflowConfig` can branch on *how a call ended*
+  (`onOutcome`) and retry/give-up (`onExhausted`, ADR-030), but cannot branch on conditions *at the moment a
+  flow starts* — e.g. "if cart value > $100, use a bigger discount and a different persona; otherwise don't
+  offer one at all." This is the real gap the Klaviyo/Shopify Flow research surfaced, and it's not
+  Shopify-specific — any future vertical's agent benefits from the same capability. Scope: add an optional,
+  generic `entryConditions` concept to `WorkflowConfig`/`agentTemplates` (a simple field-comparison — e.g.
+  `{ field: "cartValue", operator: "gt", value: 100 }` — evaluated against the `scheduledCalls.metadata`
+  JSON blob already in place, not a full expression language) that resolves to a chosen persona/tool-set
+  variant before the first call is placed. **Build this as a config-driven capability first** (JSON, same
+  as today's `WORKFLOWS` env var, or wherever the config-storage migration lands — see "Config storage"
+  above); a visual canvas (React Flow, MIT-licensed, the standard library for exactly this) is a legitimate
+  follow-up once the underlying branching actually works, not a prerequisite for it. Size: engine change
+  ~1 week, config-UI-for-it is separate and comes after. **Ask the user before deciding config-only vs.
+  visual-canvas-from-the-start** — this was flagged as an open call in `CLAUDE.md`'s gate list, not decided
+  here.
 
 ## Immediate technical debt to flag, not hide
 
