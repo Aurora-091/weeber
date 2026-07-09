@@ -87,6 +87,17 @@ layer in compliance/completeness as you go). Listed here so it's a backlog, not 
   redacted per-org; call/transcript erasure uses the base repo's existing (global, phone-number-keyed) path.
 - **Per-org outbound caller ID** (currently single global `TWILIO_PHONE_NUMBER` for every Shopify agent call).
 - **The `gdpr-redact-notify` edge function** exists as a stub only — not called from `/customers/redact` yet.
+- **Per-org CRM connections (embedded iPaaS).** Today's CRM integrations (HubSpot, Salesforce,
+  GoHighLevel, Google Calendar) each use one shared, globally-configured access token — fine for a single
+  self-hosted operator, not fine once a merchant wants to connect *their own* HubSpot/Salesforce account
+  instead of a shared one. Per-org OAuth (per-org encrypted token storage, per-org refresh handling) is a
+  genuinely different, harder problem than the current setup — don't build it from scratch. Evaluate
+  **Nango** (open source, self-hostable, purpose-built for "let your SaaS users connect their own accounts")
+  as the credential layer sitting underneath the existing `resilientCall`/adapter pattern — this would
+  replace "one global token in an env var" with "per-org token, fetched by the same adapter interface,"
+  not a rebuild of the integrations themselves. Size: research spike (2-3 days) + integration (1-2 weeks) —
+  not urgent until a merchant actually asks to connect their own CRM, but worth knowing the answer before
+  that request arrives rather than scrambling then.
 
 ## Immediate technical debt to flag, not hide
 
