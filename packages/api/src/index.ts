@@ -5,6 +5,8 @@ import { shopify } from "./integrations/shopify/routes";
 import { resolveTtsProvider } from "./voice/tts";
 import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
 import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@openvent/compliance";
+import { requestLogger } from "./middleware/request-logger";
+import { errorHandler } from "./middleware/error-handler";
 
 // Cross-origin policy for the split deploy (frontend on Vercel, API on
 // Railway — ADR-035). CORS_ALLOWED_ORIGINS: comma-separated origin allowlist
@@ -19,6 +21,8 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
 
 const app = new Hono()
   .basePath('api')
+  .onError(errorHandler())
+  .use("*", requestLogger())
   .use(
     cors({
       origin: (origin) => {
