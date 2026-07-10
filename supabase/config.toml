@@ -55,4 +55,4 @@ subject = "Reset your Weeber password"
 content_path = "./supabase/templates/recovery.html"
 
 [functions.gdpr-redact-notify]
-verify_jwt = false
+verify_jwt = true

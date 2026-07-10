@@ -32,7 +32,9 @@ export const calls = pgTable("calls", {
     .notNull()
     .$defaultFn(() => new Date()),
   endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
-});
+}, (table) => [
+  index("calls_org_id_idx").on(table.orgId),
+]);
 
 /**
  * Per-call latency breakdown — one row per call, filled in as each metric
@@ -122,7 +124,9 @@ export const transcripts = pgTable("transcripts", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
-});
+}, (table) => [
+  index("transcripts_call_id_idx").on(table.callId),
+]);
 
 export const toolCalls = pgTable("tool_calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -196,7 +200,9 @@ export const scheduledCalls = pgTable("scheduled_calls", {
     .notNull()
     .$defaultFn(() => new Date()),
 }, (table) => [
-  index("scheduled_calls_checkout_token_idx").on(table.checkoutToken)
+  index("scheduled_calls_checkout_token_idx").on(table.checkoutToken),
+  index("scheduled_calls_org_id_idx").on(table.orgId),
+  index("scheduled_calls_status_run_at_idx").on(table.status, table.runAt),
 ]);
 
 /**

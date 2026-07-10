@@ -193,3 +193,17 @@ advisor-only, no repo access).
 Compliance/DNC dashboard page is unchanged. Full verification before commit: `packages/api` tsc + 129/129
 tests, `packages/openvent-compliance` tsc + 25/25 tests, `packages/web` tsc + 8/8 tests + production build,
 root `oxlint` — all clean.
+
+## 2026-07-10 — Database audit fixes
+
+- **`supabase/config.toml`**: updated `gdpr-redact-notify` to `verify_jwt = true`, matching the live
+  deployment state. The backend already passes `Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}` when
+  calling this function (see `integrations/shopify/routes.ts` line 376).
+- **Performance indexes** (migration `0010_performance_indexes.sql`, applied to live DB):
+  - `calls_org_id_idx` on `calls.org_id` — dashboard filters calls by org.
+  - `transcripts_call_id_idx` on `transcripts.call_id` — transcript listing per call.
+  - `scheduled_calls_org_id_idx` on `scheduled_calls.org_id` — org-scoped scheduled call queries.
+  - `scheduled_calls_status_run_at_idx` on `scheduled_calls(status, run_at)` — the scheduler sweep's
+    `WHERE status = 'pending' AND run_at <= now()` query path.
+- **Schema file** (`database/schema.ts`): index definitions added to `calls`, `transcripts`, and
+  `scheduledCalls` table configs so future `drizzle-kit generate` stays in sync.

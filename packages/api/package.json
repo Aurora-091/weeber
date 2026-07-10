@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.5",
-    "@openvent/compliance": "workspace:*",
+    "@openvent/compliance": "*",
     "ai": "^7.0.15",
     "dedent": "^1.7.2",
     "drizzle-orm": "^0.45.2",
