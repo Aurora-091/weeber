@@ -5,6 +5,7 @@ export const gateway = createGateway({
   apiKey: process.env.AI_GATEWAY_API_KEY,
 });
 
-// Default model for the voice agent — chosen for low latency (important for
-// real-time voice turn-taking). Swap freely; any model in the gateway works.
-export const VOICE_AGENT_MODEL = "openai/gpt-5.4-mini";
+// Model for the voice agent — low latency matters most (real-time voice
+// turn-taking). Overridable per deployment via AI_GATEWAY_MODEL; any model
+// the gateway serves works.
+export const VOICE_AGENT_MODEL = process.env.AI_GATEWAY_MODEL || "openai/gpt-5.4-mini";
