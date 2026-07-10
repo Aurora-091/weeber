@@ -15,6 +15,13 @@
       "when": 1783661711366,
       "tag": "0001_shiny_mephistopheles",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783667269799,
+      "tag": "0002_lame_thena",
+      "breakpoints": true
     }
   ]
 }

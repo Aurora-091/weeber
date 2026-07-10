@@ -111,10 +111,14 @@ export async function eraseOrgDataForPhoneNumber(orgId: string, phoneNumber: str
       )
     );
 
-  // Delete caller memory row for this phone number
+  // Delete caller memory row for this org + phone number only (audit #01,
+  // D2 fix) — callerMemory is now scoped per-org (see schema comment), so a
+  // redact request from one merchant no longer wipes another merchant's
+  // memory of the same phone number. Self-hosted/no-org callers pass
+  // orgId === "" here, matching the "" sentinel used everywhere else.
   await db
     .delete(callerMemory)
-    .where(eq(callerMemory.phoneNumber, phoneNumber));
+    .where(and(eq(callerMemory.orgId, orgId), eq(callerMemory.phoneNumber, phoneNumber)));
 
   // Delete calls scoped to this orgId and phoneNumber
   // (This automatically cascade deletes transcripts, tool calls, and latencies via foreign keys)

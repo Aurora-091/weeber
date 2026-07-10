@@ -38,3 +38,22 @@ This document tracks system changes, database schemas, API parameters, and archi
   - Validates `checkout_token` along with `phone` to identify recovery opportunities.
 - **POST `/integrations/shopify/customers/redact`**:
   - Erases all customer recordings/transcripts within the organization bounds, and fires the `gdpr-redact-notify` edge function.
+
+---
+
+## 2026-07-10 — Audit #01 fixes (D1, D2)
+
+- **D1 (build-breaking, fixed):** `packages/api/src/voice/routes.test.ts` had two `noUnusedParameters` TS
+  errors that left `main`'s `tsc --noEmit` failing. Fixed by prefixing the two unused mock params with `_`.
+- **D2 (compliance-adjacent, fixed after explicit user confirmation):** `callerMemory` was keyed by
+  `phoneNumber` only — a phone number is not a unique identity across the whole system, so a GDPR erasure
+  request from one Weeber merchant could silently delete another merchant's memory of the same caller.
+  - `caller_memory` table: added `org_id` column (`text`, default `""` for self-hosted/no-org usage), primary
+    key changed from `(phone_number)` to `(org_id, phone_number)`. Migration: `packages/api/drizzle/0002_lame_thena.sql`.
+  - `getCallerMemory` / `upsertCallerMemory` (`caller-memory.ts`) now take `orgId` as their first argument.
+  - `eraseOrgDataForPhoneNumber` (`compliance/adapters.ts`) now scopes the `caller_memory` delete by
+    `(orgId, phoneNumber)`, matching how it already scoped `calls`/`scheduledCalls`.
+  - New regression test: `packages/api/src/voice/compliance/adapters.test.ts` asserts the delete condition
+    references `org_id`, and that two orgs' erasure calls produce distinct conditions.
+  - No production data existed yet (ADR-034), so this was a clean structural migration, not an additive-only
+    patch — acceptable per that same precedent.

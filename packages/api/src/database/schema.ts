@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uniqueIndex, index, primaryKey } from "drizzle-orm/pg-core";
 
 export const calls = pgTable("calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -57,21 +57,40 @@ export const callLatency = pgTable("call_latency", {
 });
 
 /**
- * Rolling per-phone-number memory, alongside (not replacing) the per-call
- * `capturedState` engine — see ADR-023. One row per phone number: a flat
- * key/value overlay of facts learned across every call from/to that number,
- * merged (not replaced) on each call, so a returning caller doesn't start
- * from zero. Deliberately not a full call-history log — keeps prompt-
- * injection cost bounded no matter how many times someone's called.
+ * Rolling per-org, per-phone-number memory, alongside (not replacing) the
+ * per-call `capturedState` engine — see ADR-023. One row per (org, phone
+ * number): a flat key/value overlay of facts learned across every call from/
+ * to that number *for that org*, merged (not replaced) on each call, so a
+ * returning caller doesn't start from zero. Deliberately not a full
+ * call-history log — keeps prompt-injection cost bounded no matter how many
+ * times someone's called.
+ *
+ * `orgId` scoping added post-launch (audit #01, D2): a phone number is not a
+ * unique identity across the whole system — the same person can call two
+ * different Weeber merchants, and each merchant is a separate data
+ * controller. Before this fix, memory (and GDPR erasure of that memory) was
+ * keyed on phone number alone, so a redact request from Merchant A silently
+ * wiped Merchant B's memory of the same caller too. `orgId` defaults to `""`
+ * (not `NULL`) specifically so the composite primary key and the upsert's
+ * `onConflictDoUpdate` target both work correctly for self-hosted OpenVent
+ * usage (no org concept) — Postgres treats `NULL` as distinct from itself in
+ * uniqueness checks, which would silently defeat the upsert. `""` is the
+ * "no org" sentinel here, equivalent in meaning to `calls.orgId IS NULL`
+ * elsewhere in this schema.
  */
-export const callerMemory = pgTable("caller_memory", {
-  phoneNumber: text("phone_number").primaryKey(),
-  facts: jsonb("facts").$type<Record<string, string>>().notNull().default({}),
-  lastCallId: integer("last_call_id").references(() => calls.id, { onDelete: "set null" }),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const callerMemory = pgTable(
+  "caller_memory",
+  {
+    orgId: text("org_id").notNull().default(""),
+    phoneNumber: text("phone_number").notNull(),
+    facts: jsonb("facts").$type<Record<string, string>>().notNull().default({}),
+    lastCallId: integer("last_call_id").references(() => calls.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.phoneNumber] })],
+);
 
 /**
  * Multi-user dashboard auth (ADR-025) — labeled API keys, not real accounts.

@@ -22,9 +22,20 @@ not background reading:
 4. `DECISIONS.md` — every consequential decision, in order, with full reasoning (ADR-030 onward are
    Weeber-specific; ADR-001 through ADR-029 are the base OpenVent project's history — still relevant for
    understanding *why* the underlying framework works the way it does).
+5. `changelog.md` — running log of routine feature work (new tables, new endpoints, param changes) that
+   doesn't rise to the level of an architectural decision.
 
 If something looks like an odd choice and isn't explained by the doc you're reading, check `DECISIONS.md`
 before assuming it's a mistake or before changing it.
+
+**ADR vs `changelog.md` (decided 2026-07-10, audit #01 D3/D8):** `DECISIONS.md` is reserved for real
+*decisions* — anything where a call was made between real alternatives, especially anything touching
+architecture, compliance/`packages/openvent-compliance`, data model semantics (e.g. what a column scopes to),
+or user-facing behavior a merchant would notice. `changelog.md` is the source of truth for routine feature
+work — new tables/columns, new endpoint params, wiring that follows an already-decided pattern. If you're not
+sure which one a change belongs in, ask: "did this require picking between two real options?" — if yes, it's
+an ADR (and possibly still a gate-#6 STOP-AND-ASK item); if no, a `changelog.md` entry is enough. Don't skip
+both.
 
 ## Commands
 

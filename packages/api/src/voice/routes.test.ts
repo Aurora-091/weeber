@@ -33,7 +33,7 @@ mock.module("./twilio-client", () => {
 
 mock.module("./middleware/admin-auth", () => {
   return {
-    requireAdminKey: async (c: any, next: any) => {
+    requireAdminKey: async (_c: any, next: any) => {
       await next();
     }
   };
@@ -41,7 +41,7 @@ mock.module("./middleware/admin-auth", () => {
 
 mock.module("./middleware/rate-limit", () => {
   return {
-    rateLimitOutboundCalls: async (c: any, next: any) => {
+    rateLimitOutboundCalls: async (_c: any, next: any) => {
       await next();
     }
   };

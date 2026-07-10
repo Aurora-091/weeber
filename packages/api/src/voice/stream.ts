@@ -71,6 +71,7 @@ export function createVoiceStreamHandlers() {
 
   /** Cross-call memory (ADR-023) — the human's number for this call, and their rolling facts, if any. */
   let humanNumber: string | undefined;
+  let humanNumberOrgId: string | undefined;
   let callerMemoryFacts: Record<string, string> = {};
 
   let deepgram: ReturnType<typeof connectDeepgram> | null = null;
@@ -170,7 +171,7 @@ export function createVoiceStreamHandlers() {
       // Cross-call memory (ADR-023) — merge this call's captured facts into
       // the caller's rolling memory. No-op if nothing was captured.
       if (humanNumber && dbCallId) {
-        await upsertCallerMemory(humanNumber, capturedState, dbCallId);
+        await upsertCallerMemory(humanNumberOrgId, humanNumber, capturedState, dbCallId);
       }
 
       await sessionStore.delete(callSid);
@@ -356,7 +357,8 @@ export function createVoiceStreamHandlers() {
             // failure shouldn't block the call from proceeding.
             if (row) {
               humanNumber = resolveHumanNumber(row.direction, row.fromNumber, row.toNumber);
-              callerMemoryFacts = await getCallerMemory(humanNumber).catch(() => ({}));
+              humanNumberOrgId = row.orgId ?? undefined;
+              callerMemoryFacts = await getCallerMemory(humanNumberOrgId, humanNumber).catch(() => ({}));
             }
 
             // Per-number config (see number-config.ts) applies to every call
