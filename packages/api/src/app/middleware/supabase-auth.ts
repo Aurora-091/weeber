@@ -91,13 +91,29 @@ export const requireMerchantSession = createMiddleware<MerchantEnv>(async (c, ne
   }
 
   const [membership] = await db
-    .select({ orgId: orgMembers.orgId, role: orgMembers.role })
+    .select({ orgId: orgMembers.orgId, role: orgMembers.role, email: orgMembers.email })
     .from(orgMembers)
     .where(eq(orgMembers.supabaseUserId, sub))
     .limit(1);
 
+  const jwtEmail = typeof payload.email === "string" ? payload.email : null;
+  // Opportunistic, best-effort — keeps org_members.email fresh for the admin
+  // Users page without a live Supabase Admin API call on every request.
+  // Never blocks the actual request on a write failure.
+  if (jwtEmail && membership && membership.email !== jwtEmail) {
+    try {
+      void db
+        .update(orgMembers)
+        .set({ email: jwtEmail })
+        .where(eq(orgMembers.supabaseUserId, sub))
+        .catch((err: unknown) => console.error("[merchant-session] failed to refresh member email", err));
+    } catch (err) {
+      console.error("[merchant-session] failed to refresh member email", err);
+    }
+  }
+
   c.set("merchantUserId", sub);
-  c.set("merchantEmail", typeof payload.email === "string" ? payload.email : null);
+  c.set("merchantEmail", jwtEmail);
   c.set("merchantOrgId", membership?.orgId ?? null);
   c.set("merchantRole", membership?.role ?? null);
   c.set("impersonated", false);

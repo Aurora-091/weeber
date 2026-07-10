@@ -1,5 +1,6 @@
-import { Redirect, Route, Switch } from "wouter";                                                                                
-import DocsPage from "./pages/docs";                                                                                   
+import { Route, Switch } from "wouter";                                                                                
+import DocsPage from "./pages/docs";
+import LandingPage from "./pages/landing";                                                                                   
 import { Provider } from "./components/provider";                                                                      
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 import { AdminKeyGate } from "./components/dashboard/admin-key-gate";
@@ -18,7 +19,13 @@ import { TemplatesPage } from "./pages/dashboard/templates";
 import { BillingPage } from "./pages/dashboard/billing";
 import { CompliancePage } from "./pages/dashboard/compliance";
 import { FlagsPage } from "./pages/dashboard/flags";
-import { ImpersonatePage } from "./pages/dashboard/impersonate";
+import { UsersPage } from "./pages/dashboard/users";
+import { WaitlistPage } from "./pages/dashboard/waitlist";
+import { BroadcastsPage } from "./pages/dashboard/broadcasts";
+import { SupportPage } from "./pages/dashboard/support";
+import { LogsPage } from "./pages/dashboard/logs";
+import { RevenueAnalyticsPage } from "./pages/dashboard/revenue-analytics";
+import { MarketingAnalyticsPage } from "./pages/dashboard/marketing-analytics";
 
 // Merchant app pages
 import { MerchantLoginPage } from "./pages/app/login";
@@ -44,7 +51,7 @@ function App() {
   return (                                                                                                             
     <Provider>                                                                                                         
       <Switch>                                                                                                         
-        <Route path="/"><Redirect to="/dashboard" /></Route>                                                                           
+        <Route path="/" component={LandingPage} />
         <Route path="/docs" component={DocsPage} />
         
         {/* Admin Dashboard */}
@@ -84,8 +91,26 @@ function App() {
         <Route path="/dashboard/flags">
           <Dashboard><FlagsPage /></Dashboard>
         </Route>
-        <Route path="/dashboard/impersonate">
-          <Dashboard><ImpersonatePage /></Dashboard>
+        <Route path="/dashboard/users">
+          <Dashboard><UsersPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/waitlist">
+          <Dashboard><WaitlistPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/broadcasts">
+          <Dashboard><BroadcastsPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/support">
+          <Dashboard><SupportPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/logs">
+          <Dashboard><LogsPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/revenue-analytics">
+          <Dashboard><RevenueAnalyticsPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/marketing-analytics">
+          <Dashboard><MarketingAnalyticsPage /></Dashboard>
         </Route>
 
         {/* Merchant App */}

@@ -31,6 +31,11 @@ import {
   listImpersonationAudit,
   listActiveImpersonations,
 } from "../app/impersonation";
+import { listUsers } from "../app/users";
+import { listWaitlist, waitlistMarketingSummary } from "../app/waitlist";
+import { createBroadcast, listBroadcasts, sendBroadcast } from "../app/broadcasts";
+import { listSupportTickets, updateSupportTicketStatus } from "../app/support";
+import { logAdminAction, listAdminAuditLog } from "../app/audit-log";
 
 type AdminEnv = { Variables: AdminAuthVariables };
 
@@ -266,6 +271,7 @@ export const admin = new Hono<AdminEnv>()
         set: { enabled: enabled ?? false, description, updatedAt: new Date() },
       })
       .returning();
+    void logAdminAction(c.get("adminActor"), "flag.upserted", { key: row?.key, orgId: row?.orgId, enabled: row?.enabled });
     return c.json({ flag: row }, 201);
   })
 
@@ -280,6 +286,7 @@ export const admin = new Hono<AdminEnv>()
     if (description !== undefined) set.description = description;
     const [row] = await db.update(featureFlags).set(set).where(eq(featureFlags.id, id)).returning();
     if (!row) return c.json({ error: "flag not found" }, 404);
+    void logAdminAction(c.get("adminActor"), "flag.updated", { id, enabled, description });
     return c.json({ flag: row }, 200);
   })
 
@@ -287,19 +294,23 @@ export const admin = new Hono<AdminEnv>()
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
     await db.delete(featureFlags).where(eq(featureFlags.id, id));
+    void logAdminAction(c.get("adminActor"), "flag.deleted", { id });
     return c.json({ deleted: true }, 200);
   })
 
   // Merchant impersonation (§4.6). The plaintext token is returned exactly
   // once; the frontend presents it via the X-Weeber-Impersonation header on
   // /api/app/* routes. Sessions auto-expire; Stop closes them early. Both
-  // paths leave the audit row behind.
+  // paths leave the audit row behind. Surfaced from the Users page (per-row
+  // "Log in as" action), not a standalone admin nav item — the capability
+  // and its audit trail are unchanged, only the UI entry point moved.
   .post("/impersonation/start", async (c) => {
     const body = await c.req.json().catch(() => null);
     const orgId = body && typeof body === "object" ? (body as { orgId?: string }).orgId : undefined;
     if (!orgId?.trim()) return c.json({ error: "`orgId` is required" }, 400);
     const session = await startImpersonation(orgId.trim(), c.get("adminActor") ?? "unknown");
     if (!session) return c.json({ error: "org not found" }, 404);
+    void logAdminAction(c.get("adminActor"), "impersonation.started", { orgId: orgId.trim(), sessionId: session.id });
     return c.json({ impersonation: session }, 201);
   })
 
@@ -307,6 +318,7 @@ export const admin = new Hono<AdminEnv>()
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
     const stopped = await stopImpersonation(id);
+    void logAdminAction(c.get("adminActor"), "impersonation.stopped", { id });
     return c.json({ stopped }, 200);
   })
 
@@ -318,4 +330,127 @@ export const admin = new Hono<AdminEnv>()
       listActiveImpersonations(orgId),
     ]);
     return c.json({ audit, active }, 200);
+  })
+
+  // Users — individual accounts (org_members), person-centric view distinct
+  // from the org-centric Orgs page. Matches Vocalist's real admin nav split.
+  .get("/users", async (c) => {
+    const users = await listUsers(Number(c.req.query("limit")) || undefined);
+    return c.json({ users }, 200);
+  })
+
+  // Waitlist — read-only admin view over the landing page's signups (the
+  // actual join endpoint is public, see routes.ts's POST /waitlist).
+  .get("/waitlist", async (c) => {
+    const signups = await listWaitlist(Number(c.req.query("limit")) || undefined);
+    return c.json({ signups }, 200);
+  })
+
+  // Broadcasts — create, list, and send. `status` only becomes "sent" if an
+  // email provider is actually configured (see broadcasts.ts) — never a
+  // fabricated success.
+  .get("/broadcasts", async (c) => {
+    const rows = await listBroadcasts(Number(c.req.query("limit")) || undefined);
+    return c.json({ broadcasts: rows }, 200);
+  })
+
+  .post("/broadcasts", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { title, body: message, audience } = body as { title?: string; body?: string; audience?: string };
+    if (!title?.trim() || !message?.trim()) return c.json({ error: "`title` and `body` are required" }, 400);
+    const row = await createBroadcast({ title, body: message, audience: audience ?? "all", createdBy: c.get("adminActor") });
+    void logAdminAction(c.get("adminActor"), "broadcast.created", { id: row?.id, title, audience: audience ?? "all" });
+    return c.json({ broadcast: row }, 201);
+  })
+
+  .post("/broadcasts/:id/send", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const row = await sendBroadcast(id);
+    if (!row) return c.json({ error: "broadcast not found" }, 404);
+    void logAdminAction(c.get("adminActor"), "broadcast.send_attempted", { id, status: row.status });
+    return c.json({ broadcast: row }, 200);
+  })
+
+  // Support tickets — list/update. Submission itself happens via
+  // routes.ts's public/merchant endpoints, not here.
+  .get("/support", async (c) => {
+    const status = c.req.query("status") || undefined;
+    const rows = await listSupportTickets(status, Number(c.req.query("limit")) || undefined);
+    return c.json({ tickets: rows }, 200);
+  })
+
+  .put("/support/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const body = await c.req.json().catch(() => null);
+    const status = body && typeof body === "object" ? (body as { status?: string }).status : undefined;
+    if (!status?.trim()) return c.json({ error: "`status` is required" }, 400);
+    const row = await updateSupportTicketStatus(id, status.trim());
+    if (!row) return c.json({ error: "ticket not found" }, 404);
+    void logAdminAction(c.get("adminActor"), "support.status_updated", { id, status: status.trim() });
+    return c.json({ ticket: row }, 200);
+  })
+
+  // Admin action log — reads adminAuditLog (see app/audit-log.ts), not raw
+  // process logs. No log-shipping infra exists; this is "who changed what,"
+  // which is the more useful surface for an ops team anyway.
+  .get("/logs", async (c) => {
+    const rows = await listAdminAuditLog(Number(c.req.query("limit")) || undefined);
+    return c.json({ logs: rows }, 200);
+  })
+
+  // Revenue Analytics — real data only. No Stripe/Razorpay integration
+  // exists yet (ADR-034 deferred it), so this is a usage-minutes proxy and
+  // plan-count breakdown, explicitly NOT a fabricated $ revenue number.
+  .get("/revenue-analytics", async (c) => {
+    const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const [orgRows, callRows] = await Promise.all([
+      db.select({ id: orgs.id, planName: orgs.planName, currency: orgs.currency }).from(orgs),
+      db
+        .select({ orgId: calls.orgId, startedAt: calls.startedAt, endedAt: calls.endedAt })
+        .from(calls)
+        .where(gte(calls.startedAt, since)),
+    ]);
+
+    const orgsByPlan: Record<string, number> = {};
+    for (const org of orgRows) {
+      const plan = org.planName ?? "(no plan set)";
+      orgsByPlan[plan] = (orgsByPlan[plan] ?? 0) + 1;
+    }
+
+    let totalMinutes = 0;
+    const minutesByDay: Record<string, number> = {};
+    for (const call of callRows) {
+      if (!call.endedAt) continue;
+      const minutes = (call.endedAt.getTime() - call.startedAt.getTime()) / 60000;
+      totalMinutes += minutes;
+      const day = call.startedAt.toISOString().slice(0, 10);
+      minutesByDay[day] = (minutesByDay[day] ?? 0) + minutes;
+    }
+    for (const day of Object.keys(minutesByDay)) minutesByDay[day] = Math.round(minutesByDay[day]! * 10) / 10;
+
+    return c.json(
+      {
+        rangeDays: days,
+        note: "Usage-minutes proxy, not billed revenue — no payment processor is integrated yet.",
+        totalOrgs: orgRows.length,
+        orgsByPlan,
+        totalMinutesInRange: Math.round(totalMinutes * 10) / 10,
+        minutesByDay,
+      },
+      200,
+    );
+  })
+
+  // Marketing Analytics — real data only. Only the waitlist table records
+  // any acquisition signal today (no traffic/funnel tracking beyond a GTM
+  // container id) — signups over time + referral/source breakdown, nothing
+  // fabricated.
+  .get("/marketing-analytics", async (c) => {
+    const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
+    const summary = await waitlistMarketingSummary(days);
+    return c.json(summary, 200);
   });

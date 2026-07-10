@@ -3,6 +3,7 @@ import { cors } from "hono/cors"
 import { voice } from "./voice/routes";
 import { admin } from "./voice/admin-routes";
 import { merchantApp } from "./app/routes";
+import { publicRoutes } from "./app/public-routes";
 import { shopify } from "./integrations/shopify/routes";
 import { resolveTtsProvider } from "./voice/tts";
 import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
@@ -68,6 +69,7 @@ const app = new Hono()
   .route('/voice', voice)
   .route('/voice', admin)
   .route('/app', merchantApp)
+  .route('/public', publicRoutes)
   .route('/', shopify);
 // Note: the Twilio Media Stream WebSocket (/api/voice/stream) is handled
 // natively in server.ts, not through this Hono app — see voice/ws-route.ts.

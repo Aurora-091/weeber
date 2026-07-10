@@ -27,6 +27,7 @@ import {
   type MerchantSessionVariables,
 } from "./middleware/supabase-auth";
 import { stopImpersonation } from "./impersonation";
+import { submitSupportTicket } from "./support";
 import {
   getOrg,
   getAgentConfigsForOrg,
@@ -221,6 +222,23 @@ export const merchantApp = new Hono<MerchantEnv>()
   .get("/flags", async (c) => {
     const flags = await getEffectiveFlags(c.get("merchantOrgId")!);
     return c.json({ flags }, 200);
+  })
+
+  // Merchant support submission — same underlying table as the public
+  // landing-page form (public-routes.ts), just with orgId known.
+  .post("/support", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { subject, message } = body as { subject?: string; message?: string };
+    if (!subject?.trim() || !message?.trim()) return c.json({ error: "`subject` and `message` are required" }, 400);
+    const ticket = await submitSupportTicket({
+      orgId: c.get("merchantOrgId"),
+      email: c.get("merchantEmail") ?? "unknown",
+      subject,
+      message,
+    });
+    if (!ticket) return c.json({ error: "Failed to submit ticket" }, 500);
+    return c.json({ submitted: true }, 201);
   })
 
   // Self-stop for the "Viewing as <org>" banner: the /app tab only holds the

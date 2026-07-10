@@ -43,6 +43,13 @@
       "when": 1783681243607,
       "tag": "0005_unique_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783692965972,
+      "tag": "0006_chilly_blur",
+      "breakpoints": true
     }
   ]
 }

@@ -156,3 +156,40 @@ Fixed: corrected the path (4 `..` levels), and the success log now reflects what
 full success). New regression test `database/seed.test.ts` hits the real filesystem (deliberately not
 mocking `Bun.file`) so a repeat of this exact path bug fails the test the same way it silently broke
 production. No manual DB fix needed — the corrected seeder self-heals `agent_templates` on next boot.
+
+## 2026-07-10 — Admin dashboard rebuilt to match Vocalist's real admin structure + real landing page
+
+Rebuilt `/dashboard` nav and pages to mirror what Vocalist actually ships as an admin panel, instead of
+the ad-hoc set that had accumulated here. Added: **Users** (org members list, was missing entirely),
+**Waitlist** (`GET /api/voice/waitlist`, reads the new `waitlist_signups` table), **Broadcasts** (compose +
+send to a segment, `broadcasts` table, only marks `status: "sent"` when `RESEND_API_KEY` is configured and
+the email actually goes out — otherwise `"queued"`, never fabricated), **Support** (merchant-submitted
+tickets via new `POST /app/support`, admin list + reply view via `support_tickets` table), **Logs**
+(reads `admin_audit_log`, now also written to by the flags and impersonation admin mutations, not just a
+placeholder), **Revenue Analytics** and **Marketing Analytics** — both explicitly framed as proxies (usage
+minutes for revenue, waitlist signups for marketing) since no Stripe/Razorpay or funnel-tracking
+integration exists yet; the pages say so on-screen rather than presenting the numbers as real
+revenue/funnel data.
+
+**Impersonate removed as a standalone nav page** — the capability and its audit trail (start/stop,
+active-sessions list, full history) are not gone, they now live inside the new Users page ("Log in as"
+action per row + an audit trail section), matching how Vocalist surfaces it. `/dashboard/impersonate`
+route and file deleted.
+
+**New public, unauthenticated routes** (`app/public-routes.ts`, mounted at `/api/public`, deliberately
+separate from the admin-key-gated and Supabase-session-gated routers so "needs zero auth" stays obvious
+from the file): `POST /api/public/waitlist`, `POST /api/public/support`.
+
+**Landing page** (`pages/landing.tsx`, mounted at `/`, replacing the old unconditional redirect to
+`/dashboard`): hero, 3-feature strip, waitlist signup form posting to `POST /api/public/waitlist`, footer
+link to merchant login. Dark monochrome theme (`.theme-weeber`, ADR-039) applied the same way the
+merchant login page does it — wrapped at the page root, not a new global default. Structure loosely
+informed by Vocalist's landing/waitlist pages (read-only reference, no code copied — Vocalist stays
+advisor-only, no repo access).
+
+**Schema**: new tables `admin_audit_log`, `broadcasts`, `support_tickets`, `waitlist_signups`, plus
+`org_members.email` — all additive, migration `0006_chilly_blur.sql`.
+
+Compliance/DNC dashboard page is unchanged. Full verification before commit: `packages/api` tsc + 129/129
+tests, `packages/openvent-compliance` tsc + 25/25 tests, `packages/web` tsc + 8/8 tests + production build,
+root `oxlint` — all clean.

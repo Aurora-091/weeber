@@ -416,6 +416,12 @@ export const orgMembers = pgTable(
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("owner"),
+    /** Opportunistically written by requireMerchantSession on each authenticated
+     * request (best-effort, cheap) — avoids a separate live Supabase Admin API
+     * call just to list users for the admin panel's Users page. Nullable: a
+     * member row created before this column existed, or one whose token has
+     * never carried an email claim, simply shows blank until their next request. */
+    email: text("email"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -424,6 +430,85 @@ export const orgMembers = pgTable(
     uniqueIndex("org_members_user_org_idx").on(table.supabaseUserId, table.orgId),
     index("org_members_user_idx").on(table.supabaseUserId),
   ],
+);
+
+/**
+ * Pre-launch/marketing waitlist signups — the landing page's one real
+ * conversion action. `email` unique so a repeat signup is a no-op, not a
+ * duplicate row. `convertedOrgId` is set once (manually, for now) if/when a
+ * waitlisted email actually becomes a real org — lets Marketing Analytics
+ * show a real conversion count instead of just raw signup volume.
+ */
+export const waitlistSignups = pgTable("waitlist_signups", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  referralCode: text("referral_code"),
+  source: text("source"),
+  convertedOrgId: text("converted_org_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Admin-authored broadcasts to merchants or the whole waitlist. `status`
+ * stays "queued" (not "sent") when no email provider is configured
+ * (RESEND_API_KEY unset) — the row is real, honest about what actually
+ * happened, never a fabricated "sent" for something that didn't go out.
+ */
+export const broadcasts = pgTable("broadcasts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  /** "all" (every org) | "waitlist" | a specific orgId */
+  audience: text("audience").notNull().default("all"),
+  status: text("status").notNull().default("draft"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  sentAt: timestamp("sent_at", { withTimezone: true, mode: "date" }),
+});
+
+/**
+ * Merchant support tickets — submitted from `/app` (authenticated) or the
+ * public landing page (email-only, no account required yet). `orgId`
+ * nullable for the latter case.
+ */
+export const supportTickets = pgTable("support_tickets", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id"),
+  email: text("email").notNull(),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Generic admin-action audit log — the Logs admin page reads this, not raw
+ * server/process logs (no log-shipping infra exists, and this is more
+ * useful anyway: "who changed what," not stack traces). Append-only,
+ * same spirit as impersonationSessions' audit trail.
+ */
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    detail: jsonb("detail"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index("admin_audit_log_created_idx").on(table.createdAt)],
 );
 
 /**
