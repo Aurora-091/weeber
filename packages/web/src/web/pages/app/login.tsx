@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Mail } from "lucide-react";
+import { Loader as Loader2, Mail } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
@@ -31,9 +31,14 @@ export function MerchantLoginPage() {
   const [otpCode, setOtpCode] = useState("");
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
 
-  // Forgot-password flow
+  // Forgot-password flow (OTP-based, no redirect URL dependency)
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotVerified, setForgotVerified] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [resetDone, setResetDone] = useState(false);
 
   // Already signed in? Straight to the app.
   useEffect(() => {
@@ -155,15 +160,54 @@ export function MerchantLoginPage() {
     if (!supabase || !email.trim()) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/app/auth/reset-password`,
-    });
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email);
     setPending(false);
     if (authError) {
       setError(authError.message);
       return;
     }
     setForgotSent(true);
+  }
+
+  async function submitForgotCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || forgotCode.trim().length < 6) return;
+    setPending(true);
+    setError(null);
+    const { error: authError } = await supabase.auth.verifyOtp({
+      email,
+      token: forgotCode.trim(),
+      type: "recovery",
+    });
+    setPending(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    setForgotVerified(true);
+  }
+
+  async function submitNewPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase) return;
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setPending(true);
+    setError(null);
+    const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+    setPending(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    setResetDone(true);
+    setTimeout(() => navigate("/app"), 1500);
   }
 
   const shellClass = cn(
@@ -241,25 +285,79 @@ export function MerchantLoginPage() {
     );
   }
 
-  // Forgot-password step — separate from the main tabs since it's a
-  // one-off detour, not a third persistent mode.
+  // Forgot-password flow — OTP-based, 3 steps inline: email → code → new password.
   if (forgotOpen) {
     return (
       <div className={shellClass}>
         <div className="w-full max-w-sm">
-          {forgotSent ? (
+          {resetDone ? (
+            <div className="text-center">
+              <h1 className="text-xl font-medium">Password updated</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Taking you to your dashboard…</p>
+            </div>
+          ) : forgotVerified ? (
+            <div className="text-left">
+              <h1 className="text-xl font-medium text-center">Set a new password</h1>
+              <form onSubmit={submitNewPassword} className="mt-6 flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="new-pw">New password</Label>
+                  <Input
+                    id="new-pw"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="confirm-pw">Confirm password</Label>
+                  <Input
+                    id="confirm-pw"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Update password
+                </Button>
+              </form>
+            </div>
+          ) : forgotSent ? (
             <div className="text-center">
               <Mail className="mx-auto size-6 text-primary" aria-hidden />
               <h1 className="mt-3 text-xl font-medium">Check your inbox</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                We sent a password-reset link to {email}. It opens a page here to set a new password.
+                We sent a 6-digit reset code to <span className="text-foreground">{email}</span>. Enter it below.
               </p>
+              <form onSubmit={submitForgotCode} className="mt-5 flex flex-col gap-3">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={forgotCode}
+                  onChange={(e) => setForgotCode(e.target.value)}
+                  className="text-center tracking-widest"
+                  maxLength={6}
+                />
+                <Button type="submit" disabled={pending || forgotCode.trim().length < 6}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Verify code
+                </Button>
+              </form>
             </div>
           ) : (
             <>
               <h1 className="text-xl font-medium">Reset your password</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                Enter your account email and we'll send you a reset link.
+                Enter your account email and we'll send you a 6-digit reset code.
               </p>
               <form onSubmit={submitForgotPassword} className="mt-6 flex flex-col gap-4">
                 <div className="grid gap-1.5">
@@ -276,21 +374,28 @@ export function MerchantLoginPage() {
                 </div>
                 <Button type="submit" disabled={pending}>
                   {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                  Send reset link
+                  Send reset code
                 </Button>
               </form>
             </>
           )}
-          <button
-            type="button"
-            className="mt-6 block w-full text-center text-sm text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setForgotOpen(false);
-              setForgotSent(false);
-            }}
-          >
-            Back to sign-in
-          </button>
+          {!resetDone && (
+            <button
+              type="button"
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setForgotOpen(false);
+                setForgotSent(false);
+                setForgotVerified(false);
+                setForgotCode("");
+                setNewPassword("");
+                setConfirmNewPassword("");
+                setResetDone(false);
+              }}
+            >
+              Back to sign-in
+            </button>
+          )}
           {error && (
             <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
               {error}
