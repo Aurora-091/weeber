@@ -6,14 +6,14 @@ level version of it.
 
 ## What's already scaffolded in this repo (read before building)
 
-- `packages/web/src/api/database/schema.ts` — `orgs`, `shopLinks`, `shopifyContacts`,
+- `packages/api/src/database/schema.ts` — `orgs`, `shopLinks`, `shopifyContacts`,
   `shopifyDiscountCodes`, `shopifyWebhookEvents` tables, plus `orgId`/`metadata` columns on
-  `calls`/`scheduledCalls`. Run `bun run db:generate && bun run db:push` (from `packages/web`) to apply.
-- `packages/web/src/api/integrations/shopify/` — `routes.ts` (all 9 contract-defined webhook receivers),
+  `calls`/`scheduledCalls`. Run `bun run db:generate && bun run db:push` (from `packages/api`) to apply.
+- `packages/api/src/integrations/shopify/` — `routes.ts` (all 9 contract-defined webhook receivers),
   `client.ts` (calls back into weebersh), `secret-auth.ts`, `idempotency.ts`.
-- `packages/web/src/api/voice/tools/offerCartRecoveryDiscount.ts`,
-  `packages/web/src/api/voice/tools/confirmCodOrder.ts` — the two new agent tools.
-- Workflow engine (`packages/web/src/api/voice/workflows/`) extended with `onExhausted` on retries and
+- `packages/api/src/voice/tools/offerCartRecoveryDiscount.ts`,
+  `packages/api/src/voice/tools/confirmCodOrder.ts` — the two new agent tools.
+- Workflow engine (`packages/api/src/voice/workflows/`) extended with `onExhausted` on retries and
   `orgId`/`metadata` threaded through the full call lifecycle.
 - `railway.json`, `supabase/` (config.toml, KB bucket migration, one example edge function), `.env.example`
   updated with every new var this needs.
@@ -121,7 +121,7 @@ layer in compliance/completeness as you go). Listed here so it's a backlog, not 
 
 ## Immediate technical debt to flag, not hide
 
-- `packages/web/vercel.json` builds only the static frontend — it does not serve `/api/*`. Once Vercel +
+- `vercel.json` (repo root) builds only the static frontend — it does not serve `/api/*`. Once Vercel +
   Railway are both live, the dashboard's own fetch calls need an absolute backend URL (see workstream E).
   Until that's fixed, the dashboard will look broken if deployed to Vercel alone without Railway wired in.
 - The Railway WebSocket path for Twilio Media Streams has not been tested against a real Railway deployment

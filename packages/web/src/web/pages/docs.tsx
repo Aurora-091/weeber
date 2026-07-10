@@ -143,7 +143,7 @@ Barge-in: if Deepgram detects new speech while the agent is talking,
 we send Twilio a "clear" event and abort the in-flight LLM/TTS immediately.`}
             />
             <p className="text-muted-foreground leading-relaxed mt-4">
-              This WebSocket bridge (<code>packages/web/src/api/voice/stream.ts</code>) only runs correctly
+              This WebSocket bridge (<code>packages/api/src/voice/stream.ts</code>) only runs correctly
               under the real Bun server — not Vite's dev SSR module runner. It's wired directly into{" "}
               <code>server.ts</code> (see <code>voice/ws-route.ts</code>), so REST endpoints work in dev
               mode, but live call audio requires the production server (<code>bun run start</code>).
@@ -344,7 +344,7 @@ curl -X POST {PUBLIC_APP_URL}/api/voice/webhooks/test`}
           <section id="database" className="scroll-mt-20">
             <h2 className="text-2xl font-bold mb-3">Database Schema</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Three tables in <code>packages/web/src/api/database/schema.ts</code>, backed by Turso (SQLite)
+              Three tables in <code>packages/api/src/database/schema.ts</code>, backed by Turso (SQLite)
               via Drizzle ORM:
             </p>
             <CodeBlock
@@ -369,7 +369,7 @@ toolCalls    // one row per agent tool invocation
           <section id="tools" className="scroll-mt-20">
             <h2 className="text-2xl font-bold mb-3">Agent Tools</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Tools live in <code>packages/web/src/api/voice/tools/</code> and are registered in{" "}
+              Tools live in <code>packages/api/src/voice/tools/</code> and are registered in{" "}
               <code>voice/agent.ts</code>. Two stubs ship out of the box to prove the tool-calling path
               works end-to-end during a live call — replace their bodies with real integrations:
             </p>

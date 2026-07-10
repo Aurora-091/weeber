@@ -26,7 +26,7 @@ describe("syncToHubspot", () => {
     global.fetch = (async () => {
       callCount += 1;
       return new Response(JSON.stringify({ id: "contact-123" }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const result = await syncToHubspot("+15551234567", "Jamie", "Called about pricing");
     expect(result).toEqual({ synced: true, contactId: "contact-123" });
@@ -37,7 +37,7 @@ describe("syncToHubspot", () => {
     process.env.HUBSPOT_API_KEY = "test-key";
     global.fetch = (async () => {
       throw new Error("network unreachable");
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const result = await syncToHubspot("+15551234567", "Jamie", "Called about pricing");
     expect(result.synced).toBe(false);

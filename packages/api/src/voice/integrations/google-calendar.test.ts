@@ -25,7 +25,7 @@ describe("bookOnGoogleCalendar", () => {
     global.fetch = (async () =>
       new Response(JSON.stringify({ id: "evt-1", htmlLink: "https://calendar.google.com/evt-1" }), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     const result = await bookOnGoogleCalendar("Jamie", "2026-08-01T10:00:00Z", "notes");
     expect(result).toEqual({
@@ -37,7 +37,7 @@ describe("bookOnGoogleCalendar", () => {
 
   it("treats a non-2xx response as a failure instead of a false success", async () => {
     process.env.GOOGLE_CALENDAR_ACCESS_TOKEN = "test-token";
-    global.fetch = (async () => new Response("invalid grant", { status: 401 })) as typeof fetch;
+    global.fetch = (async () => new Response("invalid grant", { status: 401 })) as unknown as typeof fetch;
 
     const result = await bookOnGoogleCalendar("Jamie", "2026-08-01T10:00:00Z", "notes");
     expect(result.booked).toBe(false);
