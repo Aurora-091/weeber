@@ -246,6 +246,7 @@ export async function runVoiceAgentTurn({
     });
 
     let full = "";
+    const calledToolNames: string[] = [];
     for await (const delta of result.textStream) {
       if (firstTokenAt === null) {
         firstTokenAt = Date.now();
@@ -258,6 +259,37 @@ export async function runVoiceAgentTurn({
     // The model ran (possibly called tools) but produced no spoken text —
     // say something rather than leaving the caller in silence.
     if (!full.trim() && !signal?.aborted) {
+      // Diagnostic logging (audit follow-up, 2026-07-10): this is the exact
+      // "sorry, I didn't catch that" path a live test call kept hitting.
+      // Before this, an empty turn was a silent black box — no visibility
+      // into whether the model returned genuinely empty content, got stuck
+      // in a tool-only loop with no final text, or hit a finish reason like
+      // "length"/"content-filter". Log everything needed to tell those apart
+      // without needing to reproduce the call.
+      try {
+        const [finishReason, usage, steps] = await Promise.all([
+          Promise.resolve(result.finishReason).catch(() => "unknown"),
+          Promise.resolve(result.usage).catch(() => undefined),
+          Promise.resolve(result.steps).catch(() => []),
+        ]);
+        for (const step of steps as Array<{ toolCalls?: Array<{ toolName: string }> }>) {
+          for (const call of step.toolCalls ?? []) calledToolNames.push(call.toolName);
+        }
+        console.warn(
+          "[voice-agent] turn produced no spoken text — falling back",
+          {
+            model: getActiveModelLabel(llmProvider),
+            finishReason,
+            usage,
+            stepCount: (steps as unknown[]).length,
+            toolCallsThisTurn: calledToolNames,
+            historyLength: history.length,
+            systemPromptLength: ((persona ?? DEFAULT_PERSONA) + buildCallerMemoryBlock(callerMemory) + buildKnownFactsBlock(capturedState)).length,
+          },
+        );
+      } catch (diagErr) {
+        console.error("[voice-agent] failed to gather empty-turn diagnostics", diagErr);
+      }
       onTextDelta(FALLBACK_REPLY);
       return FALLBACK_REPLY;
     }
