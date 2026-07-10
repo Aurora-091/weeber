@@ -137,6 +137,15 @@ export const voice = new Hono()
       statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
       record: true,
       recordingStatusCallback: `${getPublicUrl()}/api/voice/recording-status`,
+      // Answering-machine detection (async — doesn't delay call connection,
+      // unlike sync AMD, which matters since we go straight into a live
+      // Media Stream). Twilio posts AnsweredBy to /amd-status-callback once
+      // it's determined, whether or not the agent has already started
+      // talking — see that route for how we redirect a machine-answered
+      // call out of the live stream to leave a short voicemail instead.
+      machineDetection: "DetectMessageEnd",
+      asyncAmd: "true",
+      asyncAmdStatusCallback: `${getPublicUrl()}/api/voice/amd-status-callback`,
     });
 
     await sessionStore.set(call.sid, { callSid: call.sid, direction: "outbound", persona, webhookUrl, orgId });
@@ -201,6 +210,36 @@ export const voice = new Hono()
         await sessionStore.delete(callSid);
       }
     }
+    return c.text("", 200);
+  })
+
+  // Twilio async answering-machine-detection webhook — fires once Twilio has
+  // determined AnsweredBy, independently of (and not blocking) the live
+  // Media Stream the agent is already talking over. If a machine answered,
+  // we redirect the live call out of the stream to leave a short, honest
+  // voicemail and hang up, rather than letting the agent run a live
+  // conversation into an answering machine's beep and silence.
+  .post("/amd-status-callback", requireTwilioSignature, async (c) => {
+    const body = c.get("twilioBody");
+    const callSid = String(body.CallSid ?? "");
+    const answeredBy = String(body.AnsweredBy ?? "");
+
+    const machineAnswers = new Set(["machine_start", "machine_end_beep", "machine_end_silence", "machine_end_other"]);
+    if (callSid && machineAnswers.has(answeredBy)) {
+      const twiml = new VoiceResponse();
+      twiml.say(
+        "Hi, this is an automated call — sorry to have missed you. We'll try again, or feel free to call us back. Have a good day.",
+      );
+      twiml.hangup();
+      await twilioClient
+        .calls(callSid)
+        .update({ twiml: twiml.toString() })
+        .catch((err) => console.error("[routes] failed to redirect machine-answered call", err));
+
+      const session = await sessionStore.get(callSid);
+      void dispatchWebhook(resolveWebhookUrl(session?.webhookUrl), "call.voicemail_detected", { callSid, answeredBy });
+    }
+
     return c.text("", 200);
   })
 

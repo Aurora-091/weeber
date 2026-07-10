@@ -1,0 +1,1 @@
+ALTER TABLE "orgs" ADD COLUMN "human_transfer_number" text;

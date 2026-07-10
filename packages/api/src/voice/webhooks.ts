@@ -14,7 +14,9 @@ export type VoiceWebhookEvent =
   | "call.completed"
   | "call.recording_ready"
   /** A retry chain (workflow "retry" action) gave up after maxRetries — see ADR-030's `onExhausted`. */
-  | "call.retries_exhausted";
+  | "call.retries_exhausted"
+  /** Twilio's async AMD determined a machine answered — see routes.ts's /amd-status-callback. */
+  | "call.voicemail_detected";
 
 export function resolveWebhookUrl(perCallUrl?: string | null) {
   return perCallUrl || process.env.WEBHOOK_URL || null;

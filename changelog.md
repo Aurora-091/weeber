@@ -57,3 +57,44 @@ This document tracks system changes, database schemas, API parameters, and archi
     references `org_id`, and that two orgs' erasure calls produce distinct conditions.
   - No production data existed yet (ADR-034), so this was a clean structural migration, not an additive-only
     patch — acceptable per that same precedent.
+
+---
+
+## 2026-07-10 — Root cause of "sorry, I didn't catch that" every turn
+
+`AI_GATEWAY_BASE_URL` on Railway was set to `https://ai-gateway.vercel.sh/v1` — a path that doesn't exist.
+The AI SDK's own default (and the correct one) is `.../v4/ai`. Every LLM turn was 404ing against
+`/v1/language-model`, and `agent.ts`'s empty-completion fallback silently turned that into "sorry, I didn't
+catch that" instead of surfacing a real error, which looked exactly like an STT problem from the caller's
+seat. Fixed by correcting the Railway env var (no code change) and confirmed live via a real outbound test
+call + DB transcript. Also added diagnostic logging (`agent.ts`, logs finishReason/usage/tool calls/history
+length on any empty-turn fallback) so a repeat of this class of bug surfaces immediately next time.
+
+## 2026-07-10 — Agent skills: hangUp, transferToHuman, silence handling, guardrails
+
+- **New tools** (`voice/tools/`): `hangUp` (agent ends the call — actually terminates the Twilio call leg via
+  the REST API, not just the WebSocket, after the closing line finishes), `transferToHuman` (redirects the
+  live call to `orgs.humanTransferNumber` / `HUMAN_TRANSFER_NUMBER` env fallback via a real `<Dial>`, same
+  override-then-env pattern as `outboundNumber`), `flagGuardrailEvent` (model self-reports a guardrail
+  moment — topic-boundary / unauthorized-promise / prompt-injection / abuse — logged through the existing
+  `toolCalls` table, so it's visible on the call-detail dashboard with zero new UI).
+- **Persona hardening** (`agent.ts`): new `withCallControl()` wraps every resolved persona (org override,
+  template, explicit, env map, or hardcoded default — one injection point, not duplicated per template) with
+  call-control and guardrail instructions covering hangUp/transfer usage, topic boundaries, not inventing
+  prices/policies, and holding the system persona against caller-supplied "ignore your instructions"-style
+  attempts.
+- **Heuristic prompt-injection detector** (`stream.ts`): independent, defense-in-depth phrase scan on raw
+  caller transcript text (regex set for "ignore your instructions", "you are now a...", etc.) — logs a
+  `guardrail-heuristic-detector` tool-call row even if the model doesn't self-report via flagGuardrailEvent.
+- **Silence handling** (`stream.ts`): after each spoken turn, an 8s timer arms; if the caller stays silent,
+  the agent re-prompts once ("Are you still there?"), then hangs up after a further 7s of silence. Resets on
+  any real caller speech. Re-prompt/goodbye lines are canned (no LLM call) so a flaky turn can't compound a
+  quiet caller into an even longer wait.
+- **Voicemail detection**: outbound calls now request async AMD (`machineDetection: "DetectMessageEnd"`,
+  `asyncAmd`, new `/amd-status-callback` route). If Twilio reports a machine answered, the live call is
+  redirected out of the agent stream to a short `<Say>` + `<Hangup>` instead of running the agent into an
+  answering machine's beep and silence.
+- **Schema**: `orgs.human_transfer_number` (additive, nullable) — migration `0003_normal_wallop.sql`.
+- New tests: `tools/hangUp.test.ts`, `tools/transferToHuman.test.ts`, `tools/flagGuardrailEvent.test.ts`,
+  `stream.test.ts` (heuristic detector + playback-estimate helper), plus a `resolvePersona` assertion that
+  call-control instructions land on every persona source.

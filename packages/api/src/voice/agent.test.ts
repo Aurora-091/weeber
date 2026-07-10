@@ -105,4 +105,21 @@ describe("resolvePersona", () => {
     const persona = await resolvePersona({});
     expect(persona).toContain("You are OpenVent");
   });
+
+  it("appends call-control/guardrail instructions to every resolved persona, regardless of source", async () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" };
+    const withOrgOverride = await resolvePersona({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    });
+    expect(withOrgOverride).toContain("hangUp");
+    expect(withOrgOverride).toContain("transferToHuman");
+    expect(withOrgOverride).toContain("flagGuardrailEvent");
+    expect(withOrgOverride).toContain("prompt-injection");
+
+    const fallbackDefault = await resolvePersona({});
+    expect(fallbackDefault).toContain("hangUp");
+    expect(fallbackDefault).toContain("topic-boundary");
+  });
 });

@@ -225,6 +225,13 @@ export const orgs = pgTable("orgs", {
   timezone: text("timezone"),
   contactEmail: text("contact_email"),
   outboundNumber: text("outbound_number"),
+  /**
+   * Real human/merchant phone number the `transferToHuman` tool dials into
+   * when the agent hands a live call off — see voice/tools/transferToHuman.ts.
+   * Falls back to the HUMAN_TRANSFER_NUMBER env var when unset, same
+   * override-then-env-fallback pattern as `outboundNumber`.
+   */
+  humanTransferNumber: text("human_transfer_number"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -1,4 +1,6 @@
 import type { ModelMessage } from "ai";
+import twilioPkg from "twilio";
+const { VoiceResponse } = twilioPkg.twiml;
 import { connectDeepgram } from "./deepgram";
 import { connectTts } from "./tts";
 import type { TtsConnection } from "./tts";
@@ -9,9 +11,10 @@ import { runWorkflowForOutcome } from "./workflows/engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
+import { twilioClient } from "./twilio-client";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 
 type TwilioEvent =
@@ -20,7 +23,50 @@ type TwilioEvent =
   | { event: "mark"; mark: { name: string } }
   | { event: "stop" };
 
-type Sendable = { send: (data: string) => void };
+type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Heuristic-only estimate of remaining audio playback time after the TTS
+ * provider has finished *sending* every chunk for this turn — sending isn't
+ * the same as Twilio having finished *playing* it back to the caller.
+ * ~18 characters/sec is a reasonably conservative average spoken pace;
+ * clamped so a one-word reply doesn't wait needlessly long and a long
+ * closing line doesn't get cut short.
+ */
+export function estimateRemainingPlaybackMs(text: string): number {
+  return Math.min(Math.max(text.length * 55, 400), 4000);
+}
+
+/**
+ * Best-effort, defense-in-depth phrase detector for prompt-injection
+ * attempts in raw caller speech — independent of whether the model itself
+ * calls flagGuardrailEvent (see agent.ts's withCallControl persona
+ * instructions). Not a filter/blocker — the model still decides how to
+ * respond — this only guarantees the attempt is logged for dashboard
+ * review even if the model doesn't self-report it.
+ */
+const INJECTION_PHRASE_PATTERNS = [
+  /ignore\s+(all|your|the|any)?\s*(previous|prior|above)?\s*instructions?/i,
+  /disregard\s+(your|the|any)?\s*(previous|prior)?\s*instructions?/i,
+  /forget\s+(your|the)?\s*(rules|instructions|prompt|guidelines)/i,
+  /you('re| are)\s+now\s+(a|an)\b/i,
+  /pretend\s+(you'?re|to be|you are)/i,
+  /act\s+as\s+(if|a|an)\b/i,
+  /reveal\s+your\s+(system\s+)?(prompt|instructions)/i,
+  /what\s+(is|are)\s+your\s+(system\s+)?(prompt|instructions)/i,
+  /i('m| am)\s+(the\s+|a\s+)?(developer|admin|administrator)\b/i,
+];
+
+export function looksLikePromptInjection(text: string): boolean {
+  return INJECTION_PHRASE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const SILENCE_WARNING_MS = 8000;
+const SILENCE_HANGUP_MS = 7000;
 
 /**
  * Bun WebSocket handler for a single Twilio Media Stream connection.
@@ -79,6 +125,23 @@ export function createVoiceStreamHandlers() {
   let turnAbortController: AbortController | null = null;
   let agentIsSpeaking = false;
 
+  /** Set by the hangUp/transferToHuman tools (via logToolCall below), consumed at
+   * the end of speak() once the closing/handoff line has been spoken — see
+   * that function for why this isn't acted on immediately. */
+  let pendingHangUp: { reason: string } | undefined;
+  let pendingTransfer: { reason: string } | undefined;
+
+  /** Caller-silence handling (re-prompt once, then hang up) — see armSilenceTimer. */
+  let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+  let silenceWarningIssued = false;
+
+  function clearSilenceTimer() {
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+  }
+
   async function logTranscript(role: "caller" | "agent", text: string) {
     if (!dbCallId) return;
     await db.insert(transcripts).values({ callId: dbCallId, role, text }).catch(() => undefined as unknown);
@@ -104,6 +167,15 @@ export function createVoiceStreamHandlers() {
     if (name === "captureField" && input && typeof input === "object" && "field" in input && "value" in input) {
       const { field, value } = input as { field: string; value: string };
       void mergeCapturedField(field, value);
+    }
+
+    // hangUp/transferToHuman only *signal intent* (see their tool definitions) —
+    // acted on in speak(), once the same-turn closing/handoff line is spoken.
+    if (name === "hangUp" && input && typeof input === "object" && "reason" in input) {
+      pendingHangUp = { reason: String((input as { reason: unknown }).reason) };
+    }
+    if (name === "transferToHuman" && input && typeof input === "object" && "reason" in input) {
+      pendingTransfer = { reason: String((input as { reason: unknown }).reason) };
     }
 
     if (!dbCallId) return;
@@ -134,6 +206,7 @@ export function createVoiceStreamHandlers() {
     tts?.close();
     turnAbortController?.abort();
     if (maxDurationTimer) clearTimeout(maxDurationTimer);
+    clearSilenceTimer();
     if (callSid) {
       const priorSession = await sessionStore.get(callSid);
       const previousAttempt = priorSession?.workflowAttempt;
@@ -203,12 +276,106 @@ export function createVoiceStreamHandlers() {
     void finalizeCall("failed");
   }
 
+  /** `orgs.humanTransferNumber` for this call's org, falling back to the
+   * HUMAN_TRANSFER_NUMBER env var — same override-then-env-fallback pattern
+   * as the outbound caller ID (see routes.ts's /calls/outbound). */
+  async function resolveHumanTransferNumber(orgId: string): Promise<string | undefined> {
+    const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1).catch(() => [] as never[]);
+    return org?.humanTransferNumber ?? process.env.HUMAN_TRANSFER_NUMBER ?? undefined;
+  }
+
+  /** Actually ends the call — terminates the real Twilio call leg (not just
+   * our WebSocket), since the media stream closing on its own doesn't
+   * guarantee the underlying PSTN call hangs up. */
+  async function performHangUp(ws: Sendable, reason: string) {
+    console.log(`[voice] hangUp requested: ${reason}`);
+    clearSilenceTimer();
+    if (callSid) {
+      await twilioClient
+        .calls(callSid)
+        .update({ status: "completed" })
+        .catch((err) => console.error("[voice] failed to end Twilio call via REST API", err));
+    }
+    try {
+      ws.close?.();
+    } catch {
+      // socket may already be closed — ignore
+    }
+    await finalizeCall("completed");
+  }
+
+  /** Redirects the live Twilio call out of the media stream into a real
+   * `<Dial>` to a human — the call keeps going, just no longer through the
+   * agent. Falls back to hanging up (rather than silently no-oping) if no
+   * transfer number is configured anywhere, since the agent already told
+   * the caller it was transferring them. */
+  async function performTransfer(ws: Sendable, reason: string) {
+    console.log(`[voice] transferToHuman requested: ${reason}`);
+    clearSilenceTimer();
+    const transferNumber = humanNumberOrgId
+      ? await resolveHumanTransferNumber(humanNumberOrgId)
+      : (process.env.HUMAN_TRANSFER_NUMBER ?? undefined);
+
+    if (!transferNumber) {
+      console.error("[voice] transferToHuman requested but no transfer number is configured anywhere — hanging up instead");
+      await performHangUp(ws, "transfer requested but no transfer number configured");
+      return;
+    }
+
+    if (callSid) {
+      const twiml = new VoiceResponse();
+      twiml.dial(transferNumber);
+      await twilioClient
+        .calls(callSid)
+        .update({ twiml: twiml.toString() })
+        .catch((err) => console.error("[voice] failed to redirect call for transfer", err));
+    }
+    await finalizeCall("transferred");
+  }
+
+  /** Speaks a fixed line with no LLM call involved — used for the silence
+   * re-prompt/goodbye so a flaky LLM turn can't compound an already-quiet
+   * caller into an even longer wait. */
+  async function speakCannedLine(ws: Sendable, text: string) {
+    await speak(ws, async () => text);
+  }
+
+  function armSilenceTimer(ws: Sendable) {
+    if (ended) return;
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+      void handleSilenceTimeout(ws);
+    }, silenceWarningIssued ? SILENCE_HANGUP_MS : SILENCE_WARNING_MS);
+  }
+
+  async function handleSilenceTimeout(ws: Sendable) {
+    if (ended) return;
+    if (!silenceWarningIssued) {
+      silenceWarningIssued = true;
+      await speakCannedLine(ws, "Are you still there? Let me know if you need anything else.");
+      armSilenceTimer(ws);
+    } else {
+      await speakCannedLine(ws, "I haven't heard back, so I'll go ahead and end the call here. Feel free to call back anytime. Goodbye.");
+      await performHangUp(ws, "caller silence timeout");
+    }
+  }
+
   /** Shared turn runner — used for both the opening greeting and normal replies. */
   async function speak(ws: Sendable, generate: (signal: AbortSignal) => Promise<string>) {
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
 
     const ttsRequestedAt = Date.now();
+    // Resolved once the TTS provider reports it's sent every audio chunk for
+    // this turn — used below to avoid cutting a hangUp/transfer closing line
+    // off. Not a guarantee Twilio has finished *playing* it (see
+    // estimateRemainingPlaybackMs), just that we've sent everything we're
+    // going to send.
+    let resolveTtsDone: (() => void) | undefined;
+    const ttsDone = new Promise<void>((resolve) => {
+      resolveTtsDone = resolve;
+    });
+
     tts = connectTts(
       (base64Audio) => {
         if (ttsFirstByteMs === undefined) ttsFirstByteMs = Date.now() - ttsRequestedAt;
@@ -221,10 +388,12 @@ export function createVoiceStreamHandlers() {
       },
       () => {
         agentIsSpeaking = false;
+        resolveTtsDone?.();
       },
       (err) => {
         console.error("[voice] TTS turn failed", err);
         agentIsSpeaking = false;
+        resolveTtsDone?.();
       },
       ttsProviderOverride,
     );
@@ -241,6 +410,31 @@ export function createVoiceStreamHandlers() {
     if (fullText) {
       history.push({ role: "assistant", content: fullText });
       await logTranscript("agent", fullText);
+    }
+
+    // hangUp/transferToHuman requested this turn — let the closing/handoff
+    // line actually finish (best-effort) before acting on it, see the
+    // helpers above for why this can only ever be an estimate.
+    if (pendingHangUp || pendingTransfer) {
+      await Promise.race([ttsDone, sleep(8000)]);
+      await sleep(estimateRemainingPlaybackMs(fullText));
+
+      if (pendingHangUp) {
+        const { reason } = pendingHangUp;
+        pendingHangUp = undefined;
+        pendingTransfer = undefined;
+        await performHangUp(ws, reason);
+      } else if (pendingTransfer) {
+        const { reason } = pendingTransfer;
+        pendingTransfer = undefined;
+        await performTransfer(ws, reason);
+      }
+    } else if (!ended) {
+      // Every spoken turn (greeting, normal reply, or a silence re-prompt/
+      // goodbye) goes through this function — arming the caller-silence
+      // timer here, once, covers all of them instead of needing a call site
+      // at every place a turn gets run.
+      armSilenceTimer(ws);
     }
   }
 
@@ -295,6 +489,21 @@ export function createVoiceStreamHandlers() {
             }
 
             if (!speechFinal || !isFinal || !text.trim()) return;
+
+            // Caller actually responded — reset silence handling (a fresh
+            // warning stage next time they go quiet, not an immediate hangup).
+            silenceWarningIssued = false;
+            clearSilenceTimer();
+
+            // Heuristic, defense-in-depth guardrail detector — independent of
+            // whether the model itself calls flagGuardrailEvent (see agent.ts).
+            if (looksLikePromptInjection(text)) {
+              void logToolCall(
+                "guardrail-heuristic-detector",
+                { category: "prompt-injection", callerText: text },
+                { detectedBy: "heuristic-phrase-match" },
+              );
+            }
 
             history.push({ role: "user", content: text });
             await logTranscript("caller", text);
