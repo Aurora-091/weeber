@@ -143,10 +143,10 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
   `apiFetch`/`apiUrl` for raw HTTP), which honors `VITE_API_BASE_URL`. Dependency direction is one-way:
   `web → api (types only) → compliance`. In single-deploy mode the api server serves `packages/web/dist`
   when it exists; on Railway it never does, and only `/api/*` + the Twilio WebSocket matter.
-- **Org-lite, not full multi-tenant** (ADR-030/031) — `orgId` scopes data (`calls`, `scheduledCalls`,
-  `shopifyContacts`), but there's no per-org Twilio sub-account, no per-org DNC list, and no per-org
-  billing entity yet. Don't build those without checking `WEEBER-PLAN.md`'s Phase 2 list first — they're
-  deliberately deferred, not forgotten.
+- **Org-lite today, full multi-tenant on the board** (ADR-030/031, rescoped by ADR-037) — `orgId` scopes
+  data (`calls`, `scheduledCalls`, `shopifyContacts`), but there's no per-org Twilio sub-account, per-org
+  DNC list, or per-org billing entity *yet*. Those are now in-scope Phase-1 workstreams (`WEEBER-PLAN.md`
+  J-S) — check the dependency ordering there before starting one, not whether it's in scope.
 - **Vertical-agnostic seam:** `orgs.vertical` + `agentTemplates` table (ADR-031) — Shopify is the only
   vertical with real agents today, but new verticals (clinic, hotel) should add rows here, not require a
   schema migration or a new code path per vertical.
@@ -231,9 +231,11 @@ unresolved product/business decisions:
 7. **Real credentials of any kind** (Twilio, Supabase, Deepgram, Cartesia/ElevenLabs, LLM provider, GitHub
    tokens) — never hardcode, never invent placeholder-that-looks-real values. Ask the user to supply them
    through a secure channel when needed.
-8. **Per-org Twilio sub-accounts, per-org DNC lists, full RBAC/multi-seat, per-org billing entities** — all
-   explicitly deferred (`WEEBER-PLAN.md` Phase 2). If a task seems to require one of these, that's a signal
-   to check whether the task is actually in scope yet, not to build the deferred thing as a side effect.
+8. ~~Per-org sub-accounts / DNC / RBAC deferred~~ **RESCOPED (ADR-037): there is no Phase 2 — everything
+   is in scope.** Per-org Twilio sub-accounts, per-org DNC lists, full RBAC/multi-seat, and per-org billing
+   are Phase-1 workstreams now (`WEEBER-PLAN.md` J-S). The signal to check is *sequencing*, not scope:
+   heavy multi-tenant items still build on their listed prerequisites, per-org DNC still hits gate #6
+   (compliance package), and trigger-split still hits gate #4.
 
 ## Notes
 

@@ -54,25 +54,36 @@ from `process.env`). This is the actual prerequisite for the form UI, not the fo
 
 | Workstream | Depends on | Notes |
 |---|---|---|
-| **A. Config storage (env-var -> DB) + form-based agent config UI** | H (build the new tables on Postgres, not SQLite) | The actual bottleneck for merchant-facing onboarding. See above. |
-| **B. Persona/prompt copy for the 3 agents** | Nothing | Pure content work, fully parallel with everything else. |
-| **C. Wire real Supabase project** (Storage bucket, Auth) | Nothing | Create the project, run `supabase link` + `supabase db push` against `supabase/migrations/`, wire `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`. **The project does not exist yet** — creating it is the first concrete action; the `supabase` MCP server is project-scoped and needs `SUPABASE_PROJECT_REF` from it. |
-| **D. Railway deploy** | Nothing | Point Railway at this repo, set env vars from `.env.example`, confirm `/api/health` responds, confirm the Twilio Media Stream WebSocket actually works from a real Railway URL (this is the one thing that must be tested live — WebSocket behavior through Railway's edge hasn't been verified yet). |
-| **E. Vercel deploy** | D (needs Railway's URL) | **Code half done (ADR-035):** `lib/api.ts` reads `VITE_API_BASE_URL` and all call sites route through it; backend has env-gated `CORS_ALLOWED_ORIGINS`. Remaining: set `VITE_API_BASE_URL` in Vercel's build env, `CORS_ALLOWED_ORIGINS` on Railway, deploy, verify. |
-| **F. Get real `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` values in place in both repos** | Nothing | Coordinate with whoever owns the weebersh deploy — these must match exactly in both places or every webhook 401s. |
-| **G. End-to-end test against a real (dev-store) Shopify checkout** | D, F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. |
-| **H. Turso → Supabase Postgres migration (ADR-034)** | C (needs the Supabase project to exist) | **Code half done:** `pgTable` schema, `postgres` driver (`prepare: false` for the transaction pooler), `dialect: "postgresql"`, migration SQL generated in `packages/api/drizzle/`, typecheck + all tests green. Remaining: apply the migration to the live Supabase project (needs `SUPABASE_ACCESS_TOKEN`+`SUPABASE_PROJECT_REF` for the MCP, or `DATABASE_URL` in `.env` for `bun run db:migrate`), then consider RLS policies for `orgId` scoping. |
-| **I. India-compliance review of the calling-window/DNC model** | Nothing (research), before first real India merchant (enforcement) | ADR-034: first GTM is India. `@openvent/compliance`'s calling-window is TCPA/NANP-centric (8am-9pm, US area-code timezones) and the DNC model assumes the US regime. India is TRAI's territory: NDNC/DND registry, different calling-hour norms (9am-9pm IST), telemarketing registration (140-series headers for voice). Scope what "compliant outbound calling in India" actually requires **before** the first real merchant campaign, not after. Touches `packages/openvent-compliance` — per the gate list, confirm findings with the user before changing anything there. |
+| **A. Config storage (env-var -> DB) + form-based agent config UI** | Nothing (DB is live) | The actual bottleneck for merchant-facing onboarding. Backend half (tables + read path) first; the form UI waits for the frontend round. Wire `docs/agent-prompts/` in as the seed data. |
+| ~~B. Persona/prompt copy~~ | — | **DONE** — `docs/agent-prompts/01..03` (commit bc5600a); feedback agent still flagged needs-review. |
+| ~~C. Wire real Supabase project~~ | — | **DONE** — production is `openvent2` (`wtqohdcghmxuujqyhlkz`, ap-south-1 Mumbai), schema applied, service connected via pooler. Staging project still to create. |
+| ~~D. Railway deploy~~ | — | **DONE** — `weeber-backend` project, api service (Singapore) from Aurora-091/openvent, domain `api-production-c1bb.up.railway.app`, health + WS-through-edge verified live, all provider keys set. |
+| **E. Vercel deploy** | Frontend round | **Code half done (ADR-035).** Remaining: set `VITE_API_BASE_URL` in Vercel's build env, `CORS_ALLOWED_ORIGINS` on Railway, deploy, verify. |
+| **F. Real `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` in both repos** | Nothing | Coordinate with the weebersh deploy — must match exactly in both places or every webhook 401s. |
+| **G. End-to-end test against a real (dev-store) Shopify checkout** | F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. |
+| ~~H. Turso → Supabase Postgres migration~~ | — | **DONE (ADR-034)** — pgTable schema live in Mumbai, 14 tables, driver swapped, tests green. RLS policies for `orgId` scoping still worth considering (fits N/Q work). |
+| **I. India-compliance review of the calling-window/DNC model** | Nothing (research); hard gate before first real India merchant campaign | TRAI territory: NDNC/DND registry, 9am-9pm IST norms, 140-series telemarketing headers. Touches `packages/openvent-compliance` — confirm findings with the user before changing anything there. |
+| **J. Checkout-token-based cancellation matching** | Nothing | Correctness fix — cancellation currently matches on phone number only (ADR-030 known gap). Small: index/column for `checkoutToken` + matching logic. ~2-3 days. |
+| **K. Order-value attribution for recovered carts** | Nothing | Mark a completed call "recovered" with the order's value — prerequisite for any merchant-facing revenue metric. ~2-3 days. |
+| **L. Org-scoped GDPR erasure into `calls`/`transcripts`** | Nothing | Today only `shopifyContacts` is org-scoped; call/transcript erasure is global phone-number-keyed. ~2-3 days. |
+| **M. Wire `gdpr-redact-notify` edge function to `/customers/redact`** | Nothing | Stub exists in `supabase/functions/`. ~1 day. |
+| **N. Per-org outbound caller ID** | Nothing | `orgs`-linked number resolution at dial time (scheduler + outbound route), global `TWILIO_PHONE_NUMBER` demotes to fallback. Design the seam so O plugs in later. ~3-5 days. |
+| **O. Per-tenant Twilio sub-accounts / BYO number provisioning** | N | Provisioning flow, credential storage, billing separation. 2-3 weeks. Build after N proves the per-org number seam. |
+| **P. Per-org DNC lists** | I (India model shapes it) | Consent is per business relationship — global list is conservative but wrong long-term. **Touches `packages/openvent-compliance` — user confirmation gate applies.** ~1 week. |
+| **Q. Full RBAC / multi-seat merchant accounts** | Supabase Auth wiring (frontend round) | Roles on top of merchant login. 2-3 weeks. Sequence with the frontend auth work, not before it. |
+| **R. Per-org CRM connections (Nango embedded iPaaS)** | Nothing (spike) | Research spike 2-3 days, then 1-2 weeks: per-org tokens behind the existing adapter interface, not a rebuild of the integrations. |
+| **S. Entry-condition branching ("trigger split", ADR-033)** | A (config storage is where `entryConditions` lives) | Engine change ~1 week. **Config-driven vs visual-canvas-from-day-one is still an open user decision — ask before starting (gate #4).** |
 
-B, C, D, F can all start in parallel with no dependency on each other. H needs C (the Supabase project);
-A now waits on H so its new tables are born on Postgres instead of being migrated twice. E needs D (a real
-Railway URL). G is the integration test, needs D and F both done. I is research-first — parallel with
-everything, but its enforcement half is a hard gate before real India merchant calls.
+Everything is now Phase 1 (ADR-037) — but sequencing still matters. Backend-first order per explicit
+direction: A (backend half), J, K, L, M, N are all parallel-friendly and unblocked today; F unblocks G;
+I runs as research now and gates real India campaigns; O/P/S follow their dependencies; E/Q wait for the
+frontend round. The compliance-package gate (CLAUDE.md #6) and the trigger-split decision gate (#4) survive
+the merge unchanged.
 
-## Phase 2 / explicitly deferred — don't build these now, don't forget them either
+## Merged backlog detail (formerly "Phase 2" — merged into Phase 1 by ADR-037)
 
-Everything below was deliberately cut for this round (per direction: drop heavy multi-tenant, ship faster,
-layer in compliance/completeness as you go). Listed here so it's a backlog, not a silent gap:
+Full reasoning for workstreams J-S above, kept verbatim since the constraints haven't changed — only the
+scheduling has:
 
 - **Per-tenant Twilio sub-accounts** — all orgs currently share the pool of numbers configured via
   `TWILIO_PHONE_NUMBER`/per-number config. Fine for early merchants; revisit once volume or a specific
@@ -121,10 +132,10 @@ layer in compliance/completeness as you go). Listed here so it's a backlog, not 
 
 ## Immediate technical debt to flag, not hide
 
-- `vercel.json` (repo root) builds only the static frontend — it does not serve `/api/*`. Once Vercel +
-  Railway are both live, the dashboard's own fetch calls need an absolute backend URL (see workstream E).
-  Until that's fixed, the dashboard will look broken if deployed to Vercel alone without Railway wired in.
-- The Railway WebSocket path for Twilio Media Streams has not been tested against a real Railway deployment
-  yet in this scaffold — it's architecturally sound (Railway runs a normal long-lived container, unlike
-  Vercel's serverless functions), but "should work" isn't the same as "verified." Test this first, before
-  building anything on top of it.
+- `vercel.json` (repo root) builds only the static frontend — it does not serve `/api/*`. The code half of
+  the absolute-API-base-URL fix is done (ADR-035); the env vars get set when the Vercel deploy happens
+  (workstream E).
+- ~~Railway WebSocket path untested~~ **Verified live (2026-07-10):** WS upgrade completes (101) through
+  Railway's edge on the production domain.
+- Staging environment exists on Railway but its `DATABASE_URL` is a placeholder — create a staging Supabase
+  project and mirror the production wiring before using staging for anything real.
