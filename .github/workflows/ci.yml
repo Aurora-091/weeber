@@ -35,6 +35,9 @@ jobs:
       - name: Test (api) — voice pipeline, integrations, resilience layer
         run: cd packages/api && bun run test
 
+      - name: Test (web) — theme, vertical config, and other pure-logic units
+        run: cd packages/web && bun run test
+
       - name: Test (openvent-compliance) — DNC, calling-window, HIPAA, GDPR, national-DNC adapter
         run: cd packages/openvent-compliance && bun run test
 
