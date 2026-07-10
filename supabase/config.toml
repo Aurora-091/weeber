@@ -25,7 +25,9 @@ file_size_limit = "20MiB"
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["https://app.weeber.ai"]
+# Only the password-reset email still carries a redirect link (ADR-043 —
+# sign-in/confirmation emails are OTP-code-only and need no allowlist entry).
+additional_redirect_urls = ["https://app.weeber.ai", "https://openvent-api.vercel.app"]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -33,6 +35,24 @@ enable_signup = true
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
+
+# Weeber-branded email templates (ADR-043). Sign-in ("magic link") and signup
+# confirmation render {{ .Token }} only — a 6-digit code, no URL — so those
+# flows never depend on the redirect allowlist; recovery keeps its link.
+# NOTE for the hosted project: these apply locally / via `supabase config push`.
+# If pushing isn't set up, paste each file's HTML + subject into
+# Dashboard -> Authentication -> Emails (templates) — keep both in sync.
+[auth.email.template.magic_link]
+subject = "Your Weeber sign-in code"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm your Weeber account"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Weeber password"
+content_path = "./supabase/templates/recovery.html"
 
 [functions.gdpr-redact-notify]
 verify_jwt = false

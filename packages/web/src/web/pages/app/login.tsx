@@ -14,10 +14,8 @@ type Mode = "signin" | "signup";
  * - "idle"/"password-form": normal form
  * - "needs-confirmation": signUp() succeeded but returned no session — the
  *   Supabase project requires email confirmation before a session exists.
- *   Both confirmation paths (click the link, or type the code) land here;
- *   which one the user actually used doesn't matter, whichever happens
- *   first gets them signed in (the link redirects through /app/auth/callback,
- *   the code is verified inline on this same screen). */
+ *   The confirmation email carries a 6-digit code (OTP-only templates,
+ *   ADR-043 — no link), verified inline on this same screen. */
 type SignupState = "idle" | "needs-confirmation";
 
 export function MerchantLoginPage() {
@@ -28,7 +26,7 @@ export function MerchantLoginPage() {
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
   const [signupState, setSignupState] = useState<SignupState>("idle");
   const [otpCode, setOtpCode] = useState("");
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
@@ -104,21 +102,52 @@ export function MerchantLoginPage() {
     if (authError) setError(authError.message);
   }
 
-  async function submitMagicLink(e: React.FormEvent) {
+  // Passwordless sign-in, step 1: email the 6-digit code. OTP-only on
+  // purpose (ADR-043) — the email template renders {{ .Token }}, not a
+  // magic-link URL, so no emailRedirectTo/redirect-allowlist dependency.
+  async function submitEmailCode(e: React.FormEvent) {
     e.preventDefault();
     if (!supabase) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOtp({
+    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    setPending(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    setOtpCode("");
+    setResendState("idle");
+    setCodeSent(true);
+  }
+
+  // Passwordless sign-in, step 2: verify the code. type "email" covers both
+  // an existing user's sign-in code and a brand-new user created by
+  // signInWithOtp; the password-signup flow keeps its own type "signup".
+  async function submitSigninCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || otpCode.trim().length < 6) return;
+    setPending(true);
+    setError(null);
+    const { error: authError } = await supabase.auth.verifyOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/app/auth/callback` },
+      token: otpCode.trim(),
+      type: "email",
     });
     setPending(false);
     if (authError) {
       setError(authError.message);
       return;
     }
-    setMagicLinkSent(true);
+    navigate("/app");
+  }
+
+  async function resendSigninCode() {
+    if (!supabase) return;
+    setResendState("sending");
+    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    setResendState("sent");
+    if (authError) setError(authError.message);
   }
 
   async function submitForgotPassword(e: React.FormEvent) {
@@ -161,8 +190,8 @@ export function MerchantLoginPage() {
           <Mail className="mx-auto size-6 text-primary" aria-hidden />
           <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            We sent a confirmation email to <span className="text-foreground">{email}</span>. Click the link inside,
-            or enter the 6-digit code from the same email below.
+            We sent a confirmation email to <span className="text-foreground">{email}</span>. Enter the 6-digit code
+            from it below.
           </p>
 
           <form onSubmit={submitOtpCode} className="mt-6 flex flex-col gap-3">
@@ -283,7 +312,7 @@ export function MerchantLoginPage() {
         <Tabs defaultValue="password">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="password">Password</TabsTrigger>
-            <TabsTrigger value="magic">Magic link</TabsTrigger>
+            <TabsTrigger value="code">Email code</TabsTrigger>
           </TabsList>
 
           <TabsContent value="password">
@@ -337,21 +366,55 @@ export function MerchantLoginPage() {
             </form>
           </TabsContent>
 
-          <TabsContent value="magic">
-            {magicLinkSent ? (
+          <TabsContent value="code">
+            {codeSent ? (
               <div className="mt-6 text-center">
                 <Mail className="mx-auto size-6 text-primary" aria-hidden />
                 <h2 className="mt-3 text-lg font-medium">Check your inbox</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  We sent a sign-in link to {email}. It signs you in on this device.
+                  We sent a 6-digit sign-in code to <span className="text-foreground">{email}</span>. Enter it below.
                 </p>
+                <form onSubmit={submitSigninCode} className="mt-5 flex flex-col gap-3">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    className="text-center tracking-widest"
+                    maxLength={6}
+                  />
+                  <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
+                    {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                    Verify &amp; sign in
+                  </Button>
+                </form>
+                <button
+                  type="button"
+                  className="mt-4 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={resendSigninCode}
+                  disabled={resendState === "sending"}
+                >
+                  {resendState === "sent" ? "Code resent — check your inbox" : "Didn't get it? Resend"}
+                </button>
+                <button
+                  type="button"
+                  className="mt-2 block w-full text-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setCodeSent(false);
+                    setOtpCode("");
+                  }}
+                >
+                  Use a different email
+                </button>
               </div>
             ) : (
-              <form onSubmit={submitMagicLink} className="mt-4 flex flex-col gap-4">
+              <form onSubmit={submitEmailCode} className="mt-4 flex flex-col gap-4">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="magic-email">Email</Label>
+                  <Label htmlFor="code-email">Email</Label>
                   <Input
-                    id="magic-email"
+                    id="code-email"
                     type="email"
                     autoComplete="email"
                     required
@@ -362,7 +425,7 @@ export function MerchantLoginPage() {
                 </div>
                 <Button type="submit" disabled={pending}>
                   {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                  Email me a sign-in link
+                  Email me a sign-in code
                 </Button>
               </form>
             )}

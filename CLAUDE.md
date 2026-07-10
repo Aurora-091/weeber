@@ -195,9 +195,10 @@ per agent).
 
 - **`shopify-dev-mcp`** (official, `@shopify/dev-mcp`) — live access to Shopify's Admin API/GraphQL schema
   docs. Same server `weebersh` uses; needs no credentials.
-- **`supabase`** (official, `@supabase/mcp-server-supabase`) — needs `SUPABASE_PROJECT_REF` and
-  `SUPABASE_ACCESS_TOKEN` set as real shell environment variables before starting Claude Code (the file uses
-  `${VAR}` substitution — **never replace these with literal values in the committed file**).
+- **`supabase`** (official, hosted HTTP MCP at `mcp.supabase.com/mcp`, scoped to the Weeber project via
+  `?project_ref=`) — no env vars or access token; authenticates via OAuth on first connect (run `/mcp`,
+  pick `supabase`, choose Authenticate — a browser window grants access to the Supabase org). The project
+  ref in the URL is public (it's in the served frontend bundle anyway), not a secret.
 - **`twilio`** (official, `@twilio-alpha/mcp`) — same pattern, needs `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`
   as shell env vars.
 - **`railway`** (official, hosted HTTP MCP at `mcp.railway.com` — the URL is the bare host, no `/mcp`
