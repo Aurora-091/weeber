@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Play, Loader2, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
@@ -158,8 +159,12 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
     onSuccess: () => {
       setSaveError(null);
       queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
+      toast.success("Agent saved");
     },
-    onError: (err: Error) => setSaveError(err.message),
+    onError: (err: Error) => {
+      setSaveError(err.message);
+      toast.error("Failed to save", { description: err.message });
+    },
   });
 
   async function playPreview() {
@@ -178,6 +183,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
       setPreviewState("idle");
     } catch {
       setPreviewState("error");
+      toast.error("Preview failed", { description: "Try a different voice, or try again in a minute." });
     }
   }
 
@@ -503,10 +509,10 @@ export function MerchantAgentsPage() {
             const isExpanded = expandedKey === row.templateKey;
             const isOn = row.config?.enabled ?? false;
             return (
-              <div key={row.templateKey}>
+              <div key={row.templateKey} className={isOn ? "edge-success" : "edge-muted"}>
                 <button
                   onClick={() => setExpandedKey(isExpanded ? null : row.templateKey)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/60"
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-muted/60"
                   aria-expanded={isExpanded}
                 >
                   <div>

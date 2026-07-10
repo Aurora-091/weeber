@@ -128,7 +128,7 @@ export function MerchantBillingPage() {
           {tiers.map((tier) => (
             <div
               key={tier.name}
-              className={`rounded-lg border p-5 flex flex-col justify-between transition-shadow hover:shadow-sm ${
+              className={`rounded-lg border p-5 flex flex-col justify-between transition-colors duration-150 hover:border-foreground/15 ${
                 tier.current ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border bg-card"
               }`}
             >

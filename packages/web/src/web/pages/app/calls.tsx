@@ -24,6 +24,12 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-error-soft text-error",
 };
 
+const STATUS_EDGE: Record<string, string> = {
+  "in-progress": "edge-success",
+  completed: "edge-muted",
+  failed: "edge-error",
+};
+
 function formatWhen(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -67,7 +73,7 @@ export function MerchantCallsPage() {
             <Link
               key={call.id}
               href={`/app/calls/${call.id}`}
-              className="flex items-center gap-4 px-5 transition-colors hover:bg-muted/60"
+              className={`flex items-center gap-4 px-5 transition-colors duration-150 hover:bg-muted/60 hover:border-foreground/10 ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
               style={{ paddingTop: "var(--shell-row-py)", paddingBottom: "var(--shell-row-py)" }}
             >
               <div className="shrink-0">

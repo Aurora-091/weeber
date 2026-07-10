@@ -3,6 +3,7 @@ import { Phone, Clock, Wrench, ShieldAlert } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
+import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: React.ComponentType<{ className?: string }> }) {
@@ -68,9 +69,7 @@ export function MerchantAnalyticsPage() {
       {analytics.isLoading && <SkeletonCards count={4} lines={3} />}
 
       {analytics.isError && (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load analytics data.
-        </div>
+        <EmptyState title="Couldn't load analytics" description="Something went wrong — refresh to try again." />
       )}
 
       {data && (

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Check, ExternalLink, Loader2, RefreshCw, Store, Bot, Rocket } from "lucide-react";
+import { Check, ExternalLink, Loader as Loader2, RefreshCw, Store, Bot, Rocket } from "lucide-react";
+import { toast } from "sonner";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
@@ -95,9 +96,13 @@ export function MerchantOnboardingPage() {
       if (!res.ok) throw new Error(`save failed (${res.status})`);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, { templateKey, enabled }) => {
       queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
       queryClient.invalidateQueries({ queryKey: ["app-shopify-status"] });
+      toast.success(enabled ? `${templateKey} enabled` : `${templateKey} disabled`);
+    },
+    onError: (err: Error) => {
+      toast.error("Couldn't toggle agent", { description: err.message });
     },
   });
 
