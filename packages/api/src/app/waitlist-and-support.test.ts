@@ -1,5 +1,5 @@
+/* eslint-disable unicorn/no-thenable */
 import { mock, describe, it, expect, beforeEach } from "bun:test";
-import { waitlistSignups, supportTickets } from "../database/schema";
 
 let mockSelectResult: any[] = [];
 let mockInserted: any[] = [];
@@ -45,7 +45,7 @@ mock.module("../database", () => {
       }),
       update: (table: any) => ({
         set: (data: any) => ({
-          where: (cond: any) => {
+          where: (_cond: any) => {
             mockUpdated.push({ table, data });
             return {
               returning: () => Promise.resolve([{ id: 42, ...data }]),
@@ -58,7 +58,7 @@ mock.module("../database", () => {
 });
 
 import { joinWaitlist, addWaitlistPhone, getWaitlistDisplayCount, unsubscribeByToken } from "./waitlist";
-import { submitSupportTicket, listSupportTickets, updateSupportTicketStatus } from "./support";
+import { submitSupportTicket, updateSupportTicketStatus } from "./support";
 import { publicRoutes } from "./public-routes";
 
 describe("Waitlist Service", () => {
@@ -103,7 +103,7 @@ describe("Waitlist Service", () => {
   });
 
   it("resolves waitlist display count with offset", async () => {
-    mockSelectResult = new Array(5); // 5 users
+    mockSelectResult = Array.from({ length: 5 }); // 5 users
     const count = await getWaitlistDisplayCount();
     expect(count).toBe(45); // 40 offset + 5 signups
   });
