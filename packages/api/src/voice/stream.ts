@@ -13,7 +13,7 @@ import { runWorkflowForOutcome } from "./workflows/engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
-import { twilioClient } from "./twilio-client";
+import { getTwilioClientForOrg } from "./twilio-client";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, orgs } from "../database/schema";
@@ -306,7 +306,7 @@ export function createVoiceStreamHandlers() {
     console.log(`[voice] hangUp requested: ${reason}`);
     clearSilenceTimer();
     if (callSid) {
-      await twilioClient
+      await (await getTwilioClientForOrg(humanNumberOrgId))
         .calls(callSid)
         .update({ status: "completed" })
         .catch((err) => console.error("[voice] failed to end Twilio call via REST API", err));
@@ -340,7 +340,7 @@ export function createVoiceStreamHandlers() {
     if (callSid) {
       const twiml = new VoiceResponse();
       twiml.dial(transferNumber);
-      await twilioClient
+      await (await getTwilioClientForOrg(humanNumberOrgId))
         .calls(callSid)
         .update({ twiml: twiml.toString() })
         .catch((err) => console.error("[voice] failed to redirect call for transfer", err));

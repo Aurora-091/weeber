@@ -17,7 +17,7 @@
 import { Hono } from "hono";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
-import { twilioClient, getPublicUrl, getWsUrl } from "./twilio-client";
+import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
@@ -143,7 +143,7 @@ export const voice = new Hono()
       }
     }
 
-    const call = await twilioClient.calls.create({
+    const call = await (await getTwilioClientForOrg(orgId)).calls.create({
       to,
       from,
       url: `${getPublicUrl()}/api/voice/incoming`,
@@ -254,7 +254,8 @@ export const voice = new Hono()
         "Hi, this is an automated call — sorry to have missed you. We'll try again, or feel free to call us back. Have a good day.",
       );
       twiml.hangup();
-      await twilioClient
+      const [callRow] = await db.select({ orgId: calls.orgId }).from(calls).where(eq(calls.twilioCallSid, callSid)).limit(1);
+      await (await getTwilioClientForOrg(callRow?.orgId))
         .calls(callSid)
         .update({ twiml: twiml.toString() })
         .catch((err) => console.error("[routes] failed to redirect machine-answered call", err));
@@ -364,7 +365,7 @@ export const voice = new Hono()
     const [row] = await db.select().from(calls).where(eq(calls.id, id)).limit(1);
     if (!row) return c.json({ error: "call not found" }, 404);
     try {
-      await twilioClient.calls(row.twilioCallSid).update({ status: "completed" });
+      await (await getTwilioClientForOrg(row.orgId)).calls(row.twilioCallSid).update({ status: "completed" });
     } catch (err) {
       return c.json({ error: `Failed to end call: ${(err as Error).message}` }, 500);
     }

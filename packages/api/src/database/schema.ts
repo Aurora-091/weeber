@@ -226,6 +226,23 @@ export const orgs = pgTable("orgs", {
   contactEmail: text("contact_email"),
   outboundNumber: text("outbound_number"),
   /**
+   * Per-org Twilio isolation (2026-07-10, ADR-042 — the "no per-org Twilio
+   * sub-account" gap ADR-030 explicitly deferred). Two modes:
+   *   - "platform" (default): either no dedicated Twilio account yet (falls
+   *     through to the global TWILIO_ACCOUNT_SID/AUTH_TOKEN env vars,
+   *     today's single-tenant behavior, unchanged), or a real Twilio
+   *     sub-account Weeber provisioned for this org (see
+   *     twilio-provisioning.ts) — `twilioAccountSid`/`twilioAuthToken` hold
+   *     that sub-account's own credentials, distinct from the parent's.
+   *   - "byo": the merchant's own existing Twilio account credentials,
+   *     pasted in and validated against Twilio's API before being stored.
+   * Either way, `outboundNumber` above is the number actually used —  no
+   * separate column needed for it in either mode.
+   */
+  twilioMode: text("twilio_mode").notNull().default("platform"),
+  twilioAccountSid: text("twilio_account_sid"),
+  twilioAuthToken: text("twilio_auth_token"),
+  /**
    * Real human/merchant phone number the `transferToHuman` tool dials into
    * when the agent hands a live call off — see voice/tools/transferToHuman.ts.
    * Falls back to the HUMAN_TRANSFER_NUMBER env var when unset, same

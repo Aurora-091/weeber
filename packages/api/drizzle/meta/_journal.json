@@ -64,6 +64,13 @@
       "when": 1783700238457,
       "tag": "0008_last_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783701712597,
+      "tag": "0009_puzzling_kid_colt",
+      "breakpoints": true
     }
   ]
 }

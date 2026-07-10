@@ -1,7 +1,7 @@
 import { lte, eq, and } from "drizzle-orm";
 import { db } from "../../database";
 import { scheduledCalls, orgs } from "../../database/schema";
-import { twilioClient, getPublicUrl } from "../twilio-client";
+import { getTwilioClientForOrg, getPublicUrl } from "../twilio-client";
 import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
@@ -64,7 +64,7 @@ export async function executeDueScheduledCalls() {
         continue;
       }
 
-      const call = await twilioClient.calls.create({
+      const call = await (await getTwilioClientForOrg(row.orgId)).calls.create({
         to: row.toNumber,
         from,
         url: `${getPublicUrl()}/api/voice/incoming`,

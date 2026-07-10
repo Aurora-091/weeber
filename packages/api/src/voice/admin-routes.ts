@@ -36,6 +36,13 @@ import { listWaitlist, waitlistMarketingSummary } from "../app/waitlist";
 import { createBroadcast, listBroadcasts, sendBroadcast } from "../app/broadcasts";
 import { listSupportTickets, updateSupportTicketStatus } from "../app/support";
 import { logAdminAction, listAdminAuditLog } from "../app/audit-log";
+import {
+  getTwilioStatus,
+  createSubaccountForOrg,
+  buyNumberForOrg,
+  setByoCredentials,
+  resetToPlatformDefault,
+} from "./twilio-provisioning";
 
 type AdminEnv = { Variables: AdminAuthVariables };
 
@@ -68,12 +75,15 @@ export const admin = new Hono<AdminEnv>()
 
     return c.json(
       {
-        orgs: orgRows.map((org) => ({
-          ...org,
-          connectedShops: shopCounts.get(org.id) ?? 0,
-          members: memberCounts.get(org.id) ?? 0,
-          enabledAgents: enabledAgentCounts.get(org.id) ?? 0,
-        })),
+        orgs: orgRows.map((org) => {
+          const { twilioAuthToken: _twilioAuthToken, ...safeOrg } = org;
+          return {
+            ...safeOrg,
+            connectedShops: shopCounts.get(org.id) ?? 0,
+            members: memberCounts.get(org.id) ?? 0,
+            enabledAgents: enabledAgentCounts.get(org.id) ?? 0,
+          };
+        }),
       },
       200,
     );
@@ -104,7 +114,74 @@ export const admin = new Hono<AdminEnv>()
         .where(eq(orgAgentConfigs.orgId, orgId)),
       listActiveImpersonations(orgId),
     ]);
-    return c.json({ org, shops, members, agentConfigs: configs, activeImpersonations }, 200);
+    // Never return the raw Twilio auth token in a generic org-detail blob —
+    // even admin-key-gated, it's an unnecessary exposure surface (browser
+    // dev tools, logs, copy-paste). Use GET /orgs/:orgId/twilio for the
+    // masked telephony status instead.
+    const { twilioAuthToken: _twilioAuthToken, ...safeOrg } = org;
+    return c.json({ org: safeOrg, shops, members, agentConfigs: configs, activeImpersonations }, 200);
+  })
+
+  // Per-org Twilio isolation (ADR-042) — status, sub-account provisioning,
+  // number purchase, BYO credentials, reset. Never returns the auth token.
+  .get("/orgs/:orgId/twilio", async (c) => {
+    const status = await getTwilioStatus(c.req.param("orgId"));
+    if (!status) return c.json({ error: "org not found" }, 404);
+    return c.json({ twilio: status }, 200);
+  })
+
+  .post("/orgs/:orgId/twilio/subaccount", async (c) => {
+    const orgId = c.req.param("orgId");
+    const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const result = await createSubaccountForOrg(orgId, org.name ?? orgId);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await logAdminAction(c.get("adminActor"), "twilio.subaccount.created", { orgId, accountSid: result.accountSid });
+    return c.json({ accountSid: result.accountSid }, 201);
+  })
+
+  .post("/orgs/:orgId/twilio/number", async (c) => {
+    const orgId = c.req.param("orgId");
+    const body = await c.req.json().catch(() => null);
+    const { countryCode, areaCode } = (body ?? {}) as { countryCode?: string; areaCode?: string };
+    if (!countryCode?.trim()) return c.json({ error: "`countryCode` is required, e.g. \"US\" or \"IN\"" }, 400);
+
+    const result = await buyNumberForOrg(orgId, countryCode.trim(), areaCode?.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await logAdminAction(c.get("adminActor"), "twilio.number.purchased", { orgId, phoneNumber: result.phoneNumber });
+    return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  .post("/orgs/:orgId/twilio/byo", async (c) => {
+    const orgId = c.req.param("orgId");
+    const body = await c.req.json().catch(() => null);
+    const { accountSid, authToken, phoneNumber } = (body ?? {}) as {
+      accountSid?: string;
+      authToken?: string;
+      phoneNumber?: string;
+    };
+    if (!accountSid?.trim() || !authToken?.trim() || !phoneNumber?.trim()) {
+      return c.json({ error: "`accountSid`, `authToken`, and `phoneNumber` are all required" }, 400);
+    }
+
+    const result = await setByoCredentials(orgId, {
+      accountSid: accountSid.trim(),
+      authToken: authToken.trim(),
+      phoneNumber: phoneNumber.trim(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    // Deliberately never logs the auth token, only that a BYO credential
+    // change happened and which SID/number it now points at.
+    await logAdminAction(c.get("adminActor"), "twilio.byo.set", { orgId, accountSid: accountSid.trim(), phoneNumber: phoneNumber.trim() });
+    return c.json({ ok: true }, 200);
+  })
+
+  .post("/orgs/:orgId/twilio/reset", async (c) => {
+    const orgId = c.req.param("orgId");
+    await resetToPlatformDefault(orgId);
+    await logAdminAction(c.get("adminActor"), "twilio.reset", { orgId });
+    return c.json({ ok: true }, 200);
   })
 
   // Agent template catalog (ADR-031's vertical-agnostic seam). Templates are

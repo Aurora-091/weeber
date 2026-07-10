@@ -1,6 +1,9 @@
 import { createMiddleware } from "hono/factory";
 import twilioPkg from "twilio";
-import { getPublicUrl } from "../twilio-client";
+import { eq } from "drizzle-orm";
+import { getPublicUrl, getAuthTokenForOrg } from "../twilio-client";
+import { db } from "../../database";
+import { calls, orgs } from "../../database/schema";
 
 /**
  * Validates that incoming webhook requests actually came from Twilio, using
@@ -13,7 +16,21 @@ import { getPublicUrl } from "../twilio-client";
  * triggering workflow actions (e.g. fake "not-interested" -> DNC-add) for
  * numbers that were never actually called.
  *
- * Skips validation with a loud warning if TWILIO_AUTH_TOKEN is missing
+ * Org-aware (ADR-042): Twilio signs every webhook with the auth token of
+ * whichever ACCOUNT actually placed/owns the call — the platform default
+ * for most calls, but a sub-account's or BYO merchant's own token for calls
+ * on their dedicated Twilio account (see twilio-provisioning.ts). Validating
+ * everything against only the global TWILIO_AUTH_TOKEN would silently
+ * reject every one of those orgs' webhooks. Resolution order:
+ *   1. CallSid -> calls.orgId (covers status-callback/recording-status/
+ *      amd-status-callback, and the outbound leg of /incoming — the call
+ *      row already exists by the time any of these fire).
+ *   2. Dialed number (To) -> orgs.outboundNumber (covers a genuinely fresh
+ *      inbound call, which has no DB row yet).
+ *   3. Falls back to the global TWILIO_AUTH_TOKEN when neither resolves —
+ *      unchanged behavior for platform-only deployments.
+ *
+ * Skips validation with a loud warning if no token can be resolved at all
  * (shouldn't happen given config-check.ts, but fail open with visibility
  * rather than crash every webhook call).
  *
@@ -22,6 +39,22 @@ import { getPublicUrl } from "../twilio-client";
  * `c.req.parseBody()` again, since a request body can only be consumed once.
  */
 let warnedMissingToken = false;
+
+async function resolveAuthTokenForRequest(params: Record<string, string>): Promise<string | undefined> {
+  const callSid = params.CallSid;
+  if (callSid) {
+    const [row] = await db.select({ orgId: calls.orgId }).from(calls).where(eq(calls.twilioCallSid, callSid)).limit(1);
+    if (row?.orgId) return getAuthTokenForOrg(row.orgId);
+  }
+
+  const to = params.To;
+  if (to) {
+    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.outboundNumber, to)).limit(1);
+    if (org) return getAuthTokenForOrg(org.id);
+  }
+
+  return process.env.TWILIO_AUTH_TOKEN;
+}
 
 export const requireTwilioSignature = createMiddleware<{
   Variables: { twilioBody: Record<string, string> };
@@ -33,10 +66,14 @@ export const requireTwilioSignature = createMiddleware<{
   }
   c.set("twilioBody", params);
 
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const authToken = await resolveAuthTokenForRequest(params).catch((err) => {
+    console.error("[twilio-signature] failed to resolve org-specific auth token, falling back to global", err);
+    return process.env.TWILIO_AUTH_TOKEN;
+  });
+
   if (!authToken) {
     if (!warnedMissingToken) {
-      console.warn("[twilio-signature] TWILIO_AUTH_TOKEN not set — skipping webhook signature validation");
+      console.warn("[twilio-signature] No auth token could be resolved (global or org-specific) — skipping webhook signature validation");
       warnedMissingToken = true;
     }
     return next();

@@ -1,9 +1,10 @@
 import { db } from "../../database";
-import { scheduledCalls } from "../../database/schema";
+import { scheduledCalls, orgs } from "../../database/schema";
+import { eq } from "drizzle-orm";
 import { addToDoNotCallList } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { dispatchWebhook, resolveWebhookUrl } from "../webhooks";
-import { twilioClient } from "../twilio-client";
+import { getTwilioClientForOrg } from "../twilio-client";
 import { isValidE164 } from "../validation";
 import { getWorkflowsForNumber } from "./index";
 import type { WorkflowOutcome } from "./types";
@@ -94,9 +95,13 @@ export async function runWorkflowForOutcome(params: {
           break;
         }
         case "sendSms": {
-          const from = process.env.TWILIO_PHONE_NUMBER;
+          let from = process.env.TWILIO_PHONE_NUMBER;
+          if (orgId) {
+            const [org] = await db.select({ outboundNumber: orgs.outboundNumber }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+            if (org?.outboundNumber) from = org.outboundNumber;
+          }
           if (!from) {
-            console.error(`[workflow:${workflow.name}] cannot send SMS — TWILIO_PHONE_NUMBER is not configured`);
+            console.error(`[workflow:${workflow.name}] cannot send SMS — no outbound number configured (platform or org)`);
             break;
           }
           if (!isValidE164(toNumber)) {
@@ -104,7 +109,7 @@ export async function runWorkflowForOutcome(params: {
             break;
           }
           try {
-            await twilioClient.messages.create({ to: toNumber, from, body: action.template });
+            await (await getTwilioClientForOrg(orgId)).messages.create({ to: toNumber, from, body: action.template });
             console.log(`[workflow:${workflow.name}] sent SMS to ${toNumber}`);
           } catch (err) {
             console.error(`[workflow:${workflow.name}] failed to send SMS to ${toNumber}`, err);
