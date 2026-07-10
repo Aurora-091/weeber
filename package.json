@@ -2,6 +2,9 @@
   "name": "weeber",
   "private": true,
   "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "packages/*"
   ],
