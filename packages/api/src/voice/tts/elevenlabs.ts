@@ -10,8 +10,8 @@ import type { ConnectTts } from "./types";
  * `onError` so the caller can end the turn cleanly instead of hanging forever
  * waiting for audio that will never arrive.
  */
-export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError) => {
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride) => {
+  const voiceId = voiceIdOverride || process.env.ELEVENLABS_VOICE_ID;
   const url =
     `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input` +
     `?model_id=eleven_flash_v2_5&output_format=ulaw_8000`;

@@ -10,8 +10,9 @@ import type { ConnectTts } from "./types";
  * ends, at which point a final empty-transcript message with
  * `continue: false` flushes and closes out that context.
  */
-export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError) => {
+export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride) => {
   const apiKey = process.env.CARTESIA_API_KEY ?? "";
+  const voiceId = voiceIdOverride || process.env.CARTESIA_VOICE_ID;
   const cartesiaVersion = "2025-11-04";
   const url = `wss://api.cartesia.ai/tts/websocket?api_key=${encodeURIComponent(apiKey)}&cartesia_version=${cartesiaVersion}`;
 
@@ -71,7 +72,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError) =>
         context_id: contextId,
         model_id: "sonic-3",
         transcript: text,
-        voice: { mode: "id", id: process.env.CARTESIA_VOICE_ID },
+        voice: { mode: "id", id: voiceId },
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: true,
         add_timestamps: false,
@@ -82,7 +83,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError) =>
         context_id: contextId,
         model_id: "sonic-3",
         transcript: "",
-        voice: { mode: "id", id: process.env.CARTESIA_VOICE_ID },
+        voice: { mode: "id", id: voiceId },
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: false,
         add_timestamps: false,

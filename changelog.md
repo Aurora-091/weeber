@@ -98,3 +98,44 @@ length on any empty-turn fallback) so a repeat of this class of bug surfaces imm
 - New tests: `tools/hangUp.test.ts`, `tools/transferToHuman.test.ts`, `tools/flagGuardrailEvent.test.ts`,
   `stream.test.ts` (heuristic detector + playback-estimate helper), plus a `resolvePersona` assertion that
   call-control instructions land on every persona source.
+
+## 2026-07-10 — Agent "frame" + merchant dashboard (config, voice preview, analytics)
+
+Groundwork for a future "describe the agent you want" AI-builder flow: a fixed, structured config schema
+("the frame") a merchant configures by hand today, and an AI prompt plugs values into later — same shape
+either way, no new code paths needed when that flow exists.
+
+- **`voice/agent-frame.ts`** — the single source of truth for the frame's shape: `AgentFrameSchema` (zod),
+  `AVAILABLE_TOOL_NAMES`, `RECOMMENDED_LLM_MODELS`, `TONE_STYLES`, `STRICTNESS_LEVELS`. Dashboard form, API
+  validation, and any future AI builder all import from here — not redefined per call site.
+- **Schema**: `org_agent_configs` extended additively — `name`, `greeting_line`, `closing_line`,
+  `tone_style`, `voice_provider`, `voice_id`, `language`, `llm_provider`, `llm_model`, `tools_enabled`
+  (jsonb string[]), `guardrails` (jsonb). Migration `0004_perfect_martin_li.sql`. An existing row with none
+  of these set behaves exactly as before — template default / global env-configured voice+LLM+tools, unchanged.
+- **`agent.ts`**: new `resolveAgentConfig()` — the org+template entry point. Same priority chain as
+  `resolvePersona` for the prompt body, but also reads the frame fields and returns voice/LLM/tool overrides
+  alongside the composed system prompt. `buildIdentityBlock()` composes name/greeting/closing/tone into the
+  prompt; `withCallControl()` now takes `guardrails` and varies its wording by strictness level instead of
+  one fixed block for every agent. `filterVoiceTools()` narrows the tool set per agent — `hangUp` always
+  stays available regardless (safety default, not a togglable feature).
+- **`llm/index.ts`**: `resolveVoiceModel`/`getActiveModelLabel` take an optional `modelOverride` — an agent's
+  `llmModel` bypasses the env-configured default for its provider without a redeploy.
+- **`tts/*.ts`**: `ConnectTts` takes an optional `voiceId` override, threaded through `cartesia.ts` /
+  `elevenlabs.ts` / `tts/index.ts` — an agent's `voiceId` bypasses the env-configured default voice.
+- **`stream.ts`**: now calls `resolveAgentConfig` instead of `resolvePersona` directly, wiring
+  `llmModel`/`voiceId`/`enabledTools` overrides through to every turn.
+- **`voice/tts-preview.ts`**: one-shot TTS helper for the dashboard's "preview this voice" button — runs a
+  single turn through the same `connectTts` every real call uses, collects the mu-law chunks, wraps them in
+  a WAV header (`wrapMulawInWavHeader`) so any browser `<audio>` tag can play it with zero client decoding.
+- **New endpoints** (`voice/routes.ts`, all `requireAdminKey`-gated): `GET /orgs` (dashboard org picker),
+  `GET /orgs/:orgId/agent-configs` (every template for that org's vertical, merged with its saved config row
+  if any), `PUT /orgs/:orgId/agent-configs/:templateKey` (upsert, validated against `AgentFrameSchema`),
+  `POST /voice-preview` (returns playable WAV), `GET /orgs/:orgId/analytics` (call volume, dispositions, avg
+  latency breakdown, tool usage, guardrail event counts — aggregated directly off existing tables, no new
+  rollup tables yet).
+- **Dashboard**: new `/dashboard/agents` (list + inline edit form: identity, tone, voice + live preview,
+  language, LLM provider/model, tool checkboxes, guardrail strictness selects) and `/dashboard/analytics`
+  (stat cards + simple bar breakdowns) pages, both org-scoped via a picker (no org-switcher/auth
+  infrastructure exists yet — one shared admin key sees every org, same as the rest of the dashboard).
+- New tests: `tts-preview.test.ts` (WAV header correctness), `llm/index.test.ts` additions for
+  `modelOverride` behavior.

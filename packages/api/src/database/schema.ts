@@ -360,6 +360,33 @@ export const orgAgentConfigs = pgTable(
     templateKey: text("template_key").notNull(),
     personaPrompt: text("persona_prompt"),
     enabled: boolean("enabled").notNull().default(true),
+    /**
+     * The agent "frame" (2026-07-10) — a fixed, structured set of fields a
+     * merchant (or later, an AI agent-builder prompt) configures per agent,
+     * instead of hand-writing a whole new persona/prompt/tool-wiring from
+     * scratch each time. See voice/agent-frame.ts for the shared schema/
+     * types both the dashboard form and any future AI builder use, and
+     * agent.ts's `resolveAgentConfig` for how these compose into an actual
+     * system prompt + runtime overrides. All nullable/additive — an existing
+     * row with none of these set behaves exactly as before (falls through
+     * to `personaPrompt`/template defaults and global env-configured
+     * voice/LLM/tools, unchanged).
+     */
+    name: text("name"),
+    greetingLine: text("greeting_line"),
+    closingLine: text("closing_line"),
+    toneStyle: text("tone_style"),
+    voiceProvider: text("voice_provider"),
+    voiceId: text("voice_id"),
+    language: text("language"),
+    llmProvider: text("llm_provider"),
+    llmModel: text("llm_model"),
+    toolsEnabled: jsonb("tools_enabled").$type<string[]>(),
+    guardrails: jsonb("guardrails").$type<{
+      topicBoundaryStrictness?: "low" | "medium" | "high";
+      injectionSensitivity?: "low" | "medium" | "high";
+      abuseHandlingEnabled?: boolean;
+    }>(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .$defaultFn(() => new Date()),

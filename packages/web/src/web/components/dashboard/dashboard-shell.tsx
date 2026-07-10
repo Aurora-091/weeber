@@ -1,10 +1,12 @@
 import { Link, useLocation } from "wouter";
 import { motion } from "motion/react";
-import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, ArrowLeft } from "lucide-react";
+import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, ArrowLeft, Bot, BarChart3 } from "lucide-react";
 import { clearAdminKey } from "../../lib/admin-key";
 
 const NAV = [
   { href: "/dashboard", label: "Calls", icon: PhoneCall, match: /^\/dashboard(\/calls\/.*)?$/ },
+  { href: "/dashboard/agents", label: "Agents", icon: Bot, match: /^\/dashboard\/agents$/ },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, match: /^\/dashboard\/analytics$/ },
   { href: "/dashboard/dnc", label: "Do Not Call", icon: ShieldOff, match: /^\/dashboard\/dnc$/ },
   { href: "/dashboard/audit", label: "Audit", icon: ShieldCheck, match: /^\/dashboard\/audit$/ },
   { href: "/dashboard/settings", label: "Keys", icon: KeyRound, match: /^\/dashboard\/settings$/ },

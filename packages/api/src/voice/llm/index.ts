@@ -23,14 +23,18 @@ const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 // agents — strong quality/latency tradeoff and native tool-calling support.
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
-/** Returns the active model instance to pass to `streamText`. */
-export function resolveVoiceModel(override?: LlmProvider) {
+/** Returns the active model instance to pass to `streamText`. `modelOverride`
+ * (agent-frame.ts's llmModel) bypasses the env-configured default model id
+ * for the resolved provider — e.g. a specific agent using `openai/gpt-5.4`
+ * on the gateway while every other agent still defaults to the mini model. */
+export function resolveVoiceModel(override?: LlmProvider, modelOverride?: string) {
   const provider = resolveLlmProvider(override);
-  if (provider === "groq") return groq(GROQ_MODEL);
-  return gateway(GATEWAY_MODEL);
+  if (provider === "groq") return groq(modelOverride || GROQ_MODEL);
+  return gateway(modelOverride || GATEWAY_MODEL);
 }
 
-export function getActiveModelLabel(override?: LlmProvider): string {
+export function getActiveModelLabel(override?: LlmProvider, modelOverride?: string): string {
   const provider = resolveLlmProvider(override);
-  return provider === "groq" ? `groq/${GROQ_MODEL}` : `gateway/${GATEWAY_MODEL}`;
+  const model = modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL);
+  return `${provider}/${model}`;
 }

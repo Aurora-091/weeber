@@ -19,4 +19,7 @@ export type ConnectTts = (
   onAudioChunk: (base64Audio: string) => void,
   onDone?: () => void,
   onError?: (err: unknown) => void,
+  /** Per-agent voice ID override (agent-frame.ts's voiceId) — falls back to
+   * the provider's env-configured default voice when omitted. */
+  voiceId?: string,
 ) => TtsConnection;

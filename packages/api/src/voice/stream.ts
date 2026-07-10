@@ -4,7 +4,8 @@ const { VoiceResponse } = twilioPkg.twiml;
 import { connectDeepgram } from "./deepgram";
 import { connectTts } from "./tts";
 import type { TtsConnection } from "./tts";
-import { runVoiceAgentTurn, runVoiceAgentGreeting, resolvePersona } from "./agent";
+import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
+import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
 import { getNumberConfig } from "./number-config";
 import { runWorkflowForOutcome } from "./workflows/engine";
@@ -86,6 +87,11 @@ export function createVoiceStreamHandlers() {
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | undefined;
   let llmProviderOverride: "gateway" | "groq" | undefined;
+  /** Per-agent frame overrides (see agent-frame.ts, agent.ts's resolveAgentConfig) — all
+   * undefined unless the call's org+template has a configured agent config row. */
+  let ttsVoiceIdOverride: string | undefined;
+  let llmModelOverride: string | undefined;
+  let enabledToolsOverride: AvailableToolName[] | undefined;
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
   let history: ModelMessage[] = [];
@@ -396,6 +402,7 @@ export function createVoiceStreamHandlers() {
         resolveTtsDone?.();
       },
       ttsProviderOverride,
+      ttsVoiceIdOverride,
     );
 
     let fullText = "";
@@ -451,6 +458,8 @@ export function createVoiceStreamHandlers() {
           recordLlmLatency(ms);
         },
         llmProvider: llmProviderOverride,
+        llmModel: llmModelOverride,
+        enabledTools: enabledToolsOverride,
         capturedState,
         callerMemory: callerMemoryFacts,
       }),
@@ -465,6 +474,9 @@ export function createVoiceStreamHandlers() {
         onTextDelta: (delta) => tts?.sendText(delta),
         capturedState,
         callerMemory: callerMemoryFacts,
+        llmProvider: llmProviderOverride,
+        llmModel: llmModelOverride,
+        enabledTools: enabledToolsOverride,
         onLatency: (ms, model) => {
           console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
           recordLlmLatency(ms);
@@ -575,14 +587,21 @@ export function createVoiceStreamHandlers() {
             // e.g. POST /calls/outbound) takes precedence when both exist.
             const numberConfig = getNumberConfig(row?.toNumber);
             webhookUrl = resolveWebhookUrl(session?.webhookUrl ?? numberConfig.webhookUrl ?? row?.webhookUrl ?? undefined);
-            persona = await resolvePersona({
+            const agentConfig = await resolveAgentConfig({
               explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
               calledNumber: row?.toNumber,
               orgId: session?.orgId ?? row?.orgId ?? undefined,
               templateKey: session?.workflowName ?? undefined,
             });
-            ttsProviderOverride = session?.ttsProvider ?? numberConfig.ttsProvider;
-            llmProviderOverride = session?.llmProvider ?? numberConfig.llmProvider;
+            persona = agentConfig.systemPrompt;
+            enabledToolsOverride = agentConfig.enabledTools;
+            llmModelOverride = agentConfig.llmModel;
+            ttsVoiceIdOverride = agentConfig.voiceId;
+            // Per-agent frame config takes precedence over per-number config, which
+            // takes precedence over the session override — matches the persona
+            // resolution priority (org/agent-specific beats number-wide defaults).
+            ttsProviderOverride = agentConfig.ttsProvider ?? session?.ttsProvider ?? numberConfig.ttsProvider;
+            llmProviderOverride = agentConfig.llmProvider ?? session?.llmProvider ?? numberConfig.llmProvider;
 
             // Control: optional hard cap on call length (per-call override or
             // per-number config).
