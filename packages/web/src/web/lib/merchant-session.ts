@@ -25,16 +25,35 @@ export function clearImpersonationToken() {
   sessionStorage.removeItem(IMPERSONATION_SESSION_ID_KEY);
 }
 
+async function getFreshAccessToken(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session) return null;
+  const exp = data.session.expires_at;
+  if (exp && exp * 1000 - Date.now() < 60_000) {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    return refreshed.session?.access_token ?? data.session.access_token;
+  }
+  return data.session.access_token;
+}
+
 export async function merchantHeaders(): Promise<Record<string, string>> {
   const impersonation = getImpersonationToken();
   if (impersonation) return { "X-Weeber-Impersonation": impersonation };
-  if (!supabase) return {};
-  const { data } = await supabase.auth.getSession();
-  return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
+  const token = await getFreshAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/** apiFetch with the merchant auth headers injected — what /app pages call. */
+/** appFetch with merchant auth headers + single retry on 401 (token refresh race). */
 export async function appFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = { ...(init.headers as Record<string, string> | undefined), ...(await merchantHeaders()) };
-  return apiFetch(path, { ...init, headers });
+  const res = await apiFetch(path, { ...init, headers });
+  if (res.status === 401 && !getImpersonationToken()) {
+    const freshToken = await getFreshAccessToken();
+    if (freshToken) {
+      const retryHeaders = { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${freshToken}` };
+      return apiFetch(path, { ...init, headers: retryHeaders });
+    }
+  }
+  return res;
 }

@@ -102,7 +102,8 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
   const me = useQuery({
     queryKey: ["app-me"],
     enabled: authed,
-    retry: false,
+    retry: 1,
+    retryDelay: 1000,
     queryFn: async () => {
       const res = await appFetch("/api/app/me");
       if (!res.ok) throw new Error(`me failed (${res.status})`);
