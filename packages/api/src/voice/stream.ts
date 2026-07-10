@@ -137,6 +137,7 @@ export function createVoiceStreamHandlers() {
       const priorSession = await sessionStore.get(callSid);
       const previousAttempt = priorSession?.workflowAttempt;
       const priorOrgId = priorSession?.orgId;
+      const priorCheckoutToken = priorSession?.checkoutToken;
       const priorWorkflowMetadata = priorSession?.workflowMetadata;
 
       await withRetry(
@@ -185,6 +186,7 @@ export function createVoiceStreamHandlers() {
           webhookUrl,
           previousAttempt,
           orgId: priorOrgId,
+          checkoutToken: priorCheckoutToken,
           metadata: priorWorkflowMetadata,
         }).catch((err) => console.error("[voice] workflow execution failed", err));
       }
@@ -362,10 +364,12 @@ export function createVoiceStreamHandlers() {
             // e.g. POST /calls/outbound) takes precedence when both exist.
             const numberConfig = getNumberConfig(row?.toNumber);
             webhookUrl = resolveWebhookUrl(session?.webhookUrl ?? numberConfig.webhookUrl ?? row?.webhookUrl ?? undefined);
-            persona = resolvePersona(
-              session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
-              row?.toNumber,
-            );
+            persona = await resolvePersona({
+              explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
+              calledNumber: row?.toNumber,
+              orgId: session?.orgId ?? row?.orgId ?? undefined,
+              templateKey: session?.workflowName ?? undefined,
+            });
             ttsProviderOverride = session?.ttsProvider ?? numberConfig.ttsProvider;
             llmProviderOverride = session?.llmProvider ?? numberConfig.llmProvider;
 

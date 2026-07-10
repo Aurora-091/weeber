@@ -96,3 +96,37 @@ export const callAuditAdapter: CallAuditStorageAdapter = {
     return rows.map((r) => ({ callId: String(r.id) }));
   },
 };
+
+import { and } from "drizzle-orm";
+import { callerMemory, scheduledCalls } from "../../database/schema";
+
+export async function eraseOrgDataForPhoneNumber(orgId: string, phoneNumber: string): Promise<{ callsDeleted: number }> {
+  // Delete scheduled calls for this org and number
+  await db
+    .delete(scheduledCalls)
+    .where(
+      and(
+        eq(scheduledCalls.orgId, orgId),
+        eq(scheduledCalls.toNumber, phoneNumber)
+      )
+    );
+
+  // Delete caller memory row for this phone number
+  await db
+    .delete(callerMemory)
+    .where(eq(callerMemory.phoneNumber, phoneNumber));
+
+  // Delete calls scoped to this orgId and phoneNumber
+  // (This automatically cascade deletes transcripts, tool calls, and latencies via foreign keys)
+  const deletedCalls = await db
+    .delete(calls)
+    .where(
+      and(
+        eq(calls.orgId, orgId),
+        or(eq(calls.fromNumber, phoneNumber), eq(calls.toNumber, phoneNumber))
+      )
+    )
+    .returning({ id: calls.id });
+
+  return { callsDeleted: deletedCalls.length };
+}

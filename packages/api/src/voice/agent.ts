@@ -7,6 +7,9 @@ import { crmSync } from "./tools/crmSync";
 import { captureField } from "./tools/captureField";
 import { withDisclosure } from "@openvent/compliance";
 import { resolveVoiceModel, getActiveModelLabel } from "./llm";
+import { db } from "../database";
+import { orgAgentConfigs, agentTemplates } from "../database/schema";
+import { and, eq } from "drizzle-orm";
 
 const DEFAULT_PERSONA = dedent`
   You are OpenVent, a warm, sharp voice assistant answering a live phone call.
@@ -70,13 +73,63 @@ function loadPersonaMap(): Record<string, string> {
 
 const personaMap = loadPersonaMap();
 
-/** Resolve the persona for a call: explicit override > per-number config > default. */
-export function resolvePersona(explicitPersona?: string, calledNumber?: string): string {
-  const base =
-    explicitPersona ?? (calledNumber && personaMap[calledNumber]) ?? DEFAULT_PERSONA;
-  // Compliance: automatically inject the recording/AI disclosure instruction
-  // into whichever persona is active — enforced by default, not opt-in.
-  return withDisclosure(base);
+/** Resolve the persona for a call: org override -> agentTemplates.defaultPersonaPrompt -> AGENT_PERSONAS env var -> hardcoded default. */
+export async function resolvePersona(opts: {
+  explicitPersona?: string;
+  calledNumber?: string;
+  orgId?: string;
+  templateKey?: string;
+}): Promise<string> {
+  const { explicitPersona, calledNumber, orgId, templateKey } = opts;
+
+  let resolvedTemplateKey = templateKey;
+  if (!resolvedTemplateKey && explicitPersona) {
+    const [tmpl] = await db
+      .select({ key: agentTemplates.key })
+      .from(agentTemplates)
+      .where(eq(agentTemplates.key, explicitPersona))
+      .limit(1);
+    if (tmpl) {
+      resolvedTemplateKey = tmpl.key;
+    }
+  }
+
+  // 1. Org override (if we have orgId and resolvedTemplateKey)
+  if (orgId && resolvedTemplateKey) {
+    const [override] = await db
+      .select()
+      .from(orgAgentConfigs)
+      .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.templateKey, resolvedTemplateKey)))
+      .limit(1);
+    if (override?.personaPrompt) {
+      return withDisclosure(override.personaPrompt);
+    }
+  }
+
+  // 2. agentTemplates.defaultPersonaPrompt (if we have resolvedTemplateKey)
+  if (resolvedTemplateKey) {
+    const [tmpl] = await db
+      .select()
+      .from(agentTemplates)
+      .where(eq(agentTemplates.key, resolvedTemplateKey))
+      .limit(1);
+    if (tmpl?.defaultPersonaPrompt) {
+      return withDisclosure(tmpl.defaultPersonaPrompt);
+    }
+  }
+
+  // 3. Explicit persona (if it's not a templateKey but rather a raw prompt)
+  if (explicitPersona && explicitPersona !== resolvedTemplateKey) {
+    return withDisclosure(explicitPersona);
+  }
+
+  // 4. AGENT_PERSONAS env var matching calledNumber
+  if (calledNumber && personaMap[calledNumber]) {
+    return withDisclosure(personaMap[calledNumber]);
+  }
+
+  // 5. Hardcoded default
+  return withDisclosure(DEFAULT_PERSONA);
 }
 
 export const voiceTools = { lookupInfo, bookAppointment, setDisposition, crmSync, captureField };

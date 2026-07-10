@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const calls = pgTable("calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -156,6 +156,15 @@ export const scheduledCalls = pgTable("scheduled_calls", {
    */
   orgId: text("org_id"),
   /**
+   * Promoted checkoutToken column (nullable, indexed).
+   */
+  checkoutToken: text("checkout_token"),
+  /**
+   * Additive recovered order ID and amount (nullable).
+   */
+  recoveredOrderId: text("recovered_order_id"),
+  recoveredAmount: text("recovered_amount"),
+  /**
    * Free-form workflow context (additive, nullable) — e.g. the Shopify
    * vertical stores { shop, checkoutToken, orderId } here so the call
    * flow's tools (offerDiscount, confirmOrder, cancelOrder) know which
@@ -167,7 +176,9 @@ export const scheduledCalls = pgTable("scheduled_calls", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
-});
+}, (table) => [
+  index("scheduled_calls_checkout_token_idx").on(table.checkoutToken)
+]);
 
 /**
  * --- Weeber multi-org-lite + Shopify vertical (ADR-030) ---
@@ -194,6 +205,7 @@ export const orgs = pgTable("orgs", {
   countryCode: text("country_code"),
   timezone: text("timezone"),
   contactEmail: text("contact_email"),
+  outboundNumber: text("outbound_number"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -311,3 +323,25 @@ export const agentTemplates = pgTable("agent_templates", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+export const orgAgentConfigs = pgTable(
+  "org_agent_configs",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    templateKey: text("template_key").notNull(),
+    personaPrompt: text("persona_prompt"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("org_agent_configs_org_key_idx").on(table.orgId, table.templateKey),
+  ]
+);

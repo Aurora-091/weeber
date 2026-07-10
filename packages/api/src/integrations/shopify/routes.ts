@@ -1,12 +1,14 @@
 import { Hono } from "hono";
 import { randomUUID } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, gte } from "drizzle-orm";
 import { db } from "../../database";
 import { orgs, shopLinks, shopifyContacts, scheduledCalls } from "../../database/schema";
 import { requireWeeberSecret } from "./secret-auth";
 import { alreadyProcessed, markProcessed } from "./idempotency";
 import { cancelOrder } from "./client";
 import { isValidE164 } from "../../voice/validation";
+import { eraseOrgDataForPhoneNumber } from "../../voice/compliance/adapters";
+import { resilientCall } from "../../voice/integrations/resilient-fetch";
 
 /**
  * Weeber <-> weebersh contract v1.4 — outbound direction (weebersh calls
@@ -117,6 +119,7 @@ shopify
       runAt: new Date(Date.now() + delayMinutes * 60 * 1000),
       status: "pending",
       orgId,
+      checkoutToken: token,
       metadata: { shop, checkoutToken: token, totalPrice: String(body.total_price ?? "") },
     });
 
@@ -147,13 +150,27 @@ shopify
       financial_status: financialStatus,
     } = body as { checkout_token?: string; phone?: string; payment_gateway_names?: string[]; financial_status?: string };
 
-    // (a) cancel pending recovery calls matching phone — the order
-    // already went through, no need to keep chasing it. (checkout_token
-    // isn't stored as its own indexed column on scheduledCalls today, only
-    // inside the JSON `metadata` blob, so phone is the practical match key
-    // here; see WEEBER-PLAN.md if checkout_token-based matching is needed.)
-    void checkoutToken;
-    if (phone) {
+    // (a) cancel pending recovery calls matching checkoutToken first.
+    // Only if that is missing or doesn't cancel anything do we fallback to toNumber.
+    let canceledByToken = false;
+    if (checkoutToken) {
+      const updated = await db
+        .update(scheduledCalls)
+        .set({ status: "canceled" })
+        .where(
+          and(
+            eq(scheduledCalls.workflowName, "shopify-cart-recovery"),
+            eq(scheduledCalls.status, "pending"),
+            eq(scheduledCalls.checkoutToken, checkoutToken),
+          ),
+        )
+        .returning({ id: scheduledCalls.id });
+      if (updated.length > 0) {
+        canceledByToken = true;
+      }
+    }
+
+    if (!canceledByToken && phone) {
       await db
         .update(scheduledCalls)
         .set({ status: "canceled" })
@@ -166,18 +183,62 @@ shopify
         );
     }
 
-    // (b) attribution (mark a completed call in last 72h as "recovered"
-    // with order value) — deliberately NOT implemented in this scaffold;
-    // needs a dashboard-facing revenue-attribution model that doesn't
-    // exist yet. Flagged in WEEBER-PLAN.md as a real, scoped follow-up —
-    // not silently skipped.
+    const orgId = await resolveOrgIdForShop(shop);
+    const totalPrice = (body as { total_price?: string | number }).total_price !== undefined 
+      ? String((body as { total_price?: string | number }).total_price) 
+      : "";
+
+    // (b) attribution (mark a completed call in last 7 days as "recovered" with order value)
+    if (orgId && (checkoutToken || phone)) {
+      const conditions = [
+        eq(scheduledCalls.workflowName, "shopify-cart-recovery"),
+        eq(scheduledCalls.status, "executed"),
+        eq(scheduledCalls.orgId, orgId),
+        gte(scheduledCalls.runAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+      ];
+
+      let matchedCallId: number | undefined;
+
+      if (checkoutToken) {
+        const [matchedByToken] = await db
+          .select()
+          .from(scheduledCalls)
+          .where(and(...conditions, eq(scheduledCalls.checkoutToken, checkoutToken)))
+          .orderBy(desc(scheduledCalls.runAt))
+          .limit(1);
+        if (matchedByToken) {
+          matchedCallId = matchedByToken.id;
+        }
+      }
+
+      if (!matchedCallId && phone) {
+        const [matchedByPhone] = await db
+          .select()
+          .from(scheduledCalls)
+          .where(and(...conditions, eq(scheduledCalls.toNumber, phone)))
+          .orderBy(desc(scheduledCalls.runAt))
+          .limit(1);
+        if (matchedByPhone) {
+          matchedCallId = matchedByPhone.id;
+        }
+      }
+
+      if (matchedCallId) {
+        await db
+          .update(scheduledCalls)
+          .set({
+            recoveredOrderId: String(orderId),
+            recoveredAmount: totalPrice,
+          })
+          .where(eq(scheduledCalls.id, matchedCallId));
+      }
+    }
 
     // (c) COD confirmation — schedule if this looks like a COD order.
     const isCod =
       (gateways ?? []).some((g) => /cash_on_delivery|cod/i.test(g)) || financialStatus === "pending";
 
     if (isCod && phone && isValidE164(phone)) {
-      const orgId = await resolveOrgIdForShop(shop);
       await db.insert(scheduledCalls).values({
         toNumber: phone,
         workflowName: "shopify-cod-confirmation",
@@ -296,17 +357,44 @@ shopify
     if (customer.phone) {
       const orgId = await resolveOrgIdForShop(shop);
       if (orgId) {
+        // 1. Delete contact record scoped to this org
         await db
           .delete(shopifyContacts)
           .where(and(eq(shopifyContacts.orgId, orgId), eq(shopifyContacts.e164, customer.phone)));
+
+        // 2. Scoped erasure of calls, transcripts, tool calls, latencies, and caller memory
+        await eraseOrgDataForPhoneNumber(orgId, customer.phone).catch((err) =>
+          console.error("[shopify] scoped GDPR calls/transcripts erasure failed", err)
+        );
+
+        // 3. Fire-and-forget resilient call to the gdpr-redact-notify Edge Function
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && supabaseKey) {
+          void resilientCall(
+            async (signal) => {
+              const res = await fetch(`${supabaseUrl}/functions/v1/gdpr-redact-notify`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${supabaseKey}`,
+                },
+                body: JSON.stringify({
+                  shop,
+                  e164Redacted: customer.phone,
+                }),
+                signal,
+              });
+              if (!res.ok) {
+                throw new Error(`Edge function returned status ${res.status}`);
+              }
+              return res.json();
+            },
+            { integration: "supabase-gdpr-notify" }
+          ).catch((err) => console.error("[shopify] gdpr-redact-notify resilientCall failed", err));
+        }
       }
     }
-    // NOTE: this deliberately does not touch `calls`/`transcripts` yet —
-    // full GDPR erasure across call metadata already exists as a generic
-    // OpenVent feature (see @openvent/compliance's retention/erasure —
-    // ADR referenced in the base repo), but it's keyed on phone number
-    // globally today, not org-scoped. Wiring org-scoped erasure through
-    // that existing path is a real, scoped follow-up — see WEEBER-PLAN.md.
     return c.json({ status: "redacted" }, 200);
   })
 

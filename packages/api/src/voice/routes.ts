@@ -21,7 +21,7 @@ import { twilioClient, getPublicUrl, getWsUrl } from "./twilio-client";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
-import { calls, callLatency } from "../database/schema";
+import { calls, callLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 import {
   checkOutboundCallCompliance,
@@ -102,14 +102,21 @@ export const voice = new Hono()
     if (!parsed || typeof parsed !== "object") {
       return c.json({ error: "Invalid or missing JSON request body" }, 400);
     }
-    const { to, persona, webhookUrl } = parsed as { to?: string; persona?: string; webhookUrl?: string };
+    const { to, persona, webhookUrl, orgId } = parsed as { to?: string; persona?: string; webhookUrl?: string; orgId?: string };
     if (!to) return c.json({ error: "`to` is required" }, 400);
     if (!isValidE164(to)) {
       return c.json({ error: "`to` must be a valid E.164 phone number, e.g. +15551234567" }, 400);
     }
 
-    const from = process.env.TWILIO_PHONE_NUMBER;
-    if (!from) return c.json({ error: "TWILIO_PHONE_NUMBER is not configured" }, 500);
+    let from = process.env.TWILIO_PHONE_NUMBER;
+    if (orgId) {
+      const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
+      if (org?.outboundNumber) {
+        from = org.outboundNumber;
+      }
+    }
+
+    if (!from) return c.json({ error: "No outbound phone number configured" }, 500);
 
     // Compliance gates — enforced automatically via @openvent/compliance, no
     // manual step required. A call that fails either check is rejected and
@@ -129,7 +136,7 @@ export const voice = new Hono()
       recordingStatusCallback: `${getPublicUrl()}/api/voice/recording-status`,
     });
 
-    await sessionStore.set(call.sid, { callSid: call.sid, direction: "outbound", persona, webhookUrl });
+    await sessionStore.set(call.sid, { callSid: call.sid, direction: "outbound", persona, webhookUrl, orgId });
 
     return c.json({ callSid: call.sid, status: call.status }, 201);
   })
@@ -182,6 +189,7 @@ export const voice = new Hono()
               webhookUrl: session?.webhookUrl,
               previousAttempt: session?.workflowAttempt,
               orgId: session?.orgId,
+              checkoutToken: session?.checkoutToken,
               metadata: session?.workflowMetadata,
             }).catch((err) => console.error("[routes] workflow execution failed", err));
           }

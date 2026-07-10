@@ -35,6 +35,10 @@ startRetentionSweep(callLogAdapter, {
 // workflows/scheduler.ts).
 startScheduledCallSweep();
 
+// Seed default agent templates from prompt copy files
+import { seedAgentTemplates } from "./database/seed";
+void seedAgentTemplates().catch((err) => console.error("[server] seeding templates failed:", err));
+
 const port = Number(process.env.PORT ?? 3000);
 // Single-deploy mode: serve the frontend's built assets from the sibling
 // web package (monorepo layout — ADR-036). In the split deploy (Vercel

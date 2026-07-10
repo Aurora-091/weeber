@@ -37,6 +37,7 @@ export type CallSession = {
    * every retry attempt, not just the first call).
    */
   orgId?: string;
+  checkoutToken?: string | null;
   workflowMetadata?: Record<string, string | number>;
   /**
    * Structured, deterministic call state — facts captured via the

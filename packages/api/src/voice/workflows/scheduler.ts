@@ -1,6 +1,6 @@
 import { lte, eq, and } from "drizzle-orm";
 import { db } from "../../database";
-import { scheduledCalls } from "../../database/schema";
+import { scheduledCalls, orgs } from "../../database/schema";
 import { twilioClient, getPublicUrl } from "../twilio-client";
 import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow } from "@openvent/compliance";
@@ -14,7 +14,7 @@ const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
  * Runs the same compliance gates as a manual outbound call (DNC + calling
  * window) so scheduled retries never bypass the guardrails.
  */
-async function executeDueScheduledCalls() {
+export async function executeDueScheduledCalls() {
   const due = await db
     .select()
     .from(scheduledCalls)
@@ -51,9 +51,16 @@ async function executeDueScheduledCalls() {
         continue;
       }
 
-      const from = process.env.TWILIO_PHONE_NUMBER;
+      let from = process.env.TWILIO_PHONE_NUMBER;
+      if (row.orgId) {
+        const [org] = await db.select().from(orgs).where(eq(orgs.id, row.orgId)).limit(1);
+        if (org?.outboundNumber) {
+          from = org.outboundNumber;
+        }
+      }
+
       if (!from) {
-        console.error("[scheduler] TWILIO_PHONE_NUMBER not configured — cannot execute scheduled call");
+        console.error("[scheduler] No outbound phone number configured — cannot execute scheduled call");
         continue;
       }
 
@@ -77,6 +84,7 @@ async function executeDueScheduledCalls() {
         // Weeber org-lite scoping + vertical context (ADR-030) — carried
         // through so a retry can rebuild it (see engine.ts).
         orgId: row.orgId ?? undefined,
+        checkoutToken: row.checkoutToken ?? undefined,
         workflowMetadata: row.metadata ?? undefined,
       });
 

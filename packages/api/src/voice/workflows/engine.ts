@@ -31,9 +31,10 @@ export async function runWorkflowForOutcome(params: {
    * the first call.
    */
   orgId?: string;
+  checkoutToken?: string | null;
   metadata?: Record<string, string | number>;
 }) {
-  const { toNumber, outcome, persona, webhookUrl, previousAttempt, orgId, metadata } = params;
+  const { toNumber, outcome, persona, webhookUrl, previousAttempt, orgId, checkoutToken, metadata } = params;
   const matches = getWorkflowsForNumber(toNumber);
 
   for (const workflow of matches) {
@@ -71,6 +72,7 @@ export async function runWorkflowForOutcome(params: {
             runAt: new Date(Date.now() + action.delayMinutes * 60 * 1000),
             status: "pending",
             orgId,
+            checkoutToken: checkoutToken ?? undefined,
             metadata,
           });
           console.log(
