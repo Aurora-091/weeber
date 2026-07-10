@@ -5,7 +5,14 @@ import { join } from "path";
 
 export async function seedAgentTemplates() {
   console.log("[db-seed] Seeding agent templates...");
-  const promptsDir = join(import.meta.dir, "../../../docs/agent-prompts");
+  // packages/api/src/database -> repo root is 4 levels up, not 3 (D5, this
+  // audit): the prompt files live at <repo-root>/docs/agent-prompts, not
+  // packages/docs/agent-prompts. The off-by-one silently meant every
+  // Bun.file(...).exists() check below returned false in every environment
+  // (local and Railway alike), so seeding always skipped all 3 templates via
+  // `continue` — while still logging "seeded successfully" unconditionally
+  // at the end, regardless of whether anything was actually written.
+  const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
 
   const templates = [
     {
@@ -37,12 +44,16 @@ export async function seedAgentTemplates() {
     },
   ];
 
+  let seededCount = 0;
+  let skippedCount = 0;
+
   for (const t of templates) {
     try {
       const filePath = join(promptsDir, t.fileName);
       const file = Bun.file(filePath);
       if (!(await file.exists())) {
         console.error(`[db-seed] Prompt file does not exist at ${filePath}`);
+        skippedCount++;
         continue;
       }
       const promptContent = await file.text();
@@ -76,9 +87,20 @@ export async function seedAgentTemplates() {
           active: t.active,
         });
       }
+      seededCount++;
     } catch (err) {
       console.error(`[db-seed] failed to seed template ${t.key}:`, err);
+      skippedCount++;
     }
   }
-  console.log("[db-seed] Agent templates seeded successfully.");
+
+  // Previously logged "seeded successfully" unconditionally, even when every
+  // template was skipped (see the promptsDir path fix above, D5) — that
+  // false-positive log line is exactly what let the empty-templates-table
+  // bug go unnoticed across every deploy until this audit.
+  if (skippedCount > 0) {
+    console.error(`[db-seed] ${seededCount}/${templates.length} agent templates seeded, ${skippedCount} skipped — see errors above.`);
+  } else {
+    console.log(`[db-seed] All ${seededCount} agent templates seeded successfully.`);
+  }
 }

@@ -139,3 +139,20 @@ either way, no new code paths needed when that flow exists.
   infrastructure exists yet — one shared admin key sees every org, same as the rest of the dashboard).
 - New tests: `tts-preview.test.ts` (WAV header correctness), `llm/index.test.ts` additions for
   `modelOverride` behavior.
+
+## 2026-07-10 — Fixed: agent_templates seeding bug (D5, flagged during agent-frame smoke test)
+
+`agent_templates` was completely empty in prod despite `[db-seed] Agent templates seeded successfully.`
+logging on every boot, in every environment, since this table was introduced. Root cause: `seed.ts`
+computed `promptsDir` as `packages/docs/agent-prompts` (3 `..` levels up from
+`packages/api/src/database`) — the real files live at `<repo-root>/docs/agent-prompts`, one level
+further up. Every `Bun.file(...).exists()` check silently returned false, so all 3 templates hit the
+`continue` branch and were skipped — while the function still logged an unconditional success message
+at the end regardless of whether anything was actually written. This is exactly why the Agents
+dashboard page showed zero templates during today's smoke test.
+
+Fixed: corrected the path (4 `..` levels), and the success log now reflects what actually happened
+(`"N/3 seeded, M skipped — see errors above"` when anything was skipped, instead of always claiming
+full success). New regression test `database/seed.test.ts` hits the real filesystem (deliberately not
+mocking `Bun.file`) so a repeat of this exact path bug fails the test the same way it silently broke
+production. No manual DB fix needed — the corrected seeder self-heals `agent_templates` on next boot.
