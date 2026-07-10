@@ -201,10 +201,21 @@ The user will supply some of this directly; for the rest, pause and ask rather t
 answer. This list exists because several of these look like implementation details but are actually
 unresolved product/business decisions:
 
-1. **The 3 agents' actual persona/system-prompt text.** Not written anywhere in this repo on purpose — the
-   user is providing this directly. If you reach the point of wiring up `AGENT_PERSONAS` (or wherever the
-   config-storage migration lands) and the prompt text isn't provided yet, ask for it. Do not write
-   plausible-sounding persona copy yourself.
+1. ~~The 3 agents' persona/system-prompt text~~ **PARTIALLY RESOLVED — see `docs/agent-prompts/`.**
+   Cart Recovery (`01-`) and COD Confirmation (`02-`) are adapted from real reference prompts the user
+   supplied (Bolna-style: sectioned, bilingual EN/Hindi, branch-based closings, a Reschedule Module) — treat
+   these as close to final, not a draft. Feedback (`03-`) has **no reference sample** and was drafted fresh
+   following the same structure/tone/guardrails — its own file header lists every assumption made (1-5
+   rating scale, no review incentive, negative feedback routes to a logged note not an automated resolution)
+   and should be confirmed with the user before treating it as final, unlike the other two. All three
+   include an explicit **Tools** section mapping every scripted variable/action to a real tool call
+   (`offerCartRecoveryDiscount`, `confirmCodOrder`, `captureField`, `setDisposition`) — Bolna's own sample
+   prompts never specified this, it's original mapping work done for this repo. Two known gaps flagged
+   inside the docs themselves, not hidden: no WhatsApp integration exists (cart recovery's script says SMS,
+   not WhatsApp, on purpose), and no automated negative-feedback escalation/alerting exists yet (a complaint
+   just lands in the normal call transcript). Wire these into wherever the config-storage migration
+   (env-var → DB, per `WEEBER-PLAN.md`) ends up loading persona text from — these files are the source
+   content, not necessarily the final storage format.
 2. **Final brand assets** (logo, exact hex values beyond `UI-DESIGN-BRIEF.md`'s starting proposal) — that
    proposal is explicitly a placeholder, not a commitment.
 3. ~~Hosting platform~~ **RESOLVED (ADR-034): Railway for the backend, Vercel for the frontend.** Fly.io's
