@@ -47,12 +47,10 @@ before assuming it's a mistake or before changing it.
   `packages/api/src/`. See `docs/testing.md` for the full convention (stubbing `fetch`, resetting
   module-level state between tests, etc.).
 - `bun run lint` (repo root) — oxlint, zero warnings required.
-- `cd packages/api && bun run db:push` — applies `src/database/schema.ts` changes to the live DB.
-  **Currently Turso/libSQL, but the decided direction is Supabase Postgres (ADR-034)** — the
-  `sqliteTable` → `pgTable` migration is the top structural workstream and hasn't landed yet; don't add
-  new SQLite-dialect-specific schema surface without checking whether the migration should come first.
-  Additive-only migrations — never rename or drop existing columns (repo-wide convention, see any ADR
-  touching the schema for examples).
+- `cd packages/api && bun run db:push` — applies `src/database/schema.ts` changes to the live DB
+  (Supabase Postgres, ADR-034 — the `pgTable` migration has landed; `DATABASE_URL` is the pooled
+  Supabase connection string). Additive-only migrations — never rename or drop existing columns
+  (repo-wide convention, see any ADR touching the schema for examples).
 
 ## Repo structure (top level)
 
@@ -163,8 +161,8 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
 
 ## Config surfaces that must stay in sync
 
-- `packages/api/drizzle.config.ts` (`dialect: "turso"` today; becomes `"postgresql"` when the ADR-034
-  Supabase migration lands) and `packages/api/src/database/schema.ts` — schema changes need `db:push` run
+- `packages/api/drizzle.config.ts` (`dialect: "postgresql"`, ADR-034) and
+  `packages/api/src/database/schema.ts` — schema changes need `db:push` (or a generated migration) run
   against the real `DATABASE_URL` after editing.
 - `weebersh`'s `docs/contract.md` and this repo's understanding of it — if you change a Shopify webhook
   payload shape or add an endpoint, the contract version must bump in **both** repos, not just this one.

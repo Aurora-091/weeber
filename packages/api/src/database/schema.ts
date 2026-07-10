@@ -1,7 +1,7 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const calls = sqliteTable("calls", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const calls = pgTable("calls", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   twilioCallSid: text("twilio_call_sid").notNull().unique(),
   /**
    * Weeber org-lite scoping (additive, nullable) — see ADR-030. Null for
@@ -27,11 +27,11 @@ export const calls = sqliteTable("calls", {
    * the raw transcript — fixes the "asks for the same info twice" failure
    * mode that plain transcript/summary-based memory has. See ADR-012.
    */
-  capturedState: text("captured_state", { mode: "json" }).$type<Record<string, string>>().default({}),
-  startedAt: integer("started_at", { mode: "timestamp" })
+  capturedState: jsonb("captured_state").$type<Record<string, string>>().default({}),
+  startedAt: timestamp("started_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
-  endedAt: integer("ended_at", { mode: "timestamp" }),
+  endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
 });
 
 /**
@@ -41,7 +41,7 @@ export const calls = sqliteTable("calls", {
  * ended before a given stage was reached (or shipped before this table
  * existed) simply has no value for it, not a zero or an error. See ADR-022.
  */
-export const callLatency = sqliteTable("call_latency", {
+export const callLatency = pgTable("call_latency", {
   callId: integer("call_id")
     .primaryKey()
     .references(() => calls.id, { onDelete: "cascade" }),
@@ -51,7 +51,7 @@ export const callLatency = sqliteTable("call_latency", {
   llmTtftMs: integer("llm_ttft_ms"),
   /** Time from sending text to the TTS provider to receiving the first audio chunk back, first turn only. */
   ttsFirstByteMs: integer("tts_first_byte_ms"),
-  capturedAt: integer("captured_at", { mode: "timestamp" })
+  capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -64,11 +64,11 @@ export const callLatency = sqliteTable("call_latency", {
  * from zero. Deliberately not a full call-history log — keeps prompt-
  * injection cost bounded no matter how many times someone's called.
  */
-export const callerMemory = sqliteTable("caller_memory", {
+export const callerMemory = pgTable("caller_memory", {
   phoneNumber: text("phone_number").primaryKey(),
-  facts: text("facts", { mode: "json" }).$type<Record<string, string>>().notNull().default({}),
+  facts: jsonb("facts").$type<Record<string, string>>().notNull().default({}),
   lastCallId: integer("last_call_id").references(() => calls.id, { onDelete: "set null" }),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -82,38 +82,38 @@ export const callerMemory = sqliteTable("caller_memory", {
  * hash is ever stored — the plaintext key is shown exactly once, at
  * creation, and is not retrievable again.
  */
-export const adminKeys = sqliteTable("admin_keys", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const adminKeys = pgTable("admin_keys", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   label: text("label").notNull(),
   keyHash: text("key_hash").notNull().unique(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
-  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
-  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: "date" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
 });
 
-export const transcripts = sqliteTable("transcripts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const transcripts = pgTable("transcripts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   callId: integer("call_id")
     .notNull()
     .references(() => calls.id, { onDelete: "cascade" }),
   role: text("role", { enum: ["caller", "agent"] }).notNull(),
   text: text("text").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
 
-export const toolCalls = sqliteTable("tool_calls", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const toolCalls = pgTable("tool_calls", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   callId: integer("call_id")
     .notNull()
     .references(() => calls.id, { onDelete: "cascade" }),
   toolName: text("tool_name").notNull(),
-  input: text("input", { mode: "json" }),
-  output: text("output", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  input: jsonb("input"),
+  output: jsonb("output"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -124,12 +124,12 @@ export const toolCalls = sqliteTable("tool_calls", {
  * (POST /api/voice/dnc) or automatically via a workflow action (e.g. the
  * agent marks a call "not-interested" and a workflow adds the number here).
  */
-export const doNotCall = sqliteTable("do_not_call", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const doNotCall = pgTable("do_not_call", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   phoneNumber: text("phone_number").notNull().unique(),
   reason: text("reason"),
   source: text("source", { enum: ["manual", "agent", "national-registry"] }).default("manual"),
-  addedAt: integer("added_at", { mode: "timestamp" })
+  addedAt: timestamp("added_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -139,15 +139,15 @@ export const doNotCall = sqliteTable("do_not_call", {
  * voice/workflows/) — e.g. a "no-answer" outcome scheduling a retry call
  * later. Polled periodically by a background sweep.
  */
-export const scheduledCalls = sqliteTable("scheduled_calls", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const scheduledCalls = pgTable("scheduled_calls", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   toNumber: text("to_number").notNull(),
   workflowName: text("workflow_name").notNull(),
   persona: text("persona"),
   webhookUrl: text("webhook_url"),
   attempt: integer("attempt").notNull().default(1),
   maxAttempts: integer("max_attempts").notNull().default(1),
-  runAt: integer("run_at", { mode: "timestamp" }).notNull(),
+  runAt: timestamp("run_at", { withTimezone: true, mode: "date" }).notNull(),
   status: text("status", { enum: ["pending", "claimed", "executed", "canceled", "failed"] })
     .notNull()
     .default("pending"),
@@ -163,8 +163,8 @@ export const scheduledCalls = sqliteTable("scheduled_calls", {
    * Generic on purpose — any future vertical/workflow can use this the
    * same way instead of growing this table's column count per feature.
    */
-  metadata: text("metadata", { mode: "json" }).$type<Record<string, string | number>>(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  metadata: jsonb("metadata").$type<Record<string, string | number>>(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -179,7 +179,7 @@ export const scheduledCalls = sqliteTable("scheduled_calls", {
  * merchant's calls/contacts into another's queries and (b) not require a
  * second painful migration when full tenant isolation gets built later.
  */
-export const orgs = sqliteTable("orgs", {
+export const orgs = pgTable("orgs", {
   id: text("id").primaryKey(),
   name: text("name"),
   /**
@@ -194,7 +194,7 @@ export const orgs = sqliteTable("orgs", {
   countryCode: text("country_code"),
   timezone: text("timezone"),
   contactEmail: text("contact_email"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -206,17 +206,17 @@ export const orgs = sqliteTable("orgs", {
  * carries `shop`, not `org_id`, after the initial /connected call. One org
  * can own multiple shops (matches weebersh's model).
  */
-export const shopLinks = sqliteTable("shop_links", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const shopLinks = pgTable("shop_links", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   shop: text("shop").notNull().unique(),
   orgId: text("org_id")
     .notNull()
     .references(() => orgs.id, { onDelete: "cascade" }),
   scopes: text("scopes"),
-  connectedAt: integer("connected_at", { mode: "timestamp" })
+  connectedAt: timestamp("connected_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
-  disconnectedAt: integer("disconnected_at", { mode: "timestamp" }),
+  disconnectedAt: timestamp("disconnected_at", { withTimezone: true, mode: "date" }),
 });
 
 /**
@@ -226,10 +226,10 @@ export const shopLinks = sqliteTable("shop_links", {
  * for the compliance layer, not a replacement for it; TCPA/DNC checks
  * still run per-call via @openvent/compliance regardless of this flag.
  */
-export const shopifyContacts = sqliteTable(
+export const shopifyContacts = pgTable(
   "shopify_contacts",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
@@ -237,8 +237,8 @@ export const shopifyContacts = sqliteTable(
     e164: text("e164").notNull(),
     email: text("email"),
     name: text("name"),
-    marketingConsent: integer("marketing_consent", { mode: "boolean" }).default(false),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+    marketingConsent: boolean("marketing_consent").default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .notNull()
       .$defaultFn(() => new Date()),
   },
@@ -252,8 +252,8 @@ export const shopifyContacts = sqliteTable(
  * what makes "have we already issued a code for this checkout?" a lookup
  * instead of a re-derivation.
  */
-export const shopifyDiscountCodes = sqliteTable("shopify_discount_codes", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const shopifyDiscountCodes = pgTable("shopify_discount_codes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   shop: text("shop").notNull(),
   code: text("code").notNull().unique(),
   checkoutToken: text("checkout_token"),
@@ -261,7 +261,7 @@ export const shopifyDiscountCodes = sqliteTable("shopify_discount_codes", {
   status: text("status", { enum: ["pending", "created", "already_exists", "failed"] })
     .notNull()
     .default("pending"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -273,15 +273,15 @@ export const shopifyDiscountCodes = sqliteTable("shopify_discount_codes", {
  * this table is the shared mechanism every Shopify route checks before
  * acting, instead of each route inventing its own dedupe logic.
  */
-export const shopifyWebhookEvents = sqliteTable(
+export const shopifyWebhookEvents = pgTable(
   "shopify_webhook_events",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     shop: text("shop").notNull(),
     topic: text("topic").notNull(),
     /** e.g. checkout token, order id, or customer id depending on topic — whatever the contract names as the idempotency key for that endpoint. */
     idempotencyKey: text("idempotency_key").notNull(),
-    processedAt: integer("processed_at", { mode: "timestamp" })
+    processedAt: timestamp("processed_at", { withTimezone: true, mode: "date" })
       .notNull()
       .$defaultFn(() => new Date()),
   },
@@ -298,16 +298,16 @@ export const shopifyWebhookEvents = sqliteTable(
  * template wires up, resolved to actual tool implementations in code, not
  * stored as code here.
  */
-export const agentTemplates = sqliteTable("agent_templates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const agentTemplates = pgTable("agent_templates", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   vertical: text("vertical").notNull(),
   key: text("key").notNull().unique(),
   name: text("name").notNull(),
   description: text("description"),
   defaultPersonaPrompt: text("default_persona_prompt"),
-  defaultTools: text("default_tools", { mode: "json" }).$type<string[]>().default([]),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  defaultTools: jsonb("default_tools").$type<string[]>().default([]),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
