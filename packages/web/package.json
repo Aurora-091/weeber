@@ -6,6 +6,7 @@
     "build": "tsc -b && vite build",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/",
     "lint": "cd ../.. && oxlint packages/web --deny-warnings --no-error-on-unmatched-pattern",
     "preview": "bun run build && vite preview"
   },
