@@ -445,9 +445,24 @@ export const waitlistSignups = pgTable("waitlist_signups", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   email: text("email").notNull().unique(),
   name: text("name"),
+  /** The code THIS signup used to join (i.e. who referred them) — pre-existing field, semantics
+   * unchanged. Distinct from `ownReferralCode` below (the code THEY can share). */
   referralCode: text("referral_code"),
   source: text("source"),
   convertedOrgId: text("converted_org_id"),
+  /**
+   * Referral system (2026-07-10, ported from Vocalist's waitlist — see
+   * DECISIONS.md ADR-041). `ownReferralCode` is generated on insert so every
+   * signup immediately has a shareable link; `referralCount` increments on
+   * the referrer's row whenever a new signup's `referralCode` matches it.
+   */
+  ownReferralCode: text("own_referral_code").unique(),
+  referralCount: integer("referral_count").notNull().default(0),
+  phone: text("phone"),
+  unsubscribed: boolean("unsubscribed").notNull().default(false),
+  /** Separate from `ownReferralCode` on purpose — the referral code is meant to be shared
+   * publicly, an unsubscribe token should not be guessable from it. */
+  unsubscribeToken: text("unsubscribe_token").unique(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),

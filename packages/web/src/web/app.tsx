@@ -30,6 +30,7 @@ import { MarketingAnalyticsPage } from "./pages/dashboard/marketing-analytics";
 // Merchant app pages
 import { MerchantLoginPage } from "./pages/app/login";
 import { MerchantAuthCallbackPage } from "./pages/app/auth-callback";
+import { ResetPasswordPage } from "./pages/app/reset-password";
 import { MerchantOnboardingPage } from "./pages/app/onboarding";
 import { MerchantAgentsPage } from "./pages/app/agents";
 import { MerchantCallsPage } from "./pages/app/calls";
@@ -116,6 +117,7 @@ function App() {
         {/* Merchant App */}
         <Route path="/app/login"><MerchantLoginPage /></Route>
         <Route path="/app/auth/callback"><MerchantAuthCallbackPage /></Route>
+        <Route path="/app/auth/reset-password"><ResetPasswordPage /></Route>
         
         <Route path="/app">
           <MerchantShell><MerchantOnboardingPage /></MerchantShell>

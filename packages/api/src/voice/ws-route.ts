@@ -12,7 +12,7 @@ import { createVoiceStreamHandlers } from "./stream";
  * the real Bun server — not via the Vite dev server. Use `bun run start` (or
  * the production preview) to test calls end-to-end.
  */
-type VoiceSocketData = { handlers: ReturnType<typeof createVoiceStreamHandlers> };
+type VoiceSocketData = { kind: "voice"; handlers: ReturnType<typeof createVoiceStreamHandlers> };
 
 export const VOICE_WS_PATH = "/api/voice/stream";
 
@@ -21,7 +21,7 @@ export function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Funct
   if (url.pathname !== VOICE_WS_PATH) return false;
 
   const handlers = createVoiceStreamHandlers();
-  return Boolean(server.upgrade(request, { data: { handlers } satisfies VoiceSocketData }));
+  return Boolean(server.upgrade(request, { data: { kind: "voice", handlers } satisfies VoiceSocketData }));
 }
 
 export const voiceWebsocketHandlers = {

@@ -12,6 +12,10 @@ type WaitlistRow = {
   email: string;
   name: string | null;
   referralCode: string | null;
+  ownReferralCode: string | null;
+  referralCount: number;
+  phone: string | null;
+  unsubscribed: boolean;
   source: string | null;
   convertedOrgId: string | null;
   createdAt: string;
@@ -36,11 +40,18 @@ export function WaitlistPage() {
     { key: "email", header: "Email", render: (r) => r.email },
     { key: "name", header: "Name", render: (r) => r.name ?? "\u2014" },
     { key: "source", header: "Source", render: (r) => r.source ?? "(direct)" },
-    { key: "referral", header: "Referral", render: (r) => r.referralCode ?? "\u2014" },
+    { key: "referredBy", header: "Referred by", render: (r) => r.referralCode ?? "\u2014" },
+    { key: "ownCode", header: "Their code", render: (r) => r.ownReferralCode ?? "\u2014" },
+    { key: "referrals", header: "Referrals", render: (r) => r.referralCount },
+    { key: "phone", header: "Phone", render: (r) => r.phone ?? "\u2014" },
     {
       key: "status",
       header: "Status",
-      render: (r) => (r.convertedOrgId ? <Badge variant="default">Converted</Badge> : <Badge variant="outline">Waiting</Badge>),
+      render: (r) => {
+        if (r.unsubscribed) return <Badge variant="destructive">Unsubscribed</Badge>;
+        if (r.convertedOrgId) return <Badge variant="default">Converted</Badge>;
+        return <Badge variant="outline">Waiting</Badge>;
+      },
     },
     { key: "joined", header: "Joined", render: (r) => formatWhen(r.createdAt) },
   ];

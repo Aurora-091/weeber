@@ -10,6 +10,15 @@ import { Label } from "../../components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
 
 type Mode = "signin" | "signup";
+/** Password-signup post-submit states:
+ * - "idle"/"password-form": normal form
+ * - "needs-confirmation": signUp() succeeded but returned no session — the
+ *   Supabase project requires email confirmation before a session exists.
+ *   Both confirmation paths (click the link, or type the code) land here;
+ *   which one the user actually used doesn't matter, whichever happens
+ *   first gets them signed in (the link redirects through /app/auth/callback,
+ *   the code is verified inline on this same screen). */
+type SignupState = "idle" | "needs-confirmation";
 
 export function MerchantLoginPage() {
   const { theme } = useTheme();
@@ -20,6 +29,13 @@ export function MerchantLoginPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [signupState, setSignupState] = useState<SignupState>("idle");
+  const [otpCode, setOtpCode] = useState("");
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
+
+  // Forgot-password flow
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
 
   // Already signed in? Straight to the app.
   useEffect(() => {
@@ -33,16 +49,59 @@ export function MerchantLoginPage() {
     if (!supabase) return;
     setPending(true);
     setError(null);
-    const { error: authError } =
-      mode === "signin"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+
+    if (mode === "signin") {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      setPending(false);
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+      navigate("/app");
+      return;
+    }
+
+    // Signup — Supabase returns a session immediately only when email
+    // confirmation is off for this project. When confirmation is required,
+    // `data.session` is null and no error is raised either — that's the
+    // signal to show the confirmation step, not a failure.
+    const { data, error: authError } = await supabase.auth.signUp({ email, password });
+    setPending(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    if (data.session) {
+      navigate("/app");
+      return;
+    }
+    setSignupState("needs-confirmation");
+  }
+
+  async function submitOtpCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || !otpCode.trim()) return;
+    setPending(true);
+    setError(null);
+    const { error: authError } = await supabase.auth.verifyOtp({
+      email,
+      token: otpCode.trim(),
+      type: "signup",
+    });
     setPending(false);
     if (authError) {
       setError(authError.message);
       return;
     }
     navigate("/app");
+  }
+
+  async function resendConfirmation() {
+    if (!supabase) return;
+    setResendState("sending");
+    const { error: authError } = await supabase.auth.resend({ type: "signup", email });
+    setResendState("sent");
+    if (authError) setError(authError.message);
   }
 
   async function submitMagicLink(e: React.FormEvent) {
@@ -62,36 +121,122 @@ export function MerchantLoginPage() {
     setMagicLinkSent(true);
   }
 
-  return (
-    <div
-      className={cn(
-        "theme-weeber shell-spacious min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
-        theme === "dark" && "dark",
-      )}
-    >
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-medium tracking-tight">Weeber</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your store.</p>
-        </div>
+  async function submitForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || !email.trim()) return;
+    setPending(true);
+    setError(null);
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/app/auth/reset-password`,
+    });
+    setPending(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    setForgotSent(true);
+  }
 
-        {!supabaseConfigured ? (
-          <p className="text-center text-sm text-muted-foreground">
-            Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+  const shellClass = cn(
+    "theme-weeber shell-spacious min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
+    theme === "dark" && "dark",
+  );
+
+  if (!supabaseConfigured) {
+    return (
+      <div className={shellClass}>
+        <p className="text-center text-sm text-muted-foreground">
+          Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+        </p>
+      </div>
+    );
+  }
+
+  // Post-signup confirmation step — shown instead of the form once signUp()
+  // comes back with no session.
+  if (signupState === "needs-confirmation") {
+    return (
+      <div className={shellClass}>
+        <div className="w-full max-w-sm text-center">
+          <Mail className="mx-auto size-6 text-primary" aria-hidden />
+          <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            We sent a confirmation email to <span className="text-foreground">{email}</span>. Click the link inside,
+            or enter the 6-digit code from the same email below.
           </p>
-        ) : (
-          <Tabs defaultValue="password">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="password">Password</TabsTrigger>
-              <TabsTrigger value="magic">Magic link</TabsTrigger>
-            </TabsList>
 
-            <TabsContent value="password">
-              <form onSubmit={submitPassword} className="mt-4 flex flex-col gap-4">
+          <form onSubmit={submitOtpCode} className="mt-6 flex flex-col gap-3">
+            <Input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value)}
+              className="text-center tracking-widest"
+              maxLength={6}
+            />
+            <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
+              {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+              Verify code
+            </Button>
+          </form>
+
+          <button
+            type="button"
+            className="mt-4 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={resendConfirmation}
+            disabled={resendState === "sending"}
+          >
+            {resendState === "sent" ? "Email resent — check your inbox" : "Didn't get it? Resend"}
+          </button>
+
+          <button
+            type="button"
+            className="mt-6 block w-full text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSignupState("idle");
+              setMode("signin");
+            }}
+          >
+            Back to sign-in
+          </button>
+
+          {error && (
+            <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Forgot-password step — separate from the main tabs since it's a
+  // one-off detour, not a third persistent mode.
+  if (forgotOpen) {
+    return (
+      <div className={shellClass}>
+        <div className="w-full max-w-sm">
+          {forgotSent ? (
+            <div className="text-center">
+              <Mail className="mx-auto size-6 text-primary" aria-hidden />
+              <h1 className="mt-3 text-xl font-medium">Check your inbox</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                We sent a password-reset link to {email}. It opens a page here to set a new password.
+              </p>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-xl font-medium">Reset your password</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Enter your account email and we'll send you a reset link.
+              </p>
+              <form onSubmit={submitForgotPassword} className="mt-6 flex flex-col gap-4">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="forgot-email">Email</Label>
                   <Input
-                    id="email"
+                    id="forgot-email"
                     type="email"
                     autoComplete="email"
                     required
@@ -100,64 +245,129 @@ export function MerchantLoginPage() {
                     placeholder="you@yourstore.com"
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Send reset link
+                </Button>
+              </form>
+            </>
+          )}
+          <button
+            type="button"
+            className="mt-6 block w-full text-center text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setForgotOpen(false);
+              setForgotSent(false);
+            }}
+          >
+            Back to sign-in
+          </button>
+          {error && (
+            <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={shellClass}>
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-medium tracking-tight">Weeber</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your store.</p>
+        </div>
+
+        <Tabs defaultValue="password">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="password">Password</TabsTrigger>
+            <TabsTrigger value="magic">Magic link</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="password">
+            <form onSubmit={submitPassword} className="mt-4 flex flex-col gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@yourstore.com"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
+                  {mode === "signin" && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setForgotOpen(true)}
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={pending}>
+                {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                {mode === "signin" ? "Sign in" : "Create account"}
+              </Button>
+              <button
+                type="button"
+                className="text-sm text-muted-foreground hover:text-foreground"
+                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+              >
+                {mode === "signin" ? "New to Weeber? Create an account" : "Already have an account? Sign in"}
+              </button>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="magic">
+            {magicLinkSent ? (
+              <div className="mt-6 text-center">
+                <Mail className="mx-auto size-6 text-primary" aria-hidden />
+                <h2 className="mt-3 text-lg font-medium">Check your inbox</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  We sent a sign-in link to {email}. It signs you in on this device.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={submitMagicLink} className="mt-4 flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="magic-email">Email</Label>
                   <Input
-                    id="password"
-                    type="password"
-                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    id="magic-email"
+                    type="email"
+                    autoComplete="email"
                     required
-                    minLength={8}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@yourstore.com"
                   />
                 </div>
                 <Button type="submit" disabled={pending}>
                   {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                  {mode === "signin" ? "Sign in" : "Create account"}
+                  Email me a sign-in link
                 </Button>
-                <button
-                  type="button"
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                  onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                >
-                  {mode === "signin" ? "New to Weeber? Create an account" : "Already have an account? Sign in"}
-                </button>
               </form>
-            </TabsContent>
-
-            <TabsContent value="magic">
-              {magicLinkSent ? (
-                <div className="mt-6 text-center">
-                  <Mail className="mx-auto size-6 text-primary" aria-hidden />
-                  <h2 className="mt-3 text-lg font-medium">Check your inbox</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    We sent a sign-in link to {email}. It signs you in on this device.
-                  </p>
-                </div>
-              ) : (
-                <form onSubmit={submitMagicLink} className="mt-4 flex flex-col gap-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="magic-email">Email</Label>
-                    <Input
-                      id="magic-email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@yourstore.com"
-                    />
-                  </div>
-                  <Button type="submit" disabled={pending}>
-                    {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    Email me a sign-in link
-                  </Button>
-                </form>
-              )}
-            </TabsContent>
-          </Tabs>
-        )}
+            )}
+          </TabsContent>
+        </Tabs>
 
         {error && (
           <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">

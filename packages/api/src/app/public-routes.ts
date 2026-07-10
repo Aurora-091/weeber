@@ -5,24 +5,83 @@
  * auth" stays obvious from the file, not buried in a middleware chain.
  */
 import { Hono } from "hono";
-import { joinWaitlist } from "./waitlist";
+import { joinWaitlist, addWaitlistPhone, getWaitlistDisplayCount, unsubscribeByToken } from "./waitlist";
+import { broadcastWaitlistCount } from "./waitlist-ws";
 import { submitSupportTicket } from "./support";
+
+function unsubscribePageHtml(message: string, isError = false): string {
+  const color = isError ? "#dc2626" : "#0a0a0a";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Waitlist — Weeber</title></head>
+<body style="margin:0;padding:64px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fafaf8;text-align:center;color:${color};">
+  <div style="max-width:420px;margin:0 auto;">
+    <h1 style="font-size:20px;font-weight:600;margin:0 0 12px;">${message}</h1>
+    ${!isError ? '<p style="font-size:14px;color:#6b7280;margin:0;">You won\'t receive any further waitlist emails. If this was a mistake, email us at <a href="mailto:hello@weeber.ai">hello@weeber.ai</a>.</p>' : ""}
+  </div>
+</body></html>`;
+}
 
 export const publicRoutes = new Hono()
   .post("/waitlist", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
-    const { email, name, referralCode, source } = body as {
+    const { email, name, phone, referralCode, source } = body as {
       email?: string;
       name?: string;
+      phone?: string;
       referralCode?: string;
       source?: string;
     };
     if (!email?.trim()) return c.json({ error: "`email` is required" }, 400);
 
-    const result = await joinWaitlist({ email, name, referralCode, source });
+    const result = await joinWaitlist({ email, name, phone, referralCode, source });
     if (!result.ok) return c.json({ error: result.error }, 400);
-    return c.json({ joined: true, alreadyJoined: result.alreadyJoined }, result.alreadyJoined ? 200 : 201);
+
+    if (result.alreadyJoined) {
+      return c.json({ joined: true, alreadyJoined: true, ownReferralCode: result.ownReferralCode }, 200);
+    }
+
+    void broadcastWaitlistCount();
+    return c.json(
+      {
+        joined: true,
+        alreadyJoined: false,
+        ownReferralCode: result.ownReferralCode,
+        position: result.position,
+        displayCount: result.displayCount,
+      },
+      201,
+    );
+  })
+
+  // Optional post-signup follow-up — the success screen offers "add your
+  // phone" as a separate step, not part of the initial signup form.
+  .post("/waitlist/phone", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { email, phone } = body as { email?: string; phone?: string };
+    if (!email?.trim() || !phone?.trim()) return c.json({ error: "`email` and `phone` are required" }, 400);
+    const saved = await addWaitlistPhone(email, phone);
+    if (!saved) return c.json({ error: "Could not save phone number" }, 400);
+    return c.json({ saved: true }, 200);
+  })
+
+  // Non-WS fallback for the initial count (e.g. before the socket connects,
+  // or if it can't connect at all) — the WS hook uses this as its first
+  // paint, then switches to live pushes.
+  .get("/waitlist/count", async (c) => {
+    const count = await getWaitlistDisplayCount();
+    return c.json({ count }, 200);
+  })
+
+  // Plain HTML, not a JSON API response — this is meant to be opened
+  // directly from an email link, no frontend route needed.
+  .get("/waitlist/unsubscribe", async (c) => {
+    const token = c.req.query("token");
+    if (!token) return c.html(unsubscribePageHtml("Invalid unsubscribe link.", true), 400);
+
+    const result = await unsubscribeByToken(token);
+    if (result === "invalid_token") return c.html(unsubscribePageHtml("Invalid or expired unsubscribe link.", true), 400);
+    return c.html(unsubscribePageHtml("You've been unsubscribed."), 200);
   })
 
   .post("/support", async (c) => {

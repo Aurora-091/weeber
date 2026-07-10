@@ -1,5 +1,6 @@
 import app from "./index";
 import { tryUpgradeVoiceSocket, voiceWebsocketHandlers } from "./voice/ws-route";
+import { tryUpgradeWaitlistSocket, waitlistWebsocketHandlers } from "./app/waitlist-ws";
 import { assertHipaaPreflight, startRetentionSweep } from "@openvent/compliance";
 import { callLogAdapter } from "./voice/compliance/adapters";
 import { assertVoiceConfig } from "./voice/config-check";
@@ -50,13 +51,28 @@ const indexPath = `${distDir}/index.html`;
 
 const server = Bun.serve({
   port,
-  // Handles the raw Bun WS lifecycle for the Twilio Media Stream connection.
-  // Kept separate from the Hono app — see voice/ws-route.ts for why.
-  websocket: voiceWebsocketHandlers,
+  // Bun.serve takes exactly one `websocket` handler object for the whole
+  // server — every upgraded socket (Twilio Media Stream, waitlist live
+  // count) shares this one, dispatched by `ws.data.kind` (see
+  // voice/ws-route.ts and app/waitlist-ws.ts for how each tags its data).
+  websocket: {
+    open(ws: { data: { kind: string } }) {
+      if (ws.data.kind === "voice") voiceWebsocketHandlers.open(ws as never);
+      else if (ws.data.kind === "waitlist") void waitlistWebsocketHandlers.open(ws as never);
+    },
+    message(ws: { data: { kind: string } }, message: string | Buffer) {
+      if (ws.data.kind === "voice") voiceWebsocketHandlers.message(ws as never, message);
+      else if (ws.data.kind === "waitlist") waitlistWebsocketHandlers.message();
+    },
+    close(ws: { data: { kind: string } }) {
+      if (ws.data.kind === "voice") voiceWebsocketHandlers.close(ws as never);
+      else if (ws.data.kind === "waitlist") waitlistWebsocketHandlers.close(ws as never);
+    },
+  },
   async fetch(request, srv) {
     const url = new URL(request.url);
 
-    if (tryUpgradeVoiceSocket(request, srv)) {
+    if (tryUpgradeVoiceSocket(request, srv) || tryUpgradeWaitlistSocket(request, srv)) {
       // `upgrade()` takes over the connection; no HTTP response needed here.
       return undefined as unknown as Response;
     }
