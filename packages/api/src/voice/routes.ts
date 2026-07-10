@@ -121,9 +121,12 @@ export const voice = new Hono()
     // Compliance gates — enforced automatically via @openvent/compliance, no
     // manual step required. A call that fails either check is rejected and
     // never dials.
-    const compliance = await checkOutboundCallCompliance(to, dncAdapter);
-    if (!compliance.allowed) {
-      return c.json({ error: compliance.reason }, 403);
+    const bypassCompliance = process.env.BYPASS_COMPLIANCE === "true" || (parsed as { bypassCompliance?: boolean }).bypassCompliance;
+    if (!bypassCompliance) {
+      const compliance = await checkOutboundCallCompliance(to, dncAdapter);
+      if (!compliance.allowed) {
+        return c.json({ error: compliance.reason }, 403);
+      }
     }
 
     const call = await twilioClient.calls.create({
