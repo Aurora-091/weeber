@@ -198,51 +198,56 @@
 }
 
 /*
- * Weeber product theme (ADR-032) — scoped via `.theme-weeber`, applied at
- * the root layout of /dashboard (admin panel) and /app (merchant
- * dashboard) ONLY. Deliberately separate from the `:root`/`.dark` tokens
- * above, which belong to the public OpenVent OSS landing page/marketing
- * site (editorial serif, paper/ink/ember) — that page isn't part of
- * Weeber's product surface and is left untouched. Every actual Weeber
- * screen should have `.theme-weeber` (or `.theme-weeber.dark` for dark
- * mode) on its root element.
+ * Weeber product theme (ADR-032, recolored 2026-07-10 — see DECISIONS.md
+ * for the override) — scoped via `.theme-weeber`, applied at the root
+ * layout of /dashboard (admin panel) and /app (merchant dashboard) ONLY.
+ * Deliberately separate from the `:root`/`.dark` tokens above, which
+ * belong to the public OpenVent OSS landing page/marketing site (editorial
+ * serif, paper/ink/ember) — that page isn't part of Weeber's product
+ * surface and is left untouched. Every actual Weeber screen should have
+ * `.theme-weeber` on its root element.
  *
- * Direction, per the confirmed UI/UX round: Arc-browser-like warm/calm
- * paper background (not stark white), grayscale + a small semantic set
- * (error/success/warning) + one distinct brand accent, moderate rounding,
- * serif for headings only (reusing the same Fraunces/Inter Tight/JetBrains
- * Mono font stack already loaded above — no new font imports needed).
+ * Direction (2026-07-10 override of ADR-032's warm-paper/indigo-violet
+ * round): dark by default, fully monochrome — near-black background,
+ * light-grey foreground, zero brand/accent hue anywhere, including primary
+ * buttons and the active-nav state (those render as an inverted
+ * white-on-black / light-grey treatment instead of a color). The only
+ * color left anywhere in this theme is the semantic error/success/warning
+ * set — those stay distinct hues on purpose (compliance/call-outcome
+ * status needs to be scannable at a glance; "everything is grey" would
+ * make a DNC/guardrail alert indistinguishable from a normal state). If
+ * that's not wanted either, say so and those go grayscale too.
  */
 .theme-weeber {
-  --radius: 0.625rem; /* 10px — mid-range of the confirmed 8-12px moderate-rounding direction */
+  --radius: 0.625rem; /* 10px — unchanged, orthogonal to the color round */
 
-  /* Warm paper surfaces — off-white, not stark white */
-  --weeber-paper: oklch(0.98 0.012 85);
-  --weeber-paper-2: oklch(0.955 0.014 82);
-  --weeber-ink: oklch(0.22 0.012 60);
-  --weeber-ink-soft: oklch(0.48 0.012 60);
-  --weeber-border: oklch(0.9 0.012 80);
+  /* Monochrome surfaces — chroma 0 throughout, only lightness varies */
+  --weeber-paper: oklch(0.145 0 0); /* near-black background */
+  --weeber-paper-2: oklch(0.2 0 0); /* slightly raised surface */
+  --weeber-ink: oklch(0.93 0 0); /* light-grey foreground */
+  --weeber-ink-soft: oklch(0.64 0 0); /* muted/secondary text */
+  --weeber-border: oklch(0.26 0 0);
 
-  /* Brand accent — indigo/violet, deliberately a different hue from the
-     semantic red/green/amber below so status colors never get confused
-     with brand/CTA colors. */
-  --weeber-accent: oklch(0.53 0.19 275);
-  --weeber-accent-soft: oklch(0.92 0.035 275);
-  --weeber-accent-foreground: oklch(0.98 0.01 85);
+  /* No brand/accent hue — "accent" here just means light-grey-on-black
+     (inverted), the monochrome equivalent of a filled button, not a color. */
+  --weeber-accent: oklch(0.93 0 0);
+  --weeber-accent-soft: oklch(0.24 0 0);
+  --weeber-accent-foreground: oklch(0.145 0 0);
 
-  /* Semantic status set — small, deliberate, on top of the brand accent */
-  --weeber-success: oklch(0.55 0.14 150);
-  --weeber-success-soft: oklch(0.93 0.04 150);
+  /* Semantic status set — the one deliberate exception to monochrome, see
+     the comment above this block for why. */
+  --weeber-success: oklch(0.6 0.14 150);
+  --weeber-success-soft: oklch(0.27 0.05 150);
   --weeber-warning: oklch(0.75 0.15 80);
-  --weeber-warning-soft: oklch(0.94 0.05 80);
-  --weeber-error: oklch(0.55 0.2 25);
-  --weeber-error-soft: oklch(0.93 0.045 25);
+  --weeber-warning-soft: oklch(0.3 0.06 80);
+  --weeber-error: oklch(0.62 0.2 25);
+  --weeber-error-soft: oklch(0.28 0.06 25);
 
   --background: var(--weeber-paper);
   --foreground: var(--weeber-ink);
-  --card: oklch(0.99 0.008 85);
+  --card: var(--weeber-paper-2);
   --card-foreground: var(--weeber-ink);
-  --popover: oklch(0.99 0.008 85);
+  --popover: var(--weeber-paper-2);
   --popover-foreground: var(--weeber-ink);
   --primary: var(--weeber-accent);
   --primary-foreground: var(--weeber-accent-foreground);
@@ -255,15 +260,15 @@
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
   --input: var(--weeber-border);
-  --ring: var(--weeber-accent);
-  --sidebar: var(--weeber-paper-2);
+  --ring: oklch(0.5 0 0);
+  --sidebar: oklch(0.11 0 0);
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);
   --sidebar-accent: var(--weeber-accent-soft);
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: var(--weeber-border);
-  --sidebar-ring: var(--weeber-accent);
+  --sidebar-ring: oklch(0.5 0 0);
 }
 
 /*
