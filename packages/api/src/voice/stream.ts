@@ -1,7 +1,8 @@
 import type { ModelMessage } from "ai";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
-import { connectDeepgram } from "./deepgram";
+import { connectStt } from "./stt";
+import type { SttConnection } from "./stt";
 import { connectTts } from "./tts";
 import type { TtsConnection } from "./tts";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
@@ -85,8 +86,10 @@ export function createVoiceStreamHandlers() {
   let dbCallId: number | null = null;
   let webhookUrl: string | null = null;
   let persona: string | undefined;
-  let ttsProviderOverride: "elevenlabs" | "cartesia" | undefined;
+  let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
   let llmProviderOverride: "gateway" | "groq" | undefined;
+  let sttProviderOverride: "deepgram" | "sarvam" | undefined;
+  let languageOverride: string | undefined;
   /** Per-agent frame overrides (see agent-frame.ts, agent.ts's resolveAgentConfig) — all
    * undefined unless the call's org+template has a configured agent config row. */
   let ttsVoiceIdOverride: string | undefined;
@@ -126,10 +129,16 @@ export function createVoiceStreamHandlers() {
   let humanNumberOrgId: string | undefined;
   let callerMemoryFacts: Record<string, string> = {};
 
-  let deepgram: ReturnType<typeof connectDeepgram> | null = null;
+  let stt: SttConnection | null = null;
   let tts: TtsConnection | null = null;
   let turnAbortController: AbortController | null = null;
   let agentIsSpeaking = false;
+  /** Audio arriving after the Twilio "start" event but before the STT
+   * provider/language is resolved (agentConfig lookup is async) — buffered
+   * instead of dropped, then flushed the moment `stt` connects. Bounded so a
+   * pathological delay can't leak memory. */
+  const pendingAudioChunks: Buffer[] = [];
+  const MAX_PENDING_AUDIO_CHUNKS = 200;
 
   /** Set by the hangUp/transferToHuman tools (via logToolCall below), consumed at
    * the end of speak() once the closing/handoff line has been spoken — see
@@ -208,7 +217,7 @@ export function createVoiceStreamHandlers() {
   async function finalizeCall(status: string) {
     if (ended) return;
     ended = true;
-    deepgram?.close();
+    stt?.close();
     tts?.close();
     turnAbortController?.abort();
     if (maxDurationTimer) clearTimeout(maxDurationTimer);
@@ -403,6 +412,7 @@ export function createVoiceStreamHandlers() {
       },
       ttsProviderOverride,
       ttsVoiceIdOverride,
+      languageOverride,
     );
 
     let fullText = "";
@@ -485,68 +495,91 @@ export function createVoiceStreamHandlers() {
     );
   }
 
-  return {
-    onOpen(ws: Sendable) {
-      deepgram = connectDeepgram(
-        async ({ text, isFinal, speechFinal }) => {
-          try {
-            // Barge-in: if the agent is mid-response and the caller starts
-            // talking again, cut the agent off immediately.
-            if (agentIsSpeaking && text.trim().length > 0) {
-              if (streamSid) ws.send(JSON.stringify({ event: "clear", streamSid }));
-              turnAbortController?.abort();
-              tts?.close();
-              tts = null;
-              agentIsSpeaking = false;
-            }
-
-            if (!speechFinal || !isFinal || !text.trim()) return;
-
-            // Caller actually responded — reset silence handling (a fresh
-            // warning stage next time they go quiet, not an immediate hangup).
-            silenceWarningIssued = false;
-            clearSilenceTimer();
-
-            // Heuristic, defense-in-depth guardrail detector — independent of
-            // whether the model itself calls flagGuardrailEvent (see agent.ts).
-            if (looksLikePromptInjection(text)) {
-              void logToolCall(
-                "guardrail-heuristic-detector",
-                { category: "prompt-injection", callerText: text },
-                { detectedBy: "heuristic-phrase-match" },
-              );
-            }
-
-            history.push({ role: "user", content: text });
-            await logTranscript("caller", text);
-            await runTurn(ws);
-          } catch (err) {
-            console.error("[voice] error handling transcript event", err);
+  /**
+   * Connects the STT provider for this call. Deliberately called from the
+   * "start" handler (after `sttProviderOverride`/`languageOverride` are
+   * resolved off the agent config), not eagerly in `onOpen` — the language
+   * has to be known before the socket opens for providers like Sarvam that
+   * take it as a connection-time query param, not a per-request field.
+   * `onOpen` fires immediately, before any of that async agent-config lookup
+   * has happened, so connecting there (the old Deepgram-only behavior) meant
+   * language could never actually be threaded through. Audio that arrives in
+   * the (typically tens-of-ms) window between "start" and this connecting is
+   * buffered in `pendingAudioChunks` and flushed right after, not dropped.
+   */
+  function connectSttForCall(ws: Sendable) {
+    stt = connectStt(
+      async ({ text, isFinal, speechFinal }) => {
+        try {
+          // Barge-in: if the agent is mid-response and the caller starts
+          // talking again, cut the agent off immediately.
+          if (agentIsSpeaking && text.trim().length > 0) {
+            if (streamSid) ws.send(JSON.stringify({ event: "clear", streamSid }));
+            turnAbortController?.abort();
+            tts?.close();
+            tts = null;
+            agentIsSpeaking = false;
           }
-        },
-        (err) => {
-          // Deepgram gave up reconnecting — the call can no longer hear the
-          // caller. End the call rather than leaving it hanging silently.
-          console.error("[voice] fatal Deepgram error, ending call", err);
-          endCallOnFatalError(ws);
-        },
-        (stats) => {
-          // Surface reconnect counts on the call record so a flaky call is
-          // visible in the data, not just buried in logs.
-          if (!callSid) return;
-          void withRetry(
-            () =>
-              db
-                .update(calls)
-                .set({ sttReconnectCount: stats.reconnectCount })
-                .where(eq(calls.twilioCallSid, callSid!)),
-            { label: "update-stt-stats" },
-          );
-        },
-        (ms) => {
-          sttConnectMs = ms;
-        },
-      );
+
+          if (!speechFinal || !isFinal || !text.trim()) return;
+
+          // Caller actually responded — reset silence handling (a fresh
+          // warning stage next time they go quiet, not an immediate hangup).
+          silenceWarningIssued = false;
+          clearSilenceTimer();
+
+          // Heuristic, defense-in-depth guardrail detector — independent of
+          // whether the model itself calls flagGuardrailEvent (see agent.ts).
+          if (looksLikePromptInjection(text)) {
+            void logToolCall(
+              "guardrail-heuristic-detector",
+              { category: "prompt-injection", callerText: text },
+              { detectedBy: "heuristic-phrase-match" },
+            );
+          }
+
+          history.push({ role: "user", content: text });
+          await logTranscript("caller", text);
+          await runTurn(ws);
+        } catch (err) {
+          console.error("[voice] error handling transcript event", err);
+        }
+      },
+      (err) => {
+        // STT provider gave up (or hard-failed) — the call can no longer hear
+        // the caller. End the call rather than leaving it hanging silently.
+        console.error("[voice] fatal STT error, ending call", err);
+        endCallOnFatalError(ws);
+      },
+      (stats) => {
+        // Surface reconnect counts on the call record so a flaky call is
+        // visible in the data, not just buried in logs.
+        if (!callSid) return;
+        void withRetry(
+          () =>
+            db
+              .update(calls)
+              .set({ sttReconnectCount: stats.reconnectCount })
+              .where(eq(calls.twilioCallSid, callSid!)),
+          { label: "update-stt-stats" },
+        );
+      },
+      (ms) => {
+        sttConnectMs = ms;
+      },
+      sttProviderOverride,
+      languageOverride,
+    );
+
+    if (pendingAudioChunks.length > 0) {
+      for (const chunk of pendingAudioChunks.splice(0)) stt.sendAudio(chunk);
+    }
+  }
+
+  return {
+    onOpen() {
+      // STT connects once the call's language/provider is resolved — see
+      // connectSttForCall's doc comment. Nothing to do here anymore.
     },
 
     async onMessage(raw: string, ws: Sendable) {
@@ -602,6 +635,8 @@ export function createVoiceStreamHandlers() {
             // resolution priority (org/agent-specific beats number-wide defaults).
             ttsProviderOverride = agentConfig.ttsProvider ?? session?.ttsProvider ?? numberConfig.ttsProvider;
             llmProviderOverride = agentConfig.llmProvider ?? session?.llmProvider ?? numberConfig.llmProvider;
+            sttProviderOverride = agentConfig.sttProvider ?? session?.sttProvider ?? numberConfig.sttProvider;
+            languageOverride = agentConfig.language ?? session?.language ?? numberConfig.language;
 
             // Control: optional hard cap on call length (per-call override or
             // per-number config).
@@ -619,6 +654,7 @@ export function createVoiceStreamHandlers() {
             }
           }
 
+          connectSttForCall(ws);
           history = [];
           await runGreeting(ws);
           return;
@@ -626,7 +662,11 @@ export function createVoiceStreamHandlers() {
 
         if (msg.event === "media") {
           const audio = Buffer.from(msg.media.payload, "base64");
-          deepgram?.sendAudio(audio);
+          if (stt) {
+            stt.sendAudio(audio);
+          } else if (pendingAudioChunks.length < MAX_PENDING_AUDIO_CHUNKS) {
+            pendingAudioChunks.push(audio);
+          }
           return;
         }
 

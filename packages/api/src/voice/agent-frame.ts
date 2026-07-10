@@ -39,6 +39,30 @@ export const RECOMMENDED_LLM_MODELS = [
 export const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
 export type ToneStyle = (typeof TONE_STYLES)[number];
 
+/** Curated starting points for `language`, not an exhaustive/enforced list —
+ * the field accepts free text too, so a language neither provider has
+ * explicit support for yet doesn't need a code change to try. Codes are
+ * plain ISO 639-1 (no region suffix) — each provider adapter (see
+ * stt/deepgram.ts, stt/sarvam.ts, tts/sarvam.ts) normalizes into whatever
+ * format it actually needs, so the frame itself stays provider-agnostic.
+ * India-first list since that's the primary market; "multi" is Deepgram's
+ * English+one-other code-switching mode (STT only — Sarvam has no
+ * equivalent single "auto" TTS voice, so pick a specific language for TTS
+ * even when STT is set to "multi"). */
+export const RECOMMENDED_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "mr", label: "Marathi" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "bn", label: "Bengali" },
+  { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" },
+  { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
+] as const;
+
 export const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
 export type StrictnessLevel = (typeof STRICTNESS_LEVELS)[number];
 
@@ -58,9 +82,18 @@ export const AgentFrameSchema = z.object({
   closingLine: z.string().min(1).max(500).optional(),
   toneStyle: z.enum(TONE_STYLES).optional(),
   personaPrompt: z.string().min(1).max(8000).optional(),
-  voiceProvider: z.enum(["elevenlabs", "cartesia"]).optional(),
+  voiceProvider: z.enum(["elevenlabs", "cartesia", "sarvam"]).optional(),
   voiceId: z.string().min(1).max(200).optional(),
+  /** Free text (see RECOMMENDED_LANGUAGES above for curated options) — one
+   * language drives both STT and TTS for the call. India has many more
+   * languages than any single provider covers well, so this deliberately
+   * isn't a closed enum at the schema level. */
   language: z.string().min(2).max(20).optional(),
+  /** STT provider — separate from voiceProvider (TTS) since the best STT
+   * and TTS choice for a given language don't have to be the same vendor,
+   * e.g. Deepgram STT (fast, English-strong) + Sarvam TTS (natural Hindi
+   * voice) for a Hindi-first agent. Defaults to "deepgram" when unset. */
+  sttProvider: z.enum(["deepgram", "sarvam"]).optional(),
   llmProvider: z.enum(["gateway", "groq"]).optional(),
   llmModel: z.string().min(1).max(200).optional(),
   toolsEnabled: z.array(z.enum(AVAILABLE_TOOL_NAMES)).optional(),

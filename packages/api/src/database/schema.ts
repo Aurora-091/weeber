@@ -379,6 +379,8 @@ export const orgAgentConfigs = pgTable(
     voiceProvider: text("voice_provider"),
     voiceId: text("voice_id"),
     language: text("language"),
+    /** STT provider override (2026-07-10) — see agent-frame.ts's `sttProvider`. */
+    sttProvider: text("stt_provider"),
     llmProvider: text("llm_provider"),
     llmModel: text("llm_model"),
     toolsEnabled: jsonb("tools_enabled").$type<string[]>(),

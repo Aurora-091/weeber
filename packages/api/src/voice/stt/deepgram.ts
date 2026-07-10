@@ -1,3 +1,5 @@
+import type { ConnectStt } from "./types";
+
 /**
  * Thin wrapper around Deepgram's live streaming STT WebSocket, tuned for
  * 8kHz mu-law audio coming straight off a Twilio Media Stream (no re-encoding
@@ -10,32 +12,20 @@
  * moment the new socket opens, so a brief drop doesn't silently swallow
  * whatever the caller said during the gap — this was the root cause of a
  * mid-call "went blank" incident during testing.
+ *
+ * Language (2026-07-10): defaults to Deepgram's own default (English) when
+ * omitted. nova-3 supports most single Indian languages directly (e.g. "hi",
+ * "mr", "ta") and also a "multi" code-switching mode (English + one other
+ * language auto-detected per utterance) — pass language="multi" for mixed
+ * Hindi/English calls instead of guessing a single code.
  */
-export type DeepgramTranscriptHandler = (params: {
-  text: string;
-  isFinal: boolean;
-  speechFinal: boolean;
-}) => void;
-
-export type DeepgramStats = {
-  reconnectCount: number;
-  totalGapMs: number;
-};
-
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_BASE_DELAY_MS = 500;
 // ~2s of audio at 8kHz mu-law (1 byte/sample) — enough to cover the typical
 // reconnect window without buffering unbounded memory if Deepgram is down.
 const MAX_BUFFERED_BYTES = 16_000;
 
-export function connectDeepgram(
-  onTranscript: DeepgramTranscriptHandler,
-  onFatalError?: (err: unknown) => void,
-  onStatsUpdate?: (stats: DeepgramStats) => void,
-  /** Fires once, on the very first successful connect (not on reconnects) — the
-   * "STT connect" leg of the per-call latency breakdown, see database/schema.ts's callLatency. */
-  onConnected?: (ms: number) => void,
-) {
+export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsUpdate, onConnected, language) => {
   let ws: WebSocket;
   let closedIntentionally = false;
   let reconnectAttempts = 0;
@@ -45,7 +35,7 @@ export function connectDeepgram(
   let hasReportedInitialConnect = false;
   const connectRequestedAt = Date.now();
 
-  const stats: DeepgramStats = { reconnectCount: 0, totalGapMs: 0 };
+  const stats = { reconnectCount: 0, totalGapMs: 0 };
   const audioBuffer: Uint8Array[] = [];
   let bufferedBytes = 0;
 
@@ -78,6 +68,11 @@ export function connectDeepgram(
     endpointing: "300",
     vad_events: "true",
   });
+  // Omit entirely for English default — only set when a non-English/"multi"
+  // language is actually configured on the agent frame.
+  if (language && language !== "en") {
+    params.set("language", language);
+  }
 
   function open() {
     ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, [
@@ -150,7 +145,7 @@ export function connectDeepgram(
         bufferAudio(chunk);
       }
     },
-    getStats(): DeepgramStats {
+    getStats() {
       return { ...stats };
     },
     close() {
@@ -162,4 +157,4 @@ export function connectDeepgram(
       ws.close();
     },
   };
-}
+};

@@ -9,10 +9,13 @@
  */
 export type NumberConfig = {
   persona?: string;
-  ttsProvider?: "elevenlabs" | "cartesia";
+  ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   llmProvider?: "gateway" | "groq";
   maxDurationSeconds?: number;
   webhookUrl?: string;
+  /** STT provider + language override — see agent-frame.ts. */
+  sttProvider?: "deepgram" | "sarvam";
+  language?: string;
 };
 
 /** Pure parser, exported for testing — takes the raw env string directly instead of reading process.env. */

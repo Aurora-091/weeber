@@ -13,7 +13,7 @@ export type TtsConnection = {
   close(): void;
 };
 
-export type TtsProvider = "elevenlabs" | "cartesia";
+export type TtsProvider = "elevenlabs" | "cartesia" | "sarvam";
 
 export type ConnectTts = (
   onAudioChunk: (base64Audio: string) => void,
@@ -22,4 +22,8 @@ export type ConnectTts = (
   /** Per-agent voice ID override (agent-frame.ts's voiceId) — falls back to
    * the provider's env-configured default voice when omitted. */
   voiceId?: string,
+  /** Per-agent language override (agent-frame.ts's language) — only Sarvam
+   * uses this today (it needs an explicit target language); ElevenLabs and
+   * Cartesia ignore it since their voices are already language-specific. */
+  language?: string,
 ) => TtsConnection;

@@ -12,7 +12,10 @@ describe("resolveTtsProvider", () => {
   });
 
   it("falls back to cartesia for an unknown override value", () => {
-    // @ts-expect-error intentionally invalid input to test the fallback
     expect(resolveTtsProvider("not-a-real-provider")).toBe("cartesia");
+  });
+
+  it("accepts the new sarvam provider", () => {
+    expect(resolveTtsProvider("sarvam")).toBe("sarvam");
   });
 });

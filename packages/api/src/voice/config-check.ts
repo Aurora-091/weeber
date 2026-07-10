@@ -1,4 +1,5 @@
 import { resolveTtsProvider } from "./tts";
+import { resolveSttProvider } from "./stt";
 import { resolveLlmProvider } from "./llm";
 
 /**
@@ -19,6 +20,14 @@ export function assertVoiceConfig(): void {
     if (!process.env.ELEVENLABS_API_KEY) problems.push("TTS_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY");
     if (!process.env.ELEVENLABS_VOICE_ID) problems.push("TTS_PROVIDER=elevenlabs requires ELEVENLABS_VOICE_ID");
   }
+  if (ttsProvider === "sarvam" && !process.env.SARVAM_API_KEY) {
+    problems.push("TTS_PROVIDER=sarvam requires SARVAM_API_KEY");
+  }
+
+  const sttProvider = resolveSttProvider();
+  if (sttProvider === "sarvam" && !process.env.SARVAM_API_KEY) {
+    problems.push("STT_PROVIDER=sarvam requires SARVAM_API_KEY");
+  }
 
   const llmProvider = resolveLlmProvider();
   if (llmProvider === "groq" && !process.env.GROQ_API_KEY) {
@@ -28,7 +37,9 @@ export function assertVoiceConfig(): void {
     problems.push("LLM_PROVIDER=gateway (default) requires AI_GATEWAY_API_KEY");
   }
 
-  if (!process.env.DEEPGRAM_API_KEY) problems.push("DEEPGRAM_API_KEY is required (speech-to-text)");
+  if (sttProvider === "deepgram" && !process.env.DEEPGRAM_API_KEY) {
+    problems.push("STT_PROVIDER=deepgram (default) requires DEEPGRAM_API_KEY");
+  }
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
     problems.push("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required");
   }

@@ -50,6 +50,13 @@
       "when": 1783692965972,
       "tag": "0006_chilly_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783696665657,
+      "tag": "0007_far_arclight",
+      "breakpoints": true
     }
   ]
 }

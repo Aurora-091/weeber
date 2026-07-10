@@ -1,6 +1,7 @@
 import type { ConnectTts, TtsProvider } from "./types";
 import { connectElevenLabsTts } from "./elevenlabs";
 import { connectCartesiaTts } from "./cartesia";
+import { connectSarvamTts } from "./sarvam";
 
 /**
  * TTS provider registry. Add a new provider by dropping a file in this
@@ -10,6 +11,7 @@ import { connectCartesiaTts } from "./cartesia";
 const providers: Record<TtsProvider, ConnectTts> = {
   elevenlabs: connectElevenLabsTts,
   cartesia: connectCartesiaTts,
+  sarvam: connectSarvamTts,
 };
 
 /**
@@ -18,9 +20,9 @@ const providers: Record<TtsProvider, ConnectTts> = {
  * library-voice restriction ElevenLabs' free plan has. Falls back with a
  * warning if an unknown value is set.
  */
-export function resolveTtsProvider(override?: TtsProvider): TtsProvider {
+export function resolveTtsProvider(override?: string | null): TtsProvider {
   const configured = (override ?? process.env.TTS_PROVIDER ?? "cartesia").toLowerCase();
-  if (configured === "elevenlabs" || configured === "cartesia") return configured;
+  if (configured === "elevenlabs" || configured === "cartesia" || configured === "sarvam") return configured;
   console.warn(`[tts] Unknown TTS provider "${configured}" — falling back to "cartesia"`);
   return "cartesia";
 }
@@ -29,11 +31,12 @@ export function connectTts(
   onAudioChunk: (base64Audio: string) => void,
   onDone?: () => void,
   onError?: (err: unknown) => void,
-  providerOverride?: TtsProvider,
+  providerOverride?: string | null,
   voiceIdOverride?: string,
+  languageOverride?: string,
 ) {
   const provider = resolveTtsProvider(providerOverride);
-  return providers[provider](onAudioChunk, onDone, onError, voiceIdOverride);
+  return providers[provider](onAudioChunk, onDone, onError, voiceIdOverride, languageOverride);
 }
 
 export type { ConnectTts, TtsConnection, TtsProvider } from "./types";

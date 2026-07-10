@@ -1,0 +1,1 @@
+ALTER TABLE "org_agent_configs" ADD COLUMN "stt_provider" text;

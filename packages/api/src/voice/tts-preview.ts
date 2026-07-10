@@ -16,6 +16,7 @@ export async function generatePreviewAudio(
   text: string,
   provider: TtsProvider,
   voiceId: string | undefined,
+  language?: string,
 ): Promise<Buffer> {
   const chunks: Buffer[] = [];
 
@@ -36,6 +37,7 @@ export async function generatePreviewAudio(
       },
       provider,
       voiceId,
+      language,
     );
 
     tts.sendText(text);

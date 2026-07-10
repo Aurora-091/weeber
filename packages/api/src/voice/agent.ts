@@ -227,12 +227,17 @@ export async function resolvePersona(opts: {
 
 export type ResolvedAgentConfig = {
   systemPrompt: string;
-  ttsProvider?: "elevenlabs" | "cartesia";
+  ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   voiceId?: string;
   llmProvider?: "gateway" | "groq";
   llmModel?: string;
   /** Undefined = every tool enabled (unchanged behavior for agents with no frame configured). */
   enabledTools?: AvailableToolName[];
+  /** STT provider override (agent-frame.ts's `sttProvider`) — undefined falls through to
+   * number-config/session/global STT_PROVIDER default ("deepgram"). */
+  sttProvider?: "deepgram" | "sarvam";
+  /** Drives both STT and TTS for the call (agent-frame.ts's `language`) — see RECOMMENDED_LANGUAGES. */
+  language?: string;
 };
 
 /**
@@ -289,11 +294,13 @@ export async function resolveAgentConfig(opts: {
 
       return {
         systemPrompt,
-        ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | null) ?? undefined,
+        ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
         llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
+        sttProvider: (config.sttProvider as "deepgram" | "sarvam" | null) ?? undefined,
+        language: config.language ?? undefined,
       };
     }
   }

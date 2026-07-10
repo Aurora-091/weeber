@@ -26,7 +26,7 @@ export function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Funct
 
 export const voiceWebsocketHandlers = {
   open(ws: { send: (data: string) => void; data: VoiceSocketData }) {
-    ws.data.handlers.onOpen(ws);
+    ws.data.handlers.onOpen();
   },
   message(ws: { data: VoiceSocketData; send: (data: string) => void }, message: string | Buffer) {
     const data = typeof message === "string" ? message : message.toString();

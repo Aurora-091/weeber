@@ -21,8 +21,11 @@ export type CallSession = {
   webhookUrl?: string;
   createdAt: number;
   /** Per-call overrides — let a single call use a different provider than the global default. */
-  ttsProvider?: "elevenlabs" | "cartesia";
+  ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   llmProvider?: "gateway" | "groq";
+  /** STT provider + language override for this call — see agent-frame.ts. */
+  sttProvider?: "deepgram" | "sarvam";
+  language?: string;
   maxDurationSeconds?: number;
   /** Set when this call was placed by the workflow scheduler (a retry) — lets the
    * workflow engine enforce maxRetries instead of retrying forever. */

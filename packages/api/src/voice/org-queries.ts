@@ -60,6 +60,7 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     voiceProvider: frame.voiceProvider,
     voiceId: frame.voiceId,
     language: frame.language,
+    sttProvider: frame.sttProvider,
     llmProvider: frame.llmProvider,
     llmModel: frame.llmModel,
     toolsEnabled: frame.toolsEnabled,

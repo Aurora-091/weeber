@@ -105,7 +105,18 @@ export const voice = new Hono()
     if (!parsed || typeof parsed !== "object") {
       return c.json({ error: "Invalid or missing JSON request body" }, 400);
     }
-    const { to, persona, webhookUrl, orgId } = parsed as { to?: string; persona?: string; webhookUrl?: string; orgId?: string };
+    const { to, persona, webhookUrl, orgId, ttsProvider, sttProvider, language } = parsed as {
+      to?: string;
+      persona?: string;
+      webhookUrl?: string;
+      orgId?: string;
+      /** Per-call overrides for this one test/outbound call — same fields as the
+       * agent frame (agent-frame.ts), but scoped to just this call instead of
+       * saved to an org's agent config. Handy for one-off language/provider tests. */
+      ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
+      sttProvider?: "deepgram" | "sarvam";
+      language?: string;
+    };
     if (!to) return c.json({ error: "`to` is required" }, 400);
     if (!isValidE164(to)) {
       return c.json({ error: "`to` must be a valid E.164 phone number, e.g. +15551234567" }, 400);
@@ -151,7 +162,16 @@ export const voice = new Hono()
       asyncAmdStatusCallback: `${getPublicUrl()}/api/voice/amd-status-callback`,
     });
 
-    await sessionStore.set(call.sid, { callSid: call.sid, direction: "outbound", persona, webhookUrl, orgId });
+    await sessionStore.set(call.sid, {
+      callSid: call.sid,
+      direction: "outbound",
+      persona,
+      webhookUrl,
+      orgId,
+      ttsProvider,
+      sttProvider,
+      language,
+    });
 
     return c.json({ callSid: call.sid, status: call.status }, 201);
   })
@@ -474,14 +494,19 @@ export const voice = new Hono()
   .post("/voice-preview", requireAdminKey, async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
-    const { text, voiceProvider, voiceId } = body as { text?: string; voiceProvider?: string; voiceId?: string };
+    const { text, voiceProvider, voiceId, language } = body as {
+      text?: string;
+      voiceProvider?: string;
+      voiceId?: string;
+      language?: string;
+    };
     if (!text || !text.trim()) return c.json({ error: "`text` is required" }, 400);
-    if (voiceProvider !== "elevenlabs" && voiceProvider !== "cartesia") {
-      return c.json({ error: "`voiceProvider` must be \"elevenlabs\" or \"cartesia\"" }, 400);
+    if (voiceProvider !== "elevenlabs" && voiceProvider !== "cartesia" && voiceProvider !== "sarvam") {
+      return c.json({ error: "`voiceProvider` must be \"elevenlabs\", \"cartesia\", or \"sarvam\"" }, 400);
     }
 
     try {
-      const wav = await generatePreviewAudio(text.slice(0, 300), voiceProvider, voiceId);
+      const wav = await generatePreviewAudio(text.slice(0, 300), voiceProvider, voiceId, language);
       return c.body(new Uint8Array(wav), 200, { "Content-Type": "audio/wav" });
     } catch (err) {
       console.error("[routes] voice preview generation failed", err);

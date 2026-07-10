@@ -23,6 +23,22 @@ const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
   { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (fastest overall, Groq)" },
 ] as const;
+// Mirrors voice/agent-frame.ts's RECOMMENDED_LANGUAGES — suggestions only,
+// the field stays free text so a language neither provider covers yet still
+// works without a code change.
+const RECOMMENDED_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "mr", label: "Marathi" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "bn", label: "Bengali" },
+  { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" },
+  { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
+] as const;
 
 type AgentConfigRow = {
   templateKey: string;
@@ -38,6 +54,7 @@ type AgentConfigRow = {
     voiceProvider: string | null;
     voiceId: string | null;
     language: string | null;
+    sttProvider: string | null;
     llmProvider: string | null;
     llmModel: string | null;
     toolsEnabled: string[] | null;
@@ -55,6 +72,7 @@ type FormState = {
   voiceProvider: string;
   voiceId: string;
   language: string;
+  sttProvider: string;
   llmProvider: string;
   llmModel: string;
   toolsEnabled: string[];
@@ -75,6 +93,7 @@ function toFormState(row: AgentConfigRow): FormState {
     voiceProvider: c?.voiceProvider ?? "cartesia",
     voiceId: c?.voiceId ?? "",
     language: c?.language ?? "",
+    sttProvider: c?.sttProvider ?? "deepgram",
     llmProvider: c?.llmProvider ?? "gateway",
     llmModel: c?.llmModel ?? "",
     toolsEnabled: c?.toolsEnabled ?? [...AVAILABLE_TOOL_NAMES],
@@ -120,6 +139,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
           voiceProvider: form.voiceProvider,
           voiceId: form.voiceId || undefined,
           language: form.language || undefined,
+          sttProvider: form.sttProvider,
           llmProvider: form.llmProvider,
           llmModel: form.llmModel || undefined,
           toolsEnabled: form.toolsEnabled,
@@ -253,6 +273,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
           >
             <option value="cartesia">Cartesia</option>
             <option value="elevenlabs">ElevenLabs</option>
+            <option value="sarvam">Sarvam (Indian-language voices)</option>
           </select>
         </div>
         <div>
@@ -292,9 +313,29 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
             aria-label="Language"
             value={form.language}
             onChange={(e) => setForm({ ...form, language: e.target.value })}
-            placeholder="en-US"
+            placeholder="en, hi, mr, ta…"
+            list={`languages-${row.templateKey}`}
             className={inputClass()}
           />
+          <datalist id={`languages-${row.templateKey}`}>
+            {RECOMMENDED_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass()}>Speech-to-text provider</label>
+          <select
+            id={`stt-provider-${row.templateKey}`}
+            value={form.sttProvider}
+            onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
+            className={selectClass()}
+          >
+            <option value="deepgram">Deepgram</option>
+            <option value="sarvam">Sarvam (Indian-language STT)</option>
+          </select>
         </div>
         <div>
           <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass()}>LLM provider</label>
