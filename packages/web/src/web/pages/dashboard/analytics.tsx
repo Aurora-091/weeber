@@ -6,17 +6,17 @@ import { adminHeaders } from "../../lib/admin-key";
 import { useSelectedOrgId } from "../../lib/org-id";
 
 function selectClass() {
-  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ember/40 w-full";
+  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
 }
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-1.5 text-xs text-ink-soft mb-1.5">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
         <Icon className="size-3.5" />
         {label}
       </div>
-      <div className="text-xl font-semibold font-[family-name:var(--font-display)]">{value}</div>
+      <div className="text-xl font-semibold">{value}</div>
     </div>
   );
 }
@@ -27,15 +27,15 @@ function BreakdownList({ title, counts }: { title: string; counts: Record<string
   return (
     <div className="rounded-lg border border-border p-4">
       {title && <div className="text-sm font-medium mb-3">{title}</div>}
-      {entries.length === 0 && <p className="text-xs text-ink-soft">No data in this range.</p>}
+      {entries.length === 0 && <p className="text-xs text-muted-foreground">No data in this range.</p>}
       <div className="space-y-2">
         {entries.map(([key, count]) => (
           <div key={key} className="flex items-center gap-2">
             <span className="text-xs font-mono w-36 truncate shrink-0">{key}</span>
-            <div className="flex-1 h-2 rounded-full bg-paper-2 overflow-hidden">
-              <div className="h-full bg-ember/70 rounded-full" style={{ width: `${(count / max) * 100}%` }} />
+            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div className="h-full bg-primary/70 rounded-full" style={{ width: `${(count / max) * 100}%` }} />
             </div>
-            <span className="text-xs text-ink-soft w-6 text-right shrink-0">{count}</span>
+            <span className="text-xs text-muted-foreground w-6 text-right shrink-0">{count}</span>
           </div>
         ))}
       </div>
@@ -81,15 +81,15 @@ export function AnalyticsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] flex items-center gap-2">
-          <BarChart3 className="size-5 text-ember" />
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <BarChart3 className="size-5 text-primary" />
           Analytics
         </h1>
-        <p className="text-sm text-ink-soft mt-1 max-w-xl">Last 30 days across every agent for this org.</p>
+        <p className="text-sm text-muted-foreground mt-1 max-w-xl">Last 30 days across every agent for this org.</p>
       </div>
 
       <div className="mb-6 max-w-xs">
-        <label htmlFor="org-select" className="block text-xs font-medium text-ink-soft mb-1">Org</label>
+        <label htmlFor="org-select" className="block text-xs font-medium text-muted-foreground mb-1">Org</label>
         <select id="org-select" value={orgId} onChange={(e) => setOrgId(e.target.value)} className={selectClass()}>
           <option value="">Select an org…</option>
           {orgRows.map((o) => (
@@ -100,9 +100,9 @@ export function AnalyticsPage() {
         </select>
       </div>
 
-      {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-ink-soft">Select an org to see its analytics.</div>}
+      {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Select an org to see its analytics.</div>}
 
-      {orgId && analytics.isLoading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {orgId && analytics.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       {data && (
         <div className="space-y-6">
@@ -123,15 +123,15 @@ export function AnalyticsPage() {
                 </div>
                 <div className="space-y-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-ink-soft">STT connect</span>
+                    <span className="text-muted-foreground">STT connect</span>
                     <span className="font-mono">{fmtMs(data.avgLatency.sttConnectMs)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-ink-soft">LLM time-to-first-token</span>
+                    <span className="text-muted-foreground">LLM time-to-first-token</span>
                     <span className="font-mono">{fmtMs(data.avgLatency.llmTtftMs)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-ink-soft">TTS first byte</span>
+                    <span className="text-muted-foreground">TTS first byte</span>
                     <span className="font-mono">{fmtMs(data.avgLatency.ttsFirstByteMs)}</span>
                   </div>
                 </div>

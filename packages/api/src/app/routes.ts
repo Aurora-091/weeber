@@ -1,0 +1,235 @@
+/**
+ * Merchant-facing API — everything under /api/app/*. Mounted once in
+ * ../index.ts via `.route('/app', merchantApp)`.
+ *
+ * Auth: Supabase session (or an audited admin impersonation token) via
+ * requireMerchantSession — see middleware/supabase-auth.ts. The org is
+ * always resolved from the session's membership row, never from a path
+ * param: a merchant can't address another org by construction. Query/
+ * aggregation logic is shared with the admin panel's /api/voice/orgs/:orgId/*
+ * routes (voice/org-queries.ts) so both surfaces report identical data.
+ *
+ * /me is the only route that runs without an org: it's where the first-login
+ * bootstrap happens (auto-create an org + owner membership, so signup is
+ * fully self-serve — the Shopify install URL then carries this org's id into
+ * weebersh's OAuth flow, which links the shop back via POST /connected).
+ */
+import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "../database";
+import { orgMembers, orgs } from "../database/schema";
+import { AgentFrameSchema } from "../voice/agent-frame";
+import { generatePreviewAudio } from "../voice/tts-preview";
+import {
+  requireMerchantSession,
+  requireMerchantOrg,
+  type MerchantSessionVariables,
+} from "./middleware/supabase-auth";
+import { stopImpersonation } from "./impersonation";
+import {
+  getOrg,
+  getAgentConfigsForOrg,
+  upsertAgentConfig,
+  computeOrgAnalytics,
+  listOrgCalls,
+  getOrgCall,
+  getOrgCallTranscript,
+  getOrgCallToolCalls,
+  getShopifyStatus,
+  computeUsage,
+  getEffectiveFlags,
+} from "../voice/org-queries";
+
+type MerchantEnv = { Variables: MerchantSessionVariables };
+
+/**
+ * First-login bootstrap: one org + owner membership per new user.
+ * Idempotent under races — the unique (user, org) index plus re-select means
+ * two concurrent first requests still end up with exactly one membership.
+ */
+async function resolveOrCreateMembership(userId: string, email: string | null) {
+  const [existing] = await db
+    .select({ orgId: orgMembers.orgId, role: orgMembers.role })
+    .from(orgMembers)
+    .where(eq(orgMembers.supabaseUserId, userId))
+    .limit(1);
+  if (existing) return existing;
+
+  const orgId = `org_${randomUUID()}`;
+  const name = email ? `${email.split("@")[0]}'s workspace` : "My workspace";
+  await db.insert(orgs).values({ id: orgId, name, contactEmail: email ?? undefined }).onConflictDoNothing();
+  await db.insert(orgMembers).values({ supabaseUserId: userId, orgId, role: "owner" }).onConflictDoNothing();
+
+  // Re-select rather than trusting our insert — if a concurrent request won
+  // the race with a different org id, this returns the row that actually stuck.
+  const [row] = await db
+    .select({ orgId: orgMembers.orgId, role: orgMembers.role })
+    .from(orgMembers)
+    .where(eq(orgMembers.supabaseUserId, userId))
+    .limit(1);
+  return row ?? { orgId, role: "owner" };
+}
+
+// Per-org fixed-window limiter for the TTS preview — merchants now reach a
+// paid TTS API, so this can't be unmetered like the admin-key version.
+const PREVIEW_WINDOW_MS = 60_000;
+const PREVIEW_MAX_PER_WINDOW = Number(process.env.VOICE_PREVIEW_RATE_LIMIT ?? 20);
+const previewWindows = new Map<string, { start: number; count: number }>();
+
+function previewRateLimited(orgId: string): boolean {
+  const now = Date.now();
+  const window = previewWindows.get(orgId);
+  if (!window || now - window.start >= PREVIEW_WINDOW_MS) {
+    previewWindows.set(orgId, { start: now, count: 1 });
+    return false;
+  }
+  window.count += 1;
+  return window.count > PREVIEW_MAX_PER_WINDOW;
+}
+
+export const merchantApp = new Hono<MerchantEnv>()
+  .use("*", requireMerchantSession)
+
+  // Session/org resolution + first-login bootstrap. The one route without requireMerchantOrg.
+  .get("/me", async (c) => {
+    const impersonated = c.get("impersonated");
+    let orgId = c.get("merchantOrgId");
+    let role = c.get("merchantRole");
+    const userId = c.get("merchantUserId");
+    const email = c.get("merchantEmail");
+
+    if (!orgId && !impersonated && userId) {
+      const membership = await resolveOrCreateMembership(userId, email);
+      orgId = membership.orgId;
+      role = membership.role;
+    }
+    if (!orgId) {
+      return c.json({ error: "No organization for this session", code: "no_org" }, 403);
+    }
+
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "Organization not found", code: "no_org" }, 403);
+
+    return c.json(
+      {
+        user: userId ? { id: userId, email } : null,
+        role,
+        impersonated,
+        org: {
+          id: org.id,
+          name: org.name,
+          vertical: org.vertical,
+          planName: org.planName,
+          currency: org.currency,
+          countryCode: org.countryCode,
+          timezone: org.timezone,
+          contactEmail: org.contactEmail,
+        },
+      },
+      200,
+    );
+  })
+
+  // Everything below requires a resolved org.
+  .use("*", requireMerchantOrg)
+
+  .get("/agent-configs", async (c) => {
+    const merged = await getAgentConfigsForOrg(c.get("merchantOrgId")!);
+    if (!merged) return c.json({ error: "org not found" }, 404);
+    return c.json({ agentConfigs: merged }, 200);
+  })
+
+  .put("/agent-configs/:templateKey", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = AgentFrameSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid agent config", details: parsed.error.issues }, 400);
+    }
+    const row = await upsertAgentConfig(c.get("merchantOrgId")!, c.req.param("templateKey"), parsed.data);
+    return c.json({ agentConfig: row }, 200);
+  })
+
+  .post("/voice-preview", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    if (previewRateLimited(orgId)) {
+      return c.json({ error: "Too many voice previews — try again in a minute" }, 429);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { text, voiceProvider, voiceId } = body as { text?: string; voiceProvider?: string; voiceId?: string };
+    if (!text || !text.trim()) return c.json({ error: "`text` is required" }, 400);
+    if (voiceProvider !== "elevenlabs" && voiceProvider !== "cartesia") {
+      return c.json({ error: '`voiceProvider` must be "elevenlabs" or "cartesia"' }, 400);
+    }
+    try {
+      const wav = await generatePreviewAudio(text.slice(0, 300), voiceProvider, voiceId);
+      return c.body(new Uint8Array(wav), 200, { "Content-Type": "audio/wav" });
+    } catch (err) {
+      console.error("[app] voice preview generation failed", err);
+      return c.json({ error: "Failed to generate voice preview — check the voice ID" }, 502);
+    }
+  })
+
+  .get("/calls", async (c) => {
+    const limit = Number(c.req.query("limit")) || 200;
+    const rows = await listOrgCalls(c.get("merchantOrgId")!, limit);
+    return c.json({ calls: rows }, 200);
+  })
+
+  .get("/calls/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const row = await getOrgCall(c.get("merchantOrgId")!, id);
+    if (!row) return c.json({ error: "call not found" }, 404);
+    return c.json({ call: row }, 200);
+  })
+
+  .get("/calls/:id/transcript", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const rows = await getOrgCallTranscript(c.get("merchantOrgId")!, id);
+    if (!rows) return c.json({ error: "call not found" }, 404);
+    return c.json({ transcript: rows }, 200);
+  })
+
+  .get("/calls/:id/tool-calls", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const rows = await getOrgCallToolCalls(c.get("merchantOrgId")!, id);
+    if (!rows) return c.json({ error: "call not found" }, 404);
+    return c.json({ toolCalls: rows }, 200);
+  })
+
+  .get("/analytics", async (c) => {
+    const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
+    const analytics = await computeOrgAnalytics(c.get("merchantOrgId")!, days);
+    return c.json(analytics, 200);
+  })
+
+  .get("/billing/usage", async (c) => {
+    const usage = await computeUsage(c.get("merchantOrgId")!);
+    if (!usage) return c.json({ error: "org not found" }, 404);
+    return c.json(usage, 200);
+  })
+
+  .get("/shopify/status", async (c) => {
+    const status = await getShopifyStatus(c.get("merchantOrgId")!);
+    return c.json(status, 200);
+  })
+
+  .get("/flags", async (c) => {
+    const flags = await getEffectiveFlags(c.get("merchantOrgId")!);
+    return c.json({ flags }, 200);
+  })
+
+  // Self-stop for the "Viewing as <org>" banner: the /app tab only holds the
+  // impersonation token (the admin key lives in the dashboard tab's session
+  // storage), so ending the session must be possible with the token itself.
+  // The audit row gets its endedAt/endedReason either way.
+  .post("/impersonation/stop", async (c) => {
+    const sessionId = c.get("impersonationSessionId");
+    if (!sessionId) return c.json({ error: "not an impersonated session" }, 400);
+    const stopped = await stopImpersonation(sessionId);
+    return c.json({ stopped }, 200);
+  });

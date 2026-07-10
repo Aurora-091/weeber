@@ -21,9 +21,10 @@ import { twilioClient, getPublicUrl, getWsUrl } from "./twilio-client";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
-import { calls, callLatency, orgs, orgAgentConfigs, agentTemplates, toolCalls } from "../database/schema";
-import { eq, and, gte, inArray } from "drizzle-orm";
+import { calls, callLatency, orgs } from "../database/schema";
+import { eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
+import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
 import { generatePreviewAudio } from "./tts-preview";
 import {
   checkOutboundCallCompliance,
@@ -443,24 +444,8 @@ export const voice = new Hono()
   // configured" templates alongside already-configured ones in one list).
   .get("/orgs/:orgId/agent-configs", requireAdminKey, async (c) => {
     const orgId = c.req.param("orgId");
-    const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
-    if (!org) return c.json({ error: "org not found" }, 404);
-
-    const templates = await db
-      .select()
-      .from(agentTemplates)
-      .where(and(eq(agentTemplates.vertical, org.vertical), eq(agentTemplates.active, true)));
-    const configs = await db.select().from(orgAgentConfigs).where(eq(orgAgentConfigs.orgId, orgId));
-    const configByKey = new Map(configs.map((cfg) => [cfg.templateKey, cfg]));
-
-    const merged = templates.map((tmpl) => ({
-      templateKey: tmpl.key,
-      templateName: tmpl.name,
-      templateDescription: tmpl.description,
-      defaultPersonaPrompt: tmpl.defaultPersonaPrompt,
-      config: configByKey.get(tmpl.key) ?? null,
-    }));
-
+    const merged = await getAgentConfigsForOrg(orgId);
+    if (!merged) return c.json({ error: "org not found" }, 404);
     return c.json({ agentConfigs: merged }, 200);
   })
 
@@ -470,7 +455,7 @@ export const voice = new Hono()
   .put("/orgs/:orgId/agent-configs/:templateKey", requireAdminKey, async (c) => {
     const orgId = c.req.param("orgId");
     const templateKey = c.req.param("templateKey");
-    const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    const org = await getOrg(orgId);
     if (!org) return c.json({ error: "org not found" }, 404);
 
     const body = await c.req.json().catch(() => null);
@@ -478,49 +463,8 @@ export const voice = new Hono()
     if (!parsed.success) {
       return c.json({ error: "Invalid agent config", details: parsed.error.issues }, 400);
     }
-    const frame = parsed.data;
 
-    const [row] = await db
-      .insert(orgAgentConfigs)
-      .values({
-        orgId,
-        templateKey,
-        personaPrompt: frame.personaPrompt,
-        enabled: frame.enabled ?? true,
-        name: frame.name,
-        greetingLine: frame.greetingLine,
-        closingLine: frame.closingLine,
-        toneStyle: frame.toneStyle,
-        voiceProvider: frame.voiceProvider,
-        voiceId: frame.voiceId,
-        language: frame.language,
-        llmProvider: frame.llmProvider,
-        llmModel: frame.llmModel,
-        toolsEnabled: frame.toolsEnabled,
-        guardrails: frame.guardrails,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [orgAgentConfigs.orgId, orgAgentConfigs.templateKey],
-        set: {
-          personaPrompt: frame.personaPrompt,
-          enabled: frame.enabled ?? true,
-          name: frame.name,
-          greetingLine: frame.greetingLine,
-          closingLine: frame.closingLine,
-          toneStyle: frame.toneStyle,
-          voiceProvider: frame.voiceProvider,
-          voiceId: frame.voiceId,
-          language: frame.language,
-          llmProvider: frame.llmProvider,
-          llmModel: frame.llmModel,
-          toolsEnabled: frame.toolsEnabled,
-          guardrails: frame.guardrails,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-
+    const row = await upsertAgentConfig(orgId, templateKey, parsed.data);
     return c.json({ agentConfig: row }, 200);
   })
 
@@ -551,64 +495,6 @@ export const voice = new Hono()
   .get("/orgs/:orgId/analytics", requireAdminKey, async (c) => {
     const orgId = c.req.param("orgId");
     const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-    const orgCalls = await db
-      .select()
-      .from(calls)
-      .where(and(eq(calls.orgId, orgId), gte(calls.startedAt, since)));
-
-    const totalCalls = orgCalls.length;
-    const totalMinutes =
-      orgCalls.reduce((sum, call) => {
-        if (!call.endedAt) return sum;
-        return sum + (call.endedAt.getTime() - call.startedAt.getTime()) / 60000;
-      }, 0) || 0;
-
-    const dispositionBreakdown: Record<string, number> = {};
-    for (const call of orgCalls) {
-      const key = call.disposition ?? "no-disposition";
-      dispositionBreakdown[key] = (dispositionBreakdown[key] ?? 0) + 1;
-    }
-
-    const callIds = orgCalls.map((call) => call.id);
-
-    const latencyRows =
-      callIds.length > 0
-        ? await db.select().from(callLatency).where(inArray(callLatency.callId, callIds))
-        : [];
-    const avg = (values: number[]) => (values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length);
-    const avgLatency = {
-      sttConnectMs: avg(latencyRows.map((r) => r.sttConnectMs).filter((v): v is number => v != null)),
-      llmTtftMs: avg(latencyRows.map((r) => r.llmTtftMs).filter((v): v is number => v != null)),
-      ttsFirstByteMs: avg(latencyRows.map((r) => r.ttsFirstByteMs).filter((v): v is number => v != null)),
-    };
-
-    const toolRows =
-      callIds.length > 0 ? await db.select().from(toolCalls).where(inArray(toolCalls.callId, callIds)) : [];
-    const toolUsageCounts: Record<string, number> = {};
-    const guardrailEventCounts: Record<string, number> = {};
-    for (const row of toolRows) {
-      toolUsageCounts[row.toolName] = (toolUsageCounts[row.toolName] ?? 0) + 1;
-      if (row.toolName === "flagGuardrailEvent" || row.toolName === "guardrail-heuristic-detector") {
-        const category =
-          row.input && typeof row.input === "object" && "category" in row.input
-            ? String((row.input as { category: unknown }).category)
-            : "unknown";
-        guardrailEventCounts[category] = (guardrailEventCounts[category] ?? 0) + 1;
-      }
-    }
-
-    return c.json(
-      {
-        rangeDays: days,
-        totalCalls,
-        totalMinutes: Math.round(totalMinutes * 10) / 10,
-        dispositionBreakdown,
-        avgLatency,
-        toolUsageCounts,
-        guardrailEventCounts,
-      },
-      200,
-    );
+    const analytics = await computeOrgAnalytics(orgId, days);
+    return c.json(analytics, 200);
   });

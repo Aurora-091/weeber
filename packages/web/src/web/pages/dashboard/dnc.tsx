@@ -54,11 +54,11 @@ export function DncPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] flex items-center gap-2">
-          <ShieldOff className="size-5 text-ember" />
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <ShieldOff className="size-5 text-primary" />
           Do Not Call list
         </h1>
-        <p className="text-sm text-ink-soft mt-1 max-w-xl">
+        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
           Checked automatically before every outbound call via <code className="font-mono text-xs">@openvent/compliance</code>.
           Numbers land here manually (below) or automatically when the agent records a "not-interested" disposition.
         </p>
@@ -76,19 +76,19 @@ export function DncPage() {
           onChange={(e) => setPhoneNumber(e.target.value)}
           placeholder="+15551234567"
           aria-label="Phone number"
-          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ember/40"
+          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
         />
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Reason (optional)"
           aria-label="Reason"
-          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ember/40"
+          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
         />
         <button
           type="submit"
           disabled={!phoneNumber || add.isPending}
-          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-ember text-paper px-4 py-2 text-sm font-medium hover:bg-ember/90 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <Plus className="size-4" />
           Add
@@ -101,14 +101,14 @@ export function DncPage() {
           <div key={entry.phoneNumber} className="flex items-center justify-between px-4 py-3">
             <div>
               <div className="font-mono text-sm">{entry.phoneNumber}</div>
-              <div className="text-xs text-ink-soft mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 {entry.source}
                 {entry.reason ? ` · ${entry.reason}` : ""}
               </div>
             </div>
             <button
               onClick={() => remove.mutate(entry.phoneNumber)}
-              className="text-ink-soft hover:text-destructive transition-colors p-1.5"
+              className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
               aria-label="Remove from list"
             >
               <Trash2 className="size-4" />
@@ -116,7 +116,7 @@ export function DncPage() {
           </div>
         ))}
         {dncRows.length === 0 && (
-          <div className="px-4 py-8 text-sm text-ink-soft text-center">No numbers on the list.</div>
+          <div className="px-4 py-8 text-sm text-muted-foreground text-center">No numbers on the list.</div>
         )}
       </div>
     </div>

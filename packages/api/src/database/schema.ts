@@ -398,3 +398,85 @@ export const orgAgentConfigs = pgTable(
     uniqueIndex("org_agent_configs_org_key_idx").on(table.orgId, table.templateKey),
   ]
 );
+
+/**
+ * Merchant login → org resolution (frontend round, 2026-07-10). One row per
+ * membership: a Supabase Auth user (by `sub` claim) belonging to an org with
+ * a role. Today the product creates exactly one org per user with role
+ * "owner", but the shape deliberately supports multi-org-per-user and richer
+ * roles (WEEBER-PLAN workstream Q) without a migration — the v1 UI just
+ * picks the first membership.
+ */
+export const orgMembers = pgTable(
+  "org_members",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    supabaseUserId: text("supabase_user_id").notNull(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("owner"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("org_members_user_org_idx").on(table.supabaseUserId, table.orgId),
+    index("org_members_user_idx").on(table.supabaseUserId),
+  ],
+);
+
+/**
+ * Feature flags — deliberately the simplest possible model (admin panel
+ * scope, CLAUDE-BUILD-BRIEF §4.5): a key that's either global or scoped to
+ * one org, on or off. `orgId` uses the same `""`-as-global sentinel trick as
+ * `callerMemory.orgId` (Postgres treats NULL as distinct from itself in
+ * unique indexes, which would let duplicate global flags slip through).
+ * Effective value for an org = org-scoped row if present, else global row,
+ * else false.
+ */
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    key: text("key").notNull(),
+    /** `""` = global flag; otherwise an orgs.id */
+    orgId: text("org_id").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(false),
+    description: text("description"),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [uniqueIndex("feature_flags_key_org_idx").on(table.key, table.orgId)],
+);
+
+/**
+ * Merchant-impersonation sessions — session store and append-only audit log
+ * in one (CLAUDE-BUILD-BRIEF §4.6's hard requirement: every impersonation is
+ * audit-logged, who/which org/start/end). Modeled on the compliance
+ * package's audit-trail principles (append-only, queryable, exportable)
+ * without touching that package. Rows are never deleted; the only mutation
+ * ever allowed is setting `endedAt`/`endedReason` once. The plaintext token
+ * is returned exactly once at /impersonation/start and only its hash is
+ * stored — same discipline as `adminKeys.keyHash`.
+ */
+export const impersonationSessions = pgTable(
+  "impersonation_sessions",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    /** Which admin key started it — the labeled key's label, or "env-admin-key". */
+    adminActor: text("admin_actor").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    endedReason: text("ended_reason", { enum: ["stopped", "expired"] }),
+  },
+  (table) => [index("impersonation_sessions_org_idx").on(table.orgId)],
+);

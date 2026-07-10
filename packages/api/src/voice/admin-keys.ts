@@ -67,7 +67,7 @@ export async function revokeAdminKey(id: number): Promise<void> {
 export async function findActiveAdminKey(plaintextKey: string) {
   const hash = hashAdminKey(plaintextKey);
   const [row] = await db
-    .select({ id: adminKeys.id })
+    .select({ id: adminKeys.id, label: adminKeys.label })
     .from(adminKeys)
     .where(and(eq(adminKeys.keyHash, hash), isNull(adminKeys.revokedAt)))
     .limit(1);

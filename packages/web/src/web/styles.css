@@ -54,6 +54,15 @@
   --color-ember-soft: var(--ember-soft);
   --color-signal: var(--signal);
   --color-signal-soft: var(--signal-soft);
+
+  /* Weeber semantic status set — only defined inside .theme-weeber, so these
+     utilities (bg-success-soft, text-warning, …) are for product surfaces only */
+  --color-success: var(--weeber-success);
+  --color-success-soft: var(--weeber-success-soft);
+  --color-warning: var(--weeber-warning);
+  --color-warning-soft: var(--weeber-warning-soft);
+  --color-error: var(--weeber-error);
+  --color-error-soft: var(--weeber-error-soft);
 }
 
 :root {
@@ -165,6 +174,20 @@
   animation: logo-marquee 28s linear infinite;
 }
 
+/* Skeleton-to-content swap: brief crossfade, not an abrupt pop (UI-DESIGN-BRIEF) */
+@keyframes content-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.content-fade-in {
+  animation: content-fade 0.2s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -241,6 +264,30 @@
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: var(--weeber-border);
   --sidebar-ring: var(--weeber-accent);
+}
+
+/*
+ * Density variants (UI-DESIGN-BRIEF "Density" section) — same components,
+ * different spacing. `.shell-dense` = admin panel (/dashboard), ops staff,
+ * data-grid-first; `.shell-spacious` = merchant app (/app), generous
+ * whitespace. Applied on the same root element as `.theme-weeber`.
+ */
+.shell-dense {
+  --shell-page-px: 1.5rem;
+  --shell-page-py: 1.5rem;
+  --shell-page-max-w: 82rem;
+  --shell-row-py: 0.4375rem; /* 7px — tight table rows */
+  --shell-card-gap: 0.75rem;
+  --shell-section-gap: 1.25rem;
+}
+
+.shell-spacious {
+  --shell-page-px: 2rem;
+  --shell-page-py: 2.5rem;
+  --shell-page-max-w: 68rem;
+  --shell-row-py: 0.75rem;
+  --shell-card-gap: 1.25rem;
+  --shell-section-gap: 2rem;
 }
 
 .theme-weeber.dark {

@@ -86,13 +86,13 @@ function toFormState(row: AgentConfigRow): FormState {
 }
 
 function selectClass() {
-  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ember/40 w-full";
+  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
 }
 function inputClass() {
-  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ember/40 w-full";
+  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
 }
 function labelClass() {
-  return "block text-xs font-medium text-ink-soft mb-1";
+  return "block text-xs font-medium text-muted-foreground mb-1";
 }
 
 function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
@@ -171,7 +171,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   }
 
   return (
-    <div className="border-t border-border bg-paper-2/40 p-5 space-y-5">
+    <div className="border-t border-border bg-muted/40 p-5 space-y-5">
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor={`name-${row.templateKey}`} className={labelClass()}>Agent name</label>
@@ -271,7 +271,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
             type="button"
             onClick={playPreview}
             disabled={previewState === "loading"}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-paper-2 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50"
           >
             {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             Preview
@@ -340,7 +340,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 checked={name === "hangUp" || form.toolsEnabled.includes(name)}
                 disabled={name === "hangUp"}
                 onChange={() => toggleTool(name)}
-                className="accent-ember"
+                className="accent-primary"
               />
               <span className="font-mono text-xs">{name}</span>
             </label>
@@ -386,7 +386,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               aria-label="End call on sustained abuse"
               checked={form.abuseHandlingEnabled}
               onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
-              className="accent-ember"
+              className="accent-primary"
             />
             End call on sustained abuse
           </label>
@@ -400,21 +400,21 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
             aria-label="Agent enabled"
             checked={form.enabled}
             onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-            className="accent-ember"
+            className="accent-primary"
           />
           Agent enabled
         </label>
         <button
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-ember text-paper px-4 py-2 text-sm font-medium hover:bg-ember/90 transition-colors disabled:opacity-50"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
           Save
         </button>
       </div>
       {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-      {save.isSuccess && !saveError && <p className="text-xs text-ink-soft">Saved.</p>}
+      {save.isSuccess && !saveError && <p className="text-xs text-muted-foreground">Saved.</p>}
     </div>
   );
 }
@@ -450,11 +450,11 @@ export function AgentsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] flex items-center gap-2">
-          <Bot className="size-5 text-ember" />
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <Bot className="size-5 text-primary" />
           Agents
         </h1>
-        <p className="text-sm text-ink-soft mt-1 max-w-xl">
+        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
           Configure identity, voice, model, tools, and guardrails per agent — the fixed "frame" every agent is
           built from, whether set here by hand or (later) by describing the agent you want.
         </p>
@@ -472,11 +472,11 @@ export function AgentsPage() {
         </select>
       </div>
 
-      {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-ink-soft">Select an org to configure its agents.</div>}
+      {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Select an org to configure its agents.</div>}
 
-      {orgId && configs.isLoading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {orgId && configs.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {orgId && !configs.isLoading && rows.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-ink-soft">
+        <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
           No agent templates found for this org's vertical.
         </div>
       )}
@@ -489,24 +489,24 @@ export function AgentsPage() {
             <div key={row.templateKey}>
               <button
                 onClick={() => setExpandedKey(isExpanded ? null : row.templateKey)}
-                className="w-full flex items-center justify-between gap-4 px-5 py-4 hover:bg-paper-2/60 transition-colors text-left"
+                className="w-full flex items-center justify-between gap-4 px-5 py-4 hover:bg-muted/60 transition-colors text-left"
               >
                 <div>
                   <div className="text-sm font-medium flex items-center gap-2">
                     {row.config?.name || row.templateName}
                     {isConfigured ? (
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-signal bg-signal/10 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-success bg-success-soft px-1.5 py-0.5 rounded">
                         configured
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-ink-soft bg-ink/5 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         default
                       </span>
                     )}
                   </div>
-                  {row.templateDescription && <div className="text-xs text-ink-soft mt-0.5">{row.templateDescription}</div>}
+                  {row.templateDescription && <div className="text-xs text-muted-foreground mt-0.5">{row.templateDescription}</div>}
                 </div>
-                {isExpanded ? <ChevronUp className="size-4 text-ink-soft shrink-0" /> : <ChevronDown className="size-4 text-ink-soft shrink-0" />}
+                {isExpanded ? <ChevronUp className="size-4 text-muted-foreground shrink-0" /> : <ChevronDown className="size-4 text-muted-foreground shrink-0" />}
               </button>
               {isExpanded && <AgentEditForm orgId={orgId} row={row} />}
             </div>

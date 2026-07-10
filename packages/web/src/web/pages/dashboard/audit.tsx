@@ -49,11 +49,11 @@ export function AuditPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] flex items-center gap-2">
-          <ShieldCheck className="size-5 text-signal" />
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <ShieldCheck className="size-5 text-success" />
           Compliance audit
         </h1>
-        <p className="text-sm text-ink-soft mt-1 max-w-xl">
+        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
           Look up every call involving a number — consent/disclosure status, disposition, Do-Not-Call
           status, and the full transcript for each call, assembled into one exportable record. Built from
           data already collected, no reconstruction needed if you ever get asked to prove compliance.
@@ -72,12 +72,12 @@ export function AuditPage() {
           onChange={(e) => setPhoneNumber(e.target.value)}
           placeholder="+15551234567"
           aria-label="Phone number"
-          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-signal/40"
+          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
         />
         <button
           type="submit"
           disabled={!phoneNumber || loading}
-          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-signal text-paper px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           <Search className="size-4" />
           {loading ? "Looking up…" : "Look up"}
@@ -88,16 +88,16 @@ export function AuditPage() {
       {preview && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-ink-soft">Preview</h2>
+            <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground">Preview</h2>
             <button
               onClick={download}
-              className="inline-flex items-center gap-1.5 text-sm text-ember hover:underline"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
             >
               <Download className="size-4" />
               Download .txt
             </button>
           </div>
-          <pre className="rounded-lg border border-border bg-paper-2/40 p-4 text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
+          <pre className="rounded-lg border border-border bg-muted/40 p-4 text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
             {preview}
           </pre>
         </div>

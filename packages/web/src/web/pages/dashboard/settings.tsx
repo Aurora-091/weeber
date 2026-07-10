@@ -56,11 +56,11 @@ export function SettingsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] flex items-center gap-2">
-          <KeyRound className="size-5 text-ember" />
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <KeyRound className="size-5 text-primary" />
           Admin keys
         </h1>
-        <p className="text-sm text-ink-soft mt-1 max-w-xl">
+        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
           Your original <code className="font-mono text-xs">ADMIN_API_KEY</code> env var always keeps working —
           this is an additional way to hand out labeled, individually revocable keys instead of sharing that one
           secret with everyone.
@@ -68,7 +68,7 @@ export function SettingsPage() {
       </div>
 
       {justCreated && (
-        <div className="rounded-lg border border-ember/40 bg-ember/5 p-4 mb-8">
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 mb-8">
           <p className="text-sm font-medium mb-2">
             New key for "{justCreated.label}" — copy it now, it won't be shown again:
           </p>
@@ -82,7 +82,7 @@ export function SettingsPage() {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
-              className="inline-flex items-center gap-1.5 text-sm text-ember hover:underline shrink-0"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline shrink-0"
             >
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               {copied ? "Copied" : "Copy"}
@@ -103,12 +103,12 @@ export function SettingsPage() {
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Label — e.g. Jane's laptop, n8n webhook"
           aria-label="Key label"
-          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ember/40"
+          className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
         />
         <button
           type="submit"
           disabled={!label.trim() || create.isPending}
-          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-ember text-paper px-4 py-2 text-sm font-medium hover:bg-ember/90 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <Plus className="size-4" />
           Generate key
@@ -128,14 +128,14 @@ export function SettingsPage() {
                   </span>
                 )}
               </div>
-              <div className="text-xs text-ink-soft mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 created {formatWhen(k.createdAt)} · last used {formatWhen(k.lastUsedAt)}
               </div>
             </div>
             {!k.revokedAt && (
               <button
                 onClick={() => revoke.mutate(k.id)}
-                className="text-ink-soft hover:text-destructive transition-colors p-1.5"
+                className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
                 aria-label="Revoke key"
               >
                 <Trash2 className="size-4" />
@@ -144,7 +144,7 @@ export function SettingsPage() {
           </div>
         ))}
         {rows.length === 0 && (
-          <div className="px-4 py-8 text-sm text-ink-soft text-center">
+          <div className="px-4 py-8 text-sm text-muted-foreground text-center">
             No labeled keys yet — just the ADMIN_API_KEY env var.
           </div>
         )}

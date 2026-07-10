@@ -5,8 +5,8 @@ import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 
 const STATUS_STYLES: Record<string, string> = {
-  "in-progress": "bg-signal/15 text-signal",
-  completed: "bg-ink/10 text-ink-soft",
+  "in-progress": "bg-success-soft text-success",
+  completed: "bg-muted text-muted-foreground",
   failed: "bg-destructive/10 text-destructive",
 };
 
@@ -33,15 +33,15 @@ export function CallsListPage() {
     <div>
       <div className="flex items-baseline justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)]">Calls</h1>
-          <p className="text-sm text-ink-soft mt-1">Live and completed calls across every configured number.</p>
+          <h1 className="text-2xl font-semibold">Calls</h1>
+          <p className="text-sm text-muted-foreground mt-1">Live and completed calls across every configured number.</p>
         </div>
-        <span className="text-xs font-mono text-ink-soft">{rows.length} total</span>
+        <span className="text-xs font-mono text-muted-foreground">{rows.length} total</span>
       </div>
 
-      {calls.isLoading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {calls.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {!calls.isLoading && rows.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-ink-soft">
+        <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
           No calls yet. Place an outbound call or dial your Twilio number to see one here.
         </div>
       )}
@@ -53,34 +53,34 @@ export function CallsListPage() {
             <Link
               key={call.id}
               href={`/dashboard/calls/${call.id}`}
-              className="flex items-center gap-4 px-5 py-3.5 hover:bg-paper-2/60 transition-colors"
+              className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/60 transition-colors"
             >
               <div className="shrink-0">
                 {call.direction === "inbound" ? (
-                  <PhoneIncoming className="size-4 text-signal" />
+                  <PhoneIncoming className="size-4 text-success" />
                 ) : (
-                  <PhoneOutgoing className="size-4 text-ember" />
+                  <PhoneOutgoing className="size-4 text-primary" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-sm">{call.fromNumber} → {call.toNumber}</span>
                   {call.disposition && (
-                    <span className="text-xs font-mono text-ink-soft bg-paper-2 px-1.5 py-0.5 rounded">
+                    <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                       {call.disposition}
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-ink-soft mt-0.5">{formatWhen(call.startedAt)}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{formatWhen(call.startedAt)}</div>
               </div>
               {factCount > 0 && (
-                <div className="flex items-center gap-1 text-xs text-signal shrink-0" title={`${factCount} facts captured`}>
+                <div className="flex items-center gap-1 text-xs text-success shrink-0" title={`${factCount} facts captured`}>
                   <Sparkles className="size-3.5" />
                   {factCount}
                 </div>
               )}
               <span
-                className={`shrink-0 text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[call.status] ?? "bg-paper-2 text-ink-soft"}`}
+                className={`shrink-0 text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[call.status] ?? "bg-muted text-muted-foreground"}`}
               >
                 {call.status}
               </span>

@@ -29,8 +29,8 @@ async function downloadAudit(callId: string) {
 function LatencyRow({ label, ms }: { label: string; ms: number | null }) {
   return (
     <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className="text-ink-soft">{label}</span>
-      <span className={`font-mono ${ms == null ? "text-ink-soft/50 italic text-xs" : "font-medium"}`}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`font-mono ${ms == null ? "text-muted-foreground/60 italic text-xs" : "font-medium"}`}>
         {ms == null ? "not recorded" : `${ms}ms`}
       </span>
     </div>
@@ -89,17 +89,17 @@ export function CallDetailPage() {
 
   return (
     <div>
-      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-ink-soft hover:text-ink transition-colors mb-6">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
         <ArrowLeft className="size-3.5" />
         All calls
       </Link>
 
       {row && (
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] font-mono">
+          <h1 className="text-2xl font-semibold font-mono">
             {row.fromNumber} → {row.toNumber}
           </h1>
-          <p className="text-sm text-ink-soft mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {row.direction} · {row.status}
             {row.disposition ? ` · ${row.disposition}` : ""}
           </p>
@@ -109,7 +109,7 @@ export function CallDetailPage() {
                 href={row.recordingUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-ember hover:underline"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
                 <PlayCircle className="size-4" />
                 Play recording
@@ -117,7 +117,7 @@ export function CallDetailPage() {
             )}
             <button
               onClick={() => downloadAudit(String(row.id))}
-              className="inline-flex items-center gap-1.5 text-sm text-signal hover:underline"
+              className="inline-flex items-center gap-1.5 text-sm text-success hover:underline"
             >
               <ShieldCheck className="size-4" />
               Export compliance audit
@@ -128,20 +128,20 @@ export function CallDetailPage() {
 
       <div className="grid md:grid-cols-[1fr_320px] gap-8">
         <div>
-          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-ink-soft mb-3">Transcript</h2>
+          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground mb-3">Transcript</h2>
           <div className="rounded-lg border border-border divide-y divide-border">
             {transcriptRows.map((t) => (
-              <div key={t.id} className={`px-4 py-3 ${t.role === "agent" ? "bg-paper-2/40" : ""}`}>
-                <div className="text-[10px] font-mono uppercase tracking-wider text-ink-soft mb-1">{t.role}</div>
+              <div key={t.id} className={`px-4 py-3 ${t.role === "agent" ? "bg-muted/40" : ""}`}>
+                <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">{t.role}</div>
                 <div className="text-sm leading-relaxed">{t.text}</div>
               </div>
             ))}
             {transcriptRows.length === 0 && (
-              <div className="px-4 py-6 text-sm text-ink-soft text-center">No transcript yet.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground text-center">No transcript yet.</div>
             )}
           </div>
 
-          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-ink-soft mt-8 mb-3 flex items-center gap-1.5">
+          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3 flex items-center gap-1.5">
             <Wrench className="size-3.5" />
             Tool calls
           </h2>
@@ -151,25 +151,25 @@ export function CallDetailPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-mono">{tc.toolName}</span>
                   {tc.toolName === "captureField" && (
-                    <span className="text-[10px] font-mono text-signal bg-signal-soft/40 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-success bg-success-soft px-1.5 py-0.5 rounded">
                       state write
                     </span>
                   )}
                 </div>
-                <pre className="text-xs text-ink-soft mt-1.5 overflow-x-auto font-mono">
+                <pre className="text-xs text-muted-foreground mt-1.5 overflow-x-auto font-mono">
                   {JSON.stringify(tc.input, null, 2)}
                 </pre>
               </div>
             ))}
             {toolCallRows.length === 0 && (
-              <div className="px-4 py-6 text-sm text-ink-soft text-center">No tool calls yet.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground text-center">No tool calls yet.</div>
             )}
           </div>
         </div>
 
         <div>
-          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-ink-soft mb-3 flex items-center gap-1.5">
-            <Gauge className="size-3.5 text-ember" />
+          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Gauge className="size-3.5 text-primary" />
             Latency breakdown
           </h2>
           <div className="rounded-lg border border-border bg-card p-4 mb-6">
@@ -178,23 +178,23 @@ export function CallDetailPage() {
             <LatencyRow label="TTS first byte" ms={latencyRow?.ttsFirstByteMs ?? null} />
           </div>
 
-          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-ink-soft mb-3 flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-signal" />
+          <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Sparkles className="size-3.5 text-success" />
             Captured state
           </h2>
           <motion.div
             layout
-            className="rounded-lg border border-signal-soft bg-signal-soft/10 p-4"
+            className="rounded-lg border border-success/25 bg-success-soft/40 p-4"
           >
-            <p className="text-xs text-ink-soft mb-3 leading-relaxed">
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
               Structured facts confirmed this call — the agent reads these back every turn instead of the raw
               transcript, so it never re-asks for something already known.
             </p>
-            {facts.length === 0 && <p className="text-sm text-ink-soft italic">Nothing captured yet.</p>}
+            {facts.length === 0 && <p className="text-sm text-muted-foreground italic">Nothing captured yet.</p>}
             <dl className="space-y-2">
               {facts.map(([field, value]) => (
                 <div key={field}>
-                  <dt className="text-[10px] font-mono uppercase tracking-wider text-signal">{field}</dt>
+                  <dt className="text-[10px] font-mono uppercase tracking-wider text-success">{field}</dt>
                   <dd className="text-sm font-medium">{String(value)}</dd>
                 </div>
               ))}

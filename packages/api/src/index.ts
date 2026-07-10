@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from "hono/cors"
 import { voice } from "./voice/routes";
+import { admin } from "./voice/admin-routes";
+import { merchantApp } from "./app/routes";
 import { shopify } from "./integrations/shopify/routes";
 import { resolveTtsProvider } from "./voice/tts";
 import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
@@ -30,6 +32,9 @@ const app = new Hono()
         return origin && allowedOrigins.includes(origin) ? origin : null;
       },
       credentials: true,
+      // Explicit allowlist because both auth headers are non-simple — with a
+      // CORS origin allowlist set, preflights would otherwise reject them.
+      allowHeaders: ["Content-Type", "Authorization", "X-OpenVent-Admin-Key", "X-Weeber-Impersonation"],
       exposeHeaders: ["set-auth-token"],
     }),
   )
@@ -61,6 +66,8 @@ const app = new Hono()
     ),
   )
   .route('/voice', voice)
+  .route('/voice', admin)
+  .route('/app', merchantApp)
   .route('/', shopify);
 // Note: the Twilio Media Stream WebSocket (/api/voice/stream) is handled
 // natively in server.ts, not through this Hono app — see voice/ws-route.ts.

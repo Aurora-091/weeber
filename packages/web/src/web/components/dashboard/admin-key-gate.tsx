@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { getAdminKey, setAdminKey, adminHeaders } from "../../lib/admin-key";
 import { apiFetch } from "../../lib/api";
+import { useTheme } from "../../lib/theme";
+import { cn } from "../../lib/utils";
 
 /**
  * Gates dashboard access behind the same ADMIN_API_KEY used by ops
@@ -12,6 +14,7 @@ import { apiFetch } from "../../lib/api";
  * immediately instead of silently 401ing on every request underneath.
  */
 export function AdminKeyGate({ children }: { children: ReactNode }) {
+  const { theme } = useTheme();
   const [input, setInput] = useState(getAdminKey());
   const [attempted, setAttempted] = useState(getAdminKey().length > 0);
 
@@ -35,18 +38,25 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center px-6">
+    // The gate renders outside the dashboard shell, so it carries its own
+    // .theme-weeber root — otherwise the token classes below resolve to nothing.
+    <div
+      className={cn(
+        "theme-weeber min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
+        theme === "dark" && "dark",
+      )}
+    >
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2 text-ember mb-4">
+        <div className="flex items-center gap-2 text-primary mb-4">
           <KeyRound className="size-5" />
           <span className="font-mono text-xs uppercase tracking-[0.2em]">Admin access required</span>
         </div>
-        <h1 className="text-2xl font-semibold font-[family-name:var(--font-display)] mb-2">
+        <h1 className="text-2xl font-semibold mb-2">
           Enter your admin key
         </h1>
-        <p className="text-sm text-ink-soft mb-6">
-          This matches <code className="font-mono text-xs bg-paper-2 px-1.5 py-0.5 rounded">ADMIN_API_KEY</code> in
-          your server's <code className="font-mono text-xs bg-paper-2 px-1.5 py-0.5 rounded">.env</code>. Stored only
+        <p className="text-sm text-muted-foreground mb-6">
+          This matches <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">ADMIN_API_KEY</code> in
+          your server's <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.env</code>. Stored only
           in this tab's session storage.
         </p>
         <form
@@ -64,11 +74,11 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
             onChange={(e) => setInput(e.target.value)}
             placeholder="Admin key"
             aria-label="Admin key"
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ember/40"
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
           />
           <button
             type="submit"
-            className="w-full rounded-md bg-ember text-paper px-4 py-2 text-sm font-medium hover:bg-ember/90 transition-colors"
+            className="w-full rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Unlock dashboard
           </button>

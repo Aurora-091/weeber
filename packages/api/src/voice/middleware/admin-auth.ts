@@ -20,20 +20,31 @@ import { findActiveAdminKey, hasAnyAdminKey } from "../admin-keys";
  * testing. Once even one labeled key exists, that fallback stops applying —
  * an operator who's deliberately started using labeled keys shouldn't have
  * an unset env var silently reopen the gate.
+ *
+ * Sets `adminActor` on the context — which credential authenticated the
+ * request ("env-admin-key", a labeled key's label, or "unauthenticated-dev"
+ * for the local no-key fallback). Consumed by the impersonation audit log,
+ * which must record *who* started a session, not just that someone did.
  */
 let warnedMissingKey = false;
 
-export const requireAdminKey = createMiddleware(async (c, next) => {
+export type AdminAuthVariables = { adminActor: string };
+
+export const requireAdminKey = createMiddleware<{ Variables: AdminAuthVariables }>(async (c, next) => {
   const providedKey = c.req.header("X-OpenVent-Admin-Key");
   const configuredKey = process.env.ADMIN_API_KEY;
 
   if (configuredKey && providedKey === configuredKey) {
+    c.set("adminActor", "env-admin-key");
     return next();
   }
 
   if (providedKey) {
     const match = await findActiveAdminKey(providedKey).catch(() => null);
-    if (match) return next();
+    if (match) {
+      c.set("adminActor", match.label);
+      return next();
+    }
   }
 
   if (!configuredKey && !(await hasAnyAdminKey().catch(() => false))) {
@@ -45,6 +56,7 @@ export const requireAdminKey = createMiddleware(async (c, next) => {
       );
       warnedMissingKey = true;
     }
+    c.set("adminActor", "unauthenticated-dev");
     return next();
   }
 
