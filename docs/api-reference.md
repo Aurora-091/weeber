@@ -1,7 +1,7 @@
 # API reference
 
 | Method | Path | Description |
-|---|---|---|
+|---|---|---|--
 | GET | `/api/health` | Pipeline health, active providers, compliance config |
 | POST | `/api/voice/incoming` | Twilio webhook — returns TwiML to start the media stream (signature-verified) |
 | POST | `/api/voice/calls/outbound` | Trigger an outbound call: `{ to, persona?, webhookUrl? }` (compliance-gated, rate-limited, admin-key gated) |
