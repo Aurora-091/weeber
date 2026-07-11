@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -198,50 +198,60 @@
 }
 
 /*
- * Weeber product theme (ADR-032, recolored 2026-07-10 — see DECISIONS.md
- * for the override) — scoped via `.theme-weeber`, applied at the root
- * layout of /dashboard (admin panel) and /app (merchant dashboard) ONLY.
- * Deliberately separate from the `:root`/`.dark` tokens above, which
- * belong to the public OpenVent OSS landing page/marketing site (editorial
- * serif, paper/ink/ember) — that page isn't part of Weeber's product
- * surface and is left untouched. Every actual Weeber screen should have
- * `.theme-weeber` on its root element.
+ * Weeber product theme (ADR-032, recolored ADR-039, light/dark fixed
+ * ADR-044) — scoped via `.theme-weeber`, applied at the root layout of
+ * /dashboard (admin panel) and /app (merchant dashboard) ONLY. Deliberately
+ * separate from the `:root`/`.dark` tokens above, which belong to the
+ * public OpenVent OSS landing page (editorial serif, paper/ink/ember) —
+ * that page isn't part of Weeber's product surface and is left untouched.
+ * Every actual Weeber screen should have `.theme-weeber` on its root
+ * element.
  *
- * Direction (2026-07-10 override of ADR-032's warm-paper/indigo-violet
- * round): dark by default, fully monochrome — near-black background,
- * light-grey foreground, zero brand/accent hue anywhere, including primary
- * buttons and the active-nav state (those render as an inverted
- * white-on-black / light-grey treatment instead of a color). The only
- * color left anywhere in this theme is the semantic error/success/warning
- * set — those stay distinct hues on purpose (compliance/call-outcome
- * status needs to be scannable at a glance; "everything is grey" would
- * make a DNC/guardrail alert indistinguishable from a normal state). If
- * that's not wanted either, say so and those go grayscale too.
+ * Bug fixed here (ADR-044): `.theme-weeber` (no `.dark`) previously WAS the
+ * dark monochrome palette itself, and `.theme-weeber.dark` held an
+ * unrelated leftover warm/purple theme from the original ADR-032 round
+ * (chroma 0.014-0.019, a blue-violet accent hue) that ADR-039's "recolor to
+ * monochrome" pass never actually touched. Net effect: the default/light
+ * state rendered near-black, and toggling to "dark" made it warmer and
+ * purple-accented instead of darker and monochrome — backwards from what
+ * "light = white, dark = black/grey" means. Fixed by making base
+ * `.theme-weeber` the actual light-monochrome variant (white background,
+ * near-black text) and moving the correct near-black monochrome palette
+ * into `.theme-weeber.dark` where it always belonged. The old warm/purple
+ * block is gone, not just unreferenced.
+ *
+ * Direction (unchanged from ADR-039): monochrome in both modes — only
+ * lightness varies, zero brand/accent hue anywhere including primary
+ * buttons and the active-nav state (inverted black-on-white / white-on-black
+ * instead of a color). The one deliberate exception is the semantic
+ * error/success/warning set — those stay distinct hues in both modes on
+ * purpose (compliance/call-outcome status needs to be scannable at a
+ * glance).
  */
 .theme-weeber {
   --radius: 0.625rem; /* 10px — unchanged, orthogonal to the color round */
 
-  /* Monochrome surfaces — chroma 0 throughout, only lightness varies */
-  --weeber-paper: oklch(0.145 0 0); /* near-black background */
-  --weeber-paper-2: oklch(0.2 0 0); /* slightly raised surface */
-  --weeber-ink: oklch(0.93 0 0); /* light-grey foreground */
-  --weeber-ink-soft: oklch(0.64 0 0); /* muted/secondary text */
-  --weeber-border: oklch(0.26 0 0);
+  /* Monochrome surfaces — chroma 0 throughout, only lightness varies. */
+  --weeber-paper: oklch(0.99 0 0); /* near-white background */
+  --weeber-paper-2: oklch(0.96 0 0); /* slightly recessed surface */
+  --weeber-ink: oklch(0.16 0 0); /* near-black foreground */
+  --weeber-ink-soft: oklch(0.46 0 0); /* muted/secondary text */
+  --weeber-border: oklch(0.87 0 0);
 
-  /* No brand/accent hue — "accent" here just means light-grey-on-black
-     (inverted), the monochrome equivalent of a filled button, not a color. */
-  --weeber-accent: oklch(0.93 0 0);
-  --weeber-accent-soft: oklch(0.24 0 0);
-  --weeber-accent-foreground: oklch(0.145 0 0);
+  /* No brand/accent hue — inverted black-on-white, the monochrome
+     equivalent of a filled button, not a color. */
+  --weeber-accent: oklch(0.16 0 0);
+  --weeber-accent-soft: oklch(0.91 0 0);
+  --weeber-accent-foreground: oklch(0.99 0 0);
 
   /* Semantic status set — the one deliberate exception to monochrome, see
-     the comment above this block for why. */
-  --weeber-success: oklch(0.6 0.14 150);
-  --weeber-success-soft: oklch(0.27 0.05 150);
-  --weeber-warning: oklch(0.75 0.15 80);
-  --weeber-warning-soft: oklch(0.3 0.06 80);
-  --weeber-error: oklch(0.62 0.2 25);
-  --weeber-error-soft: oklch(0.28 0.06 25);
+     the comment above this block for why. Tuned for a light background. */
+  --weeber-success: oklch(0.52 0.14 150);
+  --weeber-success-soft: oklch(0.93 0.05 150);
+  --weeber-warning: oklch(0.62 0.15 80);
+  --weeber-warning-soft: oklch(0.93 0.07 80);
+  --weeber-error: oklch(0.55 0.2 25);
+  --weeber-error-soft: oklch(0.93 0.06 25);
 
   --background: var(--weeber-paper);
   --foreground: var(--weeber-ink);
@@ -260,15 +270,15 @@
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
   --input: var(--weeber-border);
-  --ring: oklch(0.5 0 0);
-  --sidebar: oklch(0.11 0 0);
+  --ring: oklch(0.6 0 0);
+  --sidebar: oklch(0.97 0 0);
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);
   --sidebar-accent: var(--weeber-accent-soft);
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: var(--weeber-border);
-  --sidebar-ring: oklch(0.5 0 0);
+  --sidebar-ring: oklch(0.6 0 0);
 }
 
 /*
@@ -334,47 +344,636 @@
 .edge-muted { border-left: 3px solid var(--weeber-border); }
 
 .theme-weeber.dark {
-  --weeber-paper: oklch(0.19 0.014 60);
-  --weeber-paper-2: oklch(0.23 0.015 60);
-  --weeber-ink: oklch(0.95 0.01 85);
-  --weeber-ink-soft: oklch(0.68 0.012 70);
-  --weeber-border: oklch(0.32 0.015 60);
+  /* The correct near-black monochrome palette — moved here from base
+     `.theme-weeber` as part of the ADR-044 fix (see comment above). */
+  --weeber-paper: oklch(0.145 0 0);
+  --weeber-paper-2: oklch(0.2 0 0);
+  --weeber-ink: oklch(0.93 0 0);
+  --weeber-ink-soft: oklch(0.64 0 0);
+  --weeber-border: oklch(0.26 0 0);
 
-  --weeber-accent: oklch(0.68 0.16 275);
-  --weeber-accent-soft: oklch(0.32 0.06 275);
-  --weeber-accent-foreground: oklch(0.15 0.012 60);
+  --weeber-accent: oklch(0.93 0 0);
+  --weeber-accent-soft: oklch(0.24 0 0);
+  --weeber-accent-foreground: oklch(0.145 0 0);
 
-  --weeber-success: oklch(0.65 0.14 150);
-  --weeber-success-soft: oklch(0.28 0.05 150);
-  --weeber-warning: oklch(0.78 0.14 80);
-  --weeber-warning-soft: oklch(0.3 0.05 80);
-  --weeber-error: oklch(0.65 0.19 25);
-  --weeber-error-soft: oklch(0.3 0.06 25);
+  --weeber-success: oklch(0.6 0.14 150);
+  --weeber-success-soft: oklch(0.27 0.05 150);
+  --weeber-warning: oklch(0.75 0.15 80);
+  --weeber-warning-soft: oklch(0.3 0.06 80);
+  --weeber-error: oklch(0.62 0.2 25);
+  --weeber-error-soft: oklch(0.28 0.06 25);
 
   --background: var(--weeber-paper);
   --foreground: var(--weeber-ink);
-  --card: oklch(0.23 0.015 60);
+  --card: var(--weeber-paper-2);
   --card-foreground: var(--weeber-ink);
-  --popover: oklch(0.23 0.015 60);
+  --popover: var(--weeber-paper-2);
   --popover-foreground: var(--weeber-ink);
   --primary: var(--weeber-accent);
   --primary-foreground: var(--weeber-accent-foreground);
-  --secondary: oklch(0.26 0.015 60);
+  --secondary: var(--weeber-paper-2);
   --secondary-foreground: var(--weeber-ink);
-  --muted: oklch(0.26 0.015 60);
+  --muted: var(--weeber-paper-2);
   --muted-foreground: var(--weeber-ink-soft);
   --accent: var(--weeber-accent-soft);
   --accent-foreground: var(--weeber-ink);
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
   --input: var(--weeber-border);
-  --ring: var(--weeber-accent);
-  --sidebar: oklch(0.21 0.015 60);
+  --ring: oklch(0.5 0 0);
+  --sidebar: oklch(0.11 0 0);
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);
   --sidebar-accent: var(--weeber-accent-soft);
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: var(--weeber-border);
-  --sidebar-ring: var(--weeber-accent);
+  --sidebar-ring: oklch(0.5 0 0);
+}
+
+/*
+ * Weeber public marketing/waitlist page (landing.tsx) — scoped via
+ * `.marketing`, faithfully ported from the Vocalist marketing site
+ * (github.com/Aurora-091/Vocalist, src/index.css + src/pages/Waitlist.tsx)
+ * per explicit direction to replicate the design/animations exactly, not
+ * reinterpret into the dark-monochrome `.theme-weeber` system used by
+ * /dashboard and /app. Deliberately a separate token set (--m-*) from
+ * `.theme-weeber`'s (--weeber-*) — the public site and the product surfaces
+ * are allowed to look different on purpose.
+ */
+.marketing {
+  --m-bg: #FCFCFB;
+  --m-bg-alt: #F3F2EF;
+  --m-surface: #FFFFFF;
+  --m-border: #E6E5E2;
+  --m-text: #0B0B0C;
+  --m-text-secondary: #45454C;
+  --m-text-muted: #7A7A82;
+  --m-accent-bg: #0B0B0C;
+  --m-accent-fg: #FCFCFB;
+  --m-input-border: #B7B6B1;
+  --m-input-shadow: 0 1px 2px rgba(11, 11, 12, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --m-input-focus-ring: rgba(11, 11, 12, 0.12);
+  background-color: var(--m-bg);
+  color: var(--m-text);
+}
+
+:is(.dark) .marketing {
+  --m-bg: #000000;
+  --m-bg-alt: #0A0A0A;
+  --m-surface: #141414;
+  --m-border: rgba(255, 255, 255, 0.08);
+  --m-text: #FAFAFA;
+  --m-text-secondary: #C7C7CC;
+  --m-text-muted: #8A8A90;
+  --m-accent-bg: #FAFAFA;
+  --m-accent-fg: #000000;
+  --m-input-border: rgba(255, 255, 255, 0.16);
+  --m-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --m-input-focus-ring: rgba(255, 255, 255, 0.14);
+}
+
+.marketing .font-display {
+  font-family: "Bricolage Grotesque", "Fraunces", "Inter Tight", sans-serif;
+}
+
+.marketing .grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+}
+
+:is(.dark) .marketing .grain-overlay {
+  mix-blend-mode: overlay;
+  opacity: 0.025;
+}
+
+.marketing .marketing-content {
+  position: relative;
+  z-index: 2;
+}
+
+.marketing [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.marketing [data-reveal].revealed {
+  opacity: 1;
+  transform: none;
+}
+
+.marketing .card-lift {
+  transition:
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.marketing .card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-color: #C8C6C0;
+}
+
+:is(.dark) .marketing .card-lift:hover {
+  box-shadow: 0 12px 32px -8px rgba(255, 255, 255, 0.04), 0 2px 8px rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.marketing .link-grow {
+  position: relative;
+  display: inline-block;
+}
+
+.marketing .link-grow::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width 0.25s ease;
+}
+
+.marketing .link-grow:hover::after {
+  width: 100%;
+}
+
+.marketing .hero-pulse-dot {
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.2);
+  animation: hero-pulse 2s infinite;
+}
+
+@keyframes hero-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(34,197,94,0.05); }
+}
+
+.marketing .hero-wave-bar {
+  flex: 1;
+  max-width: 12px;
+  min-width: 6px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, #0B0B0C 0%, #475569 50%, #94A3B8 100%);
+  opacity: 0.35;
+  animation: heroBgWave 3.5s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+:is(.dark) .marketing .hero-wave-bar {
+  background: linear-gradient(180deg, #FAFAFA 0%, #64748B 50%, #334155 100%);
+  opacity: 0.2;
+}
+
+@keyframes heroBgWave {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.25; }
+  50% { transform: scaleY(1); opacity: 0.4; }
+}
+
+.marketing .hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.marketing .hero-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  z-index: 1;
+  background: linear-gradient(180deg, transparent 0%, var(--m-bg, #FCFCFB) 86%);
+}
+
+.marketing .btn-press:active {
+  transform: scale(0.97);
+}
+
+/* Agent Demo Widget — Multi-Demo with Orb */
+.marketing .demo-widget {
+  background: var(--m-bg);
+  border: 1px solid var(--m-border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.marketing .demo-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+  gap: 12px;
+}
+
+.marketing .demo-nav-arrow {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--m-border);
+  background: var(--m-surface);
+  color: var(--m-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1), background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.marketing .demo-nav-arrow:hover {
+  background: var(--m-bg-alt);
+  transform: scale(1.08);
+}
+
+.marketing .demo-nav-arrow:active {
+  transform: scale(0.95);
+}
+
+.marketing .demo-nav-center {
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.marketing .demo-nav-title {
+  display: block;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--m-text);
+  letter-spacing: -0.01em;
+}
+
+.marketing .demo-nav-subtitle {
+  display: block;
+  font-size: 12.5px;
+  color: var(--m-text-muted);
+  margin-top: 2px;
+}
+
+.marketing .demo-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 0 4px;
+}
+
+.marketing .demo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--m-border);
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.3s ease;
+}
+
+.marketing .demo-dot--active {
+  transform: scale(1.3);
+}
+
+.marketing .demo-dot:hover:not(.demo-dot--active) {
+  background: var(--m-text-muted);
+}
+
+.marketing .demo-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 360px;
+}
+
+@media (min-width: 768px) {
+  .marketing .demo-body {
+    grid-template-columns: 1fr 1.2fr;
+  }
+}
+
+.marketing .demo-orb-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 32px 24px;
+  border-bottom: 1px solid var(--m-border);
+}
+
+@media (min-width: 768px) {
+  .marketing .demo-orb-side {
+    border-bottom: none;
+    border-right: 1px solid var(--m-border);
+  }
+}
+
+.marketing .demo-orb-wrapper {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .marketing .demo-orb-wrapper {
+    width: 180px;
+    height: 180px;
+  }
+}
+
+.marketing .demo-orb-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.marketing .demo-orb {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  filter: blur(0px);
+  transition: filter 0.4s ease;
+}
+
+.marketing .demo-orb-blob {
+  position: absolute;
+  border-radius: 50%;
+  transition: transform 0.6s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease;
+}
+
+.marketing .demo-orb-blob--1 {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background: radial-gradient(circle at 30% 30%, var(--orb-color), transparent 70%);
+  opacity: 0.7;
+  animation: orbBreathe 4s ease-in-out infinite;
+}
+
+.marketing .demo-orb-blob--2 {
+  width: 80%;
+  height: 80%;
+  top: 10%;
+  left: 20%;
+  background: radial-gradient(circle at 60% 50%, var(--orb-color), transparent 60%);
+  opacity: 0.5;
+  animation: orbBreathe 4s ease-in-out infinite 1s;
+}
+
+.marketing .demo-orb-blob--3 {
+  width: 60%;
+  height: 60%;
+  top: 25%;
+  left: 15%;
+  background: radial-gradient(circle at 40% 70%, var(--orb-color), transparent 55%);
+  opacity: 0.6;
+  animation: orbBreathe 4s ease-in-out infinite 2s;
+}
+
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(0.97) rotate(0deg); }
+  50% { transform: scale(1.03) rotate(3deg); }
+}
+
+.marketing .demo-orb--playing .demo-orb-blob--1 {
+  animation: orbMorph1 1.8s ease-in-out infinite;
+  opacity: 0.9;
+}
+
+.marketing .demo-orb--playing .demo-orb-blob--2 {
+  animation: orbMorph2 2.2s ease-in-out infinite;
+  opacity: 0.8;
+}
+
+.marketing .demo-orb--playing .demo-orb-blob--3 {
+  animation: orbMorph3 2.6s ease-in-out infinite;
+  opacity: 0.85;
+}
+
+.marketing .demo-orb--playing {
+  filter: blur(1px);
+}
+
+@keyframes orbMorph1 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  25% { transform: scale(1.1) translate(5%, -3%) rotate(5deg); }
+  50% { transform: scale(0.95) translate(-3%, 5%) rotate(-3deg); }
+  75% { transform: scale(1.05) translate(3%, 2%) rotate(2deg); }
+}
+
+@keyframes orbMorph2 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  33% { transform: scale(1.15) translate(-5%, 4%) rotate(-4deg); }
+  66% { transform: scale(0.9) translate(4%, -4%) rotate(6deg); }
+}
+
+@keyframes orbMorph3 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  25% { transform: scale(0.85) translate(6%, 5%) rotate(-5deg); }
+  50% { transform: scale(1.2) translate(-4%, -3%) rotate(4deg); }
+  75% { transform: scale(0.95) translate(2%, 4%) rotate(-2deg); }
+}
+
+.marketing .demo-orb--done .demo-orb-blob {
+  opacity: 0.4;
+}
+
+.marketing .demo-orb-glow {
+  position: absolute;
+  inset: -20%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--orb-color), transparent 65%);
+  opacity: 0.1;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.marketing .demo-orb--playing ~ .demo-orb-glow {
+  opacity: 0.2;
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(1.05); }
+}
+
+.marketing .demo-orb-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  color: #0B0B0C;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15), 0 1px 4px rgba(0,0,0,0.1);
+  transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease;
+  z-index: 2;
+}
+
+:is(.dark) .marketing .demo-orb-play {
+  background: rgba(20, 20, 20, 0.9);
+  color: #FAFAFA;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1);
+}
+
+.marketing .demo-orb-play:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.2), 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.marketing .demo-orb-play:active {
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
+.marketing .demo-orb-play--active {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+:is(.dark) .marketing .demo-orb-play--active {
+  background: rgba(20, 20, 20, 0.8);
+}
+
+.marketing .demo-orb-status {
+  text-align: center;
+  min-height: 20px;
+}
+
+.marketing .demo-orb-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--m-text);
+}
+
+.marketing .demo-orb-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.marketing .demo-progress-track {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--m-border);
+  overflow: hidden;
+}
+
+.marketing .demo-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s linear;
+}
+
+.marketing .demo-transcript-side {
+  padding: 24px;
+  max-height: 400px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.marketing .demo-transcript-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--m-text-muted);
+  margin-bottom: 16px;
+}
+
+.marketing .demo-transcript-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.marketing .demo-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: bubbleIn 0.35s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.marketing .demo-bubble-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.marketing .demo-bubble--agent .demo-bubble-label {
+  color: var(--m-text);
+}
+
+.marketing .demo-bubble--customer .demo-bubble-label {
+  color: var(--m-text-muted);
+}
+
+.marketing .demo-bubble-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--m-text-secondary);
+}
+
+.marketing .demo-bubble--agent .demo-bubble-text {
+  color: var(--m-text);
+}
+
+.marketing .demo-transcript-empty {
+  font-size: 13px;
+  color: var(--m-text-muted);
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+  .marketing .card-lift:hover {
+    transform: none;
+  }
+  .marketing .demo-orb-blob,
+  .marketing .demo-orb-glow,
+  .marketing .demo-orb-live-dot,
+  .marketing .demo-bubble {
+    animation: none !important;
+  }
 }

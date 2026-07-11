@@ -94,4 +94,37 @@ export const publicRoutes = new Hono()
     const ticket = await submitSupportTicket({ email, subject, message });
     if (!ticket) return c.json({ error: "Failed to submit ticket" }, 500);
     return c.json({ submitted: true }, 201);
+  })
+
+  // Enterprise-inquiry form (landing page's EnterpriseDialog) — routed through
+  // the same support-ticket table rather than a dedicated one; it's a single
+  // multi-step lead-capture form, not a recurring surface that needs its own
+  // schema. Subject is a fixed tag so these are easy to filter for in the
+  // admin support-tickets view.
+  .post("/enterprise-inquiry", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { name, email, businessType, callVolume, painPoint, timeline, extraInfo } = body as {
+      name?: string;
+      email?: string;
+      businessType?: string;
+      callVolume?: string;
+      painPoint?: string;
+      timeline?: string;
+      extraInfo?: string;
+    };
+    if (!name?.trim() || !email?.trim() || !businessType?.trim()) {
+      return c.json({ error: "`name`, `email`, and `businessType` are required" }, 400);
+    }
+    const message = [
+      `Name: ${name.trim()}`,
+      `Business type: ${businessType.trim()}`,
+      `Call volume: ${callVolume?.trim() || "(not provided)"}`,
+      `Pain point: ${painPoint?.trim() || "(not provided)"}`,
+      `Timeline: ${timeline?.trim() || "(not provided)"}`,
+      `Extra info: ${extraInfo?.trim() || "(none)"}`,
+    ].join("\n");
+    const ticket = await submitSupportTicket({ email, subject: "Enterprise inquiry", message });
+    if (!ticket) return c.json({ error: "Failed to submit inquiry" }, 500);
+    return c.json({ submitted: true }, 201);
   });

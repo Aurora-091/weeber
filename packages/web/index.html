@@ -3,96 +3,50 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<link rel="icon" href="/favicon.ico" />
+		<link rel="icon" type="image/png" href="/favicon.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="preload" href="/favicon.png" as="image" type="image/png" />
 
-		<title>OpenVent — Self-Hosted Voice Agent Infrastructure</title>
+		<title>Weeber — AI Voice Agents for Missed Calls | Join the Waitlist</title>
 		<meta
 			name="description"
-			content="OpenVent is an open-core, self-hosted voice AI orchestration framework. Bring your own Twilio, Deepgram, ElevenLabs/Cartesia, and LLM keys — barge-in, tool calling, TCPA/DNC/HIPAA/GDPR compliance, and a full operator dashboard, all in code you own and can self-host forever."
+			content="Weeber gives Shopify stores and clinics an AI voice agent on a real phone number — recovers abandoned carts, answers order questions, books appointments, 24/7. Compliant by default. Join the waitlist."
 		/>
 		<meta
 			name="keywords"
-			content="open source voice AI, self-hosted voice agent, voice agent framework, Twilio voice AI, alternative to Vapi, alternative to Retell, TCPA compliance voice AI, voice orchestration framework, Apache 2.0 voice AI"
+			content="AI voice agent, voice AI for Shopify, abandoned cart recovery calls, AI receptionist, voice AI for clinics, appointment booking AI, alternative to Vapi, alternative to Retell, TCPA compliant voice AI"
 		/>
-		<link rel="canonical" href="https://openvent.dev/" />
+		<link rel="canonical" href="https://www.weeber.ai/" />
 
 		<meta property="og:type" content="website" />
-		<meta property="og:site_name" content="OpenVent" />
-		<meta property="og:title" content="OpenVent — Self-Hosted Voice Agent Infrastructure" />
+		<meta property="og:site_name" content="Weeber" />
+		<meta property="og:title" content="Weeber — AI Voice Agents for Missed Calls" />
 		<meta
 			property="og:description"
-			content="Open-core, self-hosted voice AI orchestration. Bring your own Twilio/Deepgram/ElevenLabs/LLM keys. Barge-in, tool calling, compliance-first, free to self-host forever."
+			content="AI voice agents that book, recover carts, and follow up — 24/7, no code. Join the waitlist."
 		/>
-		<meta property="og:image" content="https://openvent.dev/og-image.png" />
+		<meta property="og:image" content="https://www.weeber.ai/og-image.png" />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
-		<meta property="og:url" content="https://openvent.dev/" />
+		<meta property="og:image:alt" content="Weeber AI Voice Agents Platform" />
+		<meta property="og:url" content="https://www.weeber.ai/" />
 
 		<meta name="twitter:card" content="summary_large_image" />
-		<meta name="twitter:title" content="OpenVent — Self-Hosted Voice Agent Infrastructure" />
+		<meta name="twitter:title" content="Weeber — AI Voice Agents for Missed Calls" />
 		<meta
 			name="twitter:description"
-			content="Open-core, self-hosted voice AI orchestration. Bring your own Twilio/Deepgram/ElevenLabs/LLM keys. Compliance-first, free to self-host forever."
+			content="AI voice agents that book, recover carts, and follow up — 24/7, no code. Join the waitlist."
 		/>
-		<meta name="twitter:image" content="https://openvent.dev/og-image.png" />
+		<meta name="twitter:image" content="https://www.weeber.ai/og-image.png" />
 
 		<script type="application/ld+json">
 			{
 				"@context": "https://schema.org",
-				"@type": "SoftwareApplication",
-				"name": "OpenVent",
-				"applicationCategory": "DeveloperApplication",
-				"operatingSystem": "Linux, macOS, Windows",
-				"url": "https://openvent.dev/",
-				"description": "Open-core, self-hosted voice AI orchestration framework. Bring your own Twilio, Deepgram, ElevenLabs/Cartesia, and LLM keys. Includes barge-in, tool calling, structured call state, TCPA/DNC/HIPAA/GDPR compliance enforcement, an operator dashboard, and a compliance audit-trail export.",
-				"offers": {
-					"@type": "Offer",
-					"price": "0",
-					"priceCurrency": "USD"
-				},
-				"license": "https://github.com/I-invincib1e/vent/blob/main/LICENSE",
-				"codeRepository": "https://github.com/I-invincib1e/vent",
-				"softwareHelp": "https://openvent.dev/docs"
-			}
-		</script>
-		<script type="application/ld+json">
-			{
-				"@context": "https://schema.org",
-				"@type": "FAQPage",
-				"mainEntity": [
-					{
-						"@type": "Question",
-						"name": "Is OpenVent actually self-hosted?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "The orchestration layer is self-hosted — the code, database, call logic, compliance rules, and dashboard all run on your own infrastructure. Telephony (Twilio) and the AI models (STT/LLM/TTS) remain cloud APIs by necessity, since no one self-hosts a phone network or frontier-quality model weights. OpenVent wires those providers together while you own everything above the network layer."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "How is OpenVent different from Vapi or Retell?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "Vapi and Retell are fully managed platforms — you configure a prompt in their dashboard with no access to the underlying code. OpenVent is open-core: you self-host the actual orchestration code, bring your own provider keys, and your call data lands directly in your own database instead of a vendor's platform."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "Is OpenVent free to use?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "Yes. The self-hosted core is free forever under the Apache License 2.0 — fully open source. You pay only for the AI/telephony provider usage you bring yourself (Twilio, Deepgram, ElevenLabs, your LLM). A managed hosted tier is planned for later, but the self-hosted core will never be paywalled."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "What compliance does OpenVent handle automatically?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "OpenVent enforces TCPA calling-window restrictions and Do-Not-Call list checks before every outbound call, plays a spoken AI/recording disclosure by default, includes a HIPAA boot guardrail, and runs GDPR-style data retention purge and right-to-erasure. A compliance audit-trail export can produce a per-call or per-number record for a lawyer or compliance officer on demand."
-						}
-					}
-				]
+				"@type": "Organization",
+				"name": "Weeber",
+				"url": "https://www.weeber.ai/",
+				"logo": "https://www.weeber.ai/weeber_logo.png",
+				"description": "Weeber is a vertical voice AI platform for Shopify stores and clinics — AI phone agents that recover abandoned carts, answer order questions, and book appointments, compliant by default."
 			}
 		</script>
 	</head>
