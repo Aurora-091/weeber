@@ -23,7 +23,10 @@ type SignupState = "idle" | "needs-confirmation";
 export function MerchantLoginPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("mode") === "signup" ? "signup" : "signin";
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
