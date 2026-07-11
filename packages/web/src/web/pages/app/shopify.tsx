@@ -56,7 +56,7 @@ export function MerchantShopifyPage() {
       return res.json() as Promise<{ installUrl: string }>;
     },
     onSuccess: (data) => {
-      window.location.href = data.installUrl;
+      window.open(data.installUrl, "_blank", "noopener,noreferrer");
     },
   });
 
