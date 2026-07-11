@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Check, Loader as Loader2, RefreshCw, Store, Bot, Rocket, ArrowRight } from "lucide-react";
+import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
@@ -146,7 +146,7 @@ export function MerchantOnboardingPage() {
                   {status.data!.shops.find((s) => !s.disconnectedAt)?.shop} is connected.
                 </p>
               ) : (
-                <ShopifyInstallForm orgId={me.org.id} onInstalled={() => status.refetch()} />
+                <ShopifyInstallForm />
               )}
               {!hasShop && (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -248,7 +248,7 @@ export function MerchantOnboardingPage() {
   );
 }
 
-function ShopifyInstallForm({ orgId, onInstalled }: { orgId: string; onInstalled: () => void }) {
+function ShopifyInstallForm() {
   const [storeDomain, setStoreDomain] = useState("");
 
   const installMutation = useMutation({
