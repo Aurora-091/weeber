@@ -144,11 +144,15 @@ export async function getShopifyStatus(orgId: string) {
  * entry point; org_id is appended as a query param. Null when unconfigured
  * (the UI shows a "not configured yet" state instead of a dead link).
  */
-export function buildInstallUrl(orgId: string): string | null {
+export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
   if (!base) return null;
   const sep = base.includes("?") ? "&" : "?";
-  return `${base}${sep}org_id=${encodeURIComponent(orgId)}`;
+  let url = `${base}${sep}org_id=${encodeURIComponent(orgId)}`;
+  if (shop) {
+    url += `&shop=${encodeURIComponent(shop)}`;
+  }
+  return url;
 }
 
 /** Plan + computed usage for the billing page — read-only until the Razorpay workstream lands. */

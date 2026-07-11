@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Check, ExternalLink, Loader as Loader2, RefreshCw, Store, Bot, Rocket } from "lucide-react";
+import { Check, Loader as Loader2, RefreshCw, Store, Bot, Rocket, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/utils";
@@ -145,28 +146,7 @@ export function MerchantOnboardingPage() {
                   {status.data!.shops.find((s) => !s.disconnectedAt)?.shop} is connected.
                 </p>
               ) : (
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  {status.data?.installUrl ? (
-                    <Button asChild>
-                      <a href={status.data.installUrl} target="_blank" rel="noreferrer">
-                        <ExternalLink className="size-4" aria-hidden />
-                        Install the {vertical.integrationLabel} app
-                      </a>
-                    </Button>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      The install link isn't configured yet (WEEBERSH_INSTALL_URL) — ask your Weeber contact.
-                    </p>
-                  )}
-                  <Button variant="outline" onClick={() => status.refetch()} disabled={status.isFetching}>
-                    {status.isFetching ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : (
-                      <RefreshCw className="size-4" aria-hidden />
-                    )}
-                    I've installed it — check again
-                  </Button>
-                </div>
+                <ShopifyInstallForm orgId={me.org.id} onInstalled={() => status.refetch()} />
               )}
               {!hasShop && (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -265,5 +245,73 @@ export function MerchantOnboardingPage() {
         </section>
       )}
     </div>
+  );
+}
+
+function ShopifyInstallForm({ orgId, onInstalled }: { orgId: string; onInstalled: () => void }) {
+  const [storeDomain, setStoreDomain] = useState("");
+
+  const installMutation = useMutation({
+    mutationFn: async (shop: string) => {
+      const res = await appFetch("/api/app/shopify/install-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to generate install URL" }));
+        throw new Error(err.error ?? "Failed to generate install URL");
+      }
+      return res.json() as Promise<{ installUrl: string }>;
+    },
+    onSuccess: (data) => {
+      window.location.href = data.installUrl;
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const domain = storeDomain.trim();
+    if (!domain) return;
+    installMutation.mutate(domain);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-5 space-y-3">
+      <label htmlFor="ob-store-domain" className="text-xs font-medium text-muted-foreground">
+        Your Shopify store domain
+      </label>
+      <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+        <div className="relative w-full sm:max-w-sm">
+          <Input
+            id="ob-store-domain"
+            placeholder="your-store"
+            value={storeDomain}
+            onChange={(e) => setStoreDomain(e.target.value)}
+            className="pr-32"
+            disabled={installMutation.isPending}
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+            .myshopify.com
+          </span>
+        </div>
+        <Button type="submit" disabled={!storeDomain.trim() || installMutation.isPending} className="gap-1.5">
+          {installMutation.isPending ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              Redirecting...
+            </>
+          ) : (
+            <>
+              Install on Shopify
+              <ArrowRight className="size-3.5" />
+            </>
+          )}
+        </Button>
+      </div>
+      {installMutation.isError && (
+        <p className="text-xs text-destructive">{installMutation.error.message}</p>
+      )}
+    </form>
   );
 }

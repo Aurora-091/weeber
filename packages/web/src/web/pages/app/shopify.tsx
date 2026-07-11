@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { Store, CheckCircle2, XCircle, ExternalLink, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Store, CircleCheck as CheckCircle2, Circle as XCircle, ExternalLink, ShieldCheck, ArrowRight, Loader as Loader2 } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 
 type ShopifyStatus = {
   shops: { shop: string; connectedAt: string; disconnectedAt: string | null; scopes: string[] | null }[];
@@ -14,6 +16,7 @@ type ShopifyStatus = {
 
 export function MerchantShopifyPage() {
   const { me } = useMerchant();
+  const [storeDomain, setStoreDomain] = useState("");
 
   const statusQuery = useQuery<ShopifyStatus>({
     queryKey: ["app-shopify-status", me.org.id],
@@ -24,19 +27,44 @@ export function MerchantShopifyPage() {
     },
   });
 
+  const installMutation = useMutation({
+    mutationFn: async (shop: string) => {
+      const res = await appFetch("/api/app/shopify/install-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to generate install URL" }));
+        throw new Error(err.error ?? "Failed to generate install URL");
+      }
+      return res.json() as Promise<{ installUrl: string }>;
+    },
+    onSuccess: (data) => {
+      window.location.href = data.installUrl;
+    },
+  });
+
   const data = statusQuery.data;
   const activeShop = data?.shops.find((s) => !s.disconnectedAt);
+
+  const handleInstall = (e: React.FormEvent) => {
+    e.preventDefault();
+    const domain = storeDomain.trim();
+    if (!domain) return;
+    installMutation.mutate(domain);
+  };
 
   return (
     <div className="space-y-8 font-sans text-foreground bg-background">
       <PageHeader
         title="Shopify Integration"
-        description="Connect your store and review OAuth access configurations."
+        description="Connect your Shopify store to enable voice-powered cart recovery, COD confirmation, and post-delivery feedback."
       />
 
       {statusQuery.isLoading && (
         <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
-          Loading Shopify integration status…
+          Loading Shopify integration status...
         </div>
       )}
 
@@ -52,7 +80,7 @@ export function MerchantShopifyPage() {
                   {activeShop ? (
                     <div className="flex items-center gap-1.5 text-xs text-success mt-1">
                       <CheckCircle2 className="size-3.5" />
-                      Connected to <strong className="font-mono">{activeShop.shop}</strong>
+                      Connected to <strong className="font-mono ml-1">{activeShop.shop}</strong>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 text-xs text-destructive mt-1">
@@ -60,28 +88,113 @@ export function MerchantShopifyPage() {
                       No Shopify store connected
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                    Weeber hooks into your store's checkouts and orders to run outbound voice recovery campaigns.
-                  </p>
                 </div>
-              </div>
-
-              <div>
-                {data.installUrl ? (
-                  <Button asChild text-xs>
-                    <a href={data.installUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5">
-                      {activeShop ? "Reconnect Store" : "Connect Shopify Store"}
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  </Button>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Installation URL is not configured.</p>
-                )}
               </div>
             </div>
           </div>
 
-          {/* Connection History and Details */}
+          {/* Install / Connect Form */}
+          {!activeShop && (
+            <div className="rounded-lg border border-border bg-card p-6">
+              <h3 className="text-sm font-semibold mb-1">Connect your Shopify store</h3>
+              <p className="text-xs text-muted-foreground mb-5 max-w-lg">
+                Enter your Shopify store domain below. You'll be redirected to Shopify to authorize the Weeber app.
+              </p>
+              <form onSubmit={handleInstall} className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                <div className="w-full sm:max-w-sm space-y-1.5">
+                  <label htmlFor="store-domain" className="text-xs font-medium text-muted-foreground">
+                    Store domain
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="store-domain"
+                      placeholder="your-store"
+                      value={storeDomain}
+                      onChange={(e) => setStoreDomain(e.target.value)}
+                      className="pr-32"
+                      disabled={installMutation.isPending}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                      .myshopify.com
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  type="submit"
+                  disabled={!storeDomain.trim() || installMutation.isPending}
+                  className="gap-1.5"
+                >
+                  {installMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Redirecting...
+                    </>
+                  ) : (
+                    <>
+                      Install on Shopify
+                      <ArrowRight className="size-3.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+              {installMutation.isError && (
+                <p className="text-xs text-destructive mt-3">{installMutation.error.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Reconnect for already-connected shop */}
+          {activeShop && (
+            <div className="rounded-lg border border-border bg-card p-6">
+              <h3 className="text-sm font-semibold mb-1">Reconnect store</h3>
+              <p className="text-xs text-muted-foreground mb-5 max-w-lg">
+                Need to refresh OAuth credentials or switch stores? Enter the store domain below.
+              </p>
+              <form onSubmit={handleInstall} className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                <div className="w-full sm:max-w-sm space-y-1.5">
+                  <label htmlFor="store-domain-reconnect" className="text-xs font-medium text-muted-foreground">
+                    Store domain
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="store-domain-reconnect"
+                      placeholder={activeShop.shop.replace(".myshopify.com", "")}
+                      value={storeDomain}
+                      onChange={(e) => setStoreDomain(e.target.value)}
+                      className="pr-32"
+                      disabled={installMutation.isPending}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                      .myshopify.com
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!storeDomain.trim() || installMutation.isPending}
+                  className="gap-1.5"
+                >
+                  {installMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Redirecting...
+                    </>
+                  ) : (
+                    <>
+                      Reconnect Store
+                      <ExternalLink className="size-3.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+              {installMutation.isError && (
+                <p className="text-xs text-destructive mt-3">{installMutation.error.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Connection Details & Scopes */}
           {activeShop && (
             <div className="grid gap-6 sm:grid-cols-2">
               <div className="rounded-lg border border-border bg-card p-5">
@@ -121,7 +234,7 @@ export function MerchantShopifyPage() {
             </div>
           )}
 
-          {/* Integration Troubleshooting */}
+          {/* Troubleshooting */}
           <div className="rounded-lg border border-border p-5 space-y-3">
             <h3 className="text-sm font-semibold">Troubleshooting</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -131,7 +244,7 @@ export function MerchantShopifyPage() {
               <br />
               2. Your outbound caller ID phone number is verified and formatted in correct E.164 syntax.
               <br />
-              3. If you still encounter issues, click <strong>Reconnect Store</strong> above to refresh OAuth credentials.
+              3. If you still encounter issues, use the reconnect form above to refresh OAuth credentials.
             </p>
           </div>
         </div>

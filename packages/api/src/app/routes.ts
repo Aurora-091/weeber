@@ -38,6 +38,7 @@ import {
   getOrgCallTranscript,
   getOrgCallToolCalls,
   getShopifyStatus,
+  buildInstallUrl,
   computeUsage,
   getEffectiveFlags,
 } from "../voice/org-queries";
@@ -217,6 +218,18 @@ export const merchantApp = new Hono<MerchantEnv>()
   .get("/shopify/status", async (c) => {
     const status = await getShopifyStatus(c.get("merchantOrgId")!);
     return c.json(status, 200);
+  })
+
+  .post("/shopify/install-url", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { shop } = body as { shop?: string };
+    if (!shop?.trim()) return c.json({ error: "`shop` is required" }, 400);
+    const domain = shop.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    const normalized = domain.endsWith(".myshopify.com") ? domain : `${domain}.myshopify.com`;
+    const url = buildInstallUrl(c.get("merchantOrgId")!, normalized);
+    if (!url) return c.json({ error: "Shopify install is not configured yet" }, 503);
+    return c.json({ installUrl: url }, 200);
   })
 
   .get("/flags", async (c) => {
