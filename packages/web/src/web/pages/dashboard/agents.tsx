@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, ChevronDown, ChevronUp, Play, Loader2 } from "lucide-react";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
+import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useSelectedOrgId } from "../../lib/org-id";
 
 const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
@@ -172,7 +173,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       const res = await apiFetch("/api/voice/voice-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-OpenVent-Admin-Key": getAdminKey() },
-        body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined }),
+        body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined, language: form.language || undefined }),
       });
       if (!res.ok) throw new Error(`Preview failed (${res.status})`);
       const blob = await res.blob();
@@ -277,14 +278,14 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
           </select>
         </div>
         <div>
-          <label htmlFor={`voice-id-${row.templateKey}`} className={labelClass()}>Voice ID</label>
-          <input
-            id={`voice-id-${row.templateKey}`}
-            aria-label="Voice ID"
+          <label className={labelClass()}>Voice</label>
+          <VoicePicker
+            provider={form.voiceProvider}
             value={form.voiceId}
-            onChange={(e) => setForm({ ...form, voiceId: e.target.value })}
-            placeholder="leave blank for the default voice"
-            className={inputClass()}
+            language={form.language}
+            onChange={(voiceId) => setForm({ ...form, voiceId })}
+            scope="admin"
+            previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
           />
         </div>
         <div className="flex gap-2">

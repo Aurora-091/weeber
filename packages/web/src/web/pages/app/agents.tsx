@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/merchant-session";
+import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -175,7 +176,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
       const res = await appFetch("/api/app/voice-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined }),
+        body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined, language: form.language || undefined }),
       });
       if (!res.ok) throw new Error(`Preview failed (${res.status})`);
       const blob = await res.blob();
@@ -277,13 +278,14 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
           </select>
         </div>
         <div>
-          <label htmlFor={`voice-id-${row.templateKey}`} className={labelClass}>Voice</label>
-          <input
-            id={`voice-id-${row.templateKey}`}
+          <label className={labelClass}>Voice</label>
+          <VoicePicker
+            provider={form.voiceProvider}
             value={form.voiceId}
-            onChange={(e) => setForm({ ...form, voiceId: e.target.value })}
-            placeholder="leave blank for the default voice"
-            className={fieldClass}
+            language={form.language}
+            onChange={(voiceId) => setForm({ ...form, voiceId })}
+            scope="merchant"
+            previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
           />
         </div>
         <div className="flex gap-2">

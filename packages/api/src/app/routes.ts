@@ -21,6 +21,7 @@ import { db } from "../database";
 import { orgMembers, orgs } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
+import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
 import {
   requireMerchantSession,
   requireMerchantOrg,
@@ -152,6 +153,21 @@ export const merchantApp = new Hono<MerchantEnv>()
     return c.json({ agentConfig: row }, 200);
   })
 
+  .get("/voices", async (c) => {
+    const provider = c.req.query("provider") ?? "";
+    if (!["elevenlabs", "cartesia", "sarvam"].includes(provider)) {
+      return c.json({ error: "`provider` must be \"elevenlabs\", \"cartesia\", or \"sarvam\"" }, 400);
+    }
+    const voices = await listVoicesForProvider(provider);
+    return c.json({ voices }, 200);
+  })
+
+  .get("/voices/cartesia-preview/:id", async (c) => {
+    const result = await fetchCartesiaPreviewAudio(c.req.param("id"));
+    if (!result) return c.json({ error: "Preview not available for this voice" }, 502);
+    return c.body(result.body, 200, { "Content-Type": result.contentType });
+  })
+
   .post("/voice-preview", async (c) => {
     const orgId = c.get("merchantOrgId")!;
     if (previewRateLimited(orgId)) {
@@ -159,13 +175,13 @@ export const merchantApp = new Hono<MerchantEnv>()
     }
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
-    const { text, voiceProvider, voiceId } = body as { text?: string; voiceProvider?: string; voiceId?: string };
+    const { text, voiceProvider, voiceId, language } = body as { text?: string; voiceProvider?: string; voiceId?: string; language?: string };
     if (!text || !text.trim()) return c.json({ error: "`text` is required" }, 400);
-    if (voiceProvider !== "elevenlabs" && voiceProvider !== "cartesia") {
-      return c.json({ error: '`voiceProvider` must be "elevenlabs" or "cartesia"' }, 400);
+    if (voiceProvider !== "elevenlabs" && voiceProvider !== "cartesia" && voiceProvider !== "sarvam") {
+      return c.json({ error: '`voiceProvider` must be "elevenlabs", "cartesia", or "sarvam"' }, 400);
     }
     try {
-      const wav = await generatePreviewAudio(text.slice(0, 300), voiceProvider, voiceId);
+      const wav = await generatePreviewAudio(text.slice(0, 300), voiceProvider, voiceId, language);
       return c.body(new Uint8Array(wav), 200, { "Content-Type": "audio/wav" });
     } catch (err) {
       console.error("[app] voice preview generation failed", err);

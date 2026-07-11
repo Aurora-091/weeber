@@ -26,6 +26,7 @@ import { eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
 import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
 import { generatePreviewAudio } from "./tts-preview";
+import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
 import {
   checkOutboundCallCompliance,
   addToDoNotCallList,
@@ -487,6 +488,25 @@ export const voice = new Hono()
 
     const row = await upsertAgentConfig(orgId, templateKey, parsed.data);
     return c.json({ agentConfig: row }, 200);
+  })
+
+  // Dynamic per-provider voice list for the dashboard's voice picker — see
+  // voices-catalog.ts for why each provider's preview capability differs.
+  .get("/voices", requireAdminKey, async (c) => {
+    const provider = c.req.query("provider") ?? "";
+    if (!["elevenlabs", "cartesia", "sarvam"].includes(provider)) {
+      return c.json({ error: "`provider` must be \"elevenlabs\", \"cartesia\", or \"sarvam\"" }, 400);
+    }
+    const voices = await listVoicesForProvider(provider);
+    return c.json({ voices }, 200);
+  })
+
+  // Cartesia's preview_file_url requires the same Authorization our own
+  // server has, so the browser can't play it directly — proxied here.
+  .get("/voices/cartesia-preview/:id", requireAdminKey, async (c) => {
+    const result = await fetchCartesiaPreviewAudio(c.req.param("id"));
+    if (!result) return c.json({ error: "Preview not available for this voice" }, 502);
+    return c.body(result.body, 200, { "Content-Type": result.contentType });
   })
 
   // One-shot TTS preview for the dashboard's voice picker — not part of a
