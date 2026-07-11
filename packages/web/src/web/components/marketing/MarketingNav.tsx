@@ -50,19 +50,13 @@ export function MarketingNav() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-4">
-          <Link
-            href="/app/login"
-            className="text-[14px] font-medium text-[var(--m-text-secondary)] hover:text-[var(--m-text)] transition-colors"
+        <div className="hidden md:flex items-center gap-2.5">
+          <a
+            href="#faq"
+            className="px-4 py-2 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] hover:border-[var(--m-text-muted)] transition-all"
           >
-            Sign in
-          </Link>
-          <Link
-            href="/app/login?mode=signup"
-            className="px-4 py-2 text-[14px] font-medium bg-[var(--m-text)] text-[var(--m-bg)] rounded-full hover:bg-[var(--m-text)]/90 hover:scale-[1.02] active:scale-[0.98] transition-all"
-          >
-            Sign up
-          </Link>
+            Help
+          </a>
         </div>
 
         <button
@@ -86,19 +80,13 @@ export function MarketingNav() {
               </Link>
             ))}
           </nav>
-          <div className="flex flex-col gap-2.5 pt-4 border-t border-[var(--m-border)]">
-            <Link
-              href="/app/login"
-              className="w-full text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
+          <div className="flex gap-3">
+            <a
+              href="#faq"
+              className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
             >
-              Sign in
-            </Link>
-            <Link
-              href="/app/login?mode=signup"
-              className="w-full text-center px-4 py-2.5 text-[14px] font-medium bg-[var(--m-text)] text-[var(--m-bg)] rounded-full hover:bg-[var(--m-text)]/90 transition-colors"
-            >
-              Sign up
-            </Link>
+              Help
+            </a>
           </div>
         </div>
       )}

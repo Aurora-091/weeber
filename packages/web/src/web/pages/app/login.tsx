@@ -8,8 +8,6 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "../../components/ui/card";
-import { WeeberLogo } from "../../components/WeeberLogo";
 
 type Mode = "signin" | "signup";
 /** Password-signup post-submit states:
@@ -23,10 +21,7 @@ type SignupState = "idle" | "needs-confirmation";
 export function MerchantLoginPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<Mode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("mode") === "signup" ? "signup" : "signin";
-  });
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -35,7 +30,6 @@ export function MerchantLoginPage() {
   const [signupState, setSignupState] = useState<SignupState>("idle");
   const [otpCode, setOtpCode] = useState("");
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
-  const [activeTab, setActiveTab] = useState("password");
 
   // Forgot-password flow (OTP-based, no redirect URL dependency)
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -224,13 +218,9 @@ export function MerchantLoginPage() {
   if (!supabaseConfigured) {
     return (
       <div className={shellClass}>
-        <Card className="w-full max-w-sm card-elevated text-center">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">
-              Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
-            </p>
-          </CardContent>
-        </Card>
+        <p className="text-center text-sm text-muted-foreground">
+          Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+        </p>
       </div>
     );
   }
@@ -240,61 +230,57 @@ export function MerchantLoginPage() {
   if (signupState === "needs-confirmation") {
     return (
       <div className={shellClass}>
-        <Card className="w-full max-w-sm card-elevated text-center">
-          <CardHeader className="pt-8 pb-4">
-            <Mail className="mx-auto size-8 text-primary mb-2" aria-hidden />
-            <CardTitle className="text-2xl">Confirm your account</CardTitle>
-            <CardDescription className="text-xs">
-              We sent a confirmation email to <span className="text-foreground font-semibold">{email}</span>. Enter the 6-digit code from it below.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pb-6">
-            <form onSubmit={submitOtpCode} className="flex flex-col gap-4">
-              <Input
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="123456"
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value)}
-                className="text-center tracking-widest text-lg font-mono"
-                maxLength={6}
-              />
-              <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
-                {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                Verify code
-              </Button>
-            </form>
+        <div className="w-full max-w-sm text-center">
+          <Mail className="mx-auto size-6 text-primary" aria-hidden />
+          <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            We sent a confirmation email to <span className="text-foreground">{email}</span>. Enter the 6-digit code
+            from it below.
+          </p>
 
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                onClick={resendConfirmation}
-                disabled={resendState === "sending"}
-              >
-                {resendState === "sent" ? "Email resent — check your inbox" : "Didn't get it? Resend"}
-              </button>
+          <form onSubmit={submitOtpCode} className="mt-6 flex flex-col gap-3">
+            <Input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value)}
+              className="text-center tracking-widest"
+              maxLength={6}
+            />
+            <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
+              {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+              Verify code
+            </Button>
+          </form>
 
-              <button
-                type="button"
-                className="text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setSignupState("idle");
-                  setMode("signin");
-                }}
-              >
-                Back to sign-in
-              </button>
-            </div>
+          <button
+            type="button"
+            className="mt-4 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={resendConfirmation}
+            disabled={resendState === "sending"}
+          >
+            {resendState === "sent" ? "Email resent — check your inbox" : "Didn't get it? Resend"}
+          </button>
 
-            {error && (
-              <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
-                {error}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          <button
+            type="button"
+            className="mt-6 block w-full text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSignupState("idle");
+              setMode("signin");
+            }}
+          >
+            Back to sign-in
+          </button>
+
+          {error && (
+            <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -303,140 +289,119 @@ export function MerchantLoginPage() {
   if (forgotOpen) {
     return (
       <div className={shellClass}>
-        <Card className="w-full max-w-sm card-elevated">
+        <div className="w-full max-w-sm">
           {resetDone ? (
-            <CardContent className="pt-8 pb-8 text-center">
-              <CardTitle className="text-2xl">Password updated</CardTitle>
+            <div className="text-center">
+              <h1 className="text-xl font-medium">Password updated</h1>
               <p className="mt-2 text-sm text-muted-foreground">Taking you to your dashboard…</p>
-            </CardContent>
+            </div>
           ) : forgotVerified ? (
-            <>
-              <CardHeader className="pt-8 pb-4 text-center">
-                <CardTitle className="text-2xl">Set a new password</CardTitle>
-                <CardDescription className="text-xs">
-                  Create a secure, strong password for your account.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-6">
-                <form onSubmit={submitNewPassword} className="flex flex-col gap-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="new-pw">New password</Label>
-                    <Input
-                      id="new-pw"
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      minLength={8}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="confirm-pw">Confirm password</Label>
-                    <Input
-                      id="confirm-pw"
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      minLength={8}
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    />
-                  </div>
-                  <Button type="submit" disabled={pending}>
-                    {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    Update password
-                  </Button>
-                </form>
-              </CardContent>
-            </>
-          ) : forgotSent ? (
-            <>
-              <CardHeader className="pt-8 pb-4 text-center">
-                <Mail className="mx-auto size-8 text-primary mb-2" aria-hidden />
-                <CardTitle className="text-2xl">Check your inbox</CardTitle>
-                <CardDescription className="text-xs">
-                  We sent a 6-digit reset code to <span className="text-foreground font-semibold">{email}</span>. Enter it below.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-6 text-center">
-                <form onSubmit={submitForgotCode} className="flex flex-col gap-4">
+            <div className="text-left">
+              <h1 className="text-xl font-medium text-center">Set a new password</h1>
+              <form onSubmit={submitNewPassword} className="mt-6 flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="new-pw">New password</Label>
                   <Input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    value={forgotCode}
-                    onChange={(e) => setForgotCode(e.target.value)}
-                    className="text-center tracking-widest text-lg font-mono"
-                    maxLength={6}
+                    id="new-pw"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
                   />
-                  <Button type="submit" disabled={pending || forgotCode.trim().length < 6}>
-                    {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    Verify code
-                  </Button>
-                </form>
-              </CardContent>
-            </>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="confirm-pw">Confirm password</Label>
+                  <Input
+                    id="confirm-pw"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Update password
+                </Button>
+              </form>
+            </div>
+          ) : forgotSent ? (
+            <div className="text-center">
+              <Mail className="mx-auto size-6 text-primary" aria-hidden />
+              <h1 className="mt-3 text-xl font-medium">Check your inbox</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                We sent a 6-digit reset code to <span className="text-foreground">{email}</span>. Enter it below.
+              </p>
+              <form onSubmit={submitForgotCode} className="mt-5 flex flex-col gap-3">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={forgotCode}
+                  onChange={(e) => setForgotCode(e.target.value)}
+                  className="text-center tracking-widest"
+                  maxLength={6}
+                />
+                <Button type="submit" disabled={pending || forgotCode.trim().length < 6}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Verify code
+                </Button>
+              </form>
+            </div>
           ) : (
             <>
-              <CardHeader className="pt-8 pb-4 text-center">
-                <CardTitle className="text-2xl font-medium">Reset your password</CardTitle>
-                <CardDescription className="text-xs">
-                  Enter your account email and we'll send you a 6-digit reset code.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-6">
-                <form onSubmit={submitForgotPassword} className="flex flex-col gap-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="forgot-email">Email</Label>
-                    <Input
-                      id="forgot-email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@yourstore.com"
-                    />
-                  </div>
-                  <Button type="submit" disabled={pending}>
-                    {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    Send reset code
-                  </Button>
-                </form>
-              </CardContent>
+              <h1 className="text-xl font-medium">Reset your password</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Enter your account email and we'll send you a 6-digit reset code.
+              </p>
+              <form onSubmit={submitForgotPassword} className="mt-6 flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="forgot-email">Email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@yourstore.com"
+                  />
+                </div>
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Send reset code
+                </Button>
+              </form>
             </>
           )}
-
           {!resetDone && (
-            <CardFooter className="pb-6 pt-0">
-              <button
-                type="button"
-                className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setForgotOpen(false);
-                  setForgotSent(false);
-                  setForgotVerified(false);
-                  setForgotCode("");
-                  setNewPassword("");
-                  setConfirmNewPassword("");
-                  setResetDone(false);
-                }}
-              >
-                Back to sign-in
-              </button>
-            </CardFooter>
+            <button
+              type="button"
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setForgotOpen(false);
+                setForgotSent(false);
+                setForgotVerified(false);
+                setForgotCode("");
+                setNewPassword("");
+                setConfirmNewPassword("");
+                setResetDone(false);
+              }}
+            >
+              Back to sign-in
+            </button>
           )}
-
           {error && (
-            <div className="px-6 pb-6">
-              <p className="rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
-                {error}
-              </p>
-            </div>
+            <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+              {error}
+            </p>
           )}
-        </Card>
+        </div>
       </div>
     );
   }
@@ -444,163 +409,139 @@ export function MerchantLoginPage() {
   return (
     <div className={shellClass}>
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <WeeberLogo variant="icon" size="md" className="mx-auto mb-3" />
+        <div className="mb-8 text-center">
           <h1 className="text-3xl font-medium tracking-tight">Weeber</h1>
-          <p className="mt-1.5 text-xs text-muted-foreground">Voice agents for your store.</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your store.</p>
         </div>
 
-        <Card className="card-elevated">
-          <CardHeader className="pt-8 pb-4 text-center">
-            <CardTitle className="text-2xl font-medium">
-              {activeTab === "code"
-                ? "Sign in with code"
-                : mode === "signin"
-                ? "Sign in to Weeber"
-                : "Create your account"}
-            </CardTitle>
-            <CardDescription className="text-xs">
-              {activeTab === "code"
-                ? "We will email you a secure 1-time sign-in code."
-                : mode === "signin"
-                ? "Enter your email and password to access your store's dashboard."
-                : "Get started with voice-powered checkout recovery and feedback agents."}
-            </CardDescription>
-          </CardHeader>
+        <Tabs defaultValue="password">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="password">Password</TabsTrigger>
+            <TabsTrigger value="code">Email code</TabsTrigger>
+          </TabsList>
 
-          <CardContent className="pb-6">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="password">Password</TabsTrigger>
-                <TabsTrigger value="code">Email code</TabsTrigger>
-              </TabsList>
+          <TabsContent value="password">
+            <form onSubmit={submitPassword} className="mt-4 flex flex-col gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@yourstore.com"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  {mode === "signin" && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setForgotOpen(true)}
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={pending}>
+                {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                {mode === "signin" ? "Sign in" : "Create account"}
+              </Button>
+              <button
+                type="button"
+                className="text-sm text-muted-foreground hover:text-foreground"
+                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+              >
+                {mode === "signin" ? "New to Weeber? Create an account" : "Already have an account? Sign in"}
+              </button>
+            </form>
+          </TabsContent>
 
-              <TabsContent value="password">
-                <form onSubmit={submitPassword} className="mt-4 flex flex-col gap-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@yourstore.com"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="password">Password</Label>
-                      {mode === "signin" && (
-                        <button
-                          type="button"
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => setForgotOpen(true)}
-                        >
-                          Forgot password?
-                        </button>
-                      )}
-                    </div>
-                    <Input
-                      id="password"
-                      type="password"
-                      autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                      required
-                      minLength={8}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                  <Button type="submit" disabled={pending}>
+          <TabsContent value="code">
+            {codeSent ? (
+              <div className="mt-6 text-center">
+                <Mail className="mx-auto size-6 text-primary" aria-hidden />
+                <h2 className="mt-3 text-lg font-medium">Check your inbox</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  We sent a 6-digit sign-in code to <span className="text-foreground">{email}</span>. Enter it below.
+                </p>
+                <form onSubmit={submitSigninCode} className="mt-5 flex flex-col gap-3">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    className="text-center tracking-widest"
+                    maxLength={6}
+                  />
+                  <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
                     {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    {mode === "signin" ? "Sign in" : "Create account"}
+                    Verify &amp; sign in
                   </Button>
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-foreground mt-2"
-                    onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                  >
-                    {mode === "signin" ? "New to Weeber? Create an account" : "Already have an account? Sign in"}
-                  </button>
                 </form>
-              </TabsContent>
+                <button
+                  type="button"
+                  className="mt-4 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={resendSigninCode}
+                  disabled={resendState === "sending"}
+                >
+                  {resendState === "sent" ? "Code resent — check your inbox" : "Didn't get it? Resend"}
+                </button>
+                <button
+                  type="button"
+                  className="mt-2 block w-full text-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setCodeSent(false);
+                    setOtpCode("");
+                  }}
+                >
+                  Use a different email
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={submitEmailCode} className="mt-4 flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="code-email">Email</Label>
+                  <Input
+                    id="code-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@yourstore.com"
+                  />
+                </div>
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                  Email me a sign-in code
+                </Button>
+              </form>
+            )}
+          </TabsContent>
+        </Tabs>
 
-              <TabsContent value="code">
-                {codeSent ? (
-                  <div className="mt-4 text-center">
-                    <Mail className="mx-auto size-6 text-primary" aria-hidden />
-                    <h2 className="mt-3 text-lg font-medium">Check your inbox</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      We sent a 6-digit sign-in code to <span className="text-foreground">{email}</span>. Enter it below.
-                    </p>
-                    <form onSubmit={submitSigninCode} className="mt-5 flex flex-col gap-3">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        placeholder="123456"
-                        value={otpCode}
-                        onChange={(e) => setOtpCode(e.target.value)}
-                        className="text-center tracking-widest text-lg font-mono"
-                        maxLength={6}
-                      />
-                      <Button type="submit" disabled={pending || otpCode.trim().length < 6}>
-                        {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                        Verify &amp; sign in
-                      </Button>
-                    </form>
-                    <button
-                      type="button"
-                      className="mt-4 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                      onClick={resendSigninCode}
-                      disabled={resendState === "sending"}
-                    >
-                      {resendState === "sent" ? "Code resent — check your inbox" : "Didn't get it? Resend"}
-                    </button>
-                    <button
-                      type="button"
-                      className="mt-2 block w-full text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        setCodeSent(false);
-                        setOtpCode("");
-                      }}
-                    >
-                      Use a different email
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={submitEmailCode} className="mt-4 flex flex-col gap-4">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="code-email">Email</Label>
-                      <Input
-                        id="code-email"
-                        type="email"
-                        autoComplete="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@yourstore.com"
-                      />
-                    </div>
-                    <Button type="submit" disabled={pending}>
-                      {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                      Email me a sign-in code
-                    </Button>
-                  </form>
-                )}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-
-          {error && (
-            <div className="px-6 pb-6">
-              <p className="rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
-                {error}
-              </p>
-            </div>
-          )}
-        </Card>
+        {error && (
+          <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
