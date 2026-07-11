@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Sparkles, PlayCircle } from "lucide-react";
+import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
@@ -18,9 +19,26 @@ type CallRow = {
 
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
 
+function StatusBadge({ status }: { status: string }) {
+  let dotColor = "bg-gray-400";
+  if (status === "in-progress" || status === "ringing" || status === "queued") {
+    dotColor = "bg-green-500";
+  } else if (status === "failed" || status === "busy" || status === "no-answer") {
+    dotColor = "bg-red-500";
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+      <span className={`size-2 rounded-full ${dotColor}`} />
+      {status}
+    </span>
+  );
+}
+
 export function MerchantCallDetailPage() {
   const [, params] = useRoute("/app/calls/:id");
   const id = params?.id ?? "";
+  const [copied, setCopied] = useState(false);
 
   const call = useQuery({
     queryKey: ["app-call", id],
@@ -48,8 +66,18 @@ export function MerchantCallDetailPage() {
   const facts = Object.entries(row?.capturedState ?? {});
   const transcriptRows = transcript.data?.transcript ?? [];
 
+  function copyTranscript() {
+    const text = transcriptRows
+      .map((t) => `${t.role === "agent" ? "Agent" : "Customer"}: ${t.text}`)
+      .join("\n\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
-    <div>
+    <div className="page-enter">
       <Link
         href="/app/calls"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -64,45 +92,89 @@ export function MerchantCallDetailPage() {
       {row && (
         <div className="content-fade-in">
           <div className="mb-[var(--shell-section-gap)]">
-            <h1 className="font-mono text-2xl font-medium">
-              {row.direction === "inbound" ? row.fromNumber : row.toNumber}
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="font-mono text-2xl font-medium">
+                {row.direction === "inbound" ? row.fromNumber : row.toNumber}
+              </h1>
+              <StatusBadge status={row.status} />
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {row.direction} · {row.status}
               {row.disposition ? ` · ${row.disposition}` : ""}
             </p>
             {row.recordingUrl && (
-              <a
-                href={row.recordingUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-              >
-                <PlayCircle className="size-4" aria-hidden />
-                Play recording
-              </a>
+              <div className="mt-3">
+                <div className="inline-flex items-center gap-1.5 text-sm text-primary">
+                  <PlayCircle className="size-4" aria-hidden />
+                  <span className="font-medium">Recording</span>
+                </div>
+                <audio
+                  controls
+                  src={row.recordingUrl}
+                  className="mt-2 w-full max-w-md"
+                  preload="metadata"
+                >
+                  <a href={row.recordingUrl} target="_blank" rel="noreferrer">
+                    Play recording
+                  </a>
+                </audio>
+              </div>
             )}
           </div>
 
           <div className="grid gap-8 md:grid-cols-[1fr_300px]">
             <div>
-              <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">Transcript</h2>
-              <div className="divide-y divide-border rounded-lg border border-border">
+              <div className="mb-3 flex items-center gap-3">
+                <h2 className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">Transcript</h2>
+                {transcriptRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={copyTranscript}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="size-3" aria-hidden />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3" aria-hidden />
+                        Copy transcript
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-3">
                 {transcriptRows.map((t) => (
-                  <div key={t.id} className={`px-4 py-3 ${t.role === "agent" ? "bg-muted/40" : ""}`}>
-                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {t.role === "agent" ? "agent" : "customer"}
+                  <div
+                    key={t.id}
+                    className={`flex ${t.role === "agent" ? "justify-start" : "justify-end"}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                        t.role === "agent"
+                          ? "border-l-[3px] border-l-primary bg-card shadow-sm"
+                          : "bg-muted/60"
+                      }`}
+                    >
+                      <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {t.role === "agent" ? "agent" : "customer"}
+                      </div>
+                      <div className="text-sm leading-relaxed">{t.text}</div>
                     </div>
-                    <div className="text-sm leading-relaxed">{t.text}</div>
                   </div>
                 ))}
                 {transcriptRows.length === 0 && (
-                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">No transcript yet.</div>
+                  <div className="rounded-lg border border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                    No transcript yet.
+                  </div>
                 )}
               </div>
             </div>
 
-            <div>
+            <div className="md:sticky md:top-6 md:self-start">
               <h2 className="mb-3 flex items-center gap-1.5 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                 <Sparkles className="size-3.5 text-success" aria-hidden />
                 What the agent learned

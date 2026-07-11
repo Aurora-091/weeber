@@ -14,6 +14,26 @@ type BillingUsage = {
   gateway: null;
 };
 
+function getPlanLimit(plan: string): number {
+  switch (plan.toLowerCase()) {
+    case "starter":
+      return 100;
+    case "pro":
+      return 500;
+    case "enterprise":
+      return 999999;
+    default:
+      return 500;
+  }
+}
+
+function getDaysUntilReset(): number {
+  const now = new Date();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const diff = nextMonth.getTime() - now.getTime();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
 export function MerchantBillingPage() {
   const { me } = useMerchant();
 
@@ -28,6 +48,9 @@ export function MerchantBillingPage() {
 
   const usage = usageQuery.data;
   const plan = usage?.planName || "Free Trial";
+  const limit = getPlanLimit(plan);
+  const percentage = Math.min(100, limit > 0 ? (usage?.minutes ?? 0) / limit * 100 : 0);
+  const daysLeft = getDaysUntilReset();
 
   const tiers = [
     {
@@ -57,7 +80,7 @@ export function MerchantBillingPage() {
   ];
 
   return (
-    <div className="space-y-8 font-sans text-foreground bg-background">
+    <div className="space-y-8 font-sans text-foreground bg-background page-enter">
       <PageHeader
         title="Billing & Plan"
         description="Monitor your call volumes, usage limits, and active subscription details."
@@ -82,6 +105,7 @@ export function MerchantBillingPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 Your plan is currently active. Billing cycles renew monthly.
               </p>
+              <p className="text-xs text-muted-foreground mt-2">Cycle resets in {daysLeft} days</p>
             </div>
             <div className="mt-4 pt-4 border-t border-border flex items-center gap-1.5 text-xs text-success">
               <ShieldCheck className="size-3.5" />
@@ -111,6 +135,15 @@ export function MerchantBillingPage() {
             <p className="text-xs text-muted-foreground mt-1">
               Aggregated live session duration (rounded to the nearest decimal).
             </p>
+            <div className="mt-3">
+              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: percentage + '%' }} />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                <span>{usage.minutes} used</span>
+                <span>{limit} limit</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -124,14 +157,17 @@ export function MerchantBillingPage() {
           </p>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-3 content-fade-in">
           {tiers.map((tier) => (
             <div
               key={tier.name}
-              className={`rounded-lg border p-5 flex flex-col justify-between transition-colors duration-150 hover:border-foreground/15 ${
+              className={`relative rounded-lg border p-5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-md hover:border-foreground/15 ${
                 tier.current ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border bg-card"
               }`}
             >
+              {tier.name === "Pro" && (
+                <span className="absolute -top-2.5 right-4 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-medium text-primary-foreground">Recommended</span>
+              )}
               <div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-semibold">{tier.name}</h3>

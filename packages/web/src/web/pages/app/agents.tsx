@@ -8,6 +8,8 @@ import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
+import { Switch } from "../../components/ui/switch";
+import { cn } from "../../lib/utils";
 
 /**
  * Merchant agent config — the same "frame" form as the admin panel's
@@ -117,6 +119,14 @@ const fieldClass =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
 const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
 
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70 pt-3 pb-1">
+      {children}
+    </div>
+  );
+}
+
 function AgentEditForm({ row }: { row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
@@ -197,6 +207,9 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
 
   return (
     <div className="space-y-5 border-t border-border bg-muted/40 p-5">
+      {/* Identity & Tone */}
+      <SectionHeader>Identity &amp; Tone</SectionHeader>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor={`name-${row.templateKey}`} className={labelClass}>Agent name</label>
@@ -263,6 +276,9 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         />
       </div>
 
+      {/* Voice & Sound */}
+      <SectionHeader>Voice &amp; Sound</SectionHeader>
+
       <div className="grid items-end gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor={`voice-provider-${row.templateKey}`} className={labelClass}>Voice provider</label>
@@ -308,6 +324,9 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         <p className="text-xs text-destructive">Preview failed — try a different voice, or try again in a minute.</p>
       )}
 
+      {/* Capabilities */}
+      <SectionHeader>Capabilities</SectionHeader>
+
       <div>
         <span className={labelClass}>Abilities (hangUp always stays available)</span>
         <div className="flex flex-wrap gap-3">
@@ -326,6 +345,9 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
           ))}
         </div>
       </div>
+
+      {/* Safety Guardrails */}
+      <SectionHeader>Safety Guardrails</SectionHeader>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
@@ -450,13 +472,11 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
       </div>
 
       <div className="flex items-center gap-3 pt-2">
-        <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="checkbox"
-            aria-label="Agent enabled"
+        <label className="flex items-center gap-2 text-sm">
+          <Switch
             checked={form.enabled}
-            onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-            className="accent-primary"
+            onCheckedChange={(checked) => setForm({ ...form, enabled: !!checked })}
+            aria-label="Agent enabled"
           />
           Agent enabled
         </label>
@@ -490,7 +510,7 @@ export function MerchantAgentsPage() {
   const rows = configs.data?.agentConfigs ?? [];
 
   return (
-    <div>
+    <div className="page-enter">
       <PageHeader
         title="Agents"
         description="Tune how each agent sounds and what it says. Changes apply from the next call."
@@ -519,6 +539,7 @@ export function MerchantAgentsPage() {
                 >
                   <div>
                     <div className="flex items-center gap-2 text-sm font-medium">
+                      <span className={cn("inline-block size-2 rounded-full", isOn ? "bg-success pulse-dot" : "bg-muted-foreground/40")} />
                       {row.config?.name || row.templateName}
                       <span
                         className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
@@ -538,7 +559,12 @@ export function MerchantAgentsPage() {
                     <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   )}
                 </button>
-                {isExpanded && <AgentEditForm row={row} />}
+                <div
+                  className="overflow-hidden transition-all duration-300 ease-out"
+                  style={{ maxHeight: isExpanded ? '2000px' : '0' }}
+                >
+                  <AgentEditForm row={row} />
+                </div>
               </div>
             );
           })}

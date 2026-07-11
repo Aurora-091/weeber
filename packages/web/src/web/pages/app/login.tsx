@@ -407,9 +407,10 @@ export function MerchantLoginPage() {
   }
 
   return (
-    <div className={shellClass}>
-      <div className="w-full max-w-sm">
+    <div className={shellClass} style={{ background: 'radial-gradient(ellipse at top, var(--weeber-primary)/0.03 0%, transparent 50%)' }}>
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card shadow-sm p-8 scale-in">
         <div className="mb-8 text-center">
+          <img src="/weeber_logo_transparent.png" alt="Weeber" className="mx-auto h-10 w-auto" />
           <h1 className="text-3xl font-medium tracking-tight">Weeber</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your store.</p>
         </div>
@@ -538,7 +539,7 @@ export function MerchantLoginPage() {
         </Tabs>
 
         {error && (
-          <p className="mt-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error" role="alert">
+          <p className="mt-4 rounded-md border-l-4 border-error bg-error-soft px-3 py-2 text-sm text-error" role="alert">
             {error}
           </p>
         )}

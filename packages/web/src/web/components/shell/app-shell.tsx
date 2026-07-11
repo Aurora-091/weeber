@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -89,6 +89,20 @@ function SidebarBody({
 export function AppShell({ density, nav, brand, banner, footer, actions, children }: AppShellProps) {
   const { theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [location] = useLocation();
+  const [pageKey, setPageKey] = useState(location);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  useEffect(() => {
+    if (location !== pageKey) {
+      setIsTransitioning(true);
+      const timer = setTimeout(() => {
+        setPageKey(location);
+        setIsTransitioning(false);
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [location, pageKey]);
 
   return (
     <div
@@ -131,7 +145,15 @@ export function AppShell({ density, nav, brand, banner, footer, actions, childre
               padding: "var(--shell-page-py) var(--shell-page-px)",
             }}
           >
-            {children}
+            <div
+              key={pageKey}
+              className={cn(
+                "page-enter",
+                isTransitioning && "opacity-0",
+              )}
+            >
+              {children}
+            </div>
           </main>
         </div>
       </div>

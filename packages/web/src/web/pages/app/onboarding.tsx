@@ -29,32 +29,37 @@ type AgentConfigRow = {
 const STEPS = ["Connect store", "Pick your agents", "Review & activate"] as const;
 
 function StepIndicator({ current, done }: { current: number; done: boolean[] }) {
+  const completionPercent = (done.filter(Boolean).length / done.length) * 100;
+
   return (
-    <ol className="mb-[var(--shell-section-gap)] flex items-center gap-2" aria-label="Setup progress">
-      {STEPS.map((label, i) => {
-        const isDone = done[i];
-        const isCurrent = i === current;
-        return (
-          <li key={label} className="flex flex-1 items-center gap-2">
-            <span
-              className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
-                isDone
-                  ? "bg-success text-primary-foreground"
-                  : isCurrent
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground",
-              )}
-              aria-hidden
-            >
-              {isDone ? <Check className="size-3.5" /> : i + 1}
-            </span>
-            <span className={cn("text-sm", isCurrent ? "font-medium" : "text-muted-foreground")}>{label}</span>
-            {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
-          </li>
-        );
-      })}
-    </ol>
+    <div className="mb-[var(--shell-section-gap)] flex items-center gap-2">
+      <ol className="flex flex-1 items-center gap-2" aria-label="Setup progress">
+        {STEPS.map((label, i) => {
+          const isDone = done[i];
+          const isCurrent = i === current;
+          return (
+            <li key={label} className="flex flex-1 items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
+                  isDone
+                    ? "bg-success text-primary-foreground"
+                    : isCurrent
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                )}
+                aria-hidden
+              >
+                {isDone ? <Check className="size-3.5" /> : i + 1}
+              </span>
+              <span className={cn("text-sm", isCurrent ? "font-medium" : "text-muted-foreground")}>{label}</span>
+              {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
+            </li>
+          );
+        })}
+      </ol>
+      <span className="ml-auto text-xs font-mono text-muted-foreground">{Math.round(completionPercent)}%</span>
+    </div>
   );
 }
 
@@ -128,121 +133,148 @@ export function MerchantOnboardingPage() {
   }
 
   return (
-    <div className="content-fade-in">
+    <div className="content-fade-in page-enter">
       <PageHeader title="Set up Weeber" description="Three small steps to your first agent call." />
       <StepIndicator current={current} done={stepDone} />
 
       {current === 0 && (
-        <section className="rounded-lg border border-border p-6" aria-label={STEPS[0]}>
-          <div className="flex items-start gap-3">
-            <Store className="mt-0.5 size-5 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-medium">{vertical.copy.onboardingConnectTitle}</h2>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">{vertical.copy.onboardingConnectBody}</p>
+        <div key="step-0" className="slide-in-right">
+          <section className="rounded-lg border border-border p-6" aria-label={STEPS[0]}>
+            <div className="flex items-start gap-3">
+              <Store className="mt-0.5 size-5 text-primary" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-medium">{vertical.copy.onboardingConnectTitle}</h2>
+                <p className="mt-1 max-w-xl text-sm text-muted-foreground">{vertical.copy.onboardingConnectBody}</p>
 
-              {hasShop ? (
-                <p className="mt-4 flex items-center gap-1.5 text-sm text-success">
-                  <Check className="size-4" aria-hidden />
-                  {status.data!.shops.find((s) => !s.disconnectedAt)?.shop} is connected.
-                </p>
-              ) : (
-                <ShopifyInstallForm />
-              )}
-              {!hasShop && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  This page checks automatically every few seconds after you install.
-                </p>
-              )}
-              {hasShop && (
-                <Button className="mt-5" onClick={() => setManualStep(1)}>
-                  Continue
-                </Button>
-              )}
+                {hasShop ? (
+                  <p className="mt-4 flex items-center gap-1.5 text-sm text-success">
+                    <Check className="size-4" aria-hidden />
+                    {status.data!.shops.find((s) => !s.disconnectedAt)?.shop} is connected.
+                  </p>
+                ) : (
+                  <ShopifyInstallForm />
+                )}
+                {!hasShop && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    This page checks automatically every few seconds after you install.
+                  </p>
+                )}
+                {hasShop && (
+                  <Button className="mt-5" onClick={() => setManualStep(1)}>
+                    Continue
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       )}
 
       {current === 1 && (
-        <section className="rounded-lg border border-border p-6" aria-label={STEPS[1]}>
-          <div className="flex items-start gap-3">
-            <Bot className="mt-0.5 size-5 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-medium">Pick your agents</h2>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Turn on the agents you want. Each comes ready to work with sensible defaults — you can fine-tune
-                voice, tone, and script on the Agents page any time.
-              </p>
+        <div key="step-1" className="slide-in-right">
+          <section className="rounded-lg border border-border p-6" aria-label={STEPS[1]}>
+            <div className="flex items-start gap-3">
+              <Bot className="mt-0.5 size-5 text-primary" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-medium">Pick your agents</h2>
+                <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                  Turn on the agents you want. Each comes ready to work with sensible defaults — you can fine-tune
+                  voice, tone, and script on the Agents page any time.
+                </p>
 
-              <div className="mt-5 space-y-3">
-                {rows.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No agent templates available for your store type yet.</p>
-                )}
-                {rows.map((row) => (
-                  <div
-                    key={row.templateKey}
-                    className="flex items-center justify-between gap-4 rounded-lg border border-border p-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{row.templateName}</div>
-                      {row.templateDescription && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">{row.templateDescription}</div>
-                      )}
+                <div className="mt-5 space-y-3">
+                  {rows.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No agent templates available for your store type yet.</p>
+                  )}
+                  {rows.map((row) => (
+                    <div
+                      key={row.templateKey}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-border p-4"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{row.templateName}</div>
+                        {row.templateDescription && (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{row.templateDescription}</div>
+                        )}
+                      </div>
+                      <Switch
+                        checked={row.config?.enabled ?? false}
+                        disabled={toggleAgent.isPending}
+                        onCheckedChange={(enabled) => toggleAgent.mutate({ templateKey: row.templateKey, enabled })}
+                        aria-label={`Enable ${row.templateName}`}
+                      />
                     </div>
-                    <Switch
-                      checked={row.config?.enabled ?? false}
-                      disabled={toggleAgent.isPending}
-                      onCheckedChange={(enabled) => toggleAgent.mutate({ templateKey: row.templateKey, enabled })}
-                      aria-label={`Enable ${row.templateName}`}
-                    />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
 
-              <div className="mt-5 flex gap-3">
-                <Button variant="outline" onClick={() => setManualStep(0)}>
-                  Back
-                </Button>
-                <Button onClick={() => setManualStep(2)} disabled={enabledRows.length === 0}>
-                  Continue
-                </Button>
+                <div className="mt-5 flex gap-3">
+                  <Button variant="outline" onClick={() => setManualStep(0)}>
+                    Back
+                  </Button>
+                  <Button onClick={() => setManualStep(2)} disabled={enabledRows.length === 0}>
+                    Continue
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       )}
 
       {current === 2 && (
-        <section className="rounded-lg border border-border p-6" aria-label={STEPS[2]}>
-          <div className="flex items-start gap-3">
-            <Rocket className="mt-0.5 size-5 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-medium">You're all set</h2>
-              <dl className="mt-4 space-y-2 text-sm">
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">Store:</dt>
-                  <dd className="font-mono">
-                    {status.data?.shops.find((s) => !s.disconnectedAt)?.shop ?? "not connected"}
-                  </dd>
+        <div key="step-2" className="slide-in-right scale-in relative">
+          {/* Celebration confetti burst */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+            {[...Array(6)].map((_, i) => (
+              <span
+                key={i}
+                className="absolute left-1/2 top-8 size-2 rounded-full"
+                style={{
+                  backgroundColor: ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"][i],
+                  animation: `confetti-burst 0.8s cubic-bezier(0.16,1,0.3,1) forwards`,
+                  animationDelay: `${i * 60}ms`,
+                  ["--confetti-angle" as string]: `${i * 60}deg`,
+                  transform: `rotate(${i * 60}deg) translateY(0)`,
+                }}
+              />
+            ))}
+          </div>
+
+          <section className="rounded-lg border border-border p-6" aria-label={STEPS[2]}>
+            <div className="flex items-start gap-3">
+              <Rocket
+                className="mt-0.5 size-5 text-primary"
+                style={{ animation: "scale-in 0.4s cubic-bezier(0.16,1,0.3,1)" }}
+                aria-hidden
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-medium">You're all set</h2>
+                <dl className="mt-4 space-y-2 text-sm">
+                  <div className="flex gap-2">
+                    <dt className="text-muted-foreground">Store:</dt>
+                    <dd className="font-mono">
+                      {status.data?.shops.find((s) => !s.disconnectedAt)?.shop ?? "not connected"}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="text-muted-foreground">Active agents:</dt>
+                    <dd>{enabledRows.map((r) => r.templateName).join(", ") || "none"}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+                  Your agents now react to store events automatically — there's nothing to deploy or schedule.
+                  Conversations and results will appear as they happen.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <Button variant="outline" onClick={() => setManualStep(1)}>
+                    Back
+                  </Button>
+                  <Button onClick={() => navigate("/app/analytics")}>Go to your dashboard</Button>
                 </div>
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">Active agents:</dt>
-                  <dd>{enabledRows.map((r) => r.templateName).join(", ") || "none"}</dd>
-                </div>
-              </dl>
-              <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-                Your agents now react to store events automatically — there's nothing to deploy or schedule.
-                Conversations and results will appear as they happen.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <Button variant="outline" onClick={() => setManualStep(1)}>
-                  Back
-                </Button>
-                <Button onClick={() => navigate("/app/analytics")}>Go to your dashboard</Button>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       )}
     </div>
   );
@@ -281,6 +313,11 @@ function ShopifyInstallForm() {
       <label htmlFor="ob-store-domain" className="text-xs font-medium text-muted-foreground">
         Your Shopify store domain
       </label>
+      {/* Shopify brand reference */}
+      <div className="flex items-center gap-1.5 text-sm">
+        <Store className="size-4 text-[#96bf48]" aria-hidden />
+        <span className="font-medium text-muted-foreground">Shopify</span>
+      </div>
       <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
         <div className="relative w-full sm:max-w-sm">
           <Input
