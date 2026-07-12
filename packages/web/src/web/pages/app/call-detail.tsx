@@ -108,6 +108,7 @@ export function MerchantCallDetailPage() {
                   <PlayCircle className="size-4" aria-hidden />
                   <span className="font-medium">Recording</span>
                 </div>
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                 <audio
                   controls
                   src={row.recordingUrl}

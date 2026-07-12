@@ -107,10 +107,10 @@ export function MerchantCallsPage() {
     },
     refetchInterval: 10000,
   });
-  const rows = calls.data?.calls ?? [];
+  const rawCalls = calls.data?.calls;
 
   const filteredRows = useMemo(() => {
-    let result = rows;
+    let result = rawCalls ?? [];
 
     if (directionFilter !== "all") {
       result = result.filter((c) => c.direction === directionFilter);
@@ -130,7 +130,9 @@ export function MerchantCallsPage() {
     }
 
     return result;
-  }, [rows, directionFilter, statusFilter, search]);
+  }, [rawCalls, directionFilter, statusFilter, search]);
+
+  const rows = rawCalls ?? [];
 
   const filtersActive = directionFilter !== "all" || statusFilter !== "all" || search.trim() !== "";
 
