@@ -86,7 +86,43 @@ const shopify: VerticalDefinition = {
   },
 };
 
-const VERTICALS: Record<string, VerticalDefinition> = { shopify };
+// Insurance: no live CRM/policy-system OAuth integration exists yet (unlike Shopify's weebersh
+// flow) -- deliberately no "Integrations" nav entry, since pages/app/integrations.tsx is entirely
+// Shopify-hardcoded today and would show a broken/irrelevant page for this vertical. Add one once
+// a real policy-system connector exists, matching how Shopify's got built.
+const insurance: VerticalDefinition = {
+  key: "insurance",
+  glossary: { customer: "Policyholder", customers: "Policyholders" },
+  integrationLabel: "Policy System",
+  nav: [
+    { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
+    { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
+    { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
+    { href: appPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
+    { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
+  ],
+  copy: {
+    callsEmptyTitle: "No conversations yet",
+    callsEmptyBody:
+      "Calls appear here once one of your agents makes its first call — for example a renewal reminder or a lead follow-up.",
+    analyticsEmptyBody: "Numbers show up here after your agents have made their first calls.",
+    onboardingConnectTitle: "Set up your first agent",
+    onboardingConnectBody:
+      "Turn on the Policy Renewal Reminder or Lead Follow-Up agent to start reaching policyholders and leads automatically.",
+  },
+  dashboard: {
+    metrics: [
+      { key: "renewals_confirmed", label: "Renewals confirmed", hint: "Policyholders who confirmed on a reminder call" },
+      { key: "leads_qualified", label: "Leads qualified", hint: "Leads booked with a licensed advisor" },
+    ],
+    emptyState: {
+      title: "Set up your first agent",
+      body: "Turn on an agent to start reminding policyholders and following up on leads automatically.",
+    },
+  },
+};
+
+const VERTICALS: Record<string, VerticalDefinition> = { shopify, insurance };
 
 export function getVertical(key: string | null | undefined): VerticalDefinition {
   return VERTICALS[key ?? "shopify"] ?? shopify;

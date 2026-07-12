@@ -43,6 +43,24 @@ export async function seedAgentTemplates() {
       defaultTools: ["captureField", "setDisposition"],
       active: false,
     },
+    {
+      key: "insurance-policy-renewal",
+      name: "Insurance Policy Renewal Reminder",
+      vertical: "insurance",
+      description: "Reminds policyholders of an upcoming renewal or premium due date and routes anything beyond a simple confirm/decline to a licensed agent.",
+      fileName: "04-insurance-policy-renewal-agent.md",
+      defaultTools: ["captureField", "setDisposition", "transferToHuman", "crmSync"],
+      active: true,
+    },
+    {
+      key: "insurance-lead-followup",
+      name: "Insurance Lead Follow-Up",
+      vertical: "insurance",
+      description: "Follows up on a new inbound lead, qualifies interest, and books a callback with a licensed advisor.",
+      fileName: "05-insurance-lead-followup-agent.md",
+      defaultTools: ["captureField", "bookAppointment", "setDisposition", "crmSync"],
+      active: true,
+    },
   ];
 
   let seededCount = 0;
