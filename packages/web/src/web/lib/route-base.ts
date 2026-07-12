@@ -14,12 +14,7 @@
  * Vocalist's actual shipped pattern (physically separate CustomerApp.tsx /
  * AdminApp.tsx route trees, not one tree with role-based hiding).
  */
-const rawSurface = import.meta.env.VITE_APP_SURFACE || "all";
-// Backward-compat: the live Vercel project was created with
-// VITE_APP_SURFACE=merchant (pre-rename). Accept the old value as an alias
-// for "user" until that project's env var is updated -- remove this once
-// confirmed flipped (see changelog's "Merchant -> User rename" entry).
-const surface = (rawSurface === "merchant" ? "user" : rawSurface) as "public" | "admin" | "user" | "all";
+const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "user" | "all";
 
 /** Only the combined single-deploy mode needs prefixes at all. */
 const isCombinedDeploy = surface === "all";

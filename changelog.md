@@ -4,6 +4,17 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Merchant→User infra rename completed; compat shim removed
+
+Closes out the "infra rename still pending" item from the entry below (the Vercel API could do
+it after all — no dashboard needed): Vercel project `weeber-merchant` renamed to **`weeber-app`**
+(pairs with `weeber-admin` the way `app.weeber.ai` pairs with `admin.weeber.ai`),
+`VITE_APP_SURFACE` flipped `merchant`→`user` (production + preview), redeployed and verified live
+on `app.weeber.ai`. Vercel keeps the old default domain on rename, so `weeber-merchant.vercel.app`
+was swapped for `weeber-app.vercel.app` manually. With the flip confirmed, the `merchant`-alias
+shim in `app.tsx`/`lib/route-base.ts` is deleted — `VITE_APP_SURFACE=merchant` is no longer
+accepted anywhere.
+
 ## 2026-07-13 — "Merchant" renamed to "User" across code, docs, and (pending) infra
 
 Terminology fix, not a data-model or behavior change: Shopify store owners are only

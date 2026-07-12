@@ -6,12 +6,7 @@ import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
 
-const rawSurface = import.meta.env.VITE_APP_SURFACE || "all";
-// Backward-compat: the live Vercel project was created with
-// VITE_APP_SURFACE=merchant (pre-rename). Accept the old value as an alias
-// for "user" until that project's env var is updated -- remove this once
-// confirmed flipped (see changelog's "Merchant -> User rename" entry).
-const surface = (rawSurface === "merchant" ? "user" : rawSurface) as "public" | "admin" | "user" | "all";
+const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "user" | "all";
 const showPublic = surface === "all" || surface === "public";
 const showAdmin = surface === "all" || surface === "admin";
 const showUser = surface === "all" || surface === "user";
