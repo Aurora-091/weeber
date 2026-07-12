@@ -25,6 +25,20 @@
  */
 import { mulawToPcm16, pcm16ToMulaw } from "./audio-codec";
 
+/** One 20ms frame of 8kHz/16-bit mono PCM = 160 samples * 2 bytes. Exotel's
+ * VoiceBot applet requires outbound media packets to be a multiple of this. */
+const EXOTEL_FRAME_BYTES = 320;
+
+/** Right-pads `pcm` with PCM silence (zero bytes) up to the next multiple of
+ * `frameBytes`. A no-op when already frame-aligned. */
+function padToFrameMultiple(pcm: Uint8Array, frameBytes: number): Uint8Array {
+  const remainder = pcm.length % frameBytes;
+  if (remainder === 0) return pcm;
+  const padded = new Uint8Array(pcm.length + (frameBytes - remainder));
+  padded.set(pcm, 0); // trailing bytes stay zero-initialized = silence
+  return padded;
+}
+
 export type TelephonyProvider = "twilio" | "plivo" | "exotel";
 
 export type NormalizedInboundEvent =
@@ -125,10 +139,24 @@ const exotelTransport: TelephonyTransport = {
     // convert back to the linear16 PCM Exotel expects on the way out.
     const mulaw = Buffer.from(mulawBase64, "base64");
     const pcm16 = mulawToPcm16(mulaw);
+
+    // Exotel's VoiceBot applet requires every outbound media packet to be a
+    // whole number of 20ms 8kHz/16-bit frames — i.e. a multiple of 320 bytes
+    // (160 samples). Our upstream TTS chunks are byte-streamed and NOT frame
+    // aligned, so a raw chunk whose length isn't a 320-byte multiple gets
+    // rejected/misaligned by Exotel. Pad the tail up to the next frame
+    // boundary with PCM silence (0x0000) so every packet is always valid.
+    // (A stateful re-framer that carries the <320-byte remainder into the
+    // next packet would avoid the sub-20ms silence gap entirely, but needs
+    // per-stream state the shared transport singleton can't safely hold;
+    // deferred until a live Exotel call validates this path — see
+    // docs/india-telephony.md.)
+    const framed = padToFrameMultiple(pcm16, EXOTEL_FRAME_BYTES);
+
     return JSON.stringify({
       event: "media",
       stream_sid: streamId,
-      media: { payload: Buffer.from(pcm16).toString("base64") },
+      media: { payload: Buffer.from(framed).toString("base64") },
     });
   },
   buildClear(streamId) {

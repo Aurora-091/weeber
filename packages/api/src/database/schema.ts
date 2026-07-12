@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   integer,
+  numeric,
   boolean,
   timestamp,
   jsonb,
@@ -227,7 +228,12 @@ export const scheduledCalls = pgTable("scheduled_calls", {
   orgId: text("org_id"),
   checkoutToken: text("checkout_token"),
   recoveredOrderId: text("recovered_order_id"),
-  recoveredAmount: text("recovered_amount"),
+  // Money, not free text — attributed order value from Shopify's `total_price`.
+  // Postgres `numeric` preserves decimal precision exactly (no float drift) and
+  // makes the column SQL-aggregatable. Drizzle returns it as a string, so the
+  // existing defensive `Number.parseFloat` read path in org-queries.ts is
+  // unchanged. Requires a generated migration (text -> numeric) before deploy.
+  recoveredAmount: numeric("recovered_amount", { precision: 12, scale: 2 }),
   metadata: jsonb("metadata").$type<Record<string, string | number>>(),
   workflowRunId: text("workflow_run_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

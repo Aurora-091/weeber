@@ -1,7 +1,7 @@
 import { lte, eq, and } from "drizzle-orm";
 import { db } from "../../database";
-import { scheduledCalls, orgs } from "../../database/schema";
-import { getTwilioClientForOrg, getPublicUrl } from "../twilio-client";
+import { scheduledCalls } from "../../database/schema";
+import { placeOutboundCall } from "../place-outbound-call";
 import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
@@ -52,31 +52,21 @@ export async function executeDueScheduledCalls() {
         continue;
       }
 
-      let from = process.env.TWILIO_PHONE_NUMBER;
-      if (row.orgId) {
-        const [org] = await db.select().from(orgs).where(eq(orgs.id, row.orgId)).limit(1);
-        if (org?.outboundNumber) {
-          from = org.outboundNumber;
-        }
-      }
-
-      if (!from) {
-        console.error("[scheduler] No outbound phone number configured — cannot execute scheduled call");
+      // Dispatch through the shared placement path so a scheduled retry dials
+      // through the org's real provider (Twilio / Plivo / Exotel), not always
+      // Twilio — the bug this fixes silently routed every India-BYO org's
+      // automated retry through the platform Twilio account or failed outright.
+      const placed = await placeOutboundCall({ orgId: row.orgId, to: row.toNumber });
+      if (!placed.ok) {
+        console.error(
+          `[scheduler] could not place scheduled call id=${row.id} to ${row.toNumber}: ${placed.error}`,
+        );
+        await db.update(scheduledCalls).set({ status: "failed" }).where(eq(scheduledCalls.id, row.id));
         continue;
       }
 
-      const call = await (await getTwilioClientForOrg(row.orgId)).calls.create({
-        to: row.toNumber,
-        from,
-        url: `${getPublicUrl()}/api/voice/incoming`,
-        statusCallback: `${getPublicUrl()}/api/voice/status-callback`,
-        statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-        record: true,
-        recordingStatusCallback: `${getPublicUrl()}/api/voice/recording-status`,
-      });
-
-      await sessionStore.set(call.sid, {
-        callSid: call.sid,
+      await sessionStore.set(placed.sessionKey, {
+        callSid: placed.sessionKey,
         direction: "outbound",
         persona: row.persona ?? undefined,
         webhookUrl: row.webhookUrl ?? undefined,

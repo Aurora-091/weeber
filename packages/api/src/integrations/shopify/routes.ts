@@ -12,9 +12,9 @@ import { resilientCall } from "../../voice/integrations/resilient-fetch";
 import { advanceWorkflow } from "../../voice/workflows/graph-engine";
 
 /**
- * Weeber <-> weebersh contract v1.4 — outbound direction (weebersh calls
- * these). See /docs/contract.md (copied into both repos) for the full wire
- * format. Every route here:
+ * Weeber <-> weebersh contract v1.5 — outbound direction (weebersh calls
+ * these). See /docs/contract.md (now copied into this repo too) for the full
+ * wire format. Every route here:
  *   1. authenticates via X-Weeber-Secret (requireWeeberSecret middleware)
  *   2. checks the idempotency ledger before doing anything with side effects
  *   3. always returns a real status code — weebersh's own retry logic

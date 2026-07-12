@@ -17,9 +17,9 @@
 import { Hono } from "hono";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
-import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
-import { createPlivoOutboundCall, buildPlivoStreamXml } from "./plivo-client";
-import { createExotelOutboundCall } from "./exotel-client";
+import { getTwilioClientForOrg, getWsUrl } from "./twilio-client";
+import { buildPlivoStreamXml } from "./plivo-client";
+import { placeOutboundCall } from "./place-outbound-call";
 import { requirePlivoSignature } from "./middleware/plivo-signature";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
@@ -169,18 +169,6 @@ export const voice = new Hono()
       return c.json({ error: "`to` must be a valid E.164 phone number, e.g. +15551234567" }, 400);
     }
 
-    let from = process.env.TWILIO_PHONE_NUMBER;
-    let telephonyProvider: "twilio" | "plivo" | "exotel" = "twilio";
-    if (orgId) {
-      const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
-      if (org?.outboundNumber) from = org.outboundNumber;
-      if (org?.telephonyProvider === "plivo" || org?.telephonyProvider === "exotel") {
-        telephonyProvider = org.telephonyProvider;
-      }
-    }
-
-    if (!from) return c.json({ error: "No outbound phone number configured" }, 500);
-
     // Compliance gates — enforced automatically via @openvent/compliance, no
     // manual step required. A call that fails either check is rejected and
     // never dials. Applies identically regardless of which provider places
@@ -193,82 +181,21 @@ export const voice = new Hono()
       }
     }
 
-    // Plivo and Exotel are genuinely different call-placement shapes, not
-    // just different SDKs — see docs/india-telephony.md's status note and
-    // plivo-client.ts/exotel-client.ts's doc comments for the specific
-    // unverified assumptions in each (no live prototype call yet for
-    // either). Twilio's path below is unchanged from before this work.
-    if (telephonyProvider === "plivo") {
-      if (!orgId) return c.json({ error: "`orgId` is required for Plivo calls (credentials are per-org)" }, 400);
-      const result = await createPlivoOutboundCall({
-        orgId,
-        to,
-        from,
-        answerUrl: `${getPublicUrl()}/api/voice/incoming/plivo?orgId=${encodeURIComponent(orgId)}`,
-      });
-      if (!result.ok) return c.json({ error: result.error }, 502);
+    // Single placement path (shared with the scheduled-call sweep in
+    // workflows/scheduler.ts) dispatches to the org's real provider —
+    // Twilio / Plivo / Exotel — so the two call sites can never drift. Plivo
+    // and Exotel are genuinely different call-placement shapes, not just
+    // different SDKs; see docs/india-telephony.md and
+    // plivo-client.ts/exotel-client.ts for the specific unverified
+    // assumptions in each (no live prototype call yet for either).
+    const placed = await placeOutboundCall({ orgId, to });
+    if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
-      // Provisional session under request_uuid — /incoming/plivo rebinds
-      // this to the real CallUUID once Plivo's answer webhook fires (see
-      // that route and plivo-client.ts for why request_uuid isn't trusted
-      // as the final key on its own).
-      await sessionStore.set(result.requestUuid, {
-        callSid: result.requestUuid,
-        direction: "outbound",
-        persona,
-        webhookUrl,
-        orgId,
-        ttsProvider,
-        sttProvider,
-        language,
-      });
-      return c.json({ callSid: result.requestUuid, status: "queued" }, 201);
-    }
-
-    if (telephonyProvider === "exotel") {
-      if (!orgId) return c.json({ error: "`orgId` is required for Exotel calls (credentials are per-org)" }, 400);
-      const result = await createExotelOutboundCall({
-        orgId,
-        to,
-        from,
-        streamUrl: `${getWsUrl()}/api/voice/stream/exotel`,
-      });
-      if (!result.ok) return c.json({ error: result.error }, 502);
-
-      await sessionStore.set(result.callSid, {
-        callSid: result.callSid,
-        direction: "outbound",
-        persona,
-        webhookUrl,
-        orgId,
-        ttsProvider,
-        sttProvider,
-        language,
-      });
-      return c.json({ callSid: result.callSid, status: "in-progress" }, 201);
-    }
-
-    const call = await (await getTwilioClientForOrg(orgId)).calls.create({
-      to,
-      from,
-      url: `${getPublicUrl()}/api/voice/incoming`,
-      statusCallback: `${getPublicUrl()}/api/voice/status-callback`,
-      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-      record: true,
-      recordingStatusCallback: `${getPublicUrl()}/api/voice/recording-status`,
-      // Answering-machine detection (async — doesn't delay call connection,
-      // unlike sync AMD, which matters since we go straight into a live
-      // Media Stream). Twilio posts AnsweredBy to /amd-status-callback once
-      // it's determined, whether or not the agent has already started
-      // talking — see that route for how we redirect a machine-answered
-      // call out of the live stream to leave a short voicemail instead.
-      machineDetection: "DetectMessageEnd",
-      asyncAmd: "true",
-      asyncAmdStatusCallback: `${getPublicUrl()}/api/voice/amd-status-callback`,
-    });
-
-    await sessionStore.set(call.sid, {
-      callSid: call.sid,
+    // For Plivo the key is a provisional request_uuid that /incoming/plivo
+    // later rebinds to the real CallUUID (see that route + plivo-client.ts on
+    // why request_uuid isn't trusted as the final key on its own).
+    await sessionStore.set(placed.sessionKey, {
+      callSid: placed.sessionKey,
       direction: "outbound",
       persona,
       webhookUrl,
@@ -278,7 +205,7 @@ export const voice = new Hono()
       language,
     });
 
-    return c.json({ callSid: call.sid, status: call.status }, 201);
+    return c.json({ callSid: placed.sessionKey, status: placed.status }, 201);
   })
 
   // Twilio call status webhook — updates our call record's lifecycle status.
