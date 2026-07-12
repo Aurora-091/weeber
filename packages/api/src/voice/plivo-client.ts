@@ -33,12 +33,13 @@ export type PlivoCallResult =
  * route for both inbound and outbound (mirrors how Twilio's `/incoming`
  * already doubles as both).
  *
- * Session correlation: confirmed against Plivo's own Calls API docs
- * (plivo.com/docs/voice/api/calls, "answer_url / fallback_url parameters")
- * — request_uuid and CallUUID are explicitly DIFFERENT identifiers, but
- * Plivo posts BOTH RequestUUID and CallUUID to the answer_url webhook, so
- * `/incoming/plivo` looks the prior session up by RequestUUID and rebinds
- * it to the real CallUUID there — a documented correlator, not a guess.
+ * NOTE — unverified without a live prototype call (see
+ * docs/india-telephony.md): Plivo's own docs describe `request_uuid` as
+ * identifying "the request", and in practice it equals the call's real
+ * `CallUUID` for a simple single-leg outbound call — but the answer
+ * webhook (not this response) is treated as the authoritative point where
+ * we bind session/org context to the real CallUUID, specifically so this
+ * assumption isn't load-bearing if it turns out to be wrong.
  */
 export async function createPlivoOutboundCall(input: {
   orgId: string;

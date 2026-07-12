@@ -112,25 +112,17 @@ export const voice = new Hono()
     const orgId = c.req.query("orgId");
     const body = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
     const callUuid = String(body.CallUUID ?? "");
-    // Plivo's answer_url payload includes BOTH — confirmed against Plivo's
-    // own Calls API docs (plivo.com/docs/voice/api/calls, "answer_url /
-    // fallback_url parameters"): RequestUUID is the same id createPlivoOutboundCall
-    // got back immediately from Call Create, CallUUID is the real call
-    // identifier the WS `start` event later carries. They are explicitly
-    // different values — this is the actual correlator, not a guess.
-    const requestUuid = String(body.RequestUUID ?? "");
     const from = String(body.From ?? "");
     const to = String(body.To ?? "");
     const direction = String(body.Direction ?? "") === "outbound" ? "outbound" : "inbound";
 
     if (callUuid) {
-      // Authoritative point where session/org context (stored under
-      // requestUuid by the outbound trigger) gets rebound to the real
-      // CallUUID, which is what stream.ts's start handler and every later
-      // webhook/lookup key off of.
-      const priorSession = direction === "outbound" && requestUuid ? await sessionStore.get(requestUuid) : undefined;
+      // This is the authoritative point where session/org context gets
+      // bound to Plivo's real CallUUID — see plivo-client.ts's doc comment
+      // on why the outbound trigger's own request_uuid isn't relied on for
+      // this instead.
+      const priorSession = direction === "outbound" ? await sessionStore.get(callUuid) : undefined;
       await sessionStore.set(callUuid, { ...priorSession, callSid: callUuid, direction, orgId: priorSession?.orgId ?? orgId });
-      if (requestUuid) await sessionStore.delete(requestUuid);
 
       await db
         .insert(calls)
