@@ -29,7 +29,6 @@ but it's no longer just one shared secret either — see [`DECISIONS.md`](../DEC
 labeled-key auth model.
 
 The org picker on the Agents/Analytics pages is a plain client-side dropdown, not an access-scoping
-mechanism — the one shared admin key sees every org's data, same as the rest of this dashboard. A real
-merchant-facing, per-org-scoped frontend (Supabase Auth, `/app/*`) is a separate, not-yet-built surface —
-see `CLAUDE-BUILD-BRIEF.md` §5/§9 for that plan, and `MERCHANT-APP-PAGE-MAP.md` for a full page inventory
-reference pulled from the earlier Vocalist/Aurora frontend.
+mechanism — the one shared admin key sees every org's data, same as the rest of this dashboard. The
+merchant-facing, per-org-scoped frontend (Supabase Auth, `/app/*`) has been live since 2026-07-12 — see
+`CLAUDE-BUILD-BRIEF.md` §5/§9 for its scope and `MERCHANT-APP-PAGE-MAP.md` for the full page inventory.
