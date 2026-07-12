@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Store, Circle as XCircle, ExternalLink, ShieldCheck, ArrowRight, Loader as Loader2, ChevronDown } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
@@ -32,6 +33,7 @@ function relativeTime(dateStr: string): string {
 export function MerchantShopifyPage() {
   const { me } = useMerchant();
   const [storeDomain, setStoreDomain] = useState("");
+  const queryClient = useQueryClient();
 
   const statusQuery = useQuery<ShopifyStatus>({
     queryKey: ["app-shopify-status", me.org.id],
@@ -41,6 +43,38 @@ export function MerchantShopifyPage() {
       return res.json();
     },
   });
+
+  // weebersh redirects the browser back here (via the return_url stamped
+  // into the install URL by buildInstallUrl) once its OAuth flow + the
+  // server-to-server /connected callback both complete. Force a fresh
+  // status fetch right away instead of trusting cache, and surface a clear
+  // signal if the callback didn't actually land (org_id mismatch, dropped
+  // callback, etc.) rather than leaving the merchant staring at a stale
+  // "not connected" card with no explanation.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shopify_connected") !== "1") return;
+
+    window.history.replaceState({}, "", window.location.pathname);
+
+    void queryClient
+      .invalidateQueries({ queryKey: ["app-shopify-status", me.org.id] })
+      .then(() => queryClient.fetchQuery({ queryKey: ["app-shopify-status", me.org.id] }))
+      .then((fresh) => {
+        const status = fresh as ShopifyStatus | undefined;
+        if (status?.hasShop) {
+          toast.success("Shopify store connected");
+        } else {
+          toast.error(
+            "weebersh reported a successful connection, but Weeber didn't receive it — the store isn't linked to your account yet. Try connecting again, or contact support if this repeats.",
+          );
+        }
+      })
+      .catch(() => {
+        toast.error("Couldn't confirm Shopify connection status — refresh the page to check again.");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.org.id]);
 
   const installMutation = useMutation({
     mutationFn: async (shop: string) => {

@@ -55,10 +55,30 @@ shopify
     };
 
     // org_id arrives from the Shopify install URL (install is always
-    // initiated from Weeber's dashboard) — if it's somehow missing, mint a
-    // fresh org rather than fail the connection (better a merchant gets a
-    // usable-but-unnamed org than a broken install).
-    const resolvedOrgId = orgId ?? randomUUID();
+    // initiated from Weeber's dashboard, which stamps org_id into the
+    // install URL — see buildInstallUrl). weebersh is expected to carry it
+    // through its OAuth `state`/session and echo it back here. When it's
+    // missing, that's almost always a weebersh-side bug (org_id dropped
+    // somewhere in its OAuth redirect chain), NOT a legitimately org-less
+    // install — so we log loudly and, critically, reuse whatever org this
+    // shop was already linked to (if any) instead of minting a fresh one.
+    // Without this, every retry/reconnect while that bug is live mints a
+    // brand-new orphan org and silently re-points the shop at it, which is
+    // exactly what leaves the merchant's real dashboard org looking
+    // "disconnected" forever even though weebersh reports success.
+    let resolvedOrgId = orgId ?? undefined;
+    if (!resolvedOrgId) {
+      const existingOrgId = await resolveOrgIdForShop(shop);
+      resolvedOrgId = existingOrgId ?? randomUUID();
+      console.warn(
+        `[shopify] POST /connected for shop=${shop} arrived WITHOUT org_id — weebersh is not ` +
+          `forwarding it through the OAuth flow. ` +
+          (existingOrgId
+            ? `Reusing this shop's existing linked org (${existingOrgId}) instead of minting a new one.`
+            : `No prior link found for this shop either — minting a new org (${resolvedOrgId}) as a ` +
+              `last resort. This org will NOT match any merchant's dashboard session.`),
+      );
+    }
 
     await db
       .insert(orgs)

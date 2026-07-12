@@ -143,6 +143,15 @@ export async function getShopifyStatus(orgId: string) {
  * routes.ts /connected) — WEEBERSH_INSTALL_URL is the weebersh app's install
  * entry point; org_id is appended as a query param. Null when unconfigured
  * (the UI shows a "not configured yet" state instead of a dead link).
+ *
+ * Also stamps `return_url` — where weebersh should send the merchant's
+ * browser once its OAuth flow + /connected callback both succeed. This is
+ * the explicit contract for "redirect back to Weeber" (full lifecycle:
+ * enter domain on Weeber -> redirect to Shopify install (via weebersh) ->
+ * install on Shopify -> weebersh calls back /connected -> weebersh redirects
+ * browser to return_url). weebersh must carry BOTH org_id and return_url
+ * through its OAuth `state`/session across the Shopify redirect — neither
+ * survives on its own past the Shopify consent screen.
  */
 export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
@@ -151,6 +160,11 @@ export function buildInstallUrl(orgId: string, shop?: string): string | null {
   let url = `${base}${sep}org_id=${encodeURIComponent(orgId)}`;
   if (shop) {
     url += `&shop=${encodeURIComponent(shop)}`;
+  }
+  const publicAppUrl = process.env.PUBLIC_APP_URL;
+  if (publicAppUrl) {
+    const returnUrl = `${publicAppUrl.replace(/\/$/, "")}/app/shopify?shopify_connected=1`;
+    url += `&return_url=${encodeURIComponent(returnUrl)}`;
   }
   return url;
 }
