@@ -36,7 +36,7 @@ const app = new Hono()
       credentials: true,
       // Explicit allowlist because both auth headers are non-simple — with a
       // CORS origin allowlist set, preflights would otherwise reject them.
-      allowHeaders: ["Content-Type", "Authorization", "X-OpenVent-Admin-Key", "X-Weeber-Impersonation"],
+      allowHeaders: ["Content-Type", "Authorization", "X-OpenVent-Admin-Key"],
       exposeHeaders: ["set-auth-token"],
     }),
   )
