@@ -38,10 +38,18 @@ current guidance.
 **What's explicitly still not done / unverified — no live prototype call has been made for either
 provider, this sandbox has no way to place one (no real Plivo/Exotel account, no public WS URL, no phone
 to receive a call on):**
-- Whether Plivo's immediate Call Create response (`request_uuid`) reliably equals the real `CallUUID` the
-  WS `start` event later carries is unconfirmed — `plivo-client.ts` and the `/incoming/plivo` route are
-  written so this isn't load-bearing either way (the answer webhook, not the create response, is treated
-  as the authoritative point session/org context gets bound to the real CallUUID).
+- ~~Whether Plivo's immediate Call Create response (`request_uuid`) reliably equals the real `CallUUID`~~
+  **Resolved 2026-07-13, re-checked against Plivo's own Calls API docs**: `request_uuid` and `CallUUID`
+  are explicitly different identifiers, but Plivo posts both `RequestUUID` and `CallUUID` to the
+  `answer_url` webhook — `/incoming/plivo` now looks the prior session up by `RequestUUID` (not
+  `CallUUID`, which was a real bug in the first version of this route — it looked up a session keyed by
+  the wrong id and would have silently lost outbound context) and rebinds it to the real `CallUUID`
+  there. Documented correlator now, not a guess.
+- **New risk found on the same re-check, not yet fixed**: Exotel's audio-format spec requires each
+  outbound chunk be 3,200-100,000 bytes and a multiple of 320. `telephony-transport.ts`'s Exotel adapter
+  transcodes whatever chunk size the TTS provider naturally produces — not guaranteed to land on that
+  boundary. Flagged in that file; needs a live call to know whether it actually matters before adding
+  chunk-buffering complexity.
 - Whether Exotel's `/calls/connect` response `call.sid` matches the `call_sid` in the later WS `start`
   event is unconfirmed for the same reason — `stream.ts`'s lazy-insert fallback exists specifically so a
   mismatch here doesn't leave a call with no DB row, just without this request's org/persona context.

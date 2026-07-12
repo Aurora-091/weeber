@@ -123,6 +123,16 @@ const exotelTransport: TelephonyTransport = {
   buildOutboundMedia(streamId, mulawBase64) {
     // Reverse transcode: our TTS pipeline only ever produces mu-law —
     // convert back to the linear16 PCM Exotel expects on the way out.
+    //
+    // Flagged, not fixed: Exotel's docs (Audio format table) require each
+    // outbound chunk to be 3,200-100,000 bytes AND a multiple of 320. TTS
+    // providers stream mu-law in whatever chunk sizes they naturally
+    // produce, not aligned to Exotel's requirement — a chunk that doesn't
+    // land on a 320-byte boundary after this doubles-in-size mu-law->PCM16
+    // conversion could be rejected or cause artifacts. Buffering/re-chunking
+    // to a fixed 320-multiple size before sending would fix this properly;
+    // not implemented, since it needs a live call against Exotel to verify
+    // it actually matters before adding that complexity.
     const mulaw = Buffer.from(mulawBase64, "base64");
     const pcm16 = mulawToPcm16(mulaw);
     return JSON.stringify({
