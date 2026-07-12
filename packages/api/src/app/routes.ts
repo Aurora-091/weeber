@@ -22,6 +22,8 @@ import { orgMembers, orgs } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
+import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
+import { issueTestCallToken } from "../voice/test-call-tokens";
 import {
   requireMerchantSession,
   requireMerchantOrg,
@@ -85,23 +87,9 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
   return row ?? { orgId, role: "owner" };
 }
 
-// Per-org fixed-window limiter, reused for anything that reaches a metered
-// upstream (paid TTS API, paid LLM calls) so merchants can't be unmetered —
-// see previewRateLimited (TTS preview) and testChatRateLimited (agent test
-// chat) below, each with their own window/keyspace.
-function makeFixedWindowLimiter(windowMs: number, maxPerWindow: number) {
-  const windows = new Map<string, { start: number; count: number }>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const window = windows.get(key);
-    if (!window || now - window.start >= windowMs) {
-      windows.set(key, { start: now, count: 1 });
-      return false;
-    }
-    window.count += 1;
-    return window.count > maxPerWindow;
-  };
-}
+// makeFixedWindowLimiter now lives in voice/fixed-window-limiter.ts (shared
+// with test-call-tokens.ts's issuance limiter) — see that file's doc
+// comment. Kept the same per-org fixed-window shape, just extracted.
 
 // Per-org fixed-window limiter for the TTS preview — merchants now reach a
 // paid TTS API, so this can't be unmetered like the admin-key version.
@@ -117,6 +105,13 @@ const previewRateLimited = makeFixedWindowLimiter(PREVIEW_WINDOW_MS, PREVIEW_MAX
 const TEST_CHAT_WINDOW_MS = 60_000;
 const TEST_CHAT_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CHAT_RATE_LIMIT ?? 15);
 const testChatRateLimited = makeFixedWindowLimiter(TEST_CHAT_WINDOW_MS, TEST_CHAT_MAX_PER_WINDOW);
+
+// Per-org fixed-window limiter for issuing live voice test-call tokens —
+// each token leads to a real STT+LLM+TTS session (metered upstreams), so
+// this gates issuance the same way testChatRateLimited gates test-chat.
+const TEST_CALL_WINDOW_MS = 60_000;
+const TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
+const testCallRateLimited = makeFixedWindowLimiter(TEST_CALL_WINDOW_MS, TEST_CALL_MAX_PER_WINDOW);
 
 export const merchantApp = new Hono<MerchantEnv>()
   .use("*", requireMerchantSession)
@@ -268,6 +263,28 @@ export const merchantApp = new Hono<MerchantEnv>()
     } catch (err) {
       return c.json({ error: "LLM call failed", detail: String(err) }, 502);
     }
+  })
+
+  .post("/agent-configs/:templateKey/test-call-token", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    if (testCallRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${TEST_CALL_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    let configOverride;
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: orgId });
+    return c.json({ token }, 201);
   })
 
   .get("/voices", async (c) => {

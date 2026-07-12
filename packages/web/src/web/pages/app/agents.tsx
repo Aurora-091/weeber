@@ -220,6 +220,16 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
     });
   }
 
+  /** Issues a short-lived token for the Voice tab's live test call — same
+   * configOverride contract as chatFetchFn, see test-call-tokens.ts. */
+  async function testCallTokenFetchFn() {
+    return appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+    });
+  }
+
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
@@ -237,6 +247,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         onOpenChange={setPreviewDrawerOpen}
         templateName={row.config?.name || row.templateName}
         chatFetchFn={chatFetchFn}
+        testCallTokenFetchFn={testCallTokenFetchFn}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}

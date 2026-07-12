@@ -209,6 +209,19 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     );
   };
 
+  /** Issues a short-lived token for the Voice tab's live test call — same
+   * configOverride contract as testChatFetch, see test-call-tokens.ts. */
+  const testCallTokenFetch = async () => {
+    return apiFetch(
+      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+      },
+    );
+  };
+
   return (
     <div className="border-t border-border bg-muted/40 p-5">
       <div className="flex justify-end mb-5">
@@ -219,6 +232,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         onOpenChange={setPreviewDrawerOpen}
         templateName={row.config?.name || row.templateName}
         chatFetchFn={testChatFetch}
+        testCallTokenFetchFn={testCallTokenFetch}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}

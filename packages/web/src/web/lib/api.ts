@@ -32,6 +32,18 @@ export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(apiUrl(path), init);
 }
 
+/**
+ * Same seam as apiUrl, but for the native WebSocket routes (voice/ws-route.ts
+ * — Bun-native, outside the Hono app on purpose, see that file's doc
+ * comment). Converts an http(s) origin/relative path into the matching
+ * ws(s) URL so callers (useVoiceTestCall.ts) never hardcode the scheme flip.
+ */
+export function apiWsUrl(path: string): string {
+  const base = API_BASE_URL || window.location.origin;
+  const wsBase = base.replace(/^http/, "ws");
+  return `${wsBase}${path}`;
+}
+
 const client = hc<AppType>(API_BASE_URL || "/");
 
 export const api = client.api;

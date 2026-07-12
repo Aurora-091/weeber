@@ -27,6 +27,8 @@ import { db } from "../database";
 import { calls, callLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
+import { makeFixedWindowLimiter } from "./fixed-window-limiter";
+import { issueTestCallToken } from "./test-call-tokens";
 import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
 import { generatePreviewAudio } from "./tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
@@ -50,6 +52,14 @@ import { requireTwilioSignature } from "./middleware/twilio-signature";
 import { rateLimitOutboundCalls } from "./middleware/rate-limit";
 import { isValidE164 } from "./validation";
 import { createAdminKey, listAdminKeys, revokeAdminKey } from "./admin-keys";
+
+// Per-org fixed-window limiter for issuing live voice test-call tokens from
+// the admin dashboard — same reasoning as app/routes.ts's testCallRateLimited
+// (each token leads to a real STT+LLM+TTS session), just keyed for the
+// admin-key-gated surface instead of merchant sessions.
+const ADMIN_TEST_CALL_WINDOW_MS = 60_000;
+const ADMIN_TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
+const adminTestCallRateLimited = makeFixedWindowLimiter(ADMIN_TEST_CALL_WINDOW_MS, ADMIN_TEST_CALL_MAX_PER_WINDOW);
 
 export const voice = new Hono()
   // Twilio webhook — set this as the phone number's "A call comes in" Voice URL.
@@ -620,6 +630,34 @@ export const voice = new Hono()
     } catch (err) {
       return c.json({ error: "LLM call failed", detail: String(err) }, 502);
     }
+  })
+
+  // Issues a short-lived, single-use token for the admin dashboard's live
+  // voice test call (Preview drawer's Voice tab) — see test-call-tokens.ts's
+  // doc comment for the full two-step handshake this feeds into.
+  .post("/orgs/:orgId/agent-configs/:templateKey/test-call-token", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    if (adminTestCallRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${ADMIN_TEST_CALL_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    let configOverride;
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}` });
+    return c.json({ token }, 201);
   })
 
   // Dynamic per-provider voice list for the dashboard's voice picker — see
