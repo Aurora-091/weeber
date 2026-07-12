@@ -490,6 +490,92 @@ export const voice = new Hono()
     return c.json({ agentConfig: row }, 200);
   })
 
+  // Agent test chat — exercises the real agent config (persona, tools, guardrails,
+  // LLM) as a text-only sandbox. Does NOT create a call row, does NOT touch
+  // Twilio/STT/TTS, does NOT count against usage. Returns the assistant response
+  // with latency + cost metadata so the operator can validate prompt behavior.
+  .post("/orgs/:orgId/agent-configs/:templateKey/test-chat", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.messages)) {
+      return c.json({ error: "body must include `messages` (array)" }, 400);
+    }
+
+    const { resolveAgentConfig } = await import("./agent");
+    const { resolveVoiceModel, getActiveModelLabel } = await import("./llm");
+    const { voiceTools, buildKnownFactsBlock } = await import("./agent");
+    const { streamText, stepCountIs } = await import("ai");
+
+    const agentConfig = await resolveAgentConfig({
+      orgId,
+      templateKey,
+    });
+
+    const model = resolveVoiceModel(
+      agentConfig.llmProvider,
+      agentConfig.llmModel,
+    );
+    const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
+
+    const enabledToolNames = agentConfig.enabledTools;
+    let tools = voiceTools;
+    if (enabledToolNames) {
+      const allowed = new Set([...enabledToolNames, "hangUp"]);
+      tools = Object.fromEntries(
+        Object.entries(voiceTools).filter(([name]) => allowed.has(name as never)),
+      ) as typeof voiceTools;
+    }
+
+    const messages = body.messages.map((m: { role: string; content: string }) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
+    const startedAt = Date.now();
+    let firstTokenAt: number | null = null;
+    let fullText = "";
+    const toolCallsList: { name: string; input: unknown }[] = [];
+
+    try {
+      const result = streamText({
+        model,
+        system: agentConfig.systemPrompt + buildKnownFactsBlock({}),
+        messages,
+        tools,
+        stopWhen: stepCountIs(4),
+        onStepFinish: (step) => {
+          for (const call of step.toolCalls ?? []) {
+            toolCallsList.push({ name: call.toolName, input: call.input });
+          }
+        },
+      });
+
+      for await (const delta of result.textStream) {
+        if (firstTokenAt === null) firstTokenAt = Date.now();
+        fullText += delta;
+      }
+
+      const usage = await result.usage;
+      const latencyMs = firstTokenAt ? firstTokenAt - startedAt : Date.now() - startedAt;
+      const inputTokens = usage?.inputTokens ?? 0;
+      const outputTokens = usage?.outputTokens ?? 0;
+      const estimatedCost = (inputTokens * 0.15 + outputTokens * 0.6) / 1_000_000;
+
+      return c.json({
+        response: fullText || "(No text output — agent may have only called tools.)",
+        latencyMs,
+        model: modelLabel,
+        inputTokens,
+        outputTokens,
+        estimatedCost: Math.round(estimatedCost * 10000) / 10000,
+        toolCalls: toolCallsList,
+      }, 200);
+    } catch (err) {
+      return c.json({ error: "LLM call failed", detail: String(err) }, 502);
+    }
+  })
+
   // Dynamic per-provider voice list for the dashboard's voice picker — see
   // voices-catalog.ts for why each provider's preview capability differs.
   .get("/voices", requireAdminKey, async (c) => {

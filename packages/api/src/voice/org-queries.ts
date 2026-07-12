@@ -271,6 +271,17 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
   const org = await getOrg(orgId);
   const kpis = await computeKpis(orgId, since, orgCalls, toolRows);
 
+  const dailyVolume: { date: string; count: number }[] = [];
+  const dayCounts: Record<string, number> = {};
+  for (const call of orgCalls) {
+    const day = call.startedAt.toISOString().slice(0, 10);
+    dayCounts[day] = (dayCounts[day] ?? 0) + 1;
+  }
+  for (let d = new Date(since); d <= new Date(); d.setDate(d.getDate() + 1)) {
+    const key = d.toISOString().slice(0, 10);
+    dailyVolume.push({ date: key, count: dayCounts[key] ?? 0 });
+  }
+
   return {
     rangeDays: days,
     totalCalls,
@@ -279,6 +290,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     avgLatency,
     toolUsageCounts,
     guardrailEventCounts,
+    dailyVolume,
     currency: org?.currency ?? null,
     kpis,
   };

@@ -324,76 +324,6 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         <p className="text-xs text-destructive">Preview failed — try a different voice, or try again in a minute.</p>
       )}
 
-      {/* Capabilities */}
-      <SectionHeader>Capabilities</SectionHeader>
-
-      <div>
-        <span className={labelClass}>Abilities (hangUp always stays available)</span>
-        <div className="flex flex-wrap gap-3">
-          {AVAILABLE_TOOL_NAMES.map((name) => (
-            <label key={name} className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                aria-label={name}
-                checked={name === "hangUp" || form.toolsEnabled.includes(name)}
-                disabled={name === "hangUp"}
-                onChange={() => toggleTool(name)}
-                className="accent-primary"
-              />
-              <span className="font-mono text-xs">{name}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Safety Guardrails */}
-      <SectionHeader>Safety Guardrails</SectionHeader>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div>
-          <label htmlFor={`topic-strictness-${row.templateKey}`} className={labelClass}>Stay-on-topic strictness</label>
-          <select
-            id={`topic-strictness-${row.templateKey}`}
-            value={form.topicBoundaryStrictness}
-            onChange={(e) => setForm({ ...form, topicBoundaryStrictness: e.target.value })}
-            className={fieldClass}
-          >
-            {STRICTNESS_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor={`injection-sensitivity-${row.templateKey}`} className={labelClass}>Manipulation sensitivity</label>
-          <select
-            id={`injection-sensitivity-${row.templateKey}`}
-            value={form.injectionSensitivity}
-            onChange={(e) => setForm({ ...form, injectionSensitivity: e.target.value })}
-            className={fieldClass}
-          >
-            {STRICTNESS_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-end pb-2">
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="checkbox"
-              aria-label="End call on sustained abuse"
-              checked={form.abuseHandlingEnabled}
-              onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
-              className="accent-primary"
-            />
-            End call on sustained abuse
-          </label>
-        </div>
-      </div>
-
       <div>
         <button
           type="button"
@@ -402,70 +332,142 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
           aria-expanded={advancedOpen}
         >
           <Settings2 className="size-3.5" aria-hidden />
-          Advanced
+          Advanced settings
           {advancedOpen ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
         </button>
         {advancedOpen && (
-          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          <div className="mt-4 space-y-5 border-t border-border/50 pt-4">
+            {/* Capabilities */}
+            <SectionHeader>Capabilities</SectionHeader>
             <div>
-              <label htmlFor={`language-${row.templateKey}`} className={labelClass}>Language</label>
-              <input
-                id={`language-${row.templateKey}`}
-                value={form.language}
-                onChange={(e) => setForm({ ...form, language: e.target.value })}
-                placeholder="en, hi, mr, ta…"
-                list={`languages-${row.templateKey}`}
-                className={fieldClass}
-              />
-              <datalist id={`languages-${row.templateKey}`}>
-                {RECOMMENDED_LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
+              <span className={labelClass}>Abilities (hangUp always stays available)</span>
+              <div className="flex flex-wrap gap-3">
+                {AVAILABLE_TOOL_NAMES.map((name) => (
+                  <label key={name} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      aria-label={name}
+                      checked={name === "hangUp" || form.toolsEnabled.includes(name)}
+                      disabled={name === "hangUp"}
+                      onChange={() => toggleTool(name)}
+                      className="accent-primary"
+                    />
+                    <span className="font-mono text-xs">{name}</span>
+                  </label>
                 ))}
-              </datalist>
+              </div>
             </div>
-            <div>
-              <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass}>Speech-to-text provider</label>
-              <select
-                id={`stt-provider-${row.templateKey}`}
-                value={form.sttProvider}
-                onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
-                className={fieldClass}
-              >
-                <option value="deepgram">Deepgram</option>
-                <option value="sarvam">Sarvam (Indian-language STT)</option>
-              </select>
+
+            {/* Safety Guardrails */}
+            <SectionHeader>Safety Guardrails</SectionHeader>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label htmlFor={`topic-strictness-${row.templateKey}`} className={labelClass}>Stay-on-topic strictness</label>
+                <select
+                  id={`topic-strictness-${row.templateKey}`}
+                  value={form.topicBoundaryStrictness}
+                  onChange={(e) => setForm({ ...form, topicBoundaryStrictness: e.target.value })}
+                  className={fieldClass}
+                >
+                  {STRICTNESS_LEVELS.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`injection-sensitivity-${row.templateKey}`} className={labelClass}>Manipulation sensitivity</label>
+                <select
+                  id={`injection-sensitivity-${row.templateKey}`}
+                  value={form.injectionSensitivity}
+                  onChange={(e) => setForm({ ...form, injectionSensitivity: e.target.value })}
+                  className={fieldClass}
+                >
+                  {STRICTNESS_LEVELS.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label="End call on sustained abuse"
+                    checked={form.abuseHandlingEnabled}
+                    onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
+                    className="accent-primary"
+                  />
+                  End call on sustained abuse
+                </label>
+              </div>
             </div>
-            <div>
-              <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass}>LLM provider</label>
-              <select
-                id={`llm-provider-${row.templateKey}`}
-                value={form.llmProvider}
-                onChange={(e) => setForm({ ...form, llmProvider: e.target.value })}
-                className={fieldClass}
-              >
-                <option value="gateway">AI Gateway</option>
-                <option value="groq">Groq</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor={`llm-model-${row.templateKey}`} className={labelClass}>Model</label>
-              <input
-                id={`llm-model-${row.templateKey}`}
-                value={form.llmModel}
-                onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
-                placeholder="leave blank for the default"
-                list={`models-${row.templateKey}`}
-                className={fieldClass}
-              />
-              <datalist id={`models-${row.templateKey}`}>
-                {RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => (
-                  <option key={m.model} value={m.model}>
-                    {m.label}
-                  </option>
-                ))}
-              </datalist>
+
+            {/* Provider / Model */}
+            <SectionHeader>Provider &amp; Model</SectionHeader>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label htmlFor={`language-${row.templateKey}`} className={labelClass}>Language</label>
+                <input
+                  id={`language-${row.templateKey}`}
+                  value={form.language}
+                  onChange={(e) => setForm({ ...form, language: e.target.value })}
+                  placeholder="en, hi, mr, ta…"
+                  list={`languages-${row.templateKey}`}
+                  className={fieldClass}
+                />
+                <datalist id={`languages-${row.templateKey}`}>
+                  {RECOMMENDED_LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass}>Speech-to-text provider</label>
+                <select
+                  id={`stt-provider-${row.templateKey}`}
+                  value={form.sttProvider}
+                  onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
+                  className={fieldClass}
+                >
+                  <option value="deepgram">Deepgram</option>
+                  <option value="sarvam">Sarvam (Indian-language STT)</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass}>LLM provider</label>
+                <select
+                  id={`llm-provider-${row.templateKey}`}
+                  value={form.llmProvider}
+                  onChange={(e) => setForm({ ...form, llmProvider: e.target.value })}
+                  className={fieldClass}
+                >
+                  <option value="gateway">AI Gateway</option>
+                  <option value="groq">Groq</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`llm-model-${row.templateKey}`} className={labelClass}>Model</label>
+                <input
+                  id={`llm-model-${row.templateKey}`}
+                  value={form.llmModel}
+                  onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
+                  placeholder="leave blank for the default"
+                  list={`models-${row.templateKey}`}
+                  className={fieldClass}
+                />
+                <datalist id={`models-${row.templateKey}`}>
+                  {RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => (
+                    <option key={m.model} value={m.model}>
+                      {m.label}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
             </div>
           </div>
         )}

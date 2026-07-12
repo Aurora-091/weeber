@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ShieldCheck, Ban, AlertTriangle, ShieldAlert } from "lucide-react";
+import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 
@@ -16,11 +16,24 @@ type ComplianceOverview = {
   recentDnc: DncRow[];
   guardrailEventsByOrg: Record<string, Record<string, number>>;
   completedCallsWithoutDisposition: number;
+  undispositionedCalls?: { id: number; fromNumber: string; toNumber: string; startedAt: string }[];
 };
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function downloadCsv(filename: string, headers: string[], rows: string[][]) {
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function CompliancePage() {
@@ -89,9 +102,26 @@ export function CompliancePage() {
 
             {/* Missing Dispositions */}
             <div className="rounded-lg border border-border bg-card p-5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                <AlertTriangle className="size-3.5 text-warning" />
-                Undispositioned calls
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <AlertTriangle className="size-3.5 text-warning" />
+                  Undispositioned calls
+                </div>
+                {data.undispositionedCalls && data.undispositionedCalls.length > 0 && (
+                  <button
+                    onClick={() =>
+                      downloadCsv(
+                        "undispositioned-calls.csv",
+                        ["Call ID", "From", "To", "Started At"],
+                        data.undispositionedCalls!.map((c) => [String(c.id), c.fromNumber, c.toNumber, c.startedAt]),
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Download className="size-3" />
+                    Export CSV
+                  </button>
+                )}
               </div>
               <h2 className="text-2xl font-bold tracking-tight mt-1">{data.completedCallsWithoutDisposition}</h2>
               <p className="text-xs text-muted-foreground mt-1">
@@ -103,7 +133,24 @@ export function CompliancePage() {
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Recent DNC */}
             <div className="rounded-lg border border-border p-5 bg-card">
-              <h3 className="text-sm font-semibold mb-3">Recent Global DNC Additions</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Recent Global DNC Additions</h3>
+                {data.recentDnc.length > 0 && (
+                  <button
+                    onClick={() =>
+                      downloadCsv(
+                        "dnc-list.csv",
+                        ["Phone Number", "Reason", "Source", "Added At"],
+                        data.recentDnc.map((d) => [d.phoneNumber, d.reason ?? "", d.source, d.addedAt]),
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Download className="size-3" />
+                    Export CSV
+                  </button>
+                )}
+              </div>
               {data.recentDnc.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No recent numbers added.</p>
               ) : (

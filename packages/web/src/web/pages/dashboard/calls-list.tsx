@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { PhoneIncoming, PhoneOutgoing, Sparkles } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, Sparkles, Clock } from "lucide-react";
 import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 
@@ -14,6 +14,17 @@ function formatWhen(iso: string | null) {
   if (!iso) return "—";
   const date = new Date(iso);
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDuration(startedAt: string | null, endedAt: string | null): string | null {
+  if (!startedAt || !endedAt) return null;
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0) return null;
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remainSecs = secs % 60;
+  return `${mins}m ${remainSecs}s`;
 }
 
 export function CallsListPage() {
@@ -49,6 +60,7 @@ export function CallsListPage() {
       <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
         {rows.map((call) => {
           const factCount = Object.keys(call.capturedState ?? {}).length;
+          const duration = formatDuration(call.startedAt, call.endedAt ?? null);
           return (
             <Link
               key={call.id}
@@ -73,6 +85,12 @@ export function CallsListPage() {
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">{formatWhen(call.startedAt)}</div>
               </div>
+              {duration && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title="Call duration">
+                  <Clock className="size-3" />
+                  <span className="font-mono">{duration}</span>
+                </div>
+              )}
               {factCount > 0 && (
                 <div className="flex items-center gap-1 text-xs text-success shrink-0" title={`${factCount} facts captured`}>
                   <Sparkles className="size-3.5" />

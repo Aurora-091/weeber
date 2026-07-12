@@ -296,7 +296,7 @@ export const admin = new Hono<AdminEnv>()
         .innerJoin(calls, eq(toolCalls.callId, calls.id))
         .where(inArray(toolCalls.toolName, GUARDRAIL_TOOL_NAMES)),
       db
-        .select({ id: calls.id })
+        .select({ id: calls.id, fromNumber: calls.fromNumber, toNumber: calls.toNumber, startedAt: calls.startedAt })
         .from(calls)
         .where(and(isNull(calls.disposition), eq(calls.status, "completed"))),
     ]);
@@ -319,6 +319,7 @@ export const admin = new Hono<AdminEnv>()
         recentDnc: dncRows.slice(0, 10),
         guardrailEventsByOrg,
         completedCallsWithoutDisposition: undispositioned.length,
+        undispositionedCalls: undispositioned.slice(0, 100),
       },
       200,
     );

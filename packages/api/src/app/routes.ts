@@ -154,6 +154,80 @@ export const merchantApp = new Hono<MerchantEnv>()
     return c.json({ agentConfig: row }, 200);
   })
 
+  .post("/agent-configs/:templateKey/test-chat", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.messages)) {
+      return c.json({ error: "body must include `messages` (array)" }, 400);
+    }
+
+    const { resolveAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
+    const { resolveVoiceModel, getActiveModelLabel } = await import("../voice/llm");
+    const { streamText, stepCountIs } = await import("ai");
+
+    const agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
+    const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
+
+    const enabledToolNames = agentConfig.enabledTools;
+    let tools = voiceTools;
+    if (enabledToolNames) {
+      const allowed = new Set([...enabledToolNames, "hangUp"]);
+      tools = Object.fromEntries(
+        Object.entries(voiceTools).filter(([name]) => allowed.has(name as never)),
+      ) as typeof voiceTools;
+    }
+
+    const messages = body.messages.map((m: { role: string; content: string }) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
+    const startedAt = Date.now();
+    let firstTokenAt: number | null = null;
+    let fullText = "";
+    const toolCallsList: { name: string; input: unknown }[] = [];
+
+    try {
+      const result = streamText({
+        model,
+        system: agentConfig.systemPrompt + buildKnownFactsBlock({}),
+        messages,
+        tools,
+        stopWhen: stepCountIs(4),
+        onStepFinish: (step) => {
+          for (const call of step.toolCalls ?? []) {
+            toolCallsList.push({ name: call.toolName, input: call.input });
+          }
+        },
+      });
+
+      for await (const delta of result.textStream) {
+        if (firstTokenAt === null) firstTokenAt = Date.now();
+        fullText += delta;
+      }
+
+      const usage = await result.usage;
+      const latencyMs = firstTokenAt ? firstTokenAt - startedAt : Date.now() - startedAt;
+      const inputTokens = usage?.inputTokens ?? 0;
+      const outputTokens = usage?.outputTokens ?? 0;
+      const estimatedCost = (inputTokens * 0.15 + outputTokens * 0.6) / 1_000_000;
+
+      return c.json({
+        response: fullText || "(No text output — agent may have only called tools.)",
+        latencyMs,
+        model: modelLabel,
+        inputTokens,
+        outputTokens,
+        estimatedCost: Math.round(estimatedCost * 10000) / 10000,
+        toolCalls: toolCallsList,
+      }, 200);
+    } catch (err) {
+      return c.json({ error: "LLM call failed", detail: String(err) }, 502);
+    }
+  })
+
   .get("/voices", async (c) => {
     const provider = c.req.query("provider") ?? "";
     if (!["elevenlabs", "cartesia", "sarvam"].includes(provider)) {

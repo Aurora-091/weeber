@@ -52,12 +52,10 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
           <span className="font-mono text-xs uppercase tracking-[0.2em]">Admin access required</span>
         </div>
         <h1 className="text-2xl font-semibold mb-2">
-          Enter your admin key
+          Enter your admin access key
         </h1>
         <p className="text-sm text-muted-foreground mb-6">
-          This matches <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">ADMIN_API_KEY</code> in
-          your server's <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.env</code>. Stored only
-          in this tab's session storage.
+          Your platform administrator manages access keys. This session stays local to this browser tab.
         </p>
         <form
           onSubmit={(e) => {
@@ -83,7 +81,7 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
             Unlock dashboard
           </button>
           {attempted && check.isError && (
-            <p className="text-sm text-destructive">Invalid key — check ADMIN_API_KEY in your server's .env.</p>
+            <p className="text-sm text-destructive">Invalid access key. Contact your administrator if you need a new one.</p>
           )}
         </form>
       </div>

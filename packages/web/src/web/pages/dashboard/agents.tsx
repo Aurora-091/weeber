@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, Play, Loader2 } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2 } from "lucide-react";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
 import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useSelectedOrgId } from "../../lib/org-id";
+import { AgentTestChat } from "../../components/agent-test-chat";
 
 const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
 const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
@@ -24,9 +25,6 @@ const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
   { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (fastest overall, Groq)" },
 ] as const;
-// Mirrors voice/agent-frame.ts's RECOMMENDED_LANGUAGES — suggestions only,
-// the field stays free text so a language neither provider covers yet still
-// works without a code change.
 const RECOMMENDED_LANGUAGES = [
   { code: "en", label: "English" },
   { code: "hi", label: "Hindi" },
@@ -121,13 +119,10 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"config" | "test">("config");
 
   const save = useMutation({
     mutationFn: async () => {
-      // Raw fetch, not the typed RPC client — this route takes path params
-      // *and* a JSON body with no zod-validator middleware declared, and
-      // Hono's client type inference doesn't combine those two on its own
-      // (see apiFetch's docstring — exactly the case it exists for).
       const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
@@ -191,272 +186,310 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     }));
   }
 
+  const testChatFetch = async (messages: { role: string; content: string }[]) => {
+    return apiFetch(
+      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        body: JSON.stringify({ messages }),
+      },
+    );
+  };
+
   return (
-    <div className="border-t border-border bg-muted/40 p-5 space-y-5">
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor={`name-${row.templateKey}`} className={labelClass()}>Agent name</label>
-          <input
-            id={`name-${row.templateKey}`}
-            aria-label="Agent name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="e.g. Aria"
-            className={inputClass()}
-          />
-        </div>
-        <div>
-          <label htmlFor={`tone-${row.templateKey}`} className={labelClass()}>Tone</label>
-          <select
-            id={`tone-${row.templateKey}`}
-            value={form.toneStyle}
-            onChange={(e) => setForm({ ...form, toneStyle: e.target.value })}
-            className={selectClass()}
-          >
-            <option value="">Default</option>
-            {TONE_STYLES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor={`greeting-${row.templateKey}`} className={labelClass()}>Greeting line</label>
-          <input
-            id={`greeting-${row.templateKey}`}
-            aria-label="Greeting line"
-            value={form.greetingLine}
-            onChange={(e) => setForm({ ...form, greetingLine: e.target.value })}
-            placeholder="Hi, thanks for calling — how can I help?"
-            className={inputClass()}
-          />
-        </div>
-        <div>
-          <label htmlFor={`closing-${row.templateKey}`} className={labelClass()}>Closing line</label>
-          <input
-            id={`closing-${row.templateKey}`}
-            aria-label="Closing line"
-            value={form.closingLine}
-            onChange={(e) => setForm({ ...form, closingLine: e.target.value })}
-            placeholder="Thanks for calling, have a great day!"
-            className={inputClass()}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor={`persona-${row.templateKey}`} className={labelClass()}>
-          Job description / persona prompt (leave blank to use the template default)
-        </label>
-        <textarea
-          id={`persona-${row.templateKey}`}
-          aria-label="Job description / persona prompt"
-          value={form.personaPrompt}
-          onChange={(e) => setForm({ ...form, personaPrompt: e.target.value })}
-          rows={4}
-          placeholder={row.defaultPersonaPrompt ?? ""}
-          className={inputClass() + " font-mono text-xs"}
-        />
-      </div>
-
-      <div className="grid sm:grid-cols-3 gap-4 items-end">
-        <div>
-          <label htmlFor={`voice-provider-${row.templateKey}`} className={labelClass()}>Voice provider</label>
-          <select
-            id={`voice-provider-${row.templateKey}`}
-            value={form.voiceProvider}
-            onChange={(e) => setForm({ ...form, voiceProvider: e.target.value })}
-            className={selectClass()}
-          >
-            <option value="cartesia">Cartesia</option>
-            <option value="elevenlabs">ElevenLabs</option>
-            <option value="sarvam">Sarvam (Indian-language voices)</option>
-          </select>
-        </div>
-        <div>
-          <label className={labelClass()}>Voice</label>
-          <VoicePicker
-            provider={form.voiceProvider}
-            value={form.voiceId}
-            language={form.language}
-            onChange={(voiceId) => setForm({ ...form, voiceId })}
-            scope="admin"
-            previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
-          />
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={playPreview}
-            disabled={previewState === "loading"}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            Preview
-          </button>
-          {previewUrl && (
-            // eslint-disable-next-line jsx-a11y/media-has-caption -- synthesized TTS preview, no source track to caption
-            <audio controls src={previewUrl} className="h-9" aria-label="Voice preview playback" />
-          )}
-        </div>
-      </div>
-      {previewState === "error" && <p className="text-xs text-destructive">Preview failed — check the voice ID and provider key.</p>}
-
-      <div className="grid sm:grid-cols-3 gap-4">
-        <div>
-          <label htmlFor={`language-${row.templateKey}`} className={labelClass()}>Language</label>
-          <input
-            id={`language-${row.templateKey}`}
-            aria-label="Language"
-            value={form.language}
-            onChange={(e) => setForm({ ...form, language: e.target.value })}
-            placeholder="en, hi, mr, ta…"
-            list={`languages-${row.templateKey}`}
-            className={inputClass()}
-          />
-          <datalist id={`languages-${row.templateKey}`}>
-            {RECOMMENDED_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.label}
-              </option>
-            ))}
-          </datalist>
-        </div>
-        <div>
-          <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass()}>Speech-to-text provider</label>
-          <select
-            id={`stt-provider-${row.templateKey}`}
-            value={form.sttProvider}
-            onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
-            className={selectClass()}
-          >
-            <option value="deepgram">Deepgram</option>
-            <option value="sarvam">Sarvam (Indian-language STT)</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass()}>LLM provider</label>
-          <select
-            id={`llm-provider-${row.templateKey}`}
-            value={form.llmProvider}
-            onChange={(e) => setForm({ ...form, llmProvider: e.target.value })}
-            className={selectClass()}
-          >
-            <option value="gateway">AI Gateway</option>
-            <option value="groq">Groq</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor={`llm-model-${row.templateKey}`} className={labelClass()}>Model</label>
-          <input
-            id={`llm-model-${row.templateKey}`}
-            aria-label="Model"
-            value={form.llmModel}
-            onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
-            placeholder="leave blank for the default"
-            list={`models-${row.templateKey}`}
-            className={inputClass()}
-          />
-          <datalist id={`models-${row.templateKey}`}>
-            {RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => (
-              <option key={m.model} value={m.model}>
-                {m.label}
-              </option>
-            ))}
-          </datalist>
-        </div>
-      </div>
-
-      <div>
-        <span className={labelClass()}>Tools enabled (hangUp always stays available)</span>
-        <div className="flex flex-wrap gap-3">
-          {AVAILABLE_TOOL_NAMES.map((name) => (
-            <label key={name} className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                aria-label={name}
-                checked={name === "hangUp" || form.toolsEnabled.includes(name)}
-                disabled={name === "hangUp"}
-                onChange={() => toggleTool(name)}
-                className="accent-primary"
-              />
-              <span className="font-mono text-xs">{name}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid sm:grid-cols-3 gap-4">
-        <div>
-          <label htmlFor={`topic-strictness-${row.templateKey}`} className={labelClass()}>Topic boundary strictness</label>
-          <select
-            id={`topic-strictness-${row.templateKey}`}
-            value={form.topicBoundaryStrictness}
-            onChange={(e) => setForm({ ...form, topicBoundaryStrictness: e.target.value })}
-            className={selectClass()}
-          >
-            {STRICTNESS_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor={`injection-sensitivity-${row.templateKey}`} className={labelClass()}>Injection sensitivity</label>
-          <select
-            id={`injection-sensitivity-${row.templateKey}`}
-            value={form.injectionSensitivity}
-            onChange={(e) => setForm({ ...form, injectionSensitivity: e.target.value })}
-            className={selectClass()}
-          >
-            {STRICTNESS_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-end pb-2">
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="checkbox"
-              aria-label="End call on sustained abuse"
-              checked={form.abuseHandlingEnabled}
-              onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
-              className="accent-primary"
-            />
-            End call on sustained abuse
-          </label>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 pt-2">
-        <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="checkbox"
-            aria-label="Agent enabled"
-            checked={form.enabled}
-            onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-            className="accent-primary"
-          />
-          Agent enabled
-        </label>
+    <div className="border-t border-border bg-muted/40 p-5">
+      <div className="flex gap-1 mb-5">
         <button
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+          onClick={() => setActiveTab("config")}
+          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+            activeTab === "config" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
         >
-          {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          Save
+          Configuration
+        </button>
+        <button
+          onClick={() => setActiveTab("test")}
+          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+            activeTab === "test" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          Test Agent
         </button>
       </div>
-      {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-      {save.isSuccess && !saveError && <p className="text-xs text-muted-foreground">Saved.</p>}
+
+      {activeTab === "test" && (
+        <AgentTestChat fetchFn={testChatFetch} templateName={row.config?.name || row.templateName} />
+      )}
+
+      {activeTab === "config" && (
+        <div className="space-y-5">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor={`name-${row.templateKey}`} className={labelClass()}>Agent name</label>
+              <input
+                id={`name-${row.templateKey}`}
+                aria-label="Agent name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Aria"
+                className={inputClass()}
+              />
+            </div>
+            <div>
+              <label htmlFor={`tone-${row.templateKey}`} className={labelClass()}>Tone</label>
+              <select
+                id={`tone-${row.templateKey}`}
+                value={form.toneStyle}
+                onChange={(e) => setForm({ ...form, toneStyle: e.target.value })}
+                className={selectClass()}
+              >
+                <option value="">Default</option>
+                {TONE_STYLES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor={`greeting-${row.templateKey}`} className={labelClass()}>Greeting line</label>
+              <input
+                id={`greeting-${row.templateKey}`}
+                aria-label="Greeting line"
+                value={form.greetingLine}
+                onChange={(e) => setForm({ ...form, greetingLine: e.target.value })}
+                placeholder="Hi, thanks for calling — how can I help?"
+                className={inputClass()}
+              />
+            </div>
+            <div>
+              <label htmlFor={`closing-${row.templateKey}`} className={labelClass()}>Closing line</label>
+              <input
+                id={`closing-${row.templateKey}`}
+                aria-label="Closing line"
+                value={form.closingLine}
+                onChange={(e) => setForm({ ...form, closingLine: e.target.value })}
+                placeholder="Thanks for calling, have a great day!"
+                className={inputClass()}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor={`persona-${row.templateKey}`} className={labelClass()}>
+              Job description / persona prompt (leave blank to use the template default)
+            </label>
+            <textarea
+              id={`persona-${row.templateKey}`}
+              aria-label="Job description / persona prompt"
+              value={form.personaPrompt}
+              onChange={(e) => setForm({ ...form, personaPrompt: e.target.value })}
+              rows={4}
+              placeholder={row.defaultPersonaPrompt ?? ""}
+              className={inputClass() + " font-mono text-xs"}
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-4 items-end">
+            <div>
+              <label htmlFor={`voice-provider-${row.templateKey}`} className={labelClass()}>Voice provider</label>
+              <select
+                id={`voice-provider-${row.templateKey}`}
+                value={form.voiceProvider}
+                onChange={(e) => setForm({ ...form, voiceProvider: e.target.value })}
+                className={selectClass()}
+              >
+                <option value="cartesia">Cartesia</option>
+                <option value="elevenlabs">ElevenLabs</option>
+                <option value="sarvam">Sarvam (Indian-language voices)</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass()}>Voice</label>
+              <VoicePicker
+                provider={form.voiceProvider}
+                value={form.voiceId}
+                language={form.language}
+                onChange={(voiceId) => setForm({ ...form, voiceId })}
+                scope="admin"
+                previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={playPreview}
+                disabled={previewState === "loading"}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                Preview
+              </button>
+              {previewUrl && (
+                // eslint-disable-next-line jsx-a11y/media-has-caption -- synthesized TTS preview, no source track to caption
+                <audio controls src={previewUrl} className="h-9" aria-label="Voice preview playback" />
+              )}
+            </div>
+          </div>
+          {previewState === "error" && <p className="text-xs text-destructive">Preview failed — check the voice ID and provider key.</p>}
+
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor={`language-${row.templateKey}`} className={labelClass()}>Language</label>
+              <input
+                id={`language-${row.templateKey}`}
+                aria-label="Language"
+                value={form.language}
+                onChange={(e) => setForm({ ...form, language: e.target.value })}
+                placeholder="en, hi, mr, ta…"
+                list={`languages-${row.templateKey}`}
+                className={inputClass()}
+              />
+              <datalist id={`languages-${row.templateKey}`}>
+                {RECOMMENDED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass()}>Speech-to-text provider</label>
+              <select
+                id={`stt-provider-${row.templateKey}`}
+                value={form.sttProvider}
+                onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
+                className={selectClass()}
+              >
+                <option value="deepgram">Deepgram</option>
+                <option value="sarvam">Sarvam (Indian-language STT)</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass()}>LLM provider</label>
+              <select
+                id={`llm-provider-${row.templateKey}`}
+                value={form.llmProvider}
+                onChange={(e) => setForm({ ...form, llmProvider: e.target.value })}
+                className={selectClass()}
+              >
+                <option value="gateway">AI Gateway</option>
+                <option value="groq">Groq</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`llm-model-${row.templateKey}`} className={labelClass()}>Model</label>
+              <input
+                id={`llm-model-${row.templateKey}`}
+                aria-label="Model"
+                value={form.llmModel}
+                onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
+                placeholder="leave blank for the default"
+                list={`models-${row.templateKey}`}
+                className={inputClass()}
+              />
+              <datalist id={`models-${row.templateKey}`}>
+                {RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => (
+                  <option key={m.model} value={m.model}>
+                    {m.label}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          <div>
+            <span className={labelClass()}>Tools enabled (hangUp always stays available)</span>
+            <div className="flex flex-wrap gap-3">
+              {AVAILABLE_TOOL_NAMES.map((name) => (
+                <label key={name} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label={name}
+                    checked={name === "hangUp" || form.toolsEnabled.includes(name)}
+                    disabled={name === "hangUp"}
+                    onChange={() => toggleTool(name)}
+                    className="accent-primary"
+                  />
+                  <span className="font-mono text-xs">{name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor={`topic-strictness-${row.templateKey}`} className={labelClass()}>Topic boundary strictness</label>
+              <select
+                id={`topic-strictness-${row.templateKey}`}
+                value={form.topicBoundaryStrictness}
+                onChange={(e) => setForm({ ...form, topicBoundaryStrictness: e.target.value })}
+                className={selectClass()}
+              >
+                {STRICTNESS_LEVELS.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`injection-sensitivity-${row.templateKey}`} className={labelClass()}>Injection sensitivity</label>
+              <select
+                id={`injection-sensitivity-${row.templateKey}`}
+                value={form.injectionSensitivity}
+                onChange={(e) => setForm({ ...form, injectionSensitivity: e.target.value })}
+                className={selectClass()}
+              >
+                {STRICTNESS_LEVELS.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="End call on sustained abuse"
+                  checked={form.abuseHandlingEnabled}
+                  onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
+                  className="accent-primary"
+                />
+                End call on sustained abuse
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                aria-label="Agent enabled"
+                checked={form.enabled}
+                onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+                className="accent-primary"
+              />
+              Agent enabled
+            </label>
+            <button
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Save
+            </button>
+          </div>
+          {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+          {save.isSuccess && !saveError && <p className="text-xs text-muted-foreground">Saved.</p>}
+        </div>
+      )}
     </div>
   );
 }

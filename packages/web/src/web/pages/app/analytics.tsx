@@ -1,11 +1,32 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Phone, Clock, Wrench, ShieldAlert, TrendingUp, TrendingDown, ChartBar as BarChart3, PhoneOff } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
+
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 /* ─── Date Range Selector ─── */
 
@@ -250,8 +271,69 @@ export function MerchantAnalyticsPage() {
             />
           </div>
 
+          {/* Call volume time-series chart */}
+          {data.dailyVolume && data.dailyVolume.length > 0 && (
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="text-sm font-medium mb-4">Call volume</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={data.dailyVolume} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                    tickFormatter={(v: string) => v.slice(5)}
+                  />
+                  <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Bar dataKey="count" fill="var(--chart-1)" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Outcomes donut + Latency bar */}
           <div className="grid sm:grid-cols-2 gap-4">
-            <BreakdownList title="Call outcomes" counts={data.dispositionBreakdown} />
+            {Object.keys(data.dispositionBreakdown).length > 0 && (
+              <div className="rounded-lg border border-border bg-card p-5">
+                <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={Object.entries(data.dispositionBreakdown).map(([name, value]: [string, unknown]) => ({ name, value: value as number }))}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ''} (${((percent ?? 0) * 100).toFixed(0)}%)`}
+                      labelLine={false}
+                    >
+                      {Object.keys(data.dispositionBreakdown).map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        background: "var(--color-card)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
             <div className="space-y-4">
               <div className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-1.5 text-sm font-medium mb-3">
