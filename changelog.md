@@ -4,6 +4,75 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Agent Preview drawer, Phase 2: real full-duplex in-browser voice test call
+
+Ships the "biggest lift" piece from `AGENT-CONSOLE-UI-PLAN.md` (§3, Phase 2) on both `/app/agents`
+(merchant) and `/dashboard/agents` (admin) — a real mic-in/agent-voice-out test call inside the
+Preview drawer's Voice tab, not a simulation. Backend-plus-frontend unit, not a UI-only change.
+
+- **Architecture decision**: this is a *new parallel handler* (`voice/test-call-stream.ts`), **not** a
+  4th telephony provider inside `createVoiceStreamHandlers`/`stream.ts`. That engine writes DB call
+  rows, runs workflows/webhooks, and enforces DNC/compliance/caller-memory — all unwanted overhead
+  for a config-testing sandbox. The new handler reuses only the pipeline primitives every real call
+  already uses: `connectStt`, `connectTts`, `runVoiceAgentTurn`, `runVoiceAgentGreeting` — so the test
+  call is genuinely the real STT→LLM→TTS pipeline, just without a phone number or persisted call
+  record. Max call duration capped at 5 minutes server-side.
+- **Wire format**: 8kHz mu-law, matching what `connectStt`/`connectTts` already assume natively — zero
+  backend STT/TTS changes needed. Client protocol (documented in `test-call-stream.ts`'s header
+  comment): client→server `{"type":"media","audio":"<base64 mulaw>"}` / `{"type":"stop"}`;
+  server→client `{"type":"ready"}`, `{"type":"audio",...}`, `{"type":"transcript","role":...}`,
+  `{"type":"clear"}` (barge-in signal), `{"type":"ended","reason":...}`, `{"type":"error",...}`.
+- **Auth — two-step token handshake**: a browser `WebSocket` can't send custom headers, so a raw
+  session/API-key can't ride the WS URL safely. New short-lived, single-use tokens
+  (`voice/test-call-tokens.ts`, in-memory, 2-min TTL) are issued by an HTTP POST (which *can* carry
+  normal auth) and consumed once by the WS upgrade at `/api/voice/test-call?token=...`
+  (`ws-route.ts`, token-gated, dual-dispatches "voice" vs "test-call" socket kinds).
+  - Merchant: `POST /api/app/agent-configs/:templateKey/test-call-token` (session-authed,
+    `testCallRateLimited`, optional `configOverride` validated via `AgentFrameSchema`).
+  - Admin: `POST /api/voice/orgs/:orgId/agent-configs/:templateKey/test-call-token` (admin-key gated,
+    `adminTestCallRateLimited`).
+- **Rate limiting**: `voice/fixed-window-limiter.ts` extracted as the one shared
+  `makeFixedWindowLimiter` (previously a local duplicate inside `app/routes.ts`) — same
+  can't-be-unmetered principle already applied to `previewRateLimited`/`testChatRateLimited`, tighter
+  window since a full test call costs more than one TTS sentence.
+- **Frontend**: `lib/audio-codec.ts` (browser-safe port of the API's mulaw/pcm16 math, no `Buffer`),
+  `hooks/useVoiceTestCall.ts` (mic capture, 48kHz→8kHz downsample, mulaw encode, WS send/receive,
+  playback queue, barge-in on `{"type":"clear"}`, mic/agent audio-level metering for the orb).
+  `PreviewDrawer.tsx`'s Voice tab now has real Start/End call buttons and a live transcript log, wired
+  on both `pages/app/agents.tsx` and `pages/dashboard/agents.tsx`; the prior one-shot "Hear this
+  agent" TTS button stays as a secondary quick-check below it.
+- **Known limitation**: `ScriptProcessorNode` (deprecated but functional in all evergreen browsers) is
+  used for mic capture — an `AudioWorklet` migration is a reasonable future cleanup, not urgent.
+- Verified: api typecheck/lint clean, 191 tests pass (17 new — token issue/consume/expiry,
+  stream state transitions with mocked stt/tts/agent); web typecheck/lint/build clean (no new web
+  unit tests — the hook is browser-API-heavy and hard to unit test meaningfully without a real
+  mic/`AudioContext`; judged low value versus the backend state-machine tests, which cover the actual
+  pipeline logic).
+
+## 2026-07-12 — Agent Preview drawer, Phase 1: backend-wired live-edit preview (text tab + orb shell)
+
+First half of `AGENT-CONSOLE-UI-PLAN.md` — a "Preview" button (top-right on both `/app/agents` and
+`/dashboard/agents`) opening a right-side drawer (`components/agent-preview/`: `PreviewButton`,
+`PreviewDrawer`, `VoiceOrb`, `useAudioLevel`), shared identically on both surfaces. Not decorative:
+the drawer's Text tab tests the agent's **current, unsaved, in-progress form state** — not just what's
+already saved to the DB.
+
+- **Backend**: new `buildPreviewAgentConfig(templateKey, override)` in `voice/agent.ts` builds
+  systemPrompt/voice/llm/tools directly from an `AgentFrame` override instead of reading a saved
+  `orgAgentConfigs` row, falling back to the template's default persona when
+  `override.personaPrompt` is empty (matching what a real call would get).
+- Both existing test-chat routes (`app/routes.ts` merchant, `voice/routes.ts` admin) now accept an
+  optional `configOverride` in the request body, validated via the existing `AgentFrameSchema` —
+  routes to `buildPreviewAgentConfig` when present, falls back to the existing `resolveAgentConfig`
+  (saved row) when omitted.
+- **Frontend**: `PreviewDrawer`'s Voice tab reuses the existing one-shot `/voice-preview` WAV endpoint
+  (orb reacts to TTS playback level only at this stage — full mic-in duplex is Phase 2 above); Text
+  tab reuses the existing `AgentTestChat` component (previously admin-only, inline on the page) now
+  restyled to sit inside the drawer and — new — exposed on the merchant surface for the first time,
+  sending `configOverride` from the live form state.
+- Verified: typecheck x3 (api/web/compliance), 216/216 tests (api 174 incl. 7 new, web 8, compliance
+  34), lint 0/0, web build clean, migration-drift clean.
+
 ## 2026-07-12 — Subdomain routing implementation
 
 - **New file:** `src/web/lib/domains.ts` — cross-subdomain URL helpers (`wwwUrl`, `adminUrl`, `appUrl`) driven by `VITE_WWW_ORIGIN`, `VITE_ADMIN_ORIGIN`, `VITE_APP_ORIGIN`. Unset = same-origin relative paths (local dev).
