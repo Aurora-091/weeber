@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PhoneIncoming, PhoneOutgoing, Search } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
+import { appPath } from "../../lib/route-base";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -203,7 +204,7 @@ export function MerchantCallsPage() {
               {filteredRows.map((call) => (
                 <Link
                   key={call.id}
-                  href={`/app/calls/${call.id}`}
+                  href={appPath(`/calls/${call.id}`)}
                   className={`flex items-center gap-4 px-5 transition-all duration-150 hover:bg-muted/60 hover:border-foreground/10 hover:scale-[1.005] ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
                   style={{ paddingTop: "var(--shell-row-py)", paddingBottom: "var(--shell-row-py)" }}
                 >

@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
+import { appPath } from "../../lib/route-base";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -73,7 +74,7 @@ export function ResetPasswordPage() {
       return;
     }
     setDone(true);
-    setTimeout(() => navigate("/app"), 1500);
+    setTimeout(() => navigate(appPath()), 1500);
   }
 
   return (
@@ -99,7 +100,7 @@ export function ResetPasswordPage() {
             </p>
             <button
               type="button"
-              onClick={() => navigate("/app/login")}
+              onClick={() => navigate(appPath("/login"))}
               className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               Back to sign-in

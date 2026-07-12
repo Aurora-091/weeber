@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
+import { appPath } from "../../lib/route-base";
 
 /**
  * Magic-link landing page. supabase-js (detectSessionInUrl, the default)
@@ -23,13 +24,13 @@ export function MerchantAuthCallbackPage() {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && !done) {
         done = true;
-        navigate("/app");
+        navigate(appPath());
       }
     });
     supabase.auth.getSession().then(({ data }) => {
       if (data.session && !done) {
         done = true;
-        navigate("/app");
+        navigate(appPath());
       }
     });
     const timeout = setTimeout(() => {
@@ -58,7 +59,7 @@ export function MerchantAuthCallbackPage() {
         {failed && (
           <button
             type="button"
-            onClick={() => navigate("/app/login")}
+            onClick={() => navigate(appPath("/login"))}
             className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Back to sign-in

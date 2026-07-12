@@ -8,6 +8,7 @@ import { appFetch } from "../../lib/merchant-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
+import { appPath } from "../../lib/route-base";
 import { AppShell } from "../shell/app-shell";
 
 export type MerchantMe = {
@@ -96,14 +97,14 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
     return <Notice title="Weeber" body="Checking your session…" />;
   }
   if (!session) {
-    return <Redirect to="/app/login" />;
+    return <Redirect to={appPath("/login")} />;
   }
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
       const signOut = async () => {
         await supabase?.auth.signOut();
-        window.location.href = "/app/login";
+        window.location.href = appPath("/login");
       };
       return (
         <Notice
@@ -137,7 +138,7 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={async () => {
               await supabase?.auth.signOut();
-              window.location.href = "/app/login";
+              window.location.href = appPath("/login");
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >

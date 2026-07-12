@@ -1,9 +1,10 @@
-import { Redirect, Route, Switch } from "wouter";                                                                                
+import { Redirect, Route, Switch } from "wouter";
 import DocsPage from "./pages/docs";
-import LandingPage from "./pages/landing";                                                                                   
-import { Provider } from "./components/provider";                                                                      
+import LandingPage from "./pages/landing";
+import { Provider } from "./components/provider";
 import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
+import { adminPath, appPath } from "./lib/route-base";
 
 const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "merchant" | "all";
 const showPublic = surface === "all" || surface === "public";
@@ -63,182 +64,186 @@ function Dashboard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function App() {                                                                                                       
-  return (                                                                                                             
-    <Provider>                                                                                                         
-      <Switch>                                                                                                         
+function App() {
+  return (
+    <Provider>
+      <Switch>
         {/* Public pages */}
         {showPublic && <Route path="/" component={LandingPage} />}
         {showPublic && <Route path="/docs" component={DocsPage} />}
-        
+
         {/* Admin Dashboard */}
         {showAdmin && (
-          <Route path="/dashboard">
+          <Route path={adminPath()}>
             <Dashboard><CallsListPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/calls/:id">
+          <Route path={adminPath("/calls/:id")}>
             <Dashboard><CallDetailPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/dnc">
+          <Route path={adminPath("/dnc")}>
             <Dashboard><DncPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/audit">
+          <Route path={adminPath("/audit")}>
             <Dashboard><AuditPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/settings">
+          <Route path={adminPath("/settings")}>
             <Dashboard><SettingsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/agents">
+          <Route path={adminPath("/agents")}>
             <Dashboard><AgentsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/analytics">
+          <Route path={adminPath("/analytics")}>
             <Dashboard><AnalyticsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/orgs">
+          <Route path={adminPath("/orgs")}>
             <Dashboard><OrgsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/templates">
+          <Route path={adminPath("/templates")}>
             <Dashboard><TemplatesPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/billing">
+          <Route path={adminPath("/billing")}>
             <Dashboard><BillingPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/compliance">
+          <Route path={adminPath("/compliance")}>
             <Dashboard><CompliancePage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/flags">
+          <Route path={adminPath("/flags")}>
             <Dashboard><FlagsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/users">
+          <Route path={adminPath("/users")}>
             <Dashboard><UsersPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/waitlist">
+          <Route path={adminPath("/waitlist")}>
             <Dashboard><WaitlistPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/broadcasts">
+          <Route path={adminPath("/broadcasts")}>
             <Dashboard><BroadcastsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/support">
+          <Route path={adminPath("/support")}>
             <Dashboard><SupportPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/logs">
+          <Route path={adminPath("/logs")}>
             <Dashboard><LogsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/revenue-analytics">
+          <Route path={adminPath("/revenue-analytics")}>
             <Dashboard><RevenueAnalyticsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/marketing-analytics">
+          <Route path={adminPath("/marketing-analytics")}>
             <Dashboard><MarketingAnalyticsPage /></Dashboard>
           </Route>
         )}
         {showAdmin && (
-          <Route path="/dashboard/workflow-runs">
+          <Route path={adminPath("/workflow-runs")}>
             <Dashboard><WorkflowRunsPage /></Dashboard>
           </Route>
         )}
 
-        {/* Merchant App */}
-        {showMerchant && <Route path="/app/login"><MerchantLoginPage /></Route>}
-        {showMerchant && <Route path="/app/auth/callback"><MerchantAuthCallbackPage /></Route>}
-        {showMerchant && <Route path="/app/auth/reset-password"><ResetPasswordPage /></Route>}
-        
+        {/* Merchant/User App */}
+        {showMerchant && <Route path={appPath("/login")}><MerchantLoginPage /></Route>}
+        {showMerchant && <Route path={appPath("/auth/callback")}><MerchantAuthCallbackPage /></Route>}
+        {showMerchant && <Route path={appPath("/auth/reset-password")}><ResetPasswordPage /></Route>}
+
         {showMerchant && (
-          <Route path="/app">
+          <Route path={appPath()}>
             <MerchantShell><MerchantHomePage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/onboarding">
-            <Redirect to="/app?setup=1" />
+          <Route path={appPath("/onboarding")}>
+            <Redirect to={`${appPath()}?setup=1`} />
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/agents">
+          <Route path={appPath("/agents")}>
             <MerchantShell><MerchantAgentsPage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/calls">
+          <Route path={appPath("/calls")}>
             <MerchantShell><MerchantCallsPage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/calls/:id">
+          <Route path={appPath("/calls/:id")}>
             <MerchantShell><MerchantCallDetailPage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/analytics">
+          <Route path={appPath("/analytics")}>
             <MerchantShell><MerchantAnalyticsPage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/billing">
+          <Route path={appPath("/billing")}>
             <MerchantShell><MerchantBillingPage /></MerchantShell>
           </Route>
         )}
         {showMerchant && (
-          <Route path="/app/integrations">
+          <Route path={appPath("/integrations")}>
             <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
           </Route>
         )}
 
-        {/* Cross-subdomain redirect: if a user hits a path that belongs to a
-            different surface, send them to the correct subdomain rather than
-            showing a blank page. Only fires in production (origins set). */}
+        {/* Legacy-prefix redirect: old "/dashboard/..." and "/app/..." links
+            (bookmarks, external references from the single-deploy era)
+            forwarded to the correct surface's real origin/path. Harmless
+            no-ops in combined "all" mode since the real prefixed routes
+            above always match first — only actually fires once a dedicated
+            per-surface build has dropped these prefixes from its own route
+            list. */}
         <Route path="/dashboard/:rest*">
-          <SubdomainRedirect target={adminUrl(window.location.pathname)} />
+          <SubdomainRedirect target={adminUrl(window.location.pathname.replace(/^\/dashboard/, ""))} />
         </Route>
         <Route path="/app/:rest*">
-          <SubdomainRedirect target={appUrl(window.location.pathname)} />
+          <SubdomainRedirect target={appUrl(window.location.pathname.replace(/^\/app/, ""))} />
         </Route>
 
-        {/* Fallback: redirect to the appropriate root */}
+        {/* Fallback: redirect to this surface's own root. */}
         <Route>
-          {surface === "admin" ? <Redirect to="/dashboard" /> :
-           surface === "merchant" ? <Redirect to="/app" /> :
+          {surface === "admin" ? <Redirect to={adminPath()} /> :
+           surface === "merchant" ? <Redirect to={appPath()} /> :
            <Redirect to="/" />}
         </Route>
       </Switch>
       {import.meta.env.DEV && <AgentFeedback />}
-    </Provider>                                                                                                        
-  );                                                                                                                   
-}                                                                                                                      
-                                                                                                                      
+    </Provider>
+  );
+}
+
 export default App;

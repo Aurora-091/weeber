@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Sparkles, Bot, PhoneCall, BarChart3 } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
+import { appPath } from "../../lib/route-base";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { SetupModal } from "../../components/app/setup-modal";
 import { PageHeader } from "../../components/shell/page-header";
@@ -157,7 +158,7 @@ export function MerchantHomePage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Link to="/app/agents">
+        <Link to={appPath("/agents")}>
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <Bot className="mt-0.5 size-5 text-primary" />
             <div>
@@ -166,7 +167,7 @@ export function MerchantHomePage() {
             </div>
           </div>
         </Link>
-        <Link to="/app/calls">
+        <Link to={appPath("/calls")}>
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <PhoneCall className="mt-0.5 size-5 text-primary" />
             <div>
@@ -175,7 +176,7 @@ export function MerchantHomePage() {
             </div>
           </div>
         </Link>
-        <Link to="/app/analytics">
+        <Link to={appPath("/analytics")}>
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <BarChart3 className="mt-0.5 size-5 text-primary" />
             <div>
@@ -192,7 +193,7 @@ export function MerchantHomePage() {
         onFinished={() => {
           queryClient.invalidateQueries({ queryKey: ["app-onboarding"] });
           queryClient.invalidateQueries({ queryKey: ["app-analytics-overview"] });
-          navigate("/app");
+          navigate(appPath());
         }}
       />
     </div>

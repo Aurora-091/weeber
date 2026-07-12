@@ -1,5 +1,6 @@
 import { Rocket, Bot, PhoneCall, BarChart3, CreditCard, Plug } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
+import { appPath } from "./route-base";
 
 /**
  * Vertical-driven merchant UI (MERCHANT-APP-PAGE-MAP §4, ADR-031's seam
@@ -47,17 +48,22 @@ export type VerticalDefinition = {
 // this exact label.
 const SHOPIFY_INTEGRATION_LABEL = "Shopify";
 
+function navMatch(subpath: string, tail: string): RegExp {
+  const base = appPath(subpath);
+  return new RegExp("^" + base + tail + "$");
+}
+
 const shopify: VerticalDefinition = {
   key: "shopify",
   glossary: { customer: "Customer", customers: "Customers" },
   integrationLabel: SHOPIFY_INTEGRATION_LABEL,
   nav: [
-    { href: "/app", label: "Home", icon: Rocket, match: /^\/app$/ },
-    { href: "/app/agents", label: "Agents", icon: Bot, match: /^\/app\/agents$/ },
-    { href: "/app/calls", label: "Conversations", icon: PhoneCall, match: /^\/app\/calls(\/.*)?$/ },
-    { href: "/app/analytics", label: "Analytics", icon: BarChart3, match: /^\/app\/analytics$/ },
-    { href: "/app/billing", label: "Billing", icon: CreditCard, match: /^\/app\/billing$/ },
-    { href: "/app/integrations", label: SHOPIFY_INTEGRATION_LABEL, icon: Plug, match: /^\/app\/integrations$/ },
+    { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
+    { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
+    { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
+    { href: appPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
+    { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
+    { href: appPath("/integrations"), label: SHOPIFY_INTEGRATION_LABEL, icon: Plug, match: navMatch("/integrations", "") },
   ],
   copy: {
     callsEmptyTitle: "No conversations yet",
