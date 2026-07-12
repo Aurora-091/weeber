@@ -10,6 +10,7 @@ import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
 import { getNumberConfig } from "./number-config";
 import { runWorkflowForOutcome } from "./workflows/engine";
+import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
@@ -286,16 +287,25 @@ export function createVoiceStreamHandlers() {
       // disposition — no manual step required to trigger a retry/DNC-add/
       // webhook once the agent has recorded an outcome.
       if (capturedDisposition && toNumber) {
-        void runWorkflowForOutcome({
-          toNumber,
-          outcome: capturedDisposition as WorkflowOutcome,
-          persona,
-          webhookUrl,
-          previousAttempt,
-          orgId: priorOrgId,
-          checkoutToken: priorCheckoutToken,
-          metadata: priorWorkflowMetadata,
-        }).catch((err) => console.error("[voice] workflow execution failed", err));
+        const priorWorkflowRunId = priorSession?.workflowRunId;
+        if (priorWorkflowRunId) {
+          void resumeWorkflowAfterCall(
+            priorWorkflowRunId,
+            capturedDisposition,
+            capturedState?.discount_code,
+          ).catch((err) => console.error("[voice] graph workflow resume failed", err));
+        } else {
+          void runWorkflowForOutcome({
+            toNumber,
+            outcome: capturedDisposition as WorkflowOutcome,
+            persona,
+            webhookUrl,
+            previousAttempt,
+            orgId: priorOrgId,
+            checkoutToken: priorCheckoutToken,
+            metadata: priorWorkflowMetadata,
+          }).catch((err) => console.error("[voice] workflow execution failed", err));
+        }
       }
     }
   }

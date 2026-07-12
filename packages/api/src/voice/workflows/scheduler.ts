@@ -87,6 +87,7 @@ export async function executeDueScheduledCalls() {
         orgId: row.orgId ?? undefined,
         checkoutToken: row.checkoutToken ?? undefined,
         workflowMetadata: row.metadata ?? undefined,
+        workflowRunId: row.workflowRunId ?? undefined,
       });
 
       console.log(`[scheduler] executed scheduled call to ${row.toNumber} (workflow: ${row.workflowName})`);

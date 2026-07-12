@@ -42,6 +42,9 @@ export type CallSession = {
   orgId?: string;
   checkoutToken?: string | null;
   workflowMetadata?: Record<string, string | number>;
+  /** Graph-engine workflow run ID — when set, call-end routes to
+   * `resumeWorkflowAfterCall` instead of the legacy `runWorkflowForOutcome`. */
+  workflowRunId?: string;
   /**
    * Structured, deterministic call state — facts captured via the
    * `captureField` tool during this call (email, order ID, name, etc).

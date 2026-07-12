@@ -40,6 +40,7 @@ import {
 } from "@openvent/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter } from "./compliance/adapters";
 import { runWorkflowForOutcome } from "./workflows/engine";
+import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { requireAdminKey } from "./middleware/admin-auth";
 import { requireTwilioSignature } from "./middleware/twilio-signature";
@@ -218,16 +219,23 @@ export const voice = new Hono()
         if (outcome) {
           const [row] = await db.select().from(calls).where(eq(calls.twilioCallSid, callSid)).limit(1);
           if (row) {
-            void runWorkflowForOutcome({
-              toNumber: row.toNumber,
-              outcome: outcome as WorkflowOutcome,
-              persona: session?.persona,
-              webhookUrl: session?.webhookUrl,
-              previousAttempt: session?.workflowAttempt,
-              orgId: session?.orgId,
-              checkoutToken: session?.checkoutToken,
-              metadata: session?.workflowMetadata,
-            }).catch((err) => console.error("[routes] workflow execution failed", err));
+            if (session?.workflowRunId) {
+              void resumeWorkflowAfterCall(
+                session.workflowRunId,
+                outcome,
+              ).catch((err) => console.error("[routes] graph workflow resume failed", err));
+            } else {
+              void runWorkflowForOutcome({
+                toNumber: row.toNumber,
+                outcome: outcome as WorkflowOutcome,
+                persona: session?.persona,
+                webhookUrl: session?.webhookUrl,
+                previousAttempt: session?.workflowAttempt,
+                orgId: session?.orgId,
+                checkoutToken: session?.checkoutToken,
+                metadata: session?.workflowMetadata,
+              }).catch((err) => console.error("[routes] workflow execution failed", err));
+            }
           }
         }
 
