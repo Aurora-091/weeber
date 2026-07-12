@@ -9,7 +9,9 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const adminAuditLog = pgTable("admin_audit_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -345,7 +347,13 @@ export const platformAdmins = pgTable("platform_admins", {
   email: text("email").primaryKey(),
   role: text("role").notNull().default("superadmin"),
   addedAt: timestamp("added_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => [
+  // Mirrors Vocalist's platform_role CHECK constraint shape (5 roles), even
+  // though only "superadmin" is actually enforced anywhere today (same as
+  // Vocalist only checking "super_admin" of its 5). Guards against a typo'd
+  // role value silently granting/denying access, cheap insurance either way.
+  check("platform_admins_role_check", sql`${table.role} in ('superadmin', 'admin', 'support', 'finance', 'developer')`),
+]);
 
 // --- Workflow Canvas (graph-based execution engine) ---
 

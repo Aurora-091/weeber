@@ -1,0 +1,1 @@
+ALTER TABLE "platform_admins" ADD CONSTRAINT "platform_admins_role_check" CHECK ("platform_admins"."role" in ('superadmin', 'admin', 'support', 'finance', 'developer'));
