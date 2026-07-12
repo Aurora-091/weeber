@@ -52,8 +52,13 @@ export function MerchantShopifyPage() {
   // callback, etc.) rather than leaving the merchant staring at a stale
   // "not connected" card with no explanation.
   useEffect(() => {
+    // weebersh currently hardcodes its own post-connect redirect and does
+    // NOT read the return_url we stamp into the install URL, so it sends
+    // `?connected=1` today instead of our `?shopify_connected=1` contract.
+    // Accept both so this keeps working once weebersh's redirect target is
+    // pointed at the live frontend, even before it adopts return_url.
     const params = new URLSearchParams(window.location.search);
-    if (params.get("shopify_connected") !== "1") return;
+    if (params.get("shopify_connected") !== "1" && params.get("connected") !== "1") return;
 
     window.history.replaceState({}, "", window.location.pathname);
 
