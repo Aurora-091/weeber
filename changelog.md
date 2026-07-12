@@ -4,6 +4,17 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Dynamic GTM/GA4 tracking configuration
+
+- **New table:** `platform_settings` (key-value, admin-managed) — stores platform-level config like GTM container ID and GA4 measurement ID. Generic design for future settings without schema changes.
+- **Admin endpoints:** `GET /api/voice/platform-settings` (list all), `PUT /api/voice/platform-settings/:key` (upsert with live validation against Google's endpoints before saving).
+- **Public endpoint:** `GET /api/public/tracking-config` — returns GTM/GA4 IDs only, cached 5 min, no auth required.
+- **Frontend:** `TrackingScripts` component dynamically injects GTM/GA4 scripts based on backend config. Mounted in app root so all pages are tracked.
+- **Admin UI:** New "Tracking & Analytics" section at top of `/dashboard/settings` with validated inputs, verify-before-save, and inline success/error feedback.
+- **index.html:** Removed hardcoded commented-out GTM/GA4 blocks — replaced by dynamic injection.
+
+---
+
 ## 2026-07-12 — Setup modal + vertical-driven dashboard, Plivo/Exotel telephony, CI hardening
 
 Three commits (`497a880`, `0c13b23`, `969861c`) — full reasoning in `DECISIONS.md` ADR-047/048/049,

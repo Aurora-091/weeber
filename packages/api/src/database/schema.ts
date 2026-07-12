@@ -325,6 +325,14 @@ export const waitlistSignups = pgTable("waitlist_signups", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
+// --- Platform Settings (key-value, admin-managed) ---
+
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+});
+
 // --- Workflow Canvas (graph-based execution engine) ---
 
 export const workflowTemplates = pgTable("workflow_templates", {

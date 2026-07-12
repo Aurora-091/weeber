@@ -5,6 +5,9 @@
  * auth" stays obvious from the file, not buried in a middleware chain.
  */
 import { Hono } from "hono";
+import { inArray } from "drizzle-orm";
+import { db } from "../database";
+import { platformSettings } from "../database/schema";
 import { joinWaitlist, addWaitlistPhone, getWaitlistDisplayCount, unsubscribeByToken } from "./waitlist";
 import { broadcastWaitlistCount } from "./waitlist-ws";
 import { submitSupportTicket } from "./support";
@@ -127,4 +130,17 @@ export const publicRoutes = new Hono()
     const ticket = await submitSupportTicket({ email, subject: "Enterprise inquiry", message });
     if (!ticket) return c.json({ error: "Failed to submit inquiry" }, 500);
     return c.json({ submitted: true }, 201);
+  })
+
+  .get("/tracking-config", async (c) => {
+    const rows = await db
+      .select()
+      .from(platformSettings)
+      .where(inArray(platformSettings.key, ["gtm_container_id", "ga4_measurement_id"]));
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    c.header("Cache-Control", "public, max-age=300, s-maxage=300");
+    return c.json({
+      gtmContainerId: map.gtm_container_id || null,
+      ga4MeasurementId: map.ga4_measurement_id || null,
+    }, 200);
   });

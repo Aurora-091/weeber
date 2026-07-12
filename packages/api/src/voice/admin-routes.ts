@@ -20,6 +20,7 @@ import {
   featureFlags,
   orgMembers,
   orgs,
+  platformSettings,
   shopLinks,
   toolCalls,
   orgAgentConfigs,
@@ -43,6 +44,30 @@ import {
   setByoCredentials,
   resetToPlatformDefault,
 } from "./twilio-provisioning";
+
+async function validateGtmId(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.googletagmanager.com/gtm.js?id=${id}`, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function validateGa4Id(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.googletagmanager.com/gtag/js?id=${id}`, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 type AdminEnv = { Variables: AdminAuthVariables };
 
@@ -531,4 +556,50 @@ export const admin = new Hono<AdminEnv>()
     const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
     const summary = await waitlistMarketingSummary(days);
     return c.json(summary, 200);
+  })
+
+  // --- Platform Settings (key-value, admin-managed) ---
+
+  .get("/platform-settings", async (c) => {
+    const rows = await db.select().from(platformSettings);
+    return c.json({ settings: rows }, 200);
+  })
+
+  .put("/platform-settings/:key", async (c) => {
+    const key = c.req.param("key");
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
+    const { value } = body as { value?: string };
+    const normalizedValue = typeof value === "string" ? value.trim() : "";
+
+    // Validate known keys
+    if (key === "gtm_container_id") {
+      if (normalizedValue && !/^GTM-[A-Z0-9]{4,10}$/.test(normalizedValue)) {
+        return c.json({ error: "Invalid GTM format — expected GTM-XXXXXXX" }, 422);
+      }
+      if (normalizedValue) {
+        const valid = await validateGtmId(normalizedValue);
+        if (!valid) return c.json({ error: "GTM container not found — check the ID" }, 422);
+      }
+    } else if (key === "ga4_measurement_id") {
+      if (normalizedValue && !/^G-[A-Z0-9]{6,14}$/.test(normalizedValue)) {
+        return c.json({ error: "Invalid GA4 format — expected G-XXXXXXXXXX" }, 422);
+      }
+      if (normalizedValue) {
+        const valid = await validateGa4Id(normalizedValue);
+        if (!valid) return c.json({ error: "GA4 measurement ID not found — check the ID" }, 422);
+      }
+    }
+
+    const finalValue = normalizedValue || null;
+    await db
+      .insert(platformSettings)
+      .values({ key, value: finalValue, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value: finalValue, updatedAt: new Date() },
+      });
+
+    await logAdminAction(c.get("adminActor"), "platform_settings.updated", { key, value: finalValue });
+    return c.json({ ok: true, key, value: finalValue }, 200);
   });
