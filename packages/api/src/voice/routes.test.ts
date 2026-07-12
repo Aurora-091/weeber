@@ -1,5 +1,16 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
 
+// requireAdminKey is mocked to a no-op below, but that mock has proven
+// fragile to unrelated changes elsewhere in routes.ts's import graph
+// (adding *any* new import, even one with zero dependencies, has been
+// observed to make bun's mock.module stop intercepting "./middleware/
+// admin-auth" in this file — a bun mocking quirk, not a logic bug). Belt
+// and suspenders: clearing the real env var means the REAL requireAdminKey
+// falls through to its own no-key-configured no-op path even if the mock
+// above doesn't apply, so this test doesn't silently start failing again
+// the next time routes.ts gains an import for an unrelated reason.
+delete process.env.ADMIN_API_KEY;
+
 let mockSelectedOrgs: any[] = [];
 let lastTwilioCallParams: any = null;
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { resolveLlmProvider, getActiveModelLabel } from "./index";
+import { resolveLlmProvider, getActiveModelLabel, GROQ_MODEL } from "./index";
+import { VOICE_AGENT_MODEL as GATEWAY_MODEL } from "../gateway";
 
 describe("resolveLlmProvider", () => {
   it("defaults to gateway when no override or env var", () => {
@@ -14,8 +15,13 @@ describe("resolveLlmProvider", () => {
 
 describe("getActiveModelLabel", () => {
   it("uses the env-configured default model when no modelOverride is given", () => {
-    expect(getActiveModelLabel("gateway")).toBe("gateway/openai/gpt-5.4-mini");
-    expect(getActiveModelLabel("groq")).toBe("groq/llama-3.3-70b-versatile");
+    // Asserted against the actual resolved default (GATEWAY_MODEL/GROQ_MODEL,
+    // both env-overridable) rather than a hardcoded literal — a real
+    // AI_GATEWAY_MODEL/GROQ_MODEL value in packages/api/.env legitimately
+    // changes this deployment's default, and the test should track that
+    // instead of asserting a specific model name will always be it.
+    expect(getActiveModelLabel("gateway")).toBe(`gateway/${GATEWAY_MODEL}`);
+    expect(getActiveModelLabel("groq")).toBe(`groq/${GROQ_MODEL}`);
   });
 
   it("uses the modelOverride when one is given, per-agent (agent-frame.ts's llmModel)", () => {

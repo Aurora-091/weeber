@@ -21,7 +21,7 @@ const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 
 // Llama 3.3 70B is the commonly recommended Groq model for real-time voice
 // agents — strong quality/latency tradeoff and native tool-calling support.
-const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
 /** Returns the active model instance to pass to `streamText`. `modelOverride`
  * (agent-frame.ts's llmModel) bypasses the env-configured default model id

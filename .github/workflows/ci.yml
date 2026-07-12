@@ -1,8 +1,17 @@
 name: CI
 
-# Runs on every push and PR against main. Keeps typecheck, tests, and the
-# production build green before anything merges — see CONTRIBUTING.md for
-# what's expected locally before you push.
+# Runs on every push and PR against main. Keeps typecheck, tests, build, and
+# lint green before anything merges — see CONTRIBUTING.md for what's
+# expected locally before you push.
+#
+# Split into parallel jobs (was one long sequential job) so a failure in one
+# area (e.g. lint) doesn't have to wait behind the others to report, and so
+# CI finishes faster overall. `ci-success` at the bottom is the one job that
+# depends on all the real work — set THAT as the required status check in
+# GitHub branch protection (Settings -> Branches -> Require status checks
+# to pass before merging), not the individual jobs above it. That way
+# adding/renaming/splitting jobs later never means re-configuring branch
+# protection to match — there's always exactly one name to require.
 on:
   push:
     branches: [main]
@@ -10,42 +19,107 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Typecheck, test, build
+  typecheck:
+    name: Typecheck (api, web, openvent-compliance)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
       - name: Typecheck (api)
         run: cd packages/api && bun run typecheck
-
       - name: Typecheck (web)
         run: cd packages/web && bun run typecheck
-
       - name: Typecheck (openvent-compliance)
         run: cd packages/openvent-compliance && bun run typecheck
 
+  test:
+    name: Test (api, web, openvent-compliance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Test (api) — voice pipeline, integrations, resilience layer
         run: cd packages/api && bun run test
-
       - name: Test (web) — theme, vertical config, and other pure-logic units
         run: cd packages/web && bun run test
-
       - name: Test (openvent-compliance) — DNC, calling-window, HIPAA, GDPR, national-DNC adapter
         run: cd packages/openvent-compliance && bun run test
 
+  build:
+    name: Build (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Build (web)
         # No real DATABASE_URL/API keys needed — this is a static build
         # (tsc --noEmit && vite build), nothing here touches a live database
         # or external API at build time.
         run: cd packages/web && bun run build
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
+
+  migration-drift:
+    name: Drizzle migrations match schema.ts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check for un-generated schema changes
+        # drizzle-kit generate is deterministic given the same schema.ts +
+        # existing migrations — if it produces a NEW file here, someone
+        # edited schema.ts without running `bun run db:generate` and
+        # committing the result. Catches the "forgot to generate the
+        # migration" class of bug before it reaches main, not after a
+        # deploy tries to run against a DB that doesn't match schema.ts.
+        run: |
+          cd packages/api
+          BEFORE=$(ls drizzle/*.sql 2>/dev/null | wc -l)
+          DATABASE_URL="postgres://ci:ci@localhost:5432/ci" bunx drizzle-kit generate
+          AFTER=$(ls drizzle/*.sql 2>/dev/null | wc -l)
+          if [ "$AFTER" -gt "$BEFORE" ]; then
+            echo "::error::schema.ts has changes with no committed migration. Run 'bun run db:generate' in packages/api and commit the result."
+            git diff --stat
+            exit 1
+          fi
+
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [typecheck, test, build, lint, migration-drift]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependent job failed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more required jobs failed:"
+            echo "${{ toJSON(needs) }}"
+            exit 1
+          fi
