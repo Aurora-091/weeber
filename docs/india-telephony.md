@@ -39,6 +39,56 @@ comparison — except the trigger turned out to be India telephony access, not c
 **Prototype this end-to-end (one real test call through Exotel → LiveKit SIP bridge → the existing agent
 code) before treating it as a simple swap** — it hasn't been built or tested yet.
 
+## Plivo — evaluated alongside Exotel, and the integration story is meaningfully different
+
+Researched directly (Plivo's own docs, a dedicated 2026 India-telephony-vendor comparison piece, and
+cross-referenced against multiple independent sources), not assumed, per the earlier flag that Exotel
+shouldn't be the only vendor considered before committing.
+
+**The one finding that changes the shape of this decision:** Plivo's real-time media streaming for AI
+voice agents is **WebSocket-based** ("WebSocket Stream" — real-time audio streaming via WebSocket for live
+transcription/AI processing), the same general architecture family as Twilio's Media Streams that
+`packages/api/src/voice/stream.ts` is already built against — **not** the SIP-trunk-based approach Exotel
+requires. This means a Plivo integration is plausibly a much smaller lift than the Exotel path: closer to
+"adapt the existing WebSocket message handling to Plivo's JSON shape" than "bridge SIP through LiveKit and
+sit the existing agent code behind that." This should be confirmed with one real prototype call the same
+way Exotel's path needs one — not assumed correct without testing — but it's the more promising integration
+shape on paper, and directly relevant to the transport-abstraction work already planned (see
+`voice-quality-and-india-status-2026-07-12.md`): if Plivo's WebSocket shape is close enough, it may be the
+*easier* second implementation of that abstraction, with Exotel/SIP as the third (or vice versa).
+
+**Compliance/regulatory position:** Plivo is a legitimate DLT-registered path — they've partnered
+exclusively with Tata Teleservices for 140-series (promotional) and 160-series (transactional/service)
+number provisioning (per their own docs), consistent with the Tata DLT platform already named as an option
+above. DLT support exists but is more self-serve than Exotel's — you drive more of the registration process
+yourself rather than Exotel's more hands-on compliance tooling.
+
+**Where the two actually differ, per a dedicated 2026 comparison (Plivo vs Exotel vs Ozonetel vs Knowlarity
+vs Twilio for India voice AI):**
+
+| Dimension | Plivo | Exotel |
+|---|---|---|
+| Best fit | Developer-led teams comfortable building against APIs | Teams wanting DLT/compliance handled with more hand-holding |
+| DID provisioning speed | 24-48 hours | 2-5 business days |
+| Per-minute pricing | Generally cheaper | ~10-25% more expensive than Plivo, justified by compliance/integration wrap |
+| Media streaming maturity | Mature (WebSocket), listed among the most mature alongside Twilio | Mature, AgentStream claims sub-20ms media latency (best-in-class claim) |
+| DLT/compliance hand-holding | Competent but more self-driven | Among the strongest — proactively flags violations, near-real-time scrub-list maintenance |
+| CLI/number masking | Handled via API | Strong native support (relevant for marketplace/two-party-connect patterns, not Weeber's current shape) |
+
+**Read for Weeber specifically:** Weeber is an engineering-led team building against APIs already (not a
+non-technical buyer needing hand-holding), which is exactly the profile the comparison says fits Plivo
+best. Combined with the WebSocket-vs-SIP integration-effort difference above, **Plivo is worth prototyping
+first, not Exotel** — reversing the earlier default recommendation, pending the one-real-call prototype
+that should happen for whichever vendor gets tried first. Exotel remains the stronger fallback if Plivo's
+DLT self-service process proves too much overhead to drive alone, or if the WebSocket integration turns out
+to have gaps the SIP+LiveKit path wouldn't.
+
+**Ruled out for now, from the same comparison:** Ozonetel (CCaaS-first, built for contact centers layering
+AI onto existing human agent operations — overkill for a pure voice AI SaaS product like Weeber), Knowlarity
+(slowed product velocity post-Gupshup-acquisition, not recommended for a greenfield 2026 deployment), direct
+Airtel/Jio/Tata SIP (only economical past 15-20 lakh minutes/month — far beyond Weeber's current or
+near-term scale).
+
 ## The number-series reality (this is the part that changes the "80 number" question)
 
 TRAI's current rules (TCCCPR, enforced via the DLT platform) are explicit and apply to **both** promotional
