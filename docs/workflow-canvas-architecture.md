@@ -86,7 +86,7 @@ type WorkflowEdge = {
 
 type TriggerConfig = { event: "checkout_abandoned" | "order_placed" | "order_fulfilled" };
 
-type WaitConfig = { delayMinutes: number };   // merchant-overridable
+type WaitConfig = { delayMinutes: number };   // user-overridable
 
 type CallConfig = {
   persona: string;                                    // which agent template to use for this call
@@ -103,16 +103,16 @@ type ConditionalSplitConfig = {
                          // not-interested, callback-requested, booked, no-decision, wrong-number
 };
 
-type SmsConfig = { template: string };   // merchant-overridable — supports {{merge_tags}}, see §4
+type SmsConfig = { template: string };   // user-overridable — supports {{merge_tags}}, see §4
 
 type AddToDncConfig = { reason: string };
 
 type WebhookConfig = { url: string; payloadTemplate?: Record<string, string> };
 ```
 
-**Editing permissions (per your answer — admin builds, merchants lightly customize):**
+**Editing permissions (per your answer — admin builds, users lightly customize):**
 - Admin: full graph edit — add/remove/rewire nodes and edges, saved to `workflow_templates.graph`.
-- Merchant: cannot touch `nodes`/`edges` structure at all. Their UI only exposes a filtered form of specific fields per node — `discountPercent` (or its per-attempt map), `delayMinutes`, `smsTemplate` text, `maxDurationSeconds` — written to their own `org_workflow_configs.overrides[nodeId]`, never to the template itself. At read/execution time, merge `template.graph` with `override[nodeId]` per node, same merge pattern as `getAgentConfigsForOrg`.
+- User: cannot touch `nodes`/`edges` structure at all. Their UI only exposes a filtered form of specific fields per node — `discountPercent` (or its per-attempt map), `delayMinutes`, `smsTemplate` text, `maxDurationSeconds` — written to their own `org_workflow_configs.overrides[nodeId]`, never to the template itself. At read/execution time, merge `template.graph` with `override[nodeId]` per node, same merge pattern as `getAgentConfigsForOrg`.
 
 ---
 
@@ -159,7 +159,7 @@ This is also how attempt-based discount escalation actually gets enforced: today
 **Two views, same graph, different edit permissions:**
 
 - **Admin canvas** (`/dashboard/workflows/:templateKey`): full react-flow-style editor. Drag nodes from a palette (Trigger, Wait, Call, Conditional Split, SMS, Add to DNC, Webhook), connect edges, click a node to open a config side-panel matching its `config` fields from §3, click a `conditionalSplit` node's outgoing edges to label them with an outcome from the fixed enum. Save writes the whole `graph` JSON to `workflow_templates`.
-- **Merchant view** (`/app/integrations` → a "Cart Recovery Flow" card, or its own page): the SAME graph rendered **read-only** (nodes positioned exactly as the admin laid them out, no dragging, no palette) with each node showing a small "Edit" affordance only for its merchant-overridable fields (discount %, delay minutes, SMS copy). Clicking a `call` node opens a lightweight form (not the full admin config panel) for just `discountPercent`/`maxDurationSeconds`; clicking `wait` opens just `delayMinutes`; clicking `sms` opens just the template text with the merge-tag list shown as a reference. No add/remove/rewire controls anywhere in this view.
+- **User view** (`/app/integrations` → a "Cart Recovery Flow" card, or its own page): the SAME graph rendered **read-only** (nodes positioned exactly as the admin laid them out, no dragging, no palette) with each node showing a small "Edit" affordance only for its user-overridable fields (discount %, delay minutes, SMS copy). Clicking a `call` node opens a lightweight form (not the full admin config panel) for just `discountPercent`/`maxDurationSeconds`; clicking `wait` opens just `delayMinutes`; clicking `sms` opens just the template text with the merge-tag list shown as a reference. No add/remove/rewire controls anywhere in this view.
 
 **Visual language:** match the existing app exactly (shadcn/ui components, existing card/border/color tokens, no new design system) — the canvas nodes themselves are the only new visual element; everything around them (page header, buttons, side panels) should reuse existing components.
 
@@ -219,9 +219,9 @@ Build TWO views sharing the same rendering code:
                             ]
                             [not-interested -> addToDnc(reason: "declined cart recovery")]
 
-2. MERCHANT VIEW (read-only structure, limited field edits):
+2. USER VIEW (read-only structure, limited field edits):
    - Same graph, same layout (positions locked, no dragging, no palette, no add/remove/rewire).
-   - Each node is clickable ONLY if it has merchant-editable fields:
+   - Each node is clickable ONLY if it has user-editable fields:
      - call node -> small popover/dialog with just discountPercent (both flat and escalating-map modes) and
        maxDurationSeconds — nothing else from the call config.
      - wait node -> small popover with just delayMinutes.
@@ -241,7 +241,7 @@ Don't restyle anything outside the new canvas components. Don't add node types b
 
 ## 8. What I'd do differently from a straight email-flow clone
 
-- **Don't let merchants set arbitrary discount % free-form without a ceiling** — keep the existing tool's 1-30% cap enforced server-side regardless of what the canvas UI allows, so a merchant fat-fingering the form can't accidentally authorize a 90%-off code.
+- **Don't let users set arbitrary discount % free-form without a ceiling** — keep the existing tool's 1-30% cap enforced server-side regardless of what the canvas UI allows, so a user fat-fingering the form can't accidentally authorize a 90%-off code.
 - **Don't make `conditionalSplit` require every outcome to have an edge.** Real customer behavior won't hit every branch — require only a `default` fallback edge so ungraphed outcomes don't silently dead-end a run.
 - **Don't rebuild `sendSms`/`addToDnc`/`webhook` execution logic** — the graph walker should call the exact functions already in `engine.ts` for these three actions; only the *routing* (which node runs next) is new.
 

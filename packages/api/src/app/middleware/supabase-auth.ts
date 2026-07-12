@@ -1,5 +1,5 @@
 /**
- * Merchant session gate for /api/app/* (CLAUDE-BUILD-BRIEF §9) — the
+ * User session gate for /api/app/* (CLAUDE-BUILD-BRIEF §9) — the
  * Supabase-Auth counterpart to voice/middleware/admin-auth.ts, same shape:
  * check a header, set context vars, next() or 401. Deliberately a separate
  * auth system from the admin key (two audiences, two trust levels — see
@@ -20,15 +20,15 @@ import { eq } from "drizzle-orm";
 import { db } from "../../database";
 import { orgMembers } from "../../database/schema";
 
-export type MerchantSessionVariables = {
-  merchantUserId: string | null;
-  merchantEmail: string | null;
+export type UserSessionVariables = {
+  userUserId: string | null;
+  userEmail: string | null;
   /** Resolved org; null = authenticated but no membership yet (bootstrap pending). */
-  merchantOrgId: string | null;
-  merchantRole: string | null;
+  userOrgId: string | null;
+  userRole: string | null;
 };
 
-type MerchantEnv = { Variables: MerchantSessionVariables };
+type UserEnv = { Variables: UserSessionVariables };
 
 async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>> {
   const secret = process.env.SUPABASE_JWT_SECRET;
@@ -37,7 +37,7 @@ async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>
   }
   const url = process.env.SUPABASE_URL;
   if (!url) {
-    throw new Error("Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is configured — cannot verify merchant sessions");
+    throw new Error("Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is configured — cannot verify user sessions");
   }
   return (await verifyWithJwks(token, {
     jwks_uri: `${url.replace(/\/+$/, "")}/auth/v1/.well-known/jwks.json`,
@@ -46,7 +46,7 @@ async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>
   })) as Record<string, unknown>;
 }
 
-export const requireMerchantSession = createMiddleware<MerchantEnv>(async (c, next) => {
+export const requireUserSession = createMiddleware<UserEnv>(async (c, next) => {
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
   if (!token) {
@@ -81,26 +81,26 @@ export const requireMerchantSession = createMiddleware<MerchantEnv>(async (c, ne
         .update(orgMembers)
         .set({ email: jwtEmail })
         .where(eq(orgMembers.supabaseUserId, sub))
-        .catch((err: unknown) => console.error("[merchant-session] failed to refresh member email", err));
+        .catch((err: unknown) => console.error("[user-session] failed to refresh member email", err));
     } catch (err) {
-      console.error("[merchant-session] failed to refresh member email", err);
+      console.error("[user-session] failed to refresh member email", err);
     }
   }
 
-  c.set("merchantUserId", sub);
-  c.set("merchantEmail", jwtEmail);
-  c.set("merchantOrgId", membership?.orgId ?? null);
-  c.set("merchantRole", membership?.role ?? null);
+  c.set("userUserId", sub);
+  c.set("userEmail", jwtEmail);
+  c.set("userOrgId", membership?.orgId ?? null);
+  c.set("userRole", membership?.role ?? null);
   return next();
 });
 
 /**
- * Second gate for every merchant route except /me: the session must resolve
+ * Second gate for every user route except /me: the session must resolve
  * to an org. /me is the one route that runs without this, because it's where
  * the first-login org bootstrap happens (see app/routes.ts).
  */
-export const requireMerchantOrg = createMiddleware<MerchantEnv>(async (c, next) => {
-  if (!c.get("merchantOrgId")) {
+export const requireUserOrg = createMiddleware<UserEnv>(async (c, next) => {
+  if (!c.get("userOrgId")) {
     return c.json({ error: "No organization linked to this account yet", code: "no_org" }, 403);
   }
   return next();

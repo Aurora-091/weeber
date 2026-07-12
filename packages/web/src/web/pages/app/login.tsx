@@ -19,7 +19,7 @@ type Mode = "signin" | "signup";
  *   ADR-043 — no link), verified inline on this same screen. */
 type SignupState = "idle" | "needs-confirmation";
 
-export function MerchantLoginPage() {
+export function UserLoginPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<Mode>("signin");
@@ -220,7 +220,7 @@ export function MerchantLoginPage() {
     return (
       <div className={shellClass}>
         <p className="text-center text-sm text-muted-foreground">
-          Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+          User login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
         </p>
       </div>
     );

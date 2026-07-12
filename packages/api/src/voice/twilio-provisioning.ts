@@ -1,6 +1,6 @@
 /**
  * Per-org Twilio isolation — provisioning a real sub-account (platform mode)
- * or validating + storing a merchant's own credentials (BYO mode). See
+ * or validating + storing a user's own credentials (BYO mode). See
  * schema.ts's `orgs.twilioMode`/`twilioAccountSid`/`twilioAuthToken` and
  * DECISIONS.md ADR-042 for why this exists (ADR-030 explicitly deferred it).
  */
@@ -118,7 +118,7 @@ export async function buyNumberForOrg(orgId: string, countryCode: string, areaCo
 export type ByoResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Validates a merchant's own Twilio credentials against Twilio's own API
+ * Validates a user's own Twilio credentials against Twilio's own API
  * before persisting anything — a typo'd SID/token should fail immediately
  * here, not silently on the first real call three steps later.
  */

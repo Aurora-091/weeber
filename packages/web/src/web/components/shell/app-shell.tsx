@@ -18,7 +18,7 @@ export type NavItem = {
 };
 
 type AppShellProps = {
-  /** dense = admin panel (/dashboard), spacious = merchant app (/app) */
+  /** dense = admin panel (/dashboard), spacious = user app (/app) */
   density: "dense" | "spacious";
   nav: NavItem[];
   brand: React.ReactNode;

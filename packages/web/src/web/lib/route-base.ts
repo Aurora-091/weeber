@@ -5,16 +5,21 @@
  * "/app" directly, so this is the only place that needs to change when the
  * subdomain split (admin.weeber.ai / app.weeber.ai) actually goes live.
  *
- * Today (VITE_APP_SURFACE=all, the only real deployment) admin and merchant
+ * Today (VITE_APP_SURFACE=all, the only real deployment) admin and user
  * routes share one origin, so they need distinct prefixes to avoid
  * colliding (both would otherwise want e.g. "/agents"). Once a dedicated
- * per-surface build exists (VITE_APP_SURFACE=admin / =merchant, one Vercel
+ * per-surface build exists (VITE_APP_SURFACE=admin / =user, one Vercel
  * project each), that build only ever serves its own routes on its own
  * origin — no collision possible — so it gets bare paths, matching
  * Vocalist's actual shipped pattern (physically separate CustomerApp.tsx /
  * AdminApp.tsx route trees, not one tree with role-based hiding).
  */
-const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "merchant" | "all";
+const rawSurface = import.meta.env.VITE_APP_SURFACE || "all";
+// Backward-compat: the live Vercel project was created with
+// VITE_APP_SURFACE=merchant (pre-rename). Accept the old value as an alias
+// for "user" until that project's env var is updated -- remove this once
+// confirmed flipped (see changelog's "Merchant -> User rename" entry).
+const surface = (rawSurface === "merchant" ? "user" : rawSurface) as "public" | "admin" | "user" | "all";
 
 /** Only the combined single-deploy mode needs prefixes at all. */
 const isCombinedDeploy = surface === "all";
@@ -28,7 +33,7 @@ export function adminPath(subpath = ""): string {
   return `${ADMIN_BASE}${subpath}`;
 }
 
-/** Same as adminPath(), for the merchant/user app surface. */
+/** Same as adminPath(), for the user-facing app surface. */
 export function appPath(subpath = ""): string {
   if (!subpath || subpath === "/") return APP_BASE || "/";
   return `${APP_BASE}${subpath}`;

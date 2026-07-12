@@ -365,13 +365,13 @@ export async function resolveAgentConfig(opts: {
 
 /**
  * Builds a ResolvedAgentConfig directly from an in-progress (not-yet-saved)
- * agent frame — the Preview drawer's whole point is letting a merchant/admin
+ * agent frame — the Preview drawer's whole point is letting a user/admin
  * hear/test what they're *about* to save, not what's already saved. Same
  * composition logic as resolveAgentConfig's DB-row branch (buildIdentityBlock
  * + buildLanguageInstructionBlock + withDisclosure + withCallControl), just
  * fed from the request body instead of `orgAgentConfigs`. `templateKey` is
  * still needed for the persona-prompt fallback (agentTemplates.defaultPersonaPrompt)
- * when the override's personaPrompt is empty — a merchant clearing the field
+ * when the override's personaPrompt is empty — a user clearing the field
  * shouldn't preview an empty prompt, it should preview the template default,
  * exactly like a real (unconfigured) call would.
  */

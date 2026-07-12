@@ -117,7 +117,7 @@ export function SupportPage() {
     <div>
       <PageHeader
         title="Support"
-        description="Tickets submitted from the landing page or the merchant portal."
+        description="Tickets submitted from the landing page or the user portal."
         actions={
           <select
             value={statusFilter}
@@ -132,7 +132,7 @@ export function SupportPage() {
       />
       {tickets.isLoading && <SkeletonTable columns={6} />}
       {!tickets.isLoading && rows.length === 0 && (
-        <EmptyState title="No tickets" description="Support requests will show up here as merchants submit them." />
+        <EmptyState title="No tickets" description="Support requests will show up here as users submit them." />
       )}
       {rows.length > 0 && <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={setSelected} />}
 

@@ -8,7 +8,7 @@ import honoDevPlugin from "./vite/plugins/hono-dev-plugin";
 const root = path.resolve(__dirname, "../..");
 
 /**
- * Regenerates dist/robots.txt for the admin/merchant surfaces at build time.
+ * Regenerates dist/robots.txt for the admin/user surfaces at build time.
  * The static packages/web/public/robots.txt is written for the public
  * marketing surface (Disallow /dashboard, /app -- the combined single-deploy
  * paths). On a dedicated admin.weeber.ai or app.weeber.ai build those pages

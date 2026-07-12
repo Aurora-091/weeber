@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Sparkles, Bot, PhoneCall, BarChart3 } from "lucide-react";
-import { appFetch } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
-import { useMerchant } from "../../components/app/merchant-shell";
+import { useUser } from "../../components/app/user-shell";
 import { SetupModal } from "../../components/app/setup-modal";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 
 /**
- * The merchant's default landing page (`/app`) — replaces the old
+ * The user's default landing page (`/app`) — replaces the old
  * full-page onboarding route. See docs/DECISIONS.md "Setup modal, not a
  * setup page": setup now happens in <SetupModal>, opened on top of this
  * page instead of gating it.
@@ -31,8 +31,8 @@ const STEP_LABELS: Record<string, string> = {
 type OnboardingState = { steps: Record<string, boolean>; dismissed: boolean; completedAt: string | null };
 type AnalyticsOverview = { totalCalls: number };
 
-export function MerchantHomePage() {
-  const { vertical } = useMerchant();
+export function UserHomePage() {
+  const { vertical } = useUser();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const [setupOpen, setSetupOpen] = useState(false);
@@ -59,7 +59,7 @@ export function MerchantHomePage() {
   });
 
   // Auto-open once we know setup is incomplete — same gate Vocalist uses
-  // (incomplete AND nothing live yet), so a merchant who explicitly
+  // (incomplete AND nothing live yet), so a user who explicitly
   // dismissed/skipped isn't re-interrupted on every visit.
   useEffect(() => {
     if (!onboarding.data) return;

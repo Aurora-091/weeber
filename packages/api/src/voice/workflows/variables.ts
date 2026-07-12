@@ -5,7 +5,7 @@ const DISCOUNT_PERCENT_MAX = 30;
 
 /**
  * Clamp discount percent to the existing tool's 1-30% cap — prevents
- * fat-fingered template or merchant override from authorizing absurd discounts.
+ * fat-fingered template or user override from authorizing absurd discounts.
  */
 export function clampDiscount(value: number): number {
   if (value <= 0) return 0;

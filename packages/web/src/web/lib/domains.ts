@@ -4,7 +4,7 @@
  * In production each surface lives on its own subdomain:
  *   www.weeber.ai   — marketing/waitlist (VITE_APP_SURFACE=public)
  *   admin.weeber.ai — internal admin panel (VITE_APP_SURFACE=admin)
- *   app.weeber.ai   — merchant-facing product (VITE_APP_SURFACE=merchant)
+ *   app.weeber.ai   — user-facing product (VITE_APP_SURFACE=user)
  *
  * In local dev (VITE_APP_SURFACE=all or unset) all three are the same origin,
  * so these helpers return relative paths — no external navigation needed.

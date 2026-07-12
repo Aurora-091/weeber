@@ -40,7 +40,7 @@ export type JoinWaitlistResult =
   | { ok: false; error: string };
 
 /** Idempotent — re-submitting the same email is a no-op, not an error, so a
- * merchant double-clicking "Join" doesn't see a confusing failure. */
+ * user double-clicking "Join" doesn't see a confusing failure. */
 export async function joinWaitlist(input: {
   email: string;
   name?: string;
@@ -165,7 +165,7 @@ export async function addWaitlistPhone(email: string, phone: string): Promise<bo
 
 /** Real, non-guessable total for the WS live-count broadcast and the
  * post-signup "you're #N" number — excludes unsubscribed rows, matching
- * what a merchant would actually consider "on the list". */
+ * what a user would actually consider "on the list". */
 export async function getWaitlistDisplayCount(): Promise<number> {
   const [{ value }] = await db.select({ value: countRows() }).from(waitlistSignups).where(ne(waitlistSignups.unsubscribed, true));
   return WAITLIST_DISPLAY_OFFSET + value;

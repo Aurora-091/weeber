@@ -1,7 +1,7 @@
 /**
  * Short-lived, single-use tokens for the Preview drawer's live voice test
  * call (AGENT-CONSOLE-UI-PLAN.md Phase 2). A browser WebSocket can't send
- * custom headers, so the merchant/admin session auth that gates every other
+ * custom headers, so the user/admin session auth that gates every other
  * /api/app and /api/voice route can't gate the WS upgrade directly. Instead:
  *
  *   1. An authenticated HTTP POST (real session/admin-key check, same as
@@ -25,7 +25,7 @@ export type TestCallTokenPayload = {
   orgId: string;
   templateKey: string;
   configOverride?: AgentFrame;
-  /** Who to attribute this test call to in logs — merchant org id or the admin actor string. */
+  /** Who to attribute this test call to in logs — user org id or the admin actor string. */
   actor: string;
 };
 

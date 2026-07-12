@@ -4,6 +4,51 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — "Merchant" renamed to "User" across code, docs, and (pending) infra
+
+Terminology fix, not a data-model or behavior change: Shopify store owners are only
+one of Weeber's client types — clinics, and eventually insurance/hospital clients, are
+not "merchants" in any meaningful sense, so hardcoding that word into the tenant-facing
+app's internal naming was Shopify-flavored bias baked into the platform's own vocabulary.
+The DB schema was already vertical-neutral (`orgs`, `org_members`, `vertical` column —
+no "merchant" anywhere), and the admin dashboard's own Users page already called these
+people "Users" — so "User" was the only rename target that didn't introduce a new,
+colliding vocabulary (ruled out "Customer": `verticals.ts`'s `glossary.customer` already
+means the org's own end-customers/patients being called, a different concept entirely).
+
+- **Renamed throughout** (~55 files, code identifiers + comments + living docs):
+  `MerchantShell`→`UserShell`, `Merchant*Page` components→`User*Page`,
+  `requireMerchantSession`→`requireUserSession`, `requireMerchantOrg`→`requireUserOrg`,
+  `merchantApp`→`userApp`, `merchantRole`/`merchantOrgId`/`merchantUserId`/`merchantEmail`
+  context vars→`userRole`/`userOrgId`/`userUserId`/`userEmail`, `useMerchant`→`useUser`,
+  `MerchantMe`→`UserMe`, `merchantHeaders`→`userHeaders`. Files renamed:
+  `lib/merchant-session.ts`→`lib/user-session.ts`,
+  `components/app/merchant-shell.tsx`→`components/app/user-shell.tsx`,
+  `MERCHANT-APP-PAGE-MAP.md`→`USER-APP-PAGE-MAP.md`. Living reference docs (`CLAUDE.md`,
+  `WEEBER-PLAN.md`, `CLAUDE-BUILD-BRIEF.md`, `UI-DESIGN-BRIEF.md`,
+  `docs/contract.md`/`dashboard.md`/`india-telephony.md`/`workflow-canvas-architecture.md`)
+  updated to match.
+- **Deliberately left untouched**: `changelog.md`/`DECISIONS.md`/`AGENT-CONSOLE-UI-PLAN.md`/
+  `project_analysis.md`/`audit/*.md` (historical records — rewriting past entries to use
+  today's vocabulary would misrepresent what was actually decided/found at the time), the
+  three Shopify-vertical agent prompt docs (`docs/agent-prompts/*.md` — `{{merchant_name}}`
+  is correct there, it's Shopify's own vocabulary for a store owner, not our platform's),
+  and two narrative copy references to real Shopify merchants (`landing.tsx`'s TCPA-fine
+  story, `email-templates.ts`'s "Shopify merchants" waitlist copy).
+- **Backward-compat shim** (`app.tsx`, `lib/route-base.ts`): `VITE_APP_SURFACE=merchant` is
+  still accepted as an alias for `"user"` at the exact point the env var is read, since the
+  live `weeber-merchant` Vercel project was created with that value before this rename —
+  this avoids a coordination-timing outage between this code push landing and the Vercel
+  project's env var actually being updated. Verified: `VITE_APP_SURFACE=user` and
+  `VITE_APP_SURFACE=merchant` builds produce byte-identical-size bundles.
+- **Infra rename still pending** (manual, Vercel dashboard — not exposed via the available
+  API tooling): rename the `weeber-merchant` project (suggest `weeber-user` or `weeber-app`)
+  and flip its `VITE_APP_SURFACE` env var from `merchant` to `user`. The backward-compat
+  shim above means there's no urgency/outage risk either way — remove the shim once
+  confirmed flipped.
+- Verified: api typecheck clean + 191/191 tests, web typecheck clean + 8/8 tests, lint
+  0/0, all four surface builds (`public`/`admin`/`user`/legacy `merchant`) succeed.
+
 ## 2026-07-13 — Hosted Supabase auth config synced (site_url, redirect allowlist, recovery template)
 
 `supabase config push` against the hosted project (`wtqohdcghmxuujqyhlkz`) revealed the hosted auth

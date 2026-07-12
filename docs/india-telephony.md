@@ -28,7 +28,7 @@ current guidance.
 - `voice/middleware/plivo-signature.ts` — validates `X-Plivo-Signature-V3`, algorithm taken directly from
   Plivo's own docs. Org resolution is via an `?orgId=` query param on the answer_url itself (Plivo's
   webhook is often the first request for a fresh call, with no DB row yet to look an org up from) —
-  merchants wiring a Plivo number for pure inbound use need the same `?orgId=` on their Plivo
+  users wiring a Plivo number for pure inbound use need the same `?orgId=` on their Plivo
   Application's configured Answer URL.
 - `calls.provider` column added — records which provider actually carried a call. `stream.ts`'s "start"
   handler also gained a lazy-insert fallback (using from/to off the start event itself) for Exotel, since
@@ -67,10 +67,10 @@ not for live call routing. Concretely:
   Exotel: `GET /v1/Accounts/{sid}/` against the account's own subdomain). `GET /api/app/telephony/status`
   returns all three providers' status plus which one is currently active; `POST
   /api/app/telephony/plivo/byo` and `/exotel/byo` connect them; `/telephony/reset` clears all three back
-  to the Twilio platform default. Merchant Integrations page has real Connect dialogs for both (no more
+  to the Twilio platform default. User Integrations page has real Connect dialogs for both (no more
   "Coming soon" tiles).
 - **This is credential wiring only, not the transport/media integration.** Plivo's WebSocket media
-  streaming and Exotel's SIP+LiveKit bridge (both described below) are still unbuilt — a merchant who
+  streaming and Exotel's SIP+LiveKit bridge (both described below) are still unbuilt — a user who
   connects Exotel today gets their account recorded and their number set as `outboundNumber`, but calls
   do not actually route through Exotel's media path yet (`voice/stream.ts` is still Twilio/Plivo-shaped
   WebSocket only, and even Plivo's WebSocket adapter itself hasn't been built — only its credential
@@ -78,7 +78,7 @@ not for live call routing. Concretely:
   prototype call" this doc calls for below — that's still the next real step, not this credential work.
 - No platform-owned Plivo/Exotel sub-account or number-purchase path exists (unlike Twilio's
   `createSubaccountForOrg`/`buyNumberForOrg`) — both are BYO-only, consistent with "DLT PE registration
-  is a business-verification process, not an API call" further down this doc. A merchant with nothing
+  is a business-verification process, not an API call" further down this doc. A user with nothing
   existing still gets Weeber's shared Twilio platform default until a platform Plivo path is prototyped.
 
 ---
@@ -176,10 +176,10 @@ near-term scale).
 
 ## Don't pick one India telephony vendor — generalize the BYO pattern that already exists
 
-Real objection worth designing around from day one, not retrofitting later: **some merchants Weeber
+Real objection worth designing around from day one, not retrofitting later: **some users Weeber
 targets already run their own IVR/telephony on Exotel (or another vendor)** and won't switch providers just
-to use Weeber. Picking Plivo as "the" India vendor and forcing every merchant onto it is the wrong shape of
-solution — it should be Weeber's own *default* for merchants with nothing existing, not the only option.
+to use Weeber. Picking Plivo as "the" India vendor and forcing every user onto it is the wrong shape of
+solution — it should be Weeber's own *default* for users with nothing existing, not the only option.
 
 This is not a new problem — it's the exact shape of problem `getTwilioClientForOrg()`
 (`voice/twilio-client.ts`) already solves for Twilio: every org either uses Weeber's platform Twilio
@@ -193,8 +193,8 @@ pattern to any provider, not add Plivo as a one-off:**
   resolves the right adapter per-org at call time, the same way `getTwilioClientForOrg` resolves the right
   Twilio client today — falling back to Weeber's own default (Plivo, pending its prototype) only when the
   org hasn't configured its own.
-- **Practical effect:** a merchant already on Exotel plugs in their existing Exotel credentials and keeps
-  using their own setup unchanged; a merchant with nothing existing gets Weeber's own Plivo-backed number
+- **Practical effect:** a user already on Exotel plugs in their existing Exotel credentials and keeps
+  using their own setup unchanged; a user with nothing existing gets Weeber's own Plivo-backed number
   provisioned for them. Both are first-class, not "the real one and the fallback."
 
 This changes the shape of the upcoming transport-abstraction work: build the per-org resolver from the
@@ -232,7 +232,7 @@ safe to build around — it more likely means the platform tested (Bolna, in thi
 a transitional/grandfathered number, or enforcement hasn't caught up with a specific case yet. TRAI
 regulation-on-paper and TRAI enforcement-in-practice run on different timelines in India — a normal number
 working today is not evidence it'll keep working, or that it wouldn't trigger a DND/UCC complaint against
-Weeber specifically once real merchant volume starts. Building the compliance model around "it worked in a
+Weeber specifically once real user volume starts. Building the compliance model around "it worked in a
 test call" is exactly the kind of shortcut that's cheap now and expensive after a complaint or an
 enforcement sweep. Register properly.
 
@@ -253,14 +253,14 @@ Indian number provisioning is a real-world verification process:
    stated SLA for flagging a stuck approval).
 
 **The real product/architecture question, not yet decided:** does Weeber register as **one Principal
-Entity**, with individual merchants operating as sub-brands/numbers underneath Weeber's own DLT
-registration (faster merchant onboarding, Weeber owns the compliance relationship and liability) — or does
-**each merchant need their own PE registration** (slower onboarding, but cleaner separation of who's
+Entity**, with individual users operating as sub-brands/numbers underneath Weeber's own DLT
+registration (faster user onboarding, Weeber owns the compliance relationship and liability) — or does
+**each user need their own PE registration** (slower onboarding, but cleaner separation of who's
 actually liable for what)? This is a real business decision with compliance and liability implications, not
 just an engineering one — flagged here rather than assumed either way.
 
 **Bottom line for the "self-serve, zero-setup onboarding" pitch:** in the US/NANP model, provisioning a
-merchant's number is instant and API-driven. In India, it realistically involves a KYC/approval step with
-real turnaround time (hours to days, not seconds) **at minimum for the first merchant**, and per-template
+user's number is instant and API-driven. In India, it realistically involves a KYC/approval step with
+real turnaround time (hours to days, not seconds) **at minimum for the first user**, and per-template
 approval for every new agent script thereafter. This doesn't kill the pitch, but "zero setup" needs an
 honest onboarding-flow design that accounts for a KYC step, not a promise that provisioning is instant.

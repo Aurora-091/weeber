@@ -1,6 +1,6 @@
 # UI-DESIGN-BRIEF.md — Weeber Product Design System
 
-Confirmed design direction for everything under `/dashboard` (admin panel) and `/app` (merchant dashboard).
+Confirmed design direction for everything under `/dashboard` (admin panel) and `/app` (user dashboard).
 Read alongside `CLAUDE-BUILD-BRIEF.md` — that doc covers page structure/scope, this one covers how it should
 look and feel. See ADR-032 in `DECISIONS.md` for the reasoning.
 
@@ -36,7 +36,7 @@ and is left as-is.
 - **Sans (Inter Tight)** for all UI text — labels, body, buttons, table content. Already loaded (same
   `@import` as the landing page, no new font request needed).
 - **Serif (Fraunces)** for headings/section titles only — page titles, card section headers, empty-state
-  headlines. This is the one place the merchant/admin product deliberately echoes the landing page's
+  headlines. This is the one place the user/admin product deliberately echoes the landing page's
   editorial identity, confirmed explicitly over an all-sans direction.
 - **Mono (JetBrains Mono)** for anything technical — API keys, webhook URLs, org IDs, code/JSON previews.
   Already the existing convention (`.font-mono-label` class exists in `styles.css`), just carries over.
@@ -57,7 +57,7 @@ and is left as-is.
 - **Admin panel (`/dashboard`):** dense. Ops staff live here all day — tighter row heights, more columns
   visible, less whitespace between elements. Think a data-grid-first feel for the calls/orgs/compliance
   list views.
-- **Merchant dashboard (`/app`):** spacious. Merchants visit less often and need more guidance — generous
+- **User dashboard (`/app`):** spacious. Users visit less often and need more guidance — generous
   whitespace, larger touch targets, fewer things on screen at once, more room for empty-state/onboarding
   copy to breathe.
 - Same underlying shadcn components and `.theme-weeber` tokens power both — density is a spacing/sizing
@@ -90,7 +90,7 @@ utilitarian snap, not the landing page's bold scroll-driven motion. Concretely:
 
 **Left sidebar + command palette (Cmd+K), both together** — the confirmed standard, matching Linear/Vercel/
 Raycast. Sidebar for primary navigation between sections (orgs, templates, calls, compliance, etc. in the
-admin panel; onboarding, agents, calls, analytics, billing, Shopify in the merchant app). Command palette for
+admin panel; onboarding, agents, calls, analytics, billing, Shopify in the user app). Command palette for
 quick jump-to-page and quick actions (e.g. "create agent template," "view org X") without requiring the
 sidebar click path — build this once (a shared component), reuse in both dashboards.
 
@@ -104,7 +104,7 @@ effort more than an unlabeled form ever does.
 ## Responsiveness
 
 **Desktop-first.** Must not visibly break on mobile (no horizontal scroll, no unusably cramped tap targets),
-but mobile is not a polish target for v1 — both merchants and ops staff are expected to use this on a laptop.
+but mobile is not a polish target for v1 — both users and ops staff are expected to use this on a laptop.
 Don't spend build time on a dedicated mobile layout; do make sure Tailwind's responsive utilities keep things
 usable if someone does open it on a phone.
 
@@ -125,7 +125,7 @@ start, not as a retrofit:
 ## What's NOT decided here — flag before building
 
 - Exact spacing scale values (the specific Tailwind spacing tokens for "dense" vs "spacious" density) — size
-  this when the first admin-panel and merchant-dashboard pages are actually being laid out, not in the
+  this when the first admin-panel and user-dashboard pages are actually being laid out, not in the
   abstract.
 - Logo/wordmark — still just a text wordmark placeholder per `CLAUDE-BUILD-BRIEF.md` §2, unchanged by this
   round.

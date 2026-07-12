@@ -2,7 +2,7 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 import { sign } from "hono/jwt";
 
 /**
- * Merchant /api/app surface: first-login org bootstrap (idempotent) and the
+ * User /api/app surface: first-login org bootstrap (idempotent) and the
  * org gate on every non-/me route.
  */
 
@@ -79,7 +79,7 @@ mock.module("../voice/llm", () => ({
   resolveLlmProvider: () => "gateway",
 }));
 
-import { merchantApp } from "./routes";
+import { userApp } from "./routes";
 
 async function bearer(sub: string, email?: string) {
   const token = await sign(
@@ -90,14 +90,14 @@ async function bearer(sub: string, email?: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
-describe("merchant /api/app routes", () => {
+describe("user /api/app routes", () => {
   beforeEach(() => {
     rowsByTable = { org_members: [], orgs: [], calls: [], feature_flags: [] };
     insertsByTable = {};
   });
 
   it("bootstraps an org + owner membership on first /me", async () => {
-    const res = await merchantApp.request("/me", { headers: await bearer("user-new", "jane@shop.com") });
+    const res = await userApp.request("/me", { headers: await bearer("user-new", "jane@shop.com") });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { org: { id: string; name: string }; role: string };
     expect(body.role).toBe("owner");
@@ -110,7 +110,7 @@ describe("merchant /api/app routes", () => {
   it("does not create a second org for an already-bootstrapped user", async () => {
     rowsByTable.org_members = [{ supabaseUserId: "user-1", orgId: "org-existing", role: "owner" }];
     rowsByTable.orgs = [{ id: "org-existing", name: "Existing", vertical: "shopify" }];
-    const res = await merchantApp.request("/me", { headers: await bearer("user-1") });
+    const res = await userApp.request("/me", { headers: await bearer("user-1") });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { org: { id: string } }).org.id).toBe("org-existing");
     expect(insertsByTable.orgs).toBeUndefined();
@@ -118,14 +118,14 @@ describe("merchant /api/app routes", () => {
   });
 
   it("403s org-gated routes when the session has no membership", async () => {
-    const res = await merchantApp.request("/calls", { headers: await bearer("user-orphan") });
+    const res = await userApp.request("/calls", { headers: await bearer("user-orphan") });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("no_org");
   });
 
   it("serves org-gated routes for a member", async () => {
     rowsByTable.org_members = [{ supabaseUserId: "user-1", orgId: "org-1", role: "owner" }];
-    const res = await merchantApp.request("/calls", { headers: await bearer("user-1") });
+    const res = await userApp.request("/calls", { headers: await bearer("user-1") });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ calls: [] });
   });
@@ -140,7 +140,7 @@ describe("POST /agent-configs/:templateKey/test-chat — Preview drawer's live-e
   });
 
   it("uses buildPreviewAgentConfig (live form state) when configOverride is present, not the saved DB row", async () => {
-    const res = await merchantApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
+    const res = await userApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
       method: "POST",
       headers: { ...(await bearer("user-1")), "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -157,7 +157,7 @@ describe("POST /agent-configs/:templateKey/test-chat — Preview drawer's live-e
   });
 
   it("falls back to resolveAgentConfig (saved row) when configOverride is omitted", async () => {
-    const res = await merchantApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
+    const res = await userApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
       method: "POST",
       headers: { ...(await bearer("user-1")), "Content-Type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
@@ -168,7 +168,7 @@ describe("POST /agent-configs/:templateKey/test-chat — Preview drawer's live-e
   });
 
   it("rejects a configOverride that fails AgentFrameSchema validation", async () => {
-    const res = await merchantApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
+    const res = await userApp.request("/agent-configs/shopify-cart-recovery/test-chat", {
       method: "POST",
       headers: { ...(await bearer("user-1")), "Content-Type": "application/json" },
       body: JSON.stringify({

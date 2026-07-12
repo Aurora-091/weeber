@@ -5,7 +5,7 @@ import { annotateOrder } from "../../integrations/shopify/client";
 /**
  * Shopify COD-confirmation agent's tool — records whether the caller
  * confirmed their cash-on-delivery order. On confirmation, tags the order
- * via weebersh (contract endpoint 9) so merchant staff see it in Shopify
+ * via weebersh (contract endpoint 9) so user staff see it in Shopify
  * without needing a Weeber dashboard login. Declines are NOT cancelled
  * here directly — that's handled by the workflow engine's `onExhausted`
  * path (see workflows/types.ts) so a single call's tool output can't

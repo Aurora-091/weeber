@@ -1,10 +1,10 @@
 /**
- * Plivo BYO telephony — validate + store a merchant's own Plivo credentials.
+ * Plivo BYO telephony — validate + store a user's own Plivo credentials.
  * See docs/india-telephony.md: Plivo is the recommended default for
- * merchants with no existing telephony (WebSocket media streaming, same
+ * users with no existing telephony (WebSocket media streaming, same
  * architecture family as Twilio's Media Streams, prototype pending) — but
  * there is no platform-owned sub-account/number-purchase path yet, only
- * BYO, unlike Twilio's createSubaccountForOrg/buyNumberForOrg. A merchant
+ * BYO, unlike Twilio's createSubaccountForOrg/buyNumberForOrg. A user
  * already on Plivo plugs in their own Auth ID/Token here.
  */
 import { eq } from "drizzle-orm";

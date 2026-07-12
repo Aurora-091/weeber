@@ -9,7 +9,7 @@ type PreviewDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   templateName: string;
-  /** POSTs { messages, configOverride } — same contract on both admin/merchant routes. */
+  /** POSTs { messages, configOverride } — same contract on both admin/user routes. */
   chatFetchFn: (messages: { role: string; content: string }[]) => Promise<Response>;
   /** POSTs { configOverride } to the test-call-token route (same override
    * contract as chatFetchFn) — issues the short-lived token useVoiceTestCall

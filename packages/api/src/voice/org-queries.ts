@@ -1,9 +1,9 @@
 /**
  * Org-scoped query/aggregation helpers shared by two surfaces with different
  * auth: the admin panel's /api/voice/orgs/:orgId/* routes (admin key, any
- * org) and the merchant app's /api/app/* routes (Supabase session, own org
+ * org) and the user app's /api/app/* routes (Supabase session, own org
  * only — see app/routes.ts). One implementation, two thin route wrappers, so
- * the numbers a merchant sees are by construction the same ones the admin
+ * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
@@ -148,7 +148,7 @@ export async function listOrgCalls(orgId: string, limit = 200) {
     .limit(Math.min(Math.max(limit, 1), 500));
 }
 
-/** One call, only if it belongs to this org — the merchant-side 404 guard. */
+/** One call, only if it belongs to this org — the user-side 404 guard. */
 export async function getOrgCall(orgId: string, callId: number) {
   const [row] = await db
     .select()
@@ -216,7 +216,7 @@ export async function getShopifyStatus(orgId: string) {
  * entry point; org_id is appended as a query param. Null when unconfigured
  * (the UI shows a "not configured yet" state instead of a dead link).
  *
- * Also stamps `return_url` — where weebersh should send the merchant's
+ * Also stamps `return_url` — where weebersh should send the user's
  * browser once its OAuth flow + /connected callback both succeed. This is
  * the explicit contract for "redirect back to Weeber" (full lifecycle:
  * enter domain on Weeber -> redirect to Shopify install (via weebersh) ->
@@ -279,7 +279,7 @@ export async function getEffectiveFlags(orgId: string): Promise<Record<string, b
 
 /**
  * Org analytics: operational stats (calls/minutes/latency/dispositions/
- * tools/guardrails — the original shape) plus merchant KPIs. KPI rules
+ * tools/guardrails — the original shape) plus user KPIs. KPI rules
  * (CLAUDE-BUILD-BRIEF §5.4, "no fabricated metrics"):
  *   - a rate is null, not 0, when its denominator is 0 — the UI renders an
  *     empty state instead of a made-up 0%;

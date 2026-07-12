@@ -77,7 +77,7 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
   }
 
   /** Same shape as stream.ts's speak() minus everything DB/workflow/webhook-related
-   * — barge-in, tool calls (still real — merchants should see their configured tools
+   * — barge-in, tool calls (still real — users should see their configured tools
    * actually fire), and transcript events, no call-row/latency/disposition persistence. */
   async function speak(ws: Sendable, generate: (signal: AbortSignal) => Promise<string>) {
     turnAbortController = new AbortController();

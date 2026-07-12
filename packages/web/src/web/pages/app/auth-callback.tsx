@@ -10,7 +10,7 @@ import { appPath } from "../../lib/route-base";
  * consumes the tokens from the URL itself — this page just waits for the
  * session to materialize and forwards into the app.
  */
-export function MerchantAuthCallbackPage() {
+export function UserAuthCallbackPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
   const [failed, setFailed] = useState(false);

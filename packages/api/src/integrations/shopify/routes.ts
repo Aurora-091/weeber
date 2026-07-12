@@ -62,7 +62,7 @@ async function findActiveWorkflowTemplate(orgId: string | undefined, event: stri
 }
 
 shopify
-  // 1. POST /connected — merchant clicks "Connect to Weeber" (fires from
+  // 1. POST /connected — user clicks "Connect to Weeber" (fires from
   // webbersh's UI button, not automatically from OAuth — see contract 1.4).
   .post("/connected", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -98,7 +98,7 @@ shopify
     // shop was already linked to (if any) instead of minting a fresh one.
     // Without this, every retry/reconnect while that bug is live mints a
     // brand-new orphan org and silently re-points the shop at it, which is
-    // exactly what leaves the merchant's real dashboard org looking
+    // exactly what leaves the user's real dashboard org looking
     // "disconnected" forever even though weebersh reports success.
     let resolvedOrgId = orgId ?? undefined;
     if (!resolvedOrgId) {
@@ -110,7 +110,7 @@ shopify
           (existingOrgId
             ? `Reusing this shop's existing linked org (${existingOrgId}) instead of minting a new one.`
             : `No prior link found for this shop either — minting a new org (${resolvedOrgId}) as a ` +
-              `last resort. This org will NOT match any merchant's dashboard session.`),
+              `last resort. This org will NOT match any user's dashboard session.`),
       );
     }
 

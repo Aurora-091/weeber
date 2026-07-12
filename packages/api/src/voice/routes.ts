@@ -56,7 +56,7 @@ import { createAdminKey, listAdminKeys, revokeAdminKey } from "./admin-keys";
 // Per-org fixed-window limiter for issuing live voice test-call tokens from
 // the admin dashboard — same reasoning as app/routes.ts's testCallRateLimited
 // (each token leads to a real STT+LLM+TTS session), just keyed for the
-// admin-key-gated surface instead of merchant sessions.
+// admin-key-gated surface instead of user sessions.
 const ADMIN_TEST_CALL_WINDOW_MS = 60_000;
 const ADMIN_TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
 const adminTestCallRateLimited = makeFixedWindowLimiter(ADMIN_TEST_CALL_WINDOW_MS, ADMIN_TEST_CALL_MAX_PER_WINDOW);
@@ -114,7 +114,7 @@ export const voice = new Hono()
 
   // Plivo answer webhook — the Plivo analog of /incoming above, reused for
   // both outbound (see plivo-client.ts's createPlivoOutboundCall, which
-  // sets this as answer_url) and inbound (a merchant configures this as
+  // sets this as answer_url) and inbound (a user configures this as
   // their Plivo Application's Answer URL, with `?orgId=` appended so
   // requirePlivoSignature and org resolution both work — see that
   // middleware's doc comment).
@@ -705,7 +705,7 @@ export const voice = new Hono()
     }
   })
 
-  // Merchant-dashboard analytics — simple v1, aggregated directly off
+  // User-dashboard analytics — simple v1, aggregated directly off
   // existing tables (calls/callLatency/toolCalls), no separate rollup
   // tables yet. `days` bounds how far back to look (default 30).
   .get("/orgs/:orgId/analytics", requireAdminKey, async (c) => {

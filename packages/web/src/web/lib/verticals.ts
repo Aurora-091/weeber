@@ -3,7 +3,7 @@ import type { NavItem } from "../components/shell/app-shell";
 import { appPath } from "./route-base";
 
 /**
- * Vertical-driven merchant UI (MERCHANT-APP-PAGE-MAP §4, ADR-031's seam
+ * Vertical-driven user UI (USER-APP-PAGE-MAP §4, ADR-031's seam
  * carried into the frontend): nav, labels, copy, AND dashboard content are
  * data per vertical, not JSX branches. Shopify is the only vertical with
  * real agents today; a clinic/hotel vertical adds an entry here (+
@@ -42,7 +42,7 @@ export type VerticalDefinition = {
 // Nav label for the platform-connection page is the vertical's own
 // integrationLabel ("Shopify" here, "EHR"/"PMS" for a future clinic
 // vertical, etc.) — not a hardcoded "Integrations" — so the nav stays
-// vertical-driven per MERCHANT-APP-PAGE-MAP §4 instead of a generic label
+// vertical-driven per USER-APP-PAGE-MAP §4 instead of a generic label
 // that means something different per vertical. See verticals.test.ts's
 // "contains all required nav items for shopify" test, which checks for
 // this exact label.

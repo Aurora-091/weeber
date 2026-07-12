@@ -1,5 +1,5 @@
 /**
- * Merchant support tickets (see schema.ts's `supportTickets`). Submittable
+ * User support tickets (see schema.ts's `supportTickets`). Submittable
  * from `/app` (authenticated, `orgId` known) or the public landing page
  * (email-only, no account required — `orgId` stays null).
  */

@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
-import { appFetch } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/user-session";
 import { VoicePicker } from "../../components/voice/VoicePicker";
-import { useMerchant } from "../../components/app/merchant-shell";
+import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
@@ -14,10 +14,10 @@ import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { cn } from "../../lib/utils";
 
 /**
- * Merchant agent config — the same "frame" form as the admin panel's
+ * User agent config — the same "frame" form as the admin panel's
  * /dashboard/agents (voice/agent-frame.ts is the shared schema), re-scoped
  * to the session's own org: no org picker, /api/app endpoints, and the
- * model/provider knobs tucked behind an Advanced disclosure since merchants
+ * model/provider knobs tucked behind an Advanced disclosure since users
  * shouldn't need to pick LLMs to get value.
  */
 
@@ -346,7 +346,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
             value={form.voiceId}
             language={form.language}
             onChange={(voiceId) => setForm({ ...form, voiceId })}
-            scope="merchant"
+            scope="user"
             previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
           />
         </div>
@@ -543,8 +543,8 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
   );
 }
 
-export function MerchantAgentsPage() {
-  const { vertical } = useMerchant();
+export function UserAgentsPage() {
+  const { vertical } = useUser();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const configs = useQuery({

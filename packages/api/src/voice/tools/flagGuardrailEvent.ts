@@ -5,7 +5,7 @@ import { tool } from "ai";
  * Lets the agent self-report a guardrail moment — a point where it held a
  * boundary instead of just answering. This isn't a refusal mechanism (the
  * agent already refuses/redirects in its actual spoken reply) — it's a
- * structured breadcrumb so a merchant reviewing the call on the dashboard
+ * structured breadcrumb so a user reviewing the call on the dashboard
  * can see *where* and *why* the agent held back, instead of only reading a
  * transcript and guessing.
  *

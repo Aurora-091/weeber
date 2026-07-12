@@ -6,10 +6,15 @@ import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
 
-const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "merchant" | "all";
+const rawSurface = import.meta.env.VITE_APP_SURFACE || "all";
+// Backward-compat: the live Vercel project was created with
+// VITE_APP_SURFACE=merchant (pre-rename). Accept the old value as an alias
+// for "user" until that project's env var is updated -- remove this once
+// confirmed flipped (see changelog's "Merchant -> User rename" entry).
+const surface = (rawSurface === "merchant" ? "user" : rawSurface) as "public" | "admin" | "user" | "all";
 const showPublic = surface === "all" || surface === "public";
 const showAdmin = surface === "all" || surface === "admin";
-const showMerchant = surface === "all" || surface === "merchant";
+const showUser = surface === "all" || surface === "user";
 
 function SubdomainRedirect({ target }: { target: string }) {
   if (target.startsWith("http")) {
@@ -20,11 +25,11 @@ function SubdomainRedirect({ target }: { target: string }) {
 }
 
 // Route-level code splitting: every page below is a separate build chunk.
-// A dedicated per-surface build (VITE_APP_SURFACE=admin/=merchant) only ever
-// renders its own showAdmin/showMerchant branch, so React never calls the
+// A dedicated per-surface build (VITE_APP_SURFACE=admin/=user) only ever
+// renders its own showAdmin/showUser branch, so React never calls the
 // lazy() factory for the other surface's pages -- those chunks exist in
 // dist/ but are never fetched over the network. This is what actually keeps
-// admin.weeber.ai from shipping the merchant app's code (and vice versa) --
+// admin.weeber.ai from shipping the user app's code (and vice versa) --
 // the VITE_APP_SURFACE env check alone only gated *rendering*, not bundling,
 // since every import below used to be a static top-level import.
 
@@ -76,33 +81,33 @@ const WorkflowRunsPage = lazy(() =>
   import("./pages/dashboard/workflow-runs").then((m) => ({ default: m.WorkflowRunsPage })),
 );
 
-// Merchant/user app shell + pages
-const MerchantLoginPage = lazy(() => import("./pages/app/login").then((m) => ({ default: m.MerchantLoginPage })));
-const MerchantAuthCallbackPage = lazy(() =>
-  import("./pages/app/auth-callback").then((m) => ({ default: m.MerchantAuthCallbackPage })),
+// User/user app shell + pages
+const UserLoginPage = lazy(() => import("./pages/app/login").then((m) => ({ default: m.UserLoginPage })));
+const UserAuthCallbackPage = lazy(() =>
+  import("./pages/app/auth-callback").then((m) => ({ default: m.UserAuthCallbackPage })),
 );
 const ResetPasswordPage = lazy(() =>
   import("./pages/app/reset-password").then((m) => ({ default: m.ResetPasswordPage })),
 );
-const MerchantHomePage = lazy(() => import("./pages/app/home").then((m) => ({ default: m.MerchantHomePage })));
-const MerchantAgentsPage = lazy(() =>
-  import("./pages/app/agents").then((m) => ({ default: m.MerchantAgentsPage })),
+const UserHomePage = lazy(() => import("./pages/app/home").then((m) => ({ default: m.UserHomePage })));
+const UserAgentsPage = lazy(() =>
+  import("./pages/app/agents").then((m) => ({ default: m.UserAgentsPage })),
 );
-const MerchantCallsPage = lazy(() => import("./pages/app/calls").then((m) => ({ default: m.MerchantCallsPage })));
-const MerchantCallDetailPage = lazy(() =>
-  import("./pages/app/call-detail").then((m) => ({ default: m.MerchantCallDetailPage })),
+const UserCallsPage = lazy(() => import("./pages/app/calls").then((m) => ({ default: m.UserCallsPage })));
+const UserCallDetailPage = lazy(() =>
+  import("./pages/app/call-detail").then((m) => ({ default: m.UserCallDetailPage })),
 );
-const MerchantAnalyticsPage = lazy(() =>
-  import("./pages/app/analytics").then((m) => ({ default: m.MerchantAnalyticsPage })),
+const UserAnalyticsPage = lazy(() =>
+  import("./pages/app/analytics").then((m) => ({ default: m.UserAnalyticsPage })),
 );
-const MerchantBillingPage = lazy(() =>
-  import("./pages/app/billing").then((m) => ({ default: m.MerchantBillingPage })),
+const UserBillingPage = lazy(() =>
+  import("./pages/app/billing").then((m) => ({ default: m.UserBillingPage })),
 );
-const MerchantIntegrationsPage = lazy(() =>
-  import("./pages/app/integrations").then((m) => ({ default: m.MerchantIntegrationsPage })),
+const UserIntegrationsPage = lazy(() =>
+  import("./pages/app/integrations").then((m) => ({ default: m.UserIntegrationsPage })),
 );
-const MerchantShell = lazy(() =>
-  import("./components/app/merchant-shell").then((m) => ({ default: m.MerchantShell })),
+const UserShell = lazy(() =>
+  import("./components/app/user-shell").then((m) => ({ default: m.UserShell })),
 );
 
 function RouteFallback() {
@@ -232,49 +237,49 @@ function App() {
             </Route>
           )}
 
-          {/* Merchant/User App */}
-          {showMerchant && <Route path={appPath("/login")}><MerchantLoginPage /></Route>}
-          {showMerchant && <Route path={appPath("/auth/callback")}><MerchantAuthCallbackPage /></Route>}
-          {showMerchant && <Route path={appPath("/auth/reset-password")}><ResetPasswordPage /></Route>}
+          {/* User/User App */}
+          {showUser && <Route path={appPath("/login")}><UserLoginPage /></Route>}
+          {showUser && <Route path={appPath("/auth/callback")}><UserAuthCallbackPage /></Route>}
+          {showUser && <Route path={appPath("/auth/reset-password")}><ResetPasswordPage /></Route>}
 
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath()}>
-              <MerchantShell><MerchantHomePage /></MerchantShell>
+              <UserShell><UserHomePage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/onboarding")}>
               <Redirect to={`${appPath()}?setup=1`} />
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/agents")}>
-              <MerchantShell><MerchantAgentsPage /></MerchantShell>
+              <UserShell><UserAgentsPage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/calls")}>
-              <MerchantShell><MerchantCallsPage /></MerchantShell>
+              <UserShell><UserCallsPage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/calls/:id")}>
-              <MerchantShell><MerchantCallDetailPage /></MerchantShell>
+              <UserShell><UserCallDetailPage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/analytics")}>
-              <MerchantShell><MerchantAnalyticsPage /></MerchantShell>
+              <UserShell><UserAnalyticsPage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/billing")}>
-              <MerchantShell><MerchantBillingPage /></MerchantShell>
+              <UserShell><UserBillingPage /></UserShell>
             </Route>
           )}
-          {showMerchant && (
+          {showUser && (
             <Route path={appPath("/integrations")}>
-              <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
+              <UserShell><UserIntegrationsPage /></UserShell>
             </Route>
           )}
 
@@ -295,7 +300,7 @@ function App() {
           {/* Fallback: redirect to this surface's own root. */}
           <Route>
             {surface === "admin" ? <Redirect to={adminPath()} /> :
-             surface === "merchant" ? <Redirect to={appPath()} /> :
+             surface === "user" ? <Redirect to={appPath()} /> :
              <Redirect to="/" />}
           </Route>
         </Switch>

@@ -18,8 +18,8 @@ import {
   ClipboardList,
   Phone,
 } from "lucide-react";
-import { appFetch } from "../../lib/merchant-session";
-import { useMerchant } from "../../components/app/merchant-shell";
+import { appFetch } from "../../lib/user-session";
+import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -219,8 +219,8 @@ function TelephonyProviderTile({
   );
 }
 
-export function MerchantIntegrationsPage() {
-  const { me } = useMerchant();
+export function UserIntegrationsPage() {
+  const { me } = useUser();
   const [storeDomain, setStoreDomain] = useState("");
   const queryClient = useQueryClient();
 
@@ -238,7 +238,7 @@ export function MerchantIntegrationsPage() {
   // server-to-server /connected callback both complete. Force a fresh
   // status fetch right away instead of trusting cache, and surface a clear
   // signal if the callback didn't actually land (org_id mismatch, dropped
-  // callback, etc.) rather than leaving the merchant staring at a stale
+  // callback, etc.) rather than leaving the user staring at a stale
   // "not connected" card with no explanation.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -267,7 +267,7 @@ export function MerchantIntegrationsPage() {
 
   // The redirect back from weebersh (return_url) can land in the new tab
   // opened below, not this one — and if the browser blocked that popup,
-  // the merchant continues in THIS tab instead. Either way, refetch status
+  // the user continues in THIS tab instead. Either way, refetch status
   // whenever this tab regains focus/visibility so a connect made elsewhere
   // shows up without a manual refresh.
   useEffect(() => {

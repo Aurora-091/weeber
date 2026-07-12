@@ -1,7 +1,7 @@
 import z from "zod";
 
 /**
- * The agent "frame" — the fixed, structured set of fields a merchant (or
+ * The agent "frame" — the fixed, structured set of fields a user (or
  * later, an AI agent-builder prompt) configures per agent. This is the
  * contract: a future "describe the agent you want" flow plugs values into
  * exactly this shape rather than inventing new fields, new tables, or new

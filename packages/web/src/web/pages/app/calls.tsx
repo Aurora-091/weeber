@@ -2,9 +2,9 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PhoneIncoming, PhoneOutgoing, Search } from "lucide-react";
-import { appFetch } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
-import { useMerchant } from "../../components/app/merchant-shell";
+import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
@@ -92,8 +92,8 @@ function PillToggle<T extends string>({
   );
 }
 
-export function MerchantCallsPage() {
-  const { vertical } = useMerchant();
+export function UserCallsPage() {
+  const { vertical } = useUser();
 
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
