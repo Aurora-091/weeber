@@ -9,6 +9,8 @@ import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Switch } from "../../components/ui/switch";
+import { PreviewButton } from "../../components/agent-preview/PreviewButton";
+import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { cn } from "../../lib/utils";
 
 /**
@@ -127,6 +129,32 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Same shape the PUT save mutation sends — the Preview drawer's configOverride
+ * uses this identical conversion so "what you're previewing" and "what Save
+ * would write" never drift apart. */
+function formToAgentFrame(form: FormState) {
+  return {
+    name: form.name || undefined,
+    greetingLine: form.greetingLine || undefined,
+    closingLine: form.closingLine || undefined,
+    toneStyle: form.toneStyle || undefined,
+    personaPrompt: form.personaPrompt || undefined,
+    voiceProvider: form.voiceProvider,
+    voiceId: form.voiceId || undefined,
+    language: form.language || undefined,
+    sttProvider: form.sttProvider,
+    llmProvider: form.llmProvider,
+    llmModel: form.llmModel || undefined,
+    toolsEnabled: form.toolsEnabled,
+    guardrails: {
+      topicBoundaryStrictness: form.topicBoundaryStrictness,
+      injectionSensitivity: form.injectionSensitivity,
+      abuseHandlingEnabled: form.abuseHandlingEnabled,
+    },
+    enabled: form.enabled,
+  };
+}
+
 function AgentEditForm({ row }: { row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
@@ -134,32 +162,14 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
 
   const save = useMutation({
     mutationFn: async () => {
       const res = await appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name || undefined,
-          greetingLine: form.greetingLine || undefined,
-          closingLine: form.closingLine || undefined,
-          toneStyle: form.toneStyle || undefined,
-          personaPrompt: form.personaPrompt || undefined,
-          voiceProvider: form.voiceProvider,
-          voiceId: form.voiceId || undefined,
-          language: form.language || undefined,
-          sttProvider: form.sttProvider,
-          llmProvider: form.llmProvider,
-          llmModel: form.llmModel || undefined,
-          toolsEnabled: form.toolsEnabled,
-          guardrails: {
-            topicBoundaryStrictness: form.topicBoundaryStrictness,
-            injectionSensitivity: form.injectionSensitivity,
-            abuseHandlingEnabled: form.abuseHandlingEnabled,
-          },
-          enabled: form.enabled,
-        }),
+        body: JSON.stringify(formToAgentFrame(form)),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -198,6 +208,18 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
     }
   }
 
+  /** Sends the current, in-progress form as configOverride — the backend
+   * (buildPreviewAgentConfig, voice/agent.ts) builds the system prompt/voice/
+   * LLM/tools straight from it instead of the saved DB row, so this really
+   * tests what's on screen right now. */
+  async function chatFetchFn(messages: { role: string; content: string }[]) {
+    return appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
+    });
+  }
+
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
@@ -207,6 +229,19 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
 
   return (
     <div className="space-y-5 border-t border-border bg-muted/40 p-5">
+      <div className="flex justify-end">
+        <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
+      </div>
+      <PreviewDrawer
+        open={previewDrawerOpen}
+        onOpenChange={setPreviewDrawerOpen}
+        templateName={row.config?.name || row.templateName}
+        chatFetchFn={chatFetchFn}
+        previewState={previewState}
+        previewUrl={previewUrl}
+        onPlayPreview={playPreview}
+      />
+
       {/* Identity & Tone */}
       <SectionHeader>Identity &amp; Tone</SectionHeader>
 

@@ -192,11 +192,23 @@ export const merchantApp = new Hono<MerchantEnv>()
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
-    const { resolveAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
+    const { resolveAgentConfig, buildPreviewAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("../voice/llm");
     const { streamText, stepCountIs } = await import("ai");
 
-    const agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    // configOverride (optional): the Preview drawer's whole point is testing
+    // what's currently in the form, not what's already saved — see
+    // buildPreviewAgentConfig's doc comment in voice/agent.ts.
+    let agentConfig;
+    if (body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
     const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
     const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
 

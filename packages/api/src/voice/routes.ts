@@ -540,15 +540,23 @@ export const voice = new Hono()
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
-    const { resolveAgentConfig } = await import("./agent");
+    const { resolveAgentConfig, buildPreviewAgentConfig } = await import("./agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("./llm");
     const { voiceTools, buildKnownFactsBlock } = await import("./agent");
     const { streamText, stepCountIs } = await import("ai");
 
-    const agentConfig = await resolveAgentConfig({
-      orgId,
-      templateKey,
-    });
+    // configOverride (optional): preview the admin's in-progress edits, not
+    // just the last-saved row — see buildPreviewAgentConfig in voice/agent.ts.
+    let agentConfig;
+    if (body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
 
     const model = resolveVoiceModel(
       agentConfig.llmProvider,

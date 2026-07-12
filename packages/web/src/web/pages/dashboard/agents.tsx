@@ -5,7 +5,8 @@ import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
 import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useSelectedOrgId } from "../../lib/org-id";
-import { AgentTestChat } from "../../components/agent-test-chat";
+import { PreviewButton } from "../../components/agent-preview/PreviewButton";
+import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 
 const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
 const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
@@ -113,39 +114,46 @@ function labelClass() {
   return "block text-xs font-medium text-muted-foreground mb-1";
 }
 
+/** Same shape the PUT save mutation sends — the Preview drawer's configOverride
+ * uses this identical conversion so "what you're previewing" and "what Save
+ * would write" never drift apart. */
+function formToAgentFrame(form: FormState) {
+  return {
+    name: form.name || undefined,
+    greetingLine: form.greetingLine || undefined,
+    closingLine: form.closingLine || undefined,
+    toneStyle: form.toneStyle || undefined,
+    personaPrompt: form.personaPrompt || undefined,
+    voiceProvider: form.voiceProvider,
+    voiceId: form.voiceId || undefined,
+    language: form.language || undefined,
+    sttProvider: form.sttProvider,
+    llmProvider: form.llmProvider,
+    llmModel: form.llmModel || undefined,
+    toolsEnabled: form.toolsEnabled,
+    guardrails: {
+      topicBoundaryStrictness: form.topicBoundaryStrictness,
+      injectionSensitivity: form.injectionSensitivity,
+      abuseHandlingEnabled: form.abuseHandlingEnabled,
+    },
+    enabled: form.enabled,
+  };
+}
+
 function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"config" | "test">("config");
+  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
 
   const save = useMutation({
     mutationFn: async () => {
       const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({
-          name: form.name || undefined,
-          greetingLine: form.greetingLine || undefined,
-          closingLine: form.closingLine || undefined,
-          toneStyle: form.toneStyle || undefined,
-          personaPrompt: form.personaPrompt || undefined,
-          voiceProvider: form.voiceProvider,
-          voiceId: form.voiceId || undefined,
-          language: form.language || undefined,
-          sttProvider: form.sttProvider,
-          llmProvider: form.llmProvider,
-          llmModel: form.llmModel || undefined,
-          toolsEnabled: form.toolsEnabled,
-          guardrails: {
-            topicBoundaryStrictness: form.topicBoundaryStrictness,
-            injectionSensitivity: form.injectionSensitivity,
-            abuseHandlingEnabled: form.abuseHandlingEnabled,
-          },
-          enabled: form.enabled,
-        }),
+        body: JSON.stringify(formToAgentFrame(form)),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -186,43 +194,37 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     }));
   }
 
+  /** Sends the current, in-progress form as configOverride — the backend
+   * (buildPreviewAgentConfig, voice/agent.ts) builds the system prompt/voice/
+   * LLM/tools straight from it instead of the saved DB row, so this really
+   * tests what's on screen right now, not just the last saved version. */
   const testChatFetch = async (messages: { role: string; content: string }[]) => {
     return apiFetch(
       `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
       },
     );
   };
 
   return (
     <div className="border-t border-border bg-muted/40 p-5">
-      <div className="flex gap-1 mb-5">
-        <button
-          onClick={() => setActiveTab("config")}
-          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-            activeTab === "config" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-        >
-          Configuration
-        </button>
-        <button
-          onClick={() => setActiveTab("test")}
-          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-            activeTab === "test" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-        >
-          Test Agent
-        </button>
+      <div className="flex justify-end mb-5">
+        <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
       </div>
+      <PreviewDrawer
+        open={previewDrawerOpen}
+        onOpenChange={setPreviewDrawerOpen}
+        templateName={row.config?.name || row.templateName}
+        chatFetchFn={testChatFetch}
+        previewState={previewState}
+        previewUrl={previewUrl}
+        onPlayPreview={playPreview}
+      />
 
-      {activeTab === "test" && (
-        <AgentTestChat fetchFn={testChatFetch} templateName={row.config?.name || row.templateName} />
-      )}
-
-      {activeTab === "config" && (
+      {(
         <div className="space-y-5">
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
