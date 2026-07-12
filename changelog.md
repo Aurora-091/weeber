@@ -4,6 +4,29 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Hosted Supabase auth config synced (site_url, redirect allowlist, recovery template)
+
+`supabase config push` against the hosted project (`wtqohdcghmxuujqyhlkz`) revealed the hosted auth
+config had never been synced with the repo's `config.toml`:
+
+- **`site_url` was still `http://localhost:5173`** (repo said `https://app.weeber.ai` since ADR-043's
+  session, but only locally). Consequence: the hosted **recovery email was still the old link-based
+  template**, and its `{{ .ConfirmationURL }}` — with no `redirectTo` passed by `login.tsx` — pointed
+  at the site_url, i.e. password-reset emails linked to `localhost:5173`. Hosted password reset was
+  broken end-to-end until this sync; it now sends the committed OTP-code-only template, which the
+  login page's forgot-password flow verifies inline (`verifyOtp` type `recovery`).
+- **Redirect allowlist cleaned:** stale `openvent-api*.vercel.app` / `openvent-*-rex80s-projects
+  .vercel.app` preview entries (pre-split single-project era) removed. New list is exactly the three
+  legitimate surfaces — `https://app.weeber.ai`, `https://admin.weeber.ai`, `http://localhost:5173`,
+  each as bare origin + `/**` glob (`config.toml` updated to match; bare origin and glob are both
+  needed because `/**` doesn't match the bare root). No live flow depends on the allowlist (all auth
+  emails are OTP-code-only) — this is hygiene for the `/auth/callback` / `/auth/reset-password`
+  fallback routes and any future OAuth.
+- Also fixed a stale `config.toml` comment still claiming recovery keeps its link.
+- Sync workflow note: `supabase config push --project-ref wtqohdcghmxuujqyhlkz` from repo root is the
+  way to apply future `config.toml`/email-template changes to the hosted project (needs
+  `supabase login` once per machine).
+
 ## 2026-07-13 — Waitlist email links: referral links now use PUBLIC_WEB_URL, not the API origin
 
 - **Bug:** `app/waitlist.ts` built both email links off `PUBLIC_APP_URL`, which by repo convention is
