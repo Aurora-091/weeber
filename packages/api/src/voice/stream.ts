@@ -419,13 +419,6 @@ export function createVoiceStreamHandlers() {
       resolveTtsDone = resolve;
     });
 
-    // Word-level timing for this turn only (Cartesia; other providers never
-    // call this) — used below to reconstruct what the caller actually heard
-    // if they interrupt, instead of recording the full generated text as
-    // "said" when only the first few words were ever spoken. See the
-    // onWordTimestamp doc comment in tts/types.ts for the full reasoning.
-    const spokenWords: string[] = [];
-
     tts = connectTts(
       (base64Audio) => {
         if (ttsFirstByteMs === undefined) {
@@ -451,32 +444,15 @@ export function createVoiceStreamHandlers() {
       ttsProviderOverride,
       ttsVoiceIdOverride,
       languageOverride,
-      (word) => spokenWords.push(word),
     );
 
     let fullText = "";
-    let wasInterrupted = false;
     try {
       fullText = await generate(turnAbortController.signal);
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        console.error("[voice] agent turn failed", err);
-      } else {
-        wasInterrupted = true;
-      }
+      if ((err as Error).name !== "AbortError") console.error("[voice] agent turn failed", err);
     } finally {
       tts?.endTurn();
-    }
-
-    // Barge-in happened and we have real word-timing data: record only what
-    // the caller actually heard, not the full (possibly much longer) reply
-    // the LLM had already finished generating — LLMs stream faster than TTS
-    // speaks, so on interruption the full text is often already sitting in
-    // `fullText` even though the caller only heard the first few words.
-    // Pushing the untruncated text into history would make the agent "recall"
-    // saying things it never actually said out loud.
-    if (wasInterrupted && spokenWords.length > 0) {
-      fullText = spokenWords.join(" ");
     }
 
     if (fullText) {

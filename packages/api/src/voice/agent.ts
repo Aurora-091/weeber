@@ -13,17 +13,7 @@ import { resolveVoiceModel, getActiveModelLabel } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates } from "../database/schema";
 import { and, eq } from "drizzle-orm";
-import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings } from "./agent-frame";
-
-function languageLabel(code?: string): string {
-  if (!code) return "English";
-  const match = RECOMMENDED_LANGUAGES.find((l) => l.code === code);
-  if (match && match.code !== "multi") return match.label;
-  // "multi" itself has no single spoken-voice language — this is only ever
-  // reached for the fixed TTS language paired with a "multi" STT config,
-  // which is a specific language code (e.g. "hi"), not "multi" itself.
-  return code;
-}
+import type { AvailableToolName, GuardrailSettings } from "./agent-frame";
 
 const DEFAULT_PERSONA = dedent`
   You are OpenVent, a warm, sharp voice assistant answering a live phone call.
@@ -160,46 +150,6 @@ function withCallControl(personaInstructions: string, guardrails?: GuardrailSett
  * name, how it opens/closes the call, and tone. Every field optional; an
  * empty frame produces an empty string (job description speaks for itself,
  * exactly as before the frame existed). */
-/**
- * Explicit language-behavior instructions for the LLM — previously missing
- * entirely. `language` only ever drove which STT/TTS provider+language-code
- * got used technically; the model itself was never told what language to
- * respond in, or what to do if the caller switches languages mid-call. This
- * matters most for `language: "multi"` (Deepgram's English+auto-detected-
- * other code-switching mode): STT can already follow the caller across a
- * language switch, but TTS is fixed to one language/voice for the whole
- * call (Sarvam/ElevenLabs/Cartesia have no single "auto" voice), so the
- * LLM must be told explicitly to keep responding in whatever language
- * the fixed TTS voice actually speaks, not whatever the caller just said —
- * otherwise it may draft a reply in the caller's language that the TTS
- * voice can't correctly pronounce. Mirrors the trigger/fallback/default
- * pattern Bolna's multilingual docs use for the same problem.
- */
-function buildLanguageInstructionBlock(language: string | undefined): string {
-  if (!language || language === "en") return "";
-  if (language === "multi") {
-    // The TTS voice for a "multi" call is whatever the configured provider/voiceId
-    // defaults to (a fixed, specific language, not "multi" itself — see
-    // tts/sarvam.ts's toSarvamLanguageCode and the RECOMMENDED_LANGUAGES doc
-    // comment) — not reliably resolvable from the `language` field alone, so this
-    // instructs the model to stay consistent rather than naming a language it
-    // might get wrong.
-    return (
-      `The caller may speak in more than one language during this call (e.g. code-switching between ` +
-      `English and another language mid-sentence) — understand whichever language they use, but your ` +
-      `spoken voice can only speak one fixed language for the whole call. Keep responding in whichever ` +
-      `language you used for your very first reply this call, even if the caller switches — do not ` +
-      `attempt to switch your own spoken language mid-call. If you're unsure which language to open ` +
-      `with, default to English.\n\n`
-    );
-  }
-  const label = languageLabel(language);
-  return (
-    `Conduct this entire call in ${label}. If the caller speaks in a different language, politely ` +
-    `continue in ${label} rather than switching — your voice can only speak ${label}.\n\n`
-  );
-}
-
 function buildIdentityBlock(frame?: {
   name?: string | null;
   greetingLine?: string | null;
@@ -338,9 +288,7 @@ export async function resolveAgentConfig(opts: {
       }
 
       const systemPrompt = withCallControl(
-        buildLanguageInstructionBlock(config.language ?? undefined) +
-          buildIdentityBlock(config) +
-          withDisclosure(jobDescription),
+        buildIdentityBlock(config) + withDisclosure(jobDescription),
         (config.guardrails as GuardrailSettings | null) ?? undefined,
       );
 

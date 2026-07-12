@@ -25,21 +25,21 @@ mock.module("../../database", () => {
       select: () => ({
         from: (table: any) => {
           const tableName = getTableName(table);
-          const rows = tableName === "shop_links" ? mockSelectedShopLinks : mockSelectedCalls;
           return {
             where: () => {
-              // Real Drizzle: `.where(...)` alone (no `.limit()`) is itself
-              // awaitable and resolves to every matching row — used by
-              // findActiveWorkflowTemplate's `for (const tpl of templates)`.
-              // Attach `.limit()`/`.orderBy()` onto the same array instance
-              // so both calling styles (`await db...where()` and
-              // `await db...where().limit()`) work against one mock shape.
-              return Object.assign([...rows], {
-                limit: () => rows,
+              return {
+                limit: () => {
+                  if (tableName === "shop_links") {
+                    return mockSelectedShopLinks;
+                  }
+                  return mockSelectedCalls;
+                },
                 orderBy: () => ({
-                  limit: () => mockSelectedCalls
+                  limit: () => {
+                    return mockSelectedCalls;
+                  }
                 })
-              });
+              };
             }
           };
         }

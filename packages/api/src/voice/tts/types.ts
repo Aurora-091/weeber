@@ -26,17 +26,4 @@ export type ConnectTts = (
    * uses this today (it needs an explicit target language); ElevenLabs and
    * Cartesia ignore it since their voices are already language-specific. */
   language?: string,
-  /**
-   * Word-level timing, as each word is synthesized — currently only
-   * implemented by Cartesia (`add_timestamps: true`). Used by stream.ts's
-   * barge-in handling to reconstruct exactly which words the caller
-   * actually heard before interrupting, instead of pushing the *entire*
-   * generated turn into conversation history regardless of how much of it
-   * was ever spoken (the LLM streams faster than TTS speaks, so on
-   * interruption the full text is often already generated even though the
-   * caller only heard the first few words). Providers without timestamp
-   * support simply never call this — stream.ts falls back to its previous
-   * full-text behavior when that's the case.
-   */
-  onWordTimestamp?: (word: string, startMs: number, endMs: number) => void,
 ) => TtsConnection;
