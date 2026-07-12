@@ -44,6 +44,13 @@ import {
   getEffectiveFlags,
 } from "../voice/org-queries";
 import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
+import {
+  getTwilioStatus,
+  createSubaccountForOrg,
+  buyNumberForOrg,
+  setByoCredentials,
+  resetToPlatformDefault,
+} from "../voice/twilio-provisioning";
 
 type MerchantEnv = { Variables: MerchantSessionVariables };
 
@@ -367,6 +374,79 @@ export const merchantApp = new Hono<MerchantEnv>()
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     c.header("Content-Disposition", `attachment; filename="transcripts-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     return c.body(new Uint8Array(buffer));
+  })
+
+  // Merchant-facing telephony/number self-serve (ADR-042's per-org Twilio
+  // isolation, previously admin-only — see voice/twilio-provisioning.ts for
+  // the actual logic, unchanged here, just newly reachable by the org that
+  // owns it instead of only an operator). Deliberately no shared number
+  // pool: every org either gets its own dedicated Twilio sub-account +
+  // number, or brings its own credentials — never a number shared across
+  // orgs. Twilio is the only provider wired up today; Plivo/Exotel are
+  // planned (see docs/india-telephony.md) but not implemented, so the
+  // merchant UI should present them as "coming soon", not offer them yet.
+  .get("/telephony/status", async (c) => {
+    const status = await getTwilioStatus(c.get("merchantOrgId")!);
+    if (!status) return c.json({ error: "org not found" }, 404);
+    return c.json({ telephony: status }, 200);
+  })
+
+  .post("/telephony/subaccount", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const existing = await getTwilioStatus(orgId);
+    if (existing?.accountSid) {
+      return c.json({ error: "This org already has a Twilio sub-account provisioned — reset first to start over." }, 409);
+    }
+    const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const result = await createSubaccountForOrg(orgId, org.name ?? orgId);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ accountSid: result.accountSid }, 201);
+  })
+
+  .post("/telephony/number", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const existing = await getTwilioStatus(orgId);
+    // A dedicated number is a real recurring Twilio charge — guard against
+    // a merchant accidentally buying a second one via a repeated click/call
+    // before billing exists to catch it. Reset first to replace one.
+    if (existing?.outboundNumber) {
+      return c.json({ error: `This org already has a dedicated number (${existing.outboundNumber}) — reset first to buy a different one.` }, 409);
+    }
+    const body = await c.req.json().catch(() => null);
+    const { countryCode, areaCode } = (body ?? {}) as { countryCode?: string; areaCode?: string };
+    if (!countryCode?.trim()) return c.json({ error: "`countryCode` is required, e.g. \"US\" or \"IN\"" }, 400);
+
+    const result = await buyNumberForOrg(orgId, countryCode.trim(), areaCode?.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  .post("/telephony/byo", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { accountSid, authToken, phoneNumber } = (body ?? {}) as {
+      accountSid?: string;
+      authToken?: string;
+      phoneNumber?: string;
+    };
+    if (!accountSid?.trim() || !authToken?.trim() || !phoneNumber?.trim()) {
+      return c.json({ error: "`accountSid`, `authToken`, and `phoneNumber` are all required" }, 400);
+    }
+
+    const result = await setByoCredentials(orgId, {
+      accountSid: accountSid.trim(),
+      authToken: authToken.trim(),
+      phoneNumber: phoneNumber.trim(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ ok: true }, 200);
+  })
+
+  .post("/telephony/reset", async (c) => {
+    await resetToPlatformDefault(c.get("merchantOrgId")!);
+    return c.json({ ok: true }, 200);
   })
 
   .get("/flags", async (c) => {

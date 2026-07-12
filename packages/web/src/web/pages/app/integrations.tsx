@@ -16,12 +16,15 @@ import {
   Download,
   PhoneCall,
   ClipboardList,
+  Phone,
 } from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
 
 type ShopifyStatus = {
   shops: { shop: string; connectedAt: string; disconnectedAt: string | null; scopes: string[] | null }[];
@@ -150,6 +153,58 @@ function ExportCard({
   );
 }
 
+type TelephonyStatus = {
+  mode: "platform" | "byo";
+  accountSid: string | null;
+  outboundNumber: string | null;
+  usingGlobalDefault: boolean;
+};
+
+/** One telephony provider tile — mirrors the Shopify/WooCommerce/BigCommerce
+ * card pattern above. Only Twilio has a real backend integration today
+ * (see voice/twilio-provisioning.ts); Plivo and Exotel are planned (see
+ * docs/india-telephony.md) but have no adapter yet, so their Connect
+ * buttons are disabled rather than opening a form that would silently fail. */
+function TelephonyProviderTile({
+  name,
+  connected,
+  onConnect,
+  comingSoon,
+}: {
+  name: string;
+  connected?: boolean;
+  onConnect?: () => void;
+  comingSoon?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border border-border bg-card p-5 flex items-center gap-3 ${
+        comingSoon ? "opacity-60" : "transition-all duration-200 hover:shadow-sm hover:border-foreground/10"
+      }`}
+    >
+      <Phone className="size-7 text-primary shrink-0" />
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-semibold">{name}</h3>
+        {comingSoon ? (
+          <p className="text-xs text-muted-foreground mt-0.5">Coming soon</p>
+        ) : connected ? (
+          <div className="flex items-center gap-1.5 text-xs text-success mt-0.5">
+            <span className="inline-block size-2 rounded-full bg-success pulse-dot" />
+            Connected
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground mt-0.5">Not connected</p>
+        )}
+      </div>
+      {!comingSoon && (
+        <Button variant="outline" size="sm" onClick={onConnect}>
+          {connected ? "Manage" : "Connect"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function MerchantIntegrationsPage() {
   const { me } = useMerchant();
   const [storeDomain, setStoreDomain] = useState("");
@@ -214,6 +269,78 @@ export function MerchantIntegrationsPage() {
       document.removeEventListener("visibilitychange", refetch);
     };
   }, [queryClient, me.org.id]);
+
+  // --- Telephony (BYO/dedicated number) ---
+  const [telephonyDialog, setTelephonyDialog] = useState<"twilio" | null>(null);
+  const [twilioForm, setTwilioForm] = useState({ accountSid: "", authToken: "", phoneNumber: "" });
+  const [numberCountryCode, setNumberCountryCode] = useState("US");
+  const [numberAreaCode, setNumberAreaCode] = useState("");
+
+  const telephonyStatusQuery = useQuery<TelephonyStatus>({
+    queryKey: ["app-telephony-status", me.org.id],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/telephony/status");
+      if (!res.ok) throw new Error(`Telephony status failed (${res.status})`);
+      const data = await res.json();
+      return data.telephony as TelephonyStatus;
+    },
+  });
+
+  const invalidateTelephony = () => queryClient.invalidateQueries({ queryKey: ["app-telephony-status", me.org.id] });
+
+  const twilioByoMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/byo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(twilioForm),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to connect Twilio");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Twilio connected");
+      setTelephonyDialog(null);
+      setTwilioForm({ accountSid: "", authToken: "", phoneNumber: "" });
+      void invalidateTelephony();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const dedicatedNumberMutation = useMutation({
+    mutationFn: async () => {
+      const subRes = await appFetch("/api/app/telephony/subaccount", { method: "POST" });
+      const subData = await subRes.json().catch(() => ({}));
+      if (!subRes.ok) throw new Error(subData.error ?? "Failed to provision a Twilio sub-account");
+
+      const numRes = await appFetch("/api/app/telephony/number", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ countryCode: numberCountryCode, areaCode: numberAreaCode || undefined }),
+      });
+      const numData = await numRes.json().catch(() => ({}));
+      if (!numRes.ok) throw new Error(numData.error ?? "Failed to purchase a number");
+      return numData;
+    },
+    onSuccess: (data) => {
+      toast.success(`Dedicated number provisioned: ${data.phoneNumber}`);
+      void invalidateTelephony();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const telephonyResetMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/reset", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to reset telephony settings");
+    },
+    onSuccess: () => {
+      toast.success("Reverted to platform default");
+      void invalidateTelephony();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const installMutation = useMutation({
     mutationFn: async (shop: string) => {
@@ -509,6 +636,150 @@ export function MerchantIntegrationsPage() {
           </div>
         </div>
       )}
+
+      {/* Telephony / phone numbers */}
+      <div>
+        <h2 className="text-sm font-semibold mb-1">Telephony</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Every org gets its own dedicated number or brings its own — never a number shared across orgs.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3 mb-4">
+          <TelephonyProviderTile
+            name="Twilio"
+            connected={Boolean(telephonyStatusQuery.data?.accountSid || telephonyStatusQuery.data?.outboundNumber)}
+            onConnect={() => setTelephonyDialog("twilio")}
+          />
+          <TelephonyProviderTile name="Plivo" comingSoon />
+          <TelephonyProviderTile name="Exotel" comingSoon />
+        </div>
+
+        {telephonyStatusQuery.data && (
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex sm:flex-row flex-col justify-between sm:items-center gap-4">
+              <div>
+                <h3 className="text-sm font-semibold">Current number</h3>
+                {telephonyStatusQuery.data.outboundNumber ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <span className="font-mono text-foreground">{telephonyStatusQuery.data.outboundNumber}</span>
+                    {" — "}
+                    {telephonyStatusQuery.data.mode === "byo" ? "your own Twilio account (BYO)" : "dedicated number, provisioned by Weeber"}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No dedicated number yet — currently riding the shared platform default.
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                {!telephonyStatusQuery.data.outboundNumber && (
+                  <>
+                    <Input
+                      value={numberCountryCode}
+                      onChange={(e) => setNumberCountryCode(e.target.value.toUpperCase())}
+                      placeholder="US"
+                      className="w-16 text-center"
+                      maxLength={2}
+                    />
+                    <Input
+                      value={numberAreaCode}
+                      onChange={(e) => setNumberAreaCode(e.target.value)}
+                      placeholder="Area code (optional)"
+                      className="w-40"
+                    />
+                    <Button
+                      size="sm"
+                      className="gap-1.5 shrink-0"
+                      disabled={dedicatedNumberMutation.isPending}
+                      onClick={() => dedicatedNumberMutation.mutate()}
+                    >
+                      {dedicatedNumberMutation.isPending ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Provisioning...
+                        </>
+                      ) : (
+                        "Get a dedicated number"
+                      )}
+                    </Button>
+                  </>
+                )}
+                {(telephonyStatusQuery.data.mode === "byo" || telephonyStatusQuery.data.outboundNumber) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={telephonyResetMutation.isPending}
+                    onClick={() => telephonyResetMutation.mutate()}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Dialog open={telephonyDialog === "twilio"} onOpenChange={(open) => !open && setTelephonyDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Twilio</DialogTitle>
+            <DialogDescription>Enter your credentials to connect your own Twilio account.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="twilio-sid">Account SID</Label>
+              <Input
+                id="twilio-sid"
+                placeholder="Enter account SID"
+                value={twilioForm.accountSid}
+                onChange={(e) => setTwilioForm({ ...twilioForm, accountSid: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="twilio-token">Auth Token</Label>
+              <Input
+                id="twilio-token"
+                type="password"
+                placeholder="Enter auth token"
+                value={twilioForm.authToken}
+                onChange={(e) => setTwilioForm({ ...twilioForm, authToken: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="twilio-number">Phone Number</Label>
+              <Input
+                id="twilio-number"
+                placeholder="Enter phone number"
+                value={twilioForm.phoneNumber}
+                onChange={(e) => setTwilioForm({ ...twilioForm, phoneNumber: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTelephonyDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                twilioByoMutation.isPending ||
+                !twilioForm.accountSid.trim() ||
+                !twilioForm.authToken.trim() ||
+                !twilioForm.phoneNumber.trim()
+              }
+              onClick={() => twilioByoMutation.mutate()}
+            >
+              {twilioByoMutation.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect Twilio"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Data export */}
       <div>
