@@ -76,6 +76,25 @@ export function MerchantShopifyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.org.id]);
 
+  // The redirect back from weebersh (return_url) can land in the new tab
+  // opened below, not this one — and if the browser blocked that popup,
+  // the merchant continues in THIS tab instead. Either way, refetch status
+  // whenever this tab regains focus/visibility so a connect made elsewhere
+  // shows up without a manual refresh.
+  useEffect(() => {
+    const refetch = () => {
+      if (document.visibilityState === "visible") {
+        void queryClient.invalidateQueries({ queryKey: ["app-shopify-status", me.org.id] });
+      }
+    };
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", refetch);
+    return () => {
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", refetch);
+    };
+  }, [queryClient, me.org.id]);
+
   const installMutation = useMutation({
     mutationFn: async (shop: string) => {
       const res = await appFetch("/api/app/shopify/install-url", {
@@ -90,7 +109,16 @@ export function MerchantShopifyPage() {
       return res.json() as Promise<{ installUrl: string }>;
     },
     onSuccess: (data) => {
-      window.open(data.installUrl, "_blank", "noopener,noreferrer");
+      // window.open after an awaited fetch is no longer inside the original
+      // click's synchronous call stack — Safari/Firefox in particular will
+      // often treat that as a non-user-gesture popup and silently block it.
+      // Detect that and fall back to a same-tab redirect instead of failing
+      // silently with no visible feedback.
+      const popup = window.open(data.installUrl, "_blank", "noopener,noreferrer");
+      if (!popup || popup.closed) {
+        toast.info("Opening Shopify in this tab (your browser blocked the popup)...");
+        window.location.href = data.installUrl;
+      }
     },
   });
 
