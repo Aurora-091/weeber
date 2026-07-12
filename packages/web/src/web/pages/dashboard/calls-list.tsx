@@ -69,10 +69,11 @@ export function CallsListPage() {
             >
               <div className="shrink-0">
                 {call.direction === "inbound" ? (
-                  <PhoneIncoming className="size-4 text-success" />
+                  <PhoneIncoming className="size-4 text-success" aria-hidden />
                 ) : (
-                  <PhoneOutgoing className="size-4 text-primary" />
+                  <PhoneOutgoing className="size-4 text-primary" aria-hidden />
                 )}
+                <span className="sr-only">{call.direction === "inbound" ? "Inbound" : "Outbound"}</span>
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -86,15 +87,15 @@ export function CallsListPage() {
                 <div className="text-xs text-muted-foreground mt-0.5">{formatWhen(call.startedAt)}</div>
               </div>
               {duration && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title="Call duration">
-                  <Clock className="size-3" />
-                  <span className="font-mono">{duration}</span>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                  <Clock className="size-3" aria-hidden />
+                  <span className="font-mono" aria-label={`Duration: ${duration}`}>{duration}</span>
                 </div>
               )}
               {factCount > 0 && (
-                <div className="flex items-center gap-1 text-xs text-success shrink-0" title={`${factCount} facts captured`}>
-                  <Sparkles className="size-3.5" />
-                  {factCount}
+                <div className="flex items-center gap-1 text-xs text-success shrink-0" aria-label={`${factCount} facts captured`}>
+                  <Sparkles className="size-3.5" aria-hidden />
+                  <span aria-hidden>{factCount}</span>
                 </div>
               )}
               <span

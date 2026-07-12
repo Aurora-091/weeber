@@ -102,9 +102,10 @@ export function UsersPage() {
         <button
           onClick={() => impersonate.mutate(r.orgId)}
           disabled={impersonate.isPending}
+          aria-label={`Log in as ${r.orgName ?? r.orgId}`}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
         >
-          <ArrowLeftRight className="size-3.5" />
+          <ArrowLeftRight className="size-3.5" aria-hidden />
           Log in as
         </button>
       ),

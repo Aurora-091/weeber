@@ -109,7 +109,7 @@ export function DncPage() {
             <button
               onClick={() => remove.mutate(entry.phoneNumber)}
               className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
-              aria-label="Remove from list"
+              aria-label={`Remove ${entry.phoneNumber} from Do Not Call list`}
             >
               <Trash2 className="size-4" />
             </button>
