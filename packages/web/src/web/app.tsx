@@ -3,11 +3,20 @@ import DocsPage from "./pages/docs";
 import LandingPage from "./pages/landing";                                                                                   
 import { Provider } from "./components/provider";                                                                      
 import { AgentFeedback } from "@runablehq/website-runtime";
+import { adminUrl, appUrl } from "./lib/domains";
 
 const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "merchant" | "all";
 const showPublic = surface === "all" || surface === "public";
 const showAdmin = surface === "all" || surface === "admin";
 const showMerchant = surface === "all" || surface === "merchant";
+
+function SubdomainRedirect({ target }: { target: string }) {
+  if (target.startsWith("http")) {
+    window.location.replace(target);
+    return null;
+  }
+  return <Redirect to={target} />;
+}
 
 // Admin dashboard pages (lazy-loaded when surface includes admin)
 import { AdminKeyGate } from "./components/dashboard/admin-key-gate";
@@ -209,7 +218,24 @@ function App() {
             <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
           </Route>
         )}
-      </Switch>                                                                                                        
+
+        {/* Cross-subdomain redirect: if a user hits a path that belongs to a
+            different surface, send them to the correct subdomain rather than
+            showing a blank page. Only fires in production (origins set). */}
+        <Route path="/dashboard/:rest*">
+          <SubdomainRedirect target={adminUrl(window.location.pathname)} />
+        </Route>
+        <Route path="/app/:rest*">
+          <SubdomainRedirect target={appUrl(window.location.pathname)} />
+        </Route>
+
+        {/* Fallback: redirect to the appropriate root */}
+        <Route>
+          {surface === "admin" ? <Redirect to="/dashboard" /> :
+           surface === "merchant" ? <Redirect to="/app" /> :
+           <Redirect to="/" />}
+        </Route>
+      </Switch>
       {import.meta.env.DEV && <AgentFeedback />}
     </Provider>                                                                                                        
   );                                                                                                                   

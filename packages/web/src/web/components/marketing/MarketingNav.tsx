@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, X } from "lucide-react";
 import { NAV_LINKS } from "../../lib/marketing-config";
+import { appUrl } from "../../lib/domains";
 import { WeeberLogo } from "../WeeberLogo";
 
 /** Marketing site nav — ported from Vocalist's MarketingNav.tsx, adapted
@@ -57,6 +58,12 @@ export function MarketingNav() {
           >
             Help
           </a>
+          <a
+            href={appUrl("/app/login")}
+            className="px-4 py-2 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
+          >
+            Log in
+          </a>
         </div>
 
         <button
@@ -86,6 +93,12 @@ export function MarketingNav() {
               className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
             >
               Help
+            </a>
+            <a
+              href={appUrl("/app/login")}
+              className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
+            >
+              Log in
             </a>
           </div>
         </div>

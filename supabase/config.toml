@@ -24,10 +24,10 @@ file_size_limit = "20MiB"
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
+site_url = "https://app.weeber.ai"
 # Only the password-reset email still carries a redirect link (ADR-043 —
 # sign-in/confirmation emails are OTP-code-only and need no allowlist entry).
-additional_redirect_urls = ["https://app.weeber.ai", "https://openvent-api.vercel.app"]
+additional_redirect_urls = ["https://app.weeber.ai", "https://admin.weeber.ai", "http://localhost:5173"]
 jwt_expiry = 3600
 enable_signup = true
 

@@ -4,6 +4,15 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Subdomain routing implementation
+
+- **New file:** `src/web/lib/domains.ts` — cross-subdomain URL helpers (`wwwUrl`, `adminUrl`, `appUrl`) driven by `VITE_WWW_ORIGIN`, `VITE_ADMIN_ORIGIN`, `VITE_APP_ORIGIN`. Unset = same-origin relative paths (local dev).
+- **Updated `MarketingNav`:** added "Log in" button linking to `appUrl("/app/login")`.
+- **Updated `app.tsx`:** added cross-subdomain redirect fallback routes — if a user hits `/dashboard/*` on the public surface or `/app/*` on the admin surface (or vice versa), they get redirected to the correct subdomain in production.
+- **Updated `.env.example`:** added `VITE_WWW_ORIGIN`, `VITE_ADMIN_ORIGIN`, `VITE_APP_ORIGIN` env vars; set `CORS_ALLOWED_ORIGINS` to the three production subdomains.
+- **Updated `supabase/config.toml`:** `site_url` set to `https://app.weeber.ai`; redirect allowlist includes `app.weeber.ai`, `admin.weeber.ai`, and `localhost:5173`.
+- **Deployment model:** three Vercel projects from same repo, each with its own `VITE_APP_SURFACE` value (`public`/`admin`/`merchant`) and the subdomain origins set. Railway backend's `CORS_ALLOWED_ORIGINS` must be set to all three.
+
 ## 2026-07-12 — Merchant impersonation removed entirely
 
 Full reasoning in DECISIONS.md ADR-050. Deleted `app/impersonation.ts` + its test, the
