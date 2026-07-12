@@ -4,6 +4,19 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Waitlist email links: referral links now use PUBLIC_WEB_URL, not the API origin
+
+- **Bug:** `app/waitlist.ts` built both email links off `PUBLIC_APP_URL`, which by repo convention is
+  the API's own Railway origin (Twilio webhook construction/signature verification in
+  `voice/twilio-client.ts`/`middleware/twilio-signature.ts` require that meaning). On the split deploy
+  the API origin serves no frontend, so waitlist confirmation/referral-notification emails carried
+  referral links like `https://api-production-….up.railway.app?ref=…` → 404. Unsubscribe links were
+  unaffected (they target a real `/api/public/waitlist/unsubscribe` route on the API origin).
+- **Fix:** referral links now use new env var `PUBLIC_WEB_URL` (fallback `https://www.weeber.ai` — the
+  landing page is what consumes `?ref=`); unsubscribe links stay on `PUBLIC_APP_URL`. `PUBLIC_WEB_URL`
+  was already set on the Railway service but referenced nowhere in code until now; documented in
+  `.env.example`.
+
 ## 2026-07-12 — Agent Preview drawer, Phase 2: real full-duplex in-browser voice test call
 
 Ships the "biggest lift" piece from `AGENT-CONSOLE-UI-PLAN.md` (§3, Phase 2) on both `/app/agents`
