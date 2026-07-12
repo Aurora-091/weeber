@@ -37,7 +37,7 @@ import {
 import { listUsers } from "../app/users";
 import { listWaitlist, waitlistMarketingSummary } from "../app/waitlist";
 import { createBroadcast, listBroadcasts, sendBroadcast } from "../app/broadcasts";
-import { listSupportTickets, updateSupportTicketStatus } from "../app/support";
+import { listSupportTickets, updateSupportTicketStatus, listSupportReplies, replySupportTicket } from "../app/support";
 import { logAdminAction, listAdminAuditLog } from "../app/audit-log";
 import {
   getTwilioStatus,
@@ -507,6 +507,28 @@ export const admin = new Hono<AdminEnv>()
     if (!row) return c.json({ error: "ticket not found" }, 404);
     void logAdminAction(c.get("adminActor"), "support.status_updated", { id, status: status.trim() });
     return c.json({ ticket: row }, 200);
+  })
+
+  .get("/support/:id/replies", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const rows = await listSupportReplies(id);
+    return c.json({ replies: rows }, 200);
+  })
+
+  // Actually sends the reply as an email via Resend (see app/support.ts) —
+  // not a decorative UI action. `emailSent` on the returned row reflects
+  // whether the send really succeeded.
+  .post("/support/:id/reply", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const body = await c.req.json().catch(() => null);
+    const message = body && typeof body === "object" ? (body as { message?: string }).message : undefined;
+    if (!message?.trim()) return c.json({ error: "`message` is required" }, 400);
+    const reply = await replySupportTicket({ ticketId: id, message: message.trim(), sentBy: c.get("adminActor") });
+    if (!reply) return c.json({ error: "ticket not found" }, 404);
+    void logAdminAction(c.get("adminActor"), "support.reply_sent", { id, emailSent: reply.emailSent });
+    return c.json({ reply }, 200);
   })
 
   // Admin action log — reads adminAuditLog (see app/audit-log.ts), not raw

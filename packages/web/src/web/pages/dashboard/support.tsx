@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Send, Loader2, Mail, MailX } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { PageHeader } from "../../components/shell/page-header";
@@ -7,6 +8,8 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
 import { DataTable, type Column } from "../../components/shell/data-table";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Textarea } from "../../components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
 type TicketRow = {
@@ -16,6 +19,15 @@ type TicketRow = {
   subject: string;
   message: string;
   status: "open" | "closed";
+  createdAt: string;
+};
+
+type ReplyRow = {
+  id: number;
+  ticketId: number;
+  message: string;
+  sentBy: string;
+  emailSent: boolean;
   createdAt: string;
 };
 
@@ -49,6 +61,34 @@ export function SupportPage() {
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-support"] }),
+  });
+
+  const [replyText, setReplyText] = useState("");
+
+  const replies = useQuery<{ replies: ReplyRow[] }>({
+    queryKey: ["admin-support-replies", selected?.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/voice/support/${selected!.id}/replies`, { headers: adminHeaders() });
+      if (!res.ok) throw new Error("Failed to load replies");
+      return res.json();
+    },
+    enabled: Boolean(selected),
+  });
+
+  const sendReply = useMutation({
+    mutationFn: async ({ id, message }: { id: number; message: string }) => {
+      const res = await apiFetch(`/api/voice/support/${id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) throw new Error("Failed to send reply");
+      return res.json();
+    },
+    onSuccess: () => {
+      setReplyText("");
+      queryClient.invalidateQueries({ queryKey: ["admin-support-replies", selected?.id] });
+    },
   });
 
   const rows = tickets.data?.tickets ?? [];
@@ -96,13 +136,60 @@ export function SupportPage() {
       )}
       {rows.length > 0 && <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={setSelected} />}
 
-      <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent>
+      <Dialog
+        open={Boolean(selected)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelected(null);
+            setReplyText("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{selected?.subject}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">From {selected?.email}</p>
           <p className="text-sm whitespace-pre-wrap">{selected?.message}</p>
+
+          {(replies.data?.replies?.length ?? 0) > 0 && (
+            <div className="space-y-3 border-t border-border pt-3 mt-2">
+              {replies.data!.replies.map((r) => (
+                <div key={r.id} className="text-sm bg-card border border-border rounded-md p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-muted-foreground">{r.sentBy}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      {r.emailSent ? <Mail className="size-3" /> : <MailX className="size-3" />}
+                      {r.emailSent ? "Emailed" : "Not sent — no provider configured"}
+                      {" \u00b7 "}
+                      {formatWhen(r.createdAt)}
+                    </span>
+                  </div>
+                  <p className="whitespace-pre-wrap">{r.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-2 border-t border-border pt-3">
+            <Textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder={`Reply to ${selected?.email ?? "this ticket"}...`}
+              rows={3}
+              className="text-sm"
+            />
+            {sendReply.isError && <p className="text-xs text-destructive">Failed to send reply. Try again.</p>}
+            <Button
+              size="sm"
+              disabled={!replyText.trim() || sendReply.isPending}
+              onClick={() => selected && sendReply.mutate({ id: selected.id, message: replyText })}
+              className="flex items-center gap-1.5"
+            >
+              {sendReply.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              Send reply
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

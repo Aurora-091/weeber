@@ -32,7 +32,15 @@ export async function listBroadcasts(limit = 100) {
 
 async function resolveAudienceEmails(audience: string): Promise<string[]> {
   if (audience === "waitlist") {
-    const rows = await db.select({ email: waitlistSignups.email }).from(waitlistSignups);
+    // Must exclude unsubscribed signups — otherwise a "waitlist" broadcast
+    // re-emails people who already used the unsubscribe link on the
+    // waitlist confirmation email (a real CAN-SPAM/GDPR gap, not a style
+    // nit). orgMembers ("all"/orgId audiences below) has no unsubscribe
+    // flag today since those are transactional-adjacent account emails.
+    const rows = await db
+      .select({ email: waitlistSignups.email })
+      .from(waitlistSignups)
+      .where(eq(waitlistSignups.unsubscribed, false));
     return rows.map((r) => r.email);
   }
   if (audience === "all") {

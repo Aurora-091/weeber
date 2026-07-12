@@ -299,6 +299,17 @@ export const supportTickets = pgTable("support_tickets", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
+export const supportReplies = pgTable("support_replies", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  ticketId: integer("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  sentBy: text("sent_by").notNull(),
+  emailSent: boolean("email_sent").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("support_replies_ticket_id_idx").on(table.ticketId),
+]);
+
 export const toolCalls = pgTable("tool_calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),

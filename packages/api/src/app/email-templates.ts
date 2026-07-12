@@ -164,3 +164,22 @@ export function supportTicketReceiptHtml(input: { email: string; subject: string
   `;
   return baseLayout(content);
 }
+
+export function supportReplyHtml(input: { subject: string; originalMessage: string; reply: string }): string {
+  const content = `
+    <h1 style="margin:0 0 16px;font-size:24px;font-weight:700;color:${TEXT_COLOR};line-height:1.2;">Re: ${input.subject}</h1>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:${TEXT_COLOR};white-space:pre-wrap;">${input.reply}</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${BG_COLOR};border-radius:8px;border:1px solid #E8E6E1;">
+      <tr>
+        <td style="padding:16px 20px;">
+          <p style="margin:0;font-size:12px;font-weight:600;color:${MUTED_COLOR};text-transform:uppercase;letter-spacing:0.05em;">Your original message</p>
+          <p style="margin:4px 0 0;font-size:14px;color:${MUTED_COLOR};white-space:pre-wrap;">${input.originalMessage}</p>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:${MUTED_COLOR};">
+      Reply to this email if you have follow-up questions.
+    </p>
+  `;
+  return baseLayout(content);
+}
