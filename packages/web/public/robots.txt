@@ -1,0 +1,47 @@
+# Weeber — AI Voice Agents
+# https://www.weeber.ai
+
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /dashboard/*
+Disallow: /app
+Disallow: /app/*
+Disallow: /api
+Disallow: /api/*
+
+# AI crawlers — welcome to index the public marketing surface
+User-agent: GPTBot
+Allow: /
+Disallow: /dashboard
+Disallow: /app
+Disallow: /api
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /dashboard
+Disallow: /app
+Disallow: /api
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /dashboard
+Disallow: /app
+Disallow: /api
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /dashboard
+Disallow: /app
+Disallow: /api
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /dashboard
+Disallow: /app
+Disallow: /api
+
+Sitemap: https://www.weeber.ai/sitemap.xml

@@ -3,10 +3,16 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<link rel="icon" type="image/png" href="/favicon.png" />
-		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-		<link rel="preload" href="/favicon.png" as="image" type="image/png" />
 
+		<!-- Favicon & App Icons -->
+		<link rel="icon" type="image/png" href="/favicon.png" />
+		<link rel="icon" type="image/png" sizes="192x192" href="/weeber_favicon_transparent.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+		<meta name="theme-color" content="#1A1A1A" />
+		<meta name="application-name" content="Weeber" />
+
+		<!-- Primary Meta -->
 		<title>Weeber — AI Voice Agents for Missed Calls | Join the Waitlist</title>
 		<meta
 			name="description"
@@ -16,8 +22,12 @@
 			name="keywords"
 			content="AI voice agent, voice AI for Shopify, abandoned cart recovery calls, AI receptionist, voice AI for clinics, appointment booking AI, alternative to Vapi, alternative to Retell, TCPA compliant voice AI"
 		/>
+		<meta name="author" content="Weeber" />
+		<meta name="publisher" content="Weeber" />
+		<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 		<link rel="canonical" href="https://www.weeber.ai/" />
 
+		<!-- Open Graph -->
 		<meta property="og:type" content="website" />
 		<meta property="og:site_name" content="Weeber" />
 		<meta property="og:title" content="Weeber — AI Voice Agents for Missed Calls" />
@@ -30,7 +40,9 @@
 		<meta property="og:image:height" content="630" />
 		<meta property="og:image:alt" content="Weeber AI Voice Agents Platform" />
 		<meta property="og:url" content="https://www.weeber.ai/" />
+		<meta property="og:locale" content="en_US" />
 
+		<!-- Twitter Card -->
 		<meta name="twitter:card" content="summary_large_image" />
 		<meta name="twitter:title" content="Weeber — AI Voice Agents for Missed Calls" />
 		<meta
@@ -39,18 +51,156 @@
 		/>
 		<meta name="twitter:image" content="https://www.weeber.ai/og-image.png" />
 
+		<!-- Google Search Console — replace PLACEHOLDER with your verification code -->
+		<!-- <meta name="google-site-verification" content="PLACEHOLDER" /> -->
+
+		<!-- Organization Schema -->
 		<script type="application/ld+json">
 			{
 				"@context": "https://schema.org",
 				"@type": "Organization",
 				"name": "Weeber",
 				"url": "https://www.weeber.ai/",
-				"logo": "https://www.weeber.ai/weeber_logo.png",
-				"description": "Weeber is a vertical voice AI platform for Shopify stores and clinics — AI phone agents that recover abandoned carts, answer order questions, and book appointments, compliant by default."
+				"logo": "https://www.weeber.ai/weeber_logo_transparent.png",
+				"description": "Weeber is a vertical voice AI platform for Shopify stores and clinics — AI phone agents that recover abandoned carts, answer order questions, and book appointments, compliant by default.",
+				"foundingDate": "2026",
+				"founders": [
+					{ "@type": "Person", "name": "Ashutosh Tiwari" },
+					{ "@type": "Person", "name": "Rushikesh Pawar" }
+				],
+				"contactPoint": {
+					"@type": "ContactPoint",
+					"email": "hello@weeber.ai",
+					"contactType": "customer service"
+				}
 			}
 		</script>
+
+		<!-- WebSite Schema (enables sitelinks search box) -->
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "WebSite",
+				"name": "Weeber",
+				"url": "https://www.weeber.ai/",
+				"potentialAction": {
+					"@type": "SearchAction",
+					"target": "https://www.weeber.ai/?q={search_term_string}",
+					"query-input": "required name=search_term_string"
+				}
+			}
+		</script>
+
+		<!-- SoftwareApplication Schema -->
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "SoftwareApplication",
+				"name": "Weeber",
+				"applicationCategory": "BusinessApplication",
+				"applicationSubCategory": "Voice AI Platform",
+				"operatingSystem": "Web",
+				"description": "AI voice agents that recover abandoned carts, confirm COD orders, book appointments, and collect feedback — 24/7, no code, compliant by default.",
+				"url": "https://www.weeber.ai/",
+				"offers": {
+					"@type": "Offer",
+					"price": "0",
+					"priceCurrency": "USD",
+					"description": "Free to join the waitlist. Founder pricing locked for first 100 customers.",
+					"availability": "https://schema.org/PreOrder"
+				},
+				"featureList": [
+					"Abandoned cart recovery calls",
+					"COD order confirmation",
+					"Post-delivery feedback collection",
+					"Appointment booking",
+					"Bilingual English/Hindi support",
+					"TCPA & DNC compliance enforcement",
+					"Shopify integration",
+					"No-code setup"
+				]
+			}
+		</script>
+
+		<!-- FAQPage Schema -->
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "FAQPage",
+				"mainEntity": [
+					{
+						"@type": "Question",
+						"name": "Will it actually sound human?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "Yes — natural AI voices with real back-and-forth, not a phone-tree robot. Most callers don't realize it's AI."
+						}
+					},
+					{
+						"@type": "Question",
+						"name": "Do I need a developer?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "No. You configure your agent with simple rules and prompts. Most setups take under an hour."
+						}
+					},
+					{
+						"@type": "Question",
+						"name": "Which platforms does it work with?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "Launching with Shopify and WhatsApp. WordPress, WooCommerce, and more connectors follow based on waitlist demand."
+						}
+					},
+					{
+						"@type": "Question",
+						"name": "What will it cost?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "The first waitlist customers lock in founder pricing for life. Full pricing is set at launch."
+						}
+					},
+					{
+						"@type": "Question",
+						"name": "Is my customers' data safe?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "Encrypted end to end, used only to run the flows you build, never sold or shared."
+						}
+					},
+					{
+						"@type": "Question",
+						"name": "When does the beta open?",
+						"acceptedAnswer": {
+							"@type": "Answer",
+							"text": "We're onboarding in small batches soon. Join the list and we'll reach out by industry."
+						}
+					}
+				]
+			}
+		</script>
+
+		<!-- Google Tag Manager — replace GTM-XXXXXXX with your container ID -->
+		<!-- <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+		new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+		j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+		'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+		})(window,document,'script','dataLayer','GTM-XXXXXXX');</script> -->
+
+		<!-- Google Analytics 4 — replace G-XXXXXXXXXX with your measurement ID -->
+		<!-- <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+		<script>
+			window.dataLayer = window.dataLayer || [];
+			function gtag(){dataLayer.push(arguments);}
+			gtag('js', new Date());
+			gtag('config', 'G-XXXXXXXXXX');
+		</script> -->
 	</head>
 	<body>
+		<!-- Google Tag Manager (noscript) — uncomment when GTM is configured -->
+		<!-- <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-XXXXXXX"
+		height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript> -->
+
 		<div id="root"></div>
 		<script type="module" src="/src/web/main.tsx"></script>
 	</body>

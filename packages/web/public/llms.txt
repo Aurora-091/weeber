@@ -1,0 +1,46 @@
+# Weeber
+
+> AI voice agents for businesses that miss calls.
+
+## What is Weeber?
+
+Weeber is a vertical voice AI platform that gives Shopify stores, clinics, and local service businesses an AI agent on a real phone number. The agent recovers abandoned carts, confirms COD orders, books appointments, and handles inbound calls — 24/7, no code required.
+
+## Who is it for?
+
+- Shopify and e-commerce stores losing revenue to abandoned carts and missed calls
+- Clinics and healthcare practices that need automated appointment booking
+- Local service businesses (salons, restaurants, repair shops) that can't staff phones full-time
+
+## Key capabilities
+
+- Cart recovery calls: automated outbound calls to recover abandoned Shopify carts
+- COD confirmation: voice verification of cash-on-delivery orders to reduce RTO
+- Feedback collection: post-delivery satisfaction calls with 1-5 ratings
+- Appointment booking: inbound and outbound scheduling for service businesses
+- Bilingual support: English and Hindi with natural conversational AI
+- Compliance-first: TCPA, DNC, and GDPR enforcement built into the infrastructure
+
+## Compliance
+
+Weeber enforces consent at the infrastructure level. Calls cannot be placed to numbers that haven't passed the consent gate. Features include:
+- Automatic Do-Not-Call list management
+- TCPA calling-window enforcement by timezone
+- Full audit trail for every call (exportable)
+- GDPR data retention and erasure support
+
+## Integrations
+
+- Shopify (live)
+- WhatsApp (live)
+- WordPress, Google Calendar, HubSpot, Meta (roadmap)
+
+## Links
+
+- Website: https://www.weeber.ai
+- Waitlist: https://www.weeber.ai/#waitlist
+- Contact: hello@weeber.ai
+
+## Status
+
+Pre-launch. Accepting waitlist signups. Beta onboarding in small batches.

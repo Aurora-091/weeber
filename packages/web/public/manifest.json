@@ -1,0 +1,27 @@
+{
+  "name": "Weeber",
+  "short_name": "Weeber",
+  "description": "AI voice agents that book, recover carts, and follow up — 24/7, no code.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1A1A1A",
+  "background_color": "#FAF9F7",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/weeber_favicon_transparent.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

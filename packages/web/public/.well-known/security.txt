@@ -1,0 +1,5 @@
+Contact: mailto:security@weeber.ai
+Expires: 2027-07-12T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://www.weeber.ai/.well-known/security.txt
+Policy: https://www.weeber.ai/docs

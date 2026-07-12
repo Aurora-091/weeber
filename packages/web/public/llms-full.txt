@@ -1,0 +1,118 @@
+# Weeber — Full Product Context for AI Systems
+
+> This document provides comprehensive information about Weeber for AI assistants,
+> search engines, and language models that need detailed product understanding.
+
+---
+
+## Company
+
+- Name: Weeber
+- Founded: 2026
+- Founders: Ashutosh Tiwari (Founder), Rushikesh Pawar (Co-founder)
+- Domain: weeber.ai
+- Contact: hello@weeber.ai
+- Category: Voice AI / SaaS / Shopify ecosystem
+- Stage: Pre-launch (waitlist open, beta onboarding soon)
+- Market: India-first, expanding internationally
+
+## Product Summary
+
+Weeber is a no-code voice AI platform purpose-built for small and medium businesses.
+It provides AI phone agents that handle real conversations on real phone numbers —
+recovering abandoned carts, confirming orders, booking appointments, and collecting
+feedback. Unlike horizontal voice AI platforms (Vapi, Retell, Bland), Weeber is
+vertical-specific: pre-built agents tuned for Shopify merchants, clinics, and local
+service businesses.
+
+## The Three Launch Agents
+
+### 1. Cart Recovery Agent
+- Trigger: Shopify abandoned checkout webhook
+- Action: Outbound call to the customer within a configurable delay
+- Capabilities: Identifies the customer, reminds them of cart contents, offers a
+  discount code if configured, handles objections, captures intent
+- Languages: English, Hindi (bilingual mid-call switching)
+- Compliance: Consent verification before dialing, calling-window enforcement,
+  instant DNC opt-out on request
+
+### 2. COD Confirmation Agent
+- Trigger: New Shopify order with payment method = Cash on Delivery
+- Action: Outbound call to confirm delivery address and intent to pay
+- Capabilities: Verifies customer identity, confirms order details, captures
+  address corrections, flags suspicious orders
+- Purpose: Reduces Return-to-Origin (RTO) rates for Indian e-commerce
+- Languages: English, Hindi
+
+### 3. Feedback Agent
+- Trigger: Configurable delay after order delivery (Shopify fulfilled event)
+- Action: Outbound call to collect post-purchase satisfaction
+- Capabilities: 1-5 star rating capture, open-ended feedback recording,
+  negative feedback flagging for merchant review
+- Languages: English, Hindi
+
+## Technical Architecture
+
+- Voice pipeline: Twilio Media Stream → Deepgram STT (Nova-3) → LLM (AI Gateway/Groq)
+  → ElevenLabs/Cartesia TTS → back to Twilio
+- Latency: Sub-800ms first-response, real-time barge-in support
+- Backend: Bun/Hono server on Railway, Supabase Postgres
+- Frontend: React SPA on Vercel (merchant dashboard + admin panel)
+- Shopify integration: OAuth app (separate connector service) + webhook bridge
+
+## Compliance Framework
+
+Weeber's compliance is not a feature — it's infrastructure-level enforcement:
+
+- **TCPA**: Calling windows enforced per-timezone. No calls before 8am or after 9pm
+  in the callee's local time. Consent gate blocks dialing without verified consent.
+- **DNC (Do Not Call)**: Internal DNC list checked before every outbound attempt.
+  Any verbal opt-out during a call immediately adds the number. National DNC
+  registry integration planned.
+- **GDPR**: Data retention policies, right-to-erasure support, audit trail export.
+  Edge function for automated redaction after retention period.
+- **HIPAA**: Guardrails for healthcare vertical — PHI detection and redaction in
+  transcripts, BAA-ready infrastructure design.
+- **Audit trail**: Every call produces an exportable compliance record: consent
+  status, DNC check result, disclosure confirmation, full transcript, and
+  disposition. Available per-number or per-call.
+
+## Pricing
+
+- Founder pricing locked in for first 100 waitlist customers (lifetime)
+- Full pricing announced at launch
+- Payment gateway: Razorpay (India), Dodo Payments (international, planned)
+
+## Competitive Positioning
+
+### vs. Vapi / Retell / Bland (horizontal voice AI)
+- Weeber is vertical-specific — pre-built agents, not a blank canvas
+- Compliance is enforced, not optional
+- No-code setup (under 1 hour vs. days of prompt engineering)
+- Priced for SMBs, not enterprise budgets
+
+### vs. Bolna / Plivo AI
+- Weeber integrates directly with Shopify (not generic CRM)
+- Bilingual EN/Hindi with natural code-switching
+- India-first telephony optimization (Exotel/Plivo fallback for local reliability)
+
+### vs. Manual calling / BPO
+- 24/7 availability vs. business hours only
+- Consistent quality vs. agent fatigue/turnover
+- Full audit trail vs. no compliance documentation
+- 10x lower cost per call
+
+## Links
+
+- Website: https://www.weeber.ai
+- Waitlist: https://www.weeber.ai/#waitlist
+- FAQ: https://www.weeber.ai/#faq
+- Contact: hello@weeber.ai
+- Security: security@weeber.ai
+
+## Structured Data
+
+- Type: SoftwareApplication
+- Category: BusinessApplication
+- Operating System: Web (any browser)
+- Application Sub-Category: Voice AI, Customer Communication, E-commerce Tools
