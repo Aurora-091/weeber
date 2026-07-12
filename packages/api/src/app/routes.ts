@@ -2,12 +2,12 @@
  * Merchant-facing API — everything under /api/app/*. Mounted once in
  * ../index.ts via `.route('/app', merchantApp)`.
  *
- * Auth: Supabase session (or an audited admin impersonation token) via
- * requireMerchantSession — see middleware/supabase-auth.ts. The org is
- * always resolved from the session's membership row, never from a path
- * param: a merchant can't address another org by construction. Query/
- * aggregation logic is shared with the admin panel's /api/voice/orgs/:orgId/*
- * routes (voice/org-queries.ts) so both surfaces report identical data.
+ * Auth: Supabase session via requireMerchantSession — see
+ * middleware/supabase-auth.ts. The org is always resolved from the
+ * session's membership row, never from a path param: a merchant can't
+ * address another org by construction. Query/aggregation logic is shared
+ * with the admin panel's /api/voice/orgs/:orgId/* routes
+ * (voice/org-queries.ts) so both surfaces report identical data.
  *
  * /me is the only route that runs without an org: it's where the first-login
  * bootstrap happens (auto-create an org + owner membership, so signup is
@@ -27,7 +27,6 @@ import {
   requireMerchantOrg,
   type MerchantSessionVariables,
 } from "./middleware/supabase-auth";
-import { stopImpersonation } from "./impersonation";
 import { submitSupportTicket } from "./support";
 import {
   getOrg,
@@ -124,13 +123,12 @@ export const merchantApp = new Hono<MerchantEnv>()
 
   // Session/org resolution + first-login bootstrap. The one route without requireMerchantOrg.
   .get("/me", async (c) => {
-    const impersonated = c.get("impersonated");
     let orgId = c.get("merchantOrgId");
     let role = c.get("merchantRole");
     const userId = c.get("merchantUserId");
     const email = c.get("merchantEmail");
 
-    if (!orgId && !impersonated && userId) {
+    if (!orgId && userId) {
       const membership = await resolveOrCreateMembership(userId, email);
       orgId = membership.orgId;
       role = membership.role;
@@ -146,7 +144,6 @@ export const merchantApp = new Hono<MerchantEnv>()
       {
         user: userId ? { id: userId, email } : null,
         role,
-        impersonated,
         org: {
           id: org.id,
           name: org.name,
@@ -566,15 +563,4 @@ export const merchantApp = new Hono<MerchantEnv>()
     });
     if (!ticket) return c.json({ error: "Failed to submit ticket" }, 500);
     return c.json({ submitted: true }, 201);
-  })
-
-  // Self-stop for the "Viewing as <org>" banner: the /app tab only holds the
-  // impersonation token (the admin key lives in the dashboard tab's session
-  // storage), so ending the session must be possible with the token itself.
-  // The audit row gets its endedAt/endedReason either way.
-  .post("/impersonation/stop", async (c) => {
-    const sessionId = c.get("impersonationSessionId");
-    if (!sessionId) return c.json({ error: "not an impersonated session" }, 400);
-    const stopped = await stopImpersonation(sessionId);
-    return c.json({ stopped }, 200);
   });

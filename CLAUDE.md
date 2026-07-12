@@ -143,10 +143,11 @@ Shopify agents, compliance gates) is built on top of.
 Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
 
 - **Two dashboards, one app.** `/dashboard/*` (existing) is the internal admin panel — org/shop list, agent
-  template catalog, billing oversight, compliance/DNC oversight, feature flags, merchant impersonation
-  (**must be audit-logged, no exceptions** — see `CLAUDE-BUILD-BRIEF.md` §4). `/app/*` (new) is the
+  template catalog, billing oversight, compliance/DNC oversight, feature flags. `/app/*` (new) is the
   merchant-facing surface — onboarding wizard, agent config, call history, analytics, billing, Shopify
-  connection status. Both live in `packages/web`, not separate packages.
+  connection status. Both live in `packages/web`, not separate packages. (Merchant impersonation existed
+  briefly and was removed entirely — see DECISIONS.md's removal ADR — there is no "log in as a merchant"
+  capability in this codebase.)
 - **Frontend↔backend boundary rule (ADR-035/036 — the split is done):** the backend is `packages/api`
   (`@weeber/api`), the frontend is `packages/web` (`@weeber/web`). Frontend code never imports anything
   from `@weeber/api` except types (the `AppType` RPC type in `lib/api.ts`), and never calls global `fetch`

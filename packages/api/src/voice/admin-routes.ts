@@ -1,14 +1,11 @@
 /**
  * Admin-panel endpoints added in the frontend round (CLAUDE-BUILD-BRIEF §4)
  * — org oversight, agent-template catalog, billing/compliance overviews,
- * feature flags, and merchant impersonation. Split from routes.ts to keep
- * that file's Twilio/call-pipeline surface readable; both are mounted under
- * /api/voice in ../index.ts, so paths here behave exactly as if they lived
- * in routes.ts.
+ * and feature flags. Split from routes.ts to keep that file's Twilio/
+ * call-pipeline surface readable; both are mounted under /api/voice in
+ * ../index.ts, so paths here behave exactly as if they lived in routes.ts.
  *
- * All routes are admin-key gated. Impersonation is the sensitive one: every
- * start/stop writes to the append-only impersonationSessions audit table
- * (the §4.6 hard requirement), attributed to the admin key that did it.
+ * All routes are admin-key gated.
  */
 import { Hono } from "hono";
 import { desc, eq, gte, inArray, isNull, and } from "drizzle-orm";
@@ -28,12 +25,6 @@ import {
 } from "../database/schema";
 import { requireAdminKey, type AdminAuthVariables } from "./middleware/admin-auth";
 import { adminSessionAuth } from "./middleware/admin-session";
-import {
-  startImpersonation,
-  stopImpersonation,
-  listImpersonationAudit,
-  listActiveImpersonations,
-} from "../app/impersonation";
 import { listUsers } from "../app/users";
 import { listWaitlist, waitlistMarketingSummary } from "../app/waitlist";
 import { createBroadcast, listBroadcasts, sendBroadcast } from "../app/broadcasts";
@@ -131,7 +122,7 @@ export const admin = new Hono<AdminEnv>()
     const orgId = c.req.param("orgId");
     const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
     if (!org) return c.json({ error: "org not found" }, 404);
-    const [shops, members, configs, activeImpersonations] = await Promise.all([
+    const [shops, members, configs] = await Promise.all([
       db.select().from(shopLinks).where(eq(shopLinks.orgId, orgId)),
       db
         .select({
@@ -150,14 +141,13 @@ export const admin = new Hono<AdminEnv>()
         })
         .from(orgAgentConfigs)
         .where(eq(orgAgentConfigs.orgId, orgId)),
-      listActiveImpersonations(orgId),
     ]);
     // Never return the raw Twilio auth token in a generic org-detail blob —
     // even admin-key-gated, it's an unnecessary exposure surface (browser
     // dev tools, logs, copy-paste). Use GET /orgs/:orgId/twilio for the
     // masked telephony status instead.
     const { twilioAuthToken: _twilioAuthToken, ...safeOrg } = org;
-    return c.json({ org: safeOrg, shops, members, agentConfigs: configs, activeImpersonations }, 200);
+    return c.json({ org: safeOrg, shops, members, agentConfigs: configs }, 200);
   })
 
   // Per-org Twilio isolation (ADR-042) — status, sub-account provisioning,
@@ -412,40 +402,6 @@ export const admin = new Hono<AdminEnv>()
     await db.delete(featureFlags).where(eq(featureFlags.id, id));
     void logAdminAction(c.get("adminActor"), "flag.deleted", { id });
     return c.json({ deleted: true }, 200);
-  })
-
-  // Merchant impersonation (§4.6). The plaintext token is returned exactly
-  // once; the frontend presents it via the X-Weeber-Impersonation header on
-  // /api/app/* routes. Sessions auto-expire; Stop closes them early. Both
-  // paths leave the audit row behind. Surfaced from the Users page (per-row
-  // "Log in as" action), not a standalone admin nav item — the capability
-  // and its audit trail are unchanged, only the UI entry point moved.
-  .post("/impersonation/start", async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const orgId = body && typeof body === "object" ? (body as { orgId?: string }).orgId : undefined;
-    if (!orgId?.trim()) return c.json({ error: "`orgId` is required" }, 400);
-    const session = await startImpersonation(orgId.trim(), c.get("adminActor") ?? "unknown");
-    if (!session) return c.json({ error: "org not found" }, 404);
-    void logAdminAction(c.get("adminActor"), "impersonation.started", { orgId: orgId.trim(), sessionId: session.id });
-    return c.json({ impersonation: session }, 201);
-  })
-
-  .post("/impersonation/:id/stop", async (c) => {
-    const id = Number(c.req.param("id"));
-    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
-    const stopped = await stopImpersonation(id);
-    void logAdminAction(c.get("adminActor"), "impersonation.stopped", { id });
-    return c.json({ stopped }, 200);
-  })
-
-  .get("/impersonation/audit", async (c) => {
-    const orgId = c.req.query("orgId") || undefined;
-    const limit = Number(c.req.query("limit")) || 100;
-    const [audit, active] = await Promise.all([
-      listImpersonationAudit({ orgId, limit }),
-      listActiveImpersonations(orgId),
-    ]);
-    return c.json({ audit, active }, 200);
   })
 
   // Users — individual accounts (org_members), person-centric view distinct

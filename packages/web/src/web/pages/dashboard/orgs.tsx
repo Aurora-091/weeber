@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Store, User, Bot, ArrowLeftRight, Users, ChevronDown, ChevronUp, Phone, Loader2 } from "lucide-react";
+import { Store, User, Bot, Users, ChevronDown, ChevronUp, Phone, Loader2 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
-import { setImpersonationToken } from "../../lib/merchant-session";
 
 type OrgOverviewRow = {
   id: string;
@@ -25,7 +24,6 @@ type OrgDetail = {
   shops: any[];
   members: any[];
   configs: any[];
-  activeImpersonations: any[];
 };
 
 function formatWhen(iso: string | null | undefined) {
@@ -258,26 +256,6 @@ export function OrgsPage() {
     },
   });
 
-  const impersonate = useMutation({
-    mutationFn: async (orgId: string) => {
-      const res = await apiFetch("/api/voice/impersonation/start", {
-        method: "POST",
-        headers: { ...adminHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(body.error ?? `Failed to impersonate (${res.status})`);
-      }
-      return res.json() as Promise<{ impersonation: { token: string; id: number } }>;
-    },
-    onSuccess: (data) => {
-      setImpersonationToken(data.impersonation.token, data.impersonation.id);
-      // Open /app in a new window/tab
-      window.open("/app", "_blank");
-    },
-  });
-
   const rows = orgs.data?.orgs ?? [];
 
   return (
@@ -359,17 +337,7 @@ export function OrgsPage() {
 
                 {isExpanded && (
                   <div className="border-t border-border bg-muted/30 px-6 py-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-sm font-semibold">Workspace Details</h3>
-                      <button
-                        onClick={() => impersonate.mutate(org.id)}
-                        disabled={impersonate.isPending}
-                        className="inline-flex items-center gap-1.5 rounded bg-warning text-warning-foreground px-3 py-1.5 text-xs font-medium hover:bg-warning/90 transition-colors disabled:opacity-50"
-                      >
-                        <ArrowLeftRight className="size-3.5" />
-                        Impersonate Workspace
-                      </button>
-                    </div>
+                    <h3 className="text-sm font-semibold">Workspace Details</h3>
 
                     {detail.isLoading && <p className="text-xs text-muted-foreground">Loading workspace detail…</p>}
 

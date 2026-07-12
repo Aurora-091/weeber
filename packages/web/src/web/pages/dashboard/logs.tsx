@@ -21,7 +21,7 @@ function formatWhen(iso: string) {
 /**
  * Admin action log — "who changed what," not raw process/server logs (no
  * log-shipping infra exists, and this is the more useful surface anyway).
- * Reads adminAuditLog, written from flags/broadcasts/impersonation/support
+ * Reads adminAuditLog, written from flags/broadcasts/support
  * mutations in admin-routes.ts.
  */
 export function LogsPage() {
@@ -52,7 +52,7 @@ export function LogsPage() {
       <PageHeader title="Logs" description="Admin action audit trail — who changed what, when." />
       {logs.isLoading && <SkeletonTable columns={4} />}
       {!logs.isLoading && rows.length === 0 && (
-        <EmptyState title="No admin actions logged yet" description="Every flag change, broadcast, and impersonation action shows up here." />
+        <EmptyState title="No admin actions logged yet" description="Every flag change, broadcast, and support action shows up here." />
       )}
       {rows.length > 0 && <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />}
     </div>

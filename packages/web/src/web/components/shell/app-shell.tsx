@@ -22,7 +22,7 @@ type AppShellProps = {
   density: "dense" | "spacious";
   nav: NavItem[];
   brand: React.ReactNode;
-  /** Rendered above the page content, full-width (e.g. impersonation banner). */
+  /** Rendered above the page content, full-width (e.g. a status/warning banner). */
   banner?: React.ReactNode;
   /** Rendered at the bottom of the sidebar (e.g. Lock / sign-out button). */
   footer?: React.ReactNode;

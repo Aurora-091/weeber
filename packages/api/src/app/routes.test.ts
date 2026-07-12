@@ -2,14 +2,12 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 import { sign } from "hono/jwt";
 
 /**
- * Merchant /api/app surface: first-login org bootstrap (idempotent), the
- * org gate on every non-/me route, and impersonation self-stop.
+ * Merchant /api/app surface: first-login org bootstrap (idempotent) and the
+ * org gate on every non-/me route.
  */
 
 let rowsByTable: Record<string, unknown[]> = {};
 let insertsByTable: Record<string, unknown[]> = {};
-let mockImpersonation: { id: number; orgId: string; adminActor: string } | null = null;
-let stoppedSessionIds: number[] = [];
 
 function getTableName(table: unknown): string | undefined {
   if (!table) return undefined;
@@ -46,15 +44,6 @@ mock.module("../database", () => ({
   },
 }));
 
-mock.module("./impersonation", () => ({
-  findActiveImpersonation: (token: string) =>
-    Promise.resolve(token === "valid-imp-token" ? mockImpersonation : null),
-  stopImpersonation: (id: number) => {
-    stoppedSessionIds.push(id);
-    return Promise.resolve(true);
-  },
-}));
-
 process.env.SUPABASE_JWT_SECRET = "test-jwt-secret";
 
 import { merchantApp } from "./routes";
@@ -72,16 +61,13 @@ describe("merchant /api/app routes", () => {
   beforeEach(() => {
     rowsByTable = { org_members: [], orgs: [], calls: [], feature_flags: [] };
     insertsByTable = {};
-    mockImpersonation = null;
-    stoppedSessionIds = [];
   });
 
   it("bootstraps an org + owner membership on first /me", async () => {
     const res = await merchantApp.request("/me", { headers: await bearer("user-new", "jane@shop.com") });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { org: { id: string; name: string }; role: string; impersonated: boolean };
+    const body = (await res.json()) as { org: { id: string; name: string }; role: string };
     expect(body.role).toBe("owner");
-    expect(body.impersonated).toBe(false);
     expect(body.org.id.startsWith("org_")).toBe(true);
     expect(body.org.name).toBe("jane's workspace");
     expect(insertsByTable.orgs).toHaveLength(1);
@@ -109,25 +95,5 @@ describe("merchant /api/app routes", () => {
     const res = await merchantApp.request("/calls", { headers: await bearer("user-1") });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ calls: [] });
-  });
-
-  it("rejects impersonation self-stop on a normal session", async () => {
-    rowsByTable.org_members = [{ supabaseUserId: "user-1", orgId: "org-1", role: "owner" }];
-    const res = await merchantApp.request("/impersonation/stop", {
-      method: "POST",
-      headers: await bearer("user-1"),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("stops the current impersonation session via its own token", async () => {
-    mockImpersonation = { id: 42, orgId: "org-1", adminActor: "env-admin-key" };
-    const res = await merchantApp.request("/impersonation/stop", {
-      method: "POST",
-      headers: { "X-Weeber-Impersonation": "valid-imp-token" },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ stopped: true });
-    expect(stoppedSessionIds).toEqual([42]);
   });
 });

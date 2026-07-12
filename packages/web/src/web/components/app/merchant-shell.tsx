@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Redirect, useLocation } from "wouter";
+import { Redirect } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
-import { LogOut, Eye } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
-import { appFetch, getImpersonationToken, clearImpersonationToken } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/merchant-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
@@ -13,7 +13,6 @@ import { AppShell } from "../shell/app-shell";
 export type MerchantMe = {
   user: { id: string; email: string | null } | null;
   role: string | null;
-  impersonated: boolean;
   org: {
     id: string;
     name: string | null;
@@ -53,55 +52,29 @@ function Notice({ title, body, action }: { title: string; body: string; action?:
   );
 }
 
-function ImpersonationBanner({ orgName }: { orgName: string }) {
-  const [, navigate] = useLocation();
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-[var(--weeber-warning)]/40 bg-warning-soft px-4 py-2 text-sm text-foreground">
-      <span className="flex items-center gap-2">
-        <Eye className="size-4 text-warning" aria-hidden />
-        Viewing as <strong>{orgName}</strong> — admin impersonation, all actions are audit-logged.
-      </span>
-      <button
-        type="button"
-        onClick={async () => {
-          await appFetch("/api/app/impersonation/stop", { method: "POST" }).catch(() => undefined);
-          clearImpersonationToken();
-          navigate("/app/login");
-        }}
-        className="shrink-0 rounded-md border border-[var(--weeber-warning)]/50 px-2.5 py-1 text-xs font-medium hover:bg-warning-soft/60"
-      >
-        Stop impersonating
-      </button>
-    </div>
-  );
-}
-
 /**
- * Auth gate + org context + shell for every /app page. Two ways in, mirroring
- * the backend middleware exactly: an admin impersonation token (per-tab
- * sessionStorage) or a Supabase session. GET /api/app/me both resolves the
- * org and performs the first-login bootstrap server-side.
+ * Auth gate + org context + shell for every /app page. Supabase session
+ * only (impersonation removed — see DECISIONS.md). GET /api/app/me both
+ * resolves the org and performs the first-login bootstrap server-side.
  */
 export function MerchantShell({ children }: { children: React.ReactNode }) {
-  const impersonating = Boolean(getImpersonationToken());
   const queryClient = useQueryClient();
   // undefined = still resolving, null = definitely signed out
-  const [session, setSession] = useState<Session | null | undefined>(impersonating ? null : undefined);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
-    if (impersonating || !supabase) return;
+    if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       queryClient.invalidateQueries({ queryKey: ["app-me"] });
     });
     return () => sub.subscription.unsubscribe();
-  }, [impersonating, queryClient]);
+  }, [queryClient]);
 
-  const authed = impersonating || Boolean(session);
   const me = useQuery({
     queryKey: ["app-me"],
-    enabled: authed,
+    enabled: Boolean(session),
     retry: 1,
     retryDelay: 1000,
     queryFn: async () => {
@@ -111,27 +84,24 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
     },
   });
 
-  if (!impersonating) {
-    if (!supabaseConfigured) {
-      return (
-        <Notice
-          title="Merchant login isn't configured"
-          body="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time to enable the merchant dashboard."
-        />
-      );
-    }
-    if (session === undefined) {
-      return <Notice title="Weeber" body="Checking your session…" />;
-    }
-    if (!session) {
-      return <Redirect to="/app/login" />;
-    }
+  if (!supabaseConfigured) {
+    return (
+      <Notice
+        title="Merchant login isn't configured"
+        body="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time to enable the merchant dashboard."
+      />
+    );
+  }
+  if (session === undefined) {
+    return <Notice title="Weeber" body="Checking your session…" />;
+  }
+  if (!session) {
+    return <Redirect to="/app/login" />;
   }
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
       const signOut = async () => {
-        clearImpersonationToken();
         await supabase?.auth.signOut();
         window.location.href = "/app/login";
       };
@@ -162,21 +132,18 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
         density="spacious"
         nav={vertical.nav}
         brand={<span className="font-serif text-lg font-medium tracking-tight">Weeber</span>}
-        banner={me.data.impersonated ? <ImpersonationBanner orgName={me.data.org.name ?? me.data.org.id} /> : undefined}
         footer={
-          me.data.impersonated ? undefined : (
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase?.auth.signOut();
-                window.location.href = "/app/login";
-              }}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-            >
-              <LogOut className="size-3.5" aria-hidden />
-              Sign out
-            </button>
-          )
+          <button
+            type="button"
+            onClick={async () => {
+              await supabase?.auth.signOut();
+              window.location.href = "/app/login";
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            <LogOut className="size-3.5" aria-hidden />
+            Sign out
+          </button>
         }
       >
         {children}

@@ -4,6 +4,18 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Merchant impersonation removed entirely
+
+Full reasoning in DECISIONS.md ADR-050. Deleted `app/impersonation.ts` + its test, the
+`X-Weeber-Impersonation` auth path in `requireMerchantSession` (now Supabase-session-only), the
+`/api/app/impersonation/stop`, `/api/voice/impersonation/start`, `/api/voice/impersonation/:id/stop`,
+`/api/voice/impersonation/audit` routes, and the "Log in as"/"Impersonate Workspace" UI on the
+Users and Orgs admin pages. `impersonation_sessions` table dropped via migration `0018` — historical
+audit rows are gone, not archived (explicit user choice). `MerchantMe.impersonated` removed from the
+`/api/app/me` response contract.
+
+---
+
 ## 2026-07-12 — Audit #02 fixes: cross-provider scheduled calls, Exotel frame padding, contract sync, discount amount type
 
 Resolves F1–F4 from `audit/2026-07-12-audit-02.md`. Full reasoning and repro traces in that report;

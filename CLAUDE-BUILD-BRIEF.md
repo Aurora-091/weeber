@@ -55,7 +55,9 @@ src/web/
       billing.tsx       # NEW — billing/plans oversight across orgs
       compliance.tsx    # NEW — DNC/compliance oversight across orgs
       flags.tsx         # NEW — feature flags
-      impersonate.tsx   # NEW — merchant impersonation (see \u00a76 for the hard requirement)
+      # impersonate.tsx never shipped as its own page (folded into users.tsx's "Log in as"
+      # action instead, see \u00a74 point 6) -- and the whole capability was later removed
+      # entirely. No impersonation exists in this codebase anymore.
     app/                # NEW ROUTE TREE — merchant-facing, org-scoped
       home.tsx          # dashboard landing page (/app) — checklist card + vertical-driven metrics;
                          # setup is now components/app/setup-modal.tsx opened on top of this, not its
@@ -78,7 +80,12 @@ unified, because they're for two different audiences with different trust levels
 
 ## 4. Admin panel — what it manages
 
-Confirmed scope (all six, including impersonation):
+**Point 6 (impersonation) below is historical — the capability was built, then removed
+entirely** (DB table dropped, all routes/UI deleted — see DECISIONS.md's removal ADR).
+Kept here only so nobody reintroduces it without knowing it was a deliberate call, not an
+oversight.
+
+Confirmed scope (originally six, now five — impersonation removed):
 1. Orgs/shops list + connection status (reads `orgs` + `shopLinks`)
 2. Agent template catalog (reads/writes `agentTemplates` — the vertical-agnostic seam, see ADR-031)
 3. Billing/plans oversight (depends on the billing integration existing — see `WEEBER-PLAN.md` workstreams;

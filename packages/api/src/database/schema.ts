@@ -156,19 +156,6 @@ export const featureFlags = pgTable("feature_flags", {
   uniqueIndex("feature_flags_key_org_idx").on(table.key, table.orgId),
 ]);
 
-export const impersonationSessions = pgTable("impersonation_sessions", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
-  adminActor: text("admin_actor").notNull(),
-  tokenHash: text("token_hash").notNull().unique(),
-  startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
-  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
-  endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
-  endedReason: text("ended_reason"),
-}, (table) => [
-  index("impersonation_sessions_org_idx").on(table.orgId),
-]);
-
 export const orgAgentConfigs = pgTable("org_agent_configs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),

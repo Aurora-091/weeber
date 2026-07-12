@@ -13,29 +13,19 @@
  * A network round-trip to ap-south-1 on every API call (supabase.auth.getUser)
  * would buy only instant revocation, which short JWT lifetimes already
  * approximate — not worth the latency + hard runtime dependency.
- *
- * The same middleware accepts an admin impersonation token
- * (`X-Weeber-Impersonation` header) so every merchant route behaves
- * identically under impersonation — org resolution comes from the audited
- * session row instead of a membership lookup, and `impersonated` is exposed
- * so the UI can show the "viewing as" banner.
  */
 import { createMiddleware } from "hono/factory";
 import { verify, verifyWithJwks } from "hono/jwt";
 import { eq } from "drizzle-orm";
 import { db } from "../../database";
 import { orgMembers } from "../../database/schema";
-import { findActiveImpersonation } from "../impersonation";
 
 export type MerchantSessionVariables = {
-  /** Supabase user id (`sub` claim); null under impersonation. */
   merchantUserId: string | null;
   merchantEmail: string | null;
   /** Resolved org; null = authenticated but no membership yet (bootstrap pending). */
   merchantOrgId: string | null;
   merchantRole: string | null;
-  impersonated: boolean;
-  impersonationSessionId: number | null;
 };
 
 type MerchantEnv = { Variables: MerchantSessionVariables };
@@ -57,21 +47,6 @@ async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>
 }
 
 export const requireMerchantSession = createMiddleware<MerchantEnv>(async (c, next) => {
-  const impersonationToken = c.req.header("X-Weeber-Impersonation");
-  if (impersonationToken) {
-    const session = await findActiveImpersonation(impersonationToken);
-    if (!session) {
-      return c.json({ error: "Impersonation session ended or expired", code: "impersonation_invalid" }, 401);
-    }
-    c.set("merchantUserId", null);
-    c.set("merchantEmail", null);
-    c.set("merchantOrgId", session.orgId);
-    c.set("merchantRole", "owner");
-    c.set("impersonated", true);
-    c.set("impersonationSessionId", session.id);
-    return next();
-  }
-
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
   if (!token) {
@@ -116,8 +91,6 @@ export const requireMerchantSession = createMiddleware<MerchantEnv>(async (c, ne
   c.set("merchantEmail", jwtEmail);
   c.set("merchantOrgId", membership?.orgId ?? null);
   c.set("merchantRole", membership?.role ?? null);
-  c.set("impersonated", false);
-  c.set("impersonationSessionId", null);
   return next();
 });
 

@@ -127,6 +127,13 @@
       "when": 1783850951359,
       "tag": "0017_empty_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783853949428,
+      "tag": "0018_curly_logan",
+      "breakpoints": true
     }
   ]
 }

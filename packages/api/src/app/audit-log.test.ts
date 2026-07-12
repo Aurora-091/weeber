@@ -40,7 +40,7 @@ describe("audit-log", () => {
   });
 
   it("defaults detail to null when omitted", async () => {
-    await logAdminAction("env-admin-key", "impersonation.started");
+    await logAdminAction("env-admin-key", "broadcast.created");
     expect(inserted[0]!.detail).toBeNull();
   });
 

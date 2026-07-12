@@ -1,0 +1,1 @@
+DROP TABLE "impersonation_sessions" CASCADE;

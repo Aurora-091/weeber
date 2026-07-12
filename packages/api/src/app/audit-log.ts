@@ -2,9 +2,8 @@
  * Generic admin-action audit log (see schema.ts's `adminAuditLog`). The
  * admin panel's Logs page reads this — "who changed what, when" — not raw
  * process logs, since no log-shipping infra exists and this is the more
- * useful surface anyway. Append-only, same spirit as impersonationSessions'
- * own audit trail. Best-effort: a logging failure should never block the
- * actual admin action it's describing.
+ * useful surface anyway. Append-only. Best-effort: a logging failure should
+ * never block the actual admin action it's describing.
  */
 import { desc } from "drizzle-orm";
 import { db } from "../database";

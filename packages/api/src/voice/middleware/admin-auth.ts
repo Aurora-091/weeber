@@ -23,8 +23,8 @@ import { findActiveAdminKey, hasAnyAdminKey } from "../admin-keys";
  *
  * Sets `adminActor` on the context — which credential authenticated the
  * request ("env-admin-key", a labeled key's label, or "unauthenticated-dev"
- * for the local no-key fallback). Consumed by the impersonation audit log,
- * which must record *who* started a session, not just that someone did.
+ * for the local no-key fallback). Consumed by adminAuditLog, which must
+ * record *who* performed an action, not just that someone did.
  */
 let warnedMissingKey = false;
 
