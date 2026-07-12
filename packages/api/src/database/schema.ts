@@ -200,9 +200,14 @@ export const orgMembers = pgTable("org_members", {
   email: text("email"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
-  uniqueIndex("org_members_user_org_idx").on(table.supabaseUserId, table.orgId),
-  index("org_members_user_idx").on(table.supabaseUserId),
+  // Real uniqueness on the user alone (audit#03 P1 fix) -- the product model is one org per
+  // user, and resolveOrCreateMembership's race-safety (routes.ts) depends on THIS constraint,
+  // not the old composite one below. Two concurrent first-logins each generate a different
+  // random orgId before inserting, so a composite (user, org) key never actually conflicts
+  // between them -- only a standalone unique constraint on the user catches that race.
+  uniqueIndex("org_members_user_idx").on(table.supabaseUserId),
 ]);
+
 
 export const scheduledCalls = pgTable("scheduled_calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Redirect, Route, Switch } from "wouter";
 import { Loader2 } from "lucide-react";
 import { Provider } from "./components/provider";
+import { ChunkErrorBoundary } from "./components/chunk-error-boundary";
 import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
@@ -124,6 +125,7 @@ function Dashboard({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <Provider>
+      <ChunkErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Switch>
           {/* Public pages */}
@@ -300,6 +302,7 @@ function App() {
           </Route>
         </Switch>
       </Suspense>
+      </ChunkErrorBoundary>
       {import.meta.env.DEV && <AgentFeedback />}
     </Provider>
   );
