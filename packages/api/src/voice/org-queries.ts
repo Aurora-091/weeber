@@ -224,6 +224,20 @@ export async function getShopifyStatus(orgId: string) {
  * browser to return_url). weebersh must carry BOTH org_id and return_url
  * through its OAuth `state`/session across the Shopify redirect — neither
  * survives on its own past the Shopify consent screen.
+ *
+ * PUBLIC_MERCHANT_APP_URL (not PUBLIC_APP_URL) is the correct source here —
+ * audit finding: this used to read PUBLIC_APP_URL, which is the *backend's
+ * own* Railway origin (used elsewhere for Twilio's public URL), not a
+ * browser-facing page. That sent merchants' browsers to
+ * https://api-production-....railway.app/app/shopify -- a URL with no
+ * frontend behind it at all, and a stale path to boot (the real route is
+ * /integrations, not /app/shopify). PUBLIC_MERCHANT_APP_URL is a distinct
+ * var (e.g. https://app.weeber.ai) specifically for "a browser-facing page
+ * a human actually lands on" -- same category as PUBLIC_WEB_URL (marketing
+ * site) but for the merchant app surface. Falls back to PUBLIC_APP_URL only
+ * if the new var isn't set yet, so this doesn't regress into a dead link on
+ * an unconfigured deploy -- but a real deployment should always set
+ * PUBLIC_MERCHANT_APP_URL explicitly.
  */
 export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
@@ -233,9 +247,9 @@ export function buildInstallUrl(orgId: string, shop?: string): string | null {
   if (shop) {
     url += `&shop=${encodeURIComponent(shop)}`;
   }
-  const publicAppUrl = process.env.PUBLIC_APP_URL;
-  if (publicAppUrl) {
-    const returnUrl = `${publicAppUrl.replace(/\/$/, "")}/app/shopify?shopify_connected=1`;
+  const merchantAppUrl = process.env.PUBLIC_MERCHANT_APP_URL || process.env.PUBLIC_APP_URL;
+  if (merchantAppUrl) {
+    const returnUrl = `${merchantAppUrl.replace(/\/$/, "")}/integrations?shopify_connected=1`;
     url += `&return_url=${encodeURIComponent(returnUrl)}`;
   }
   return url;

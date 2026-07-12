@@ -222,6 +222,10 @@ function TelephonyProviderTile({
 export function UserIntegrationsPage() {
   const { me } = useUser();
   const [storeDomain, setStoreDomain] = useState("");
+  // True for the brief window between landing back from weebersh's redirect
+  // and the forced status refetch resolving — fills the gap so the page
+  // doesn't sit there looking inert before the success/error toast fires.
+  const [confirmingConnection, setConfirmingConnection] = useState(false);
   const queryClient = useQueryClient();
 
   const statusQuery = useQuery<ShopifyStatus>({
@@ -245,6 +249,7 @@ export function UserIntegrationsPage() {
     if (params.get("shopify_connected") !== "1" && params.get("connected") !== "1") return;
 
     window.history.replaceState({}, "", window.location.pathname);
+    setConfirmingConnection(true);
 
     void queryClient
       .invalidateQueries({ queryKey: ["app-shopify-status", me.org.id] })
@@ -261,15 +266,15 @@ export function UserIntegrationsPage() {
       })
       .catch(() => {
         toast.error("Couldn't confirm Shopify connection status — refresh the page to check again.");
-      });
+      })
+      .finally(() => setConfirmingConnection(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.org.id]);
 
-  // The redirect back from weebersh (return_url) can land in the new tab
-  // opened below, not this one — and if the browser blocked that popup,
-  // the user continues in THIS tab instead. Either way, refetch status
-  // whenever this tab regains focus/visibility so a connect made elsewhere
-  // shows up without a manual refresh.
+  // Now that the OAuth-initiating navigation is always same-tab (issues 4+5
+  // fix — no more window.open popup), this mostly just covers a merchant
+  // manually reconnecting from a bookmark/second tab. Kept as a cheap,
+  // harmless general "keep status fresh" behavior.
   useEffect(() => {
     const refetch = () => {
       if (document.visibilityState === "visible") {
@@ -398,6 +403,19 @@ export function UserIntegrationsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // Full-page blurred loading overlay shown for the brief moment between
+  // "install URL ready" and the actual same-tab redirect firing — audit
+  // finding (issues 4+5): this used to open the OAuth flow in a new tab via
+  // window.open(), which is exactly the kind of script-opened popup
+  // Shopify's OAuth flow isn't reliably tested against (cookie/session-state
+  // validation across the Shopify consent-screen redirect chain can break in
+  // a popup context in ways it doesn't in a normal top-level navigation) --
+  // that's the most likely cause of the "lands on weebersh's own OAuth
+  // callback URL with a bare error page" failure. weebersh doesn't need a
+  // popup either: it's a non-embedded app (isEmbeddedApp: false), so there's
+  // no iframe to break out of. Same-tab redirect is both simpler and safer.
+  const [redirectingToShopify, setRedirectingToShopify] = useState(false);
+
   const installMutation = useMutation({
     mutationFn: async (shop: string) => {
       const res = await appFetch("/api/app/shopify/install-url", {
@@ -412,16 +430,13 @@ export function UserIntegrationsPage() {
       return res.json() as Promise<{ installUrl: string }>;
     },
     onSuccess: (data) => {
-      // window.open after an awaited fetch is no longer inside the original
-      // click's synchronous call stack — Safari/Firefox in particular will
-      // often treat that as a non-user-gesture popup and silently block it.
-      // Detect that and fall back to a same-tab redirect instead of failing
-      // silently with no visible feedback.
-      const popup = window.open(data.installUrl, "_blank", "noopener,noreferrer");
-      if (!popup || popup.closed) {
-        toast.info("Opening Shopify in this tab (your browser blocked the popup)...");
+      setRedirectingToShopify(true);
+      // Brief pause so the blurred overlay is actually perceivable instead
+      // of an instant jump — this is a real (if short) transition, not a
+      // fake artificial delay to look busy.
+      window.setTimeout(() => {
         window.location.href = data.installUrl;
-      }
+      }, 500);
     },
   });
 
@@ -432,9 +447,13 @@ export function UserIntegrationsPage() {
     },
     onSuccess: (fresh) => {
       const status = fresh as ShopifyStatus | undefined;
-      toast.success(status?.hasShop ? "Status refreshed — store is connected" : "Status refreshed — no store connected");
+      // Honest copy (audit finding): this only re-reads Weeber's own already-stored DB row --
+      // it does NOT re-verify anything with Shopify or weebersh (weebersh has no status/health
+      // endpoint to check against today). "Refresh" + this wording avoids implying a live
+      // re-sync happened. A real resync is filed as a follow-up (needs a new weebersh endpoint).
+      toast.success(status?.hasShop ? "Refreshed — Weeber shows this store as connected" : "Refreshed — Weeber shows no store connected");
     },
-    onError: () => toast.error("Couldn't refresh connection status — try again."),
+    onError: () => toast.error("Couldn't refresh — try again."),
   });
 
   const data = statusQuery.data;
@@ -449,6 +468,15 @@ export function UserIntegrationsPage() {
 
   return (
     <div className="space-y-8 font-sans text-foreground bg-background page-enter">
+      {(redirectingToShopify || confirmingConnection) && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/70 backdrop-blur-sm">
+          <Loader2 className="size-6 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">
+            {redirectingToShopify ? "Redirecting you to Shopify…" : "Confirming connection…"}
+          </p>
+        </div>
+      )}
+
       <PageHeader
         title="Integrations"
         description="Connect commerce platforms so your agents can react to checkouts, orders, and fulfillments — and export your data whenever you need it."
@@ -498,9 +526,10 @@ export function UserIntegrationsPage() {
                 className="gap-1.5 self-start sm:self-auto"
                 disabled={resyncMutation.isPending}
                 onClick={() => resyncMutation.mutate()}
+                title="Reloads what Weeber has stored — doesn't re-check Shopify or weebersh live"
               >
                 <RefreshCw className={`size-3.5 ${resyncMutation.isPending ? "animate-spin" : ""}`} />
-                Resync status
+                Refresh
               </Button>
             </div>
           </div>
