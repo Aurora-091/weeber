@@ -89,6 +89,33 @@ AI onto existing human agent operations — overkill for a pure voice AI SaaS pr
 Airtel/Jio/Tata SIP (only economical past 15-20 lakh minutes/month — far beyond Weeber's current or
 near-term scale).
 
+## Don't pick one India telephony vendor — generalize the BYO pattern that already exists
+
+Real objection worth designing around from day one, not retrofitting later: **some merchants Weeber
+targets already run their own IVR/telephony on Exotel (or another vendor)** and won't switch providers just
+to use Weeber. Picking Plivo as "the" India vendor and forcing every merchant onto it is the wrong shape of
+solution — it should be Weeber's own *default* for merchants with nothing existing, not the only option.
+
+This is not a new problem — it's the exact shape of problem `getTwilioClientForOrg()`
+(`voice/twilio-client.ts`) already solves for Twilio: every org either uses Weeber's platform Twilio
+account, or brings its own sub-account/credentials (`orgs.twilioAccountSid`/`twilioAuthToken`), resolved
+per-call, with the platform account as fallback. **The India telephony work should generalize this same
+pattern to any provider, not add Plivo as a one-off:**
+
+- `orgs` gains a `telephonyProvider` field (`twilio` | `plivo` | `exotel`, extensible) alongside
+  provider-specific credential fields (mirroring today's Twilio-specific ones).
+- The transport-abstraction layer already planned (see `voice-quality-and-india-status-2026-07-12.md`)
+  resolves the right adapter per-org at call time, the same way `getTwilioClientForOrg` resolves the right
+  Twilio client today — falling back to Weeber's own default (Plivo, pending its prototype) only when the
+  org hasn't configured its own.
+- **Practical effect:** a merchant already on Exotel plugs in their existing Exotel credentials and keeps
+  using their own setup unchanged; a merchant with nothing existing gets Weeber's own Plivo-backed number
+  provisioned for them. Both are first-class, not "the real one and the fallback."
+
+This changes the shape of the upcoming transport-abstraction work: build the per-org resolver from the
+start, with Plivo and Exotel as the first two real adapters (both genuinely needed, not one primary + one
+speculative), rather than treating Exotel as something to maybe revisit after Plivo ships.
+
 ## The number-series reality (this is the part that changes the "80 number" question)
 
 TRAI's current rules (TCCCPR, enforced via the DLT platform) are explicit and apply to **both** promotional
