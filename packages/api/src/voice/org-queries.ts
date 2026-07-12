@@ -191,7 +191,18 @@ export async function getShopifyStatus(orgId: string) {
     .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.enabled, true)));
 
   return {
-    shops,
+    // shopLinks.scopes is stored as a raw comma-separated string (see
+    // integrations/shopify/routes.ts's insert), but the frontend's
+    // ShopifyStatus type — and the Integrations page's `.map()` over it —
+    // has always expected `string[] | null`. Split it here so the API
+    // actually honors its own declared contract, instead of crashing the
+    // Integrations page's render for every org with a connected store
+    // (TypeError: scopes.map is not a function, white-screens the page
+    // with no error boundary to catch it).
+    shops: shops.map((s) => ({
+      ...s,
+      scopes: s.scopes ? s.scopes.split(",").map((scope) => scope.trim()).filter(Boolean) : null,
+    })),
     hasShop: shops.some((s) => !s.disconnectedAt),
     enabledAgentCount: enabled.length,
     installUrl: buildInstallUrl(orgId),

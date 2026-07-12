@@ -31,7 +31,7 @@ mock.module("../database", () => ({
   },
 }));
 
-import { computeOrgAnalytics, getEffectiveFlags } from "./org-queries";
+import { computeOrgAnalytics, getEffectiveFlags, getShopifyStatus } from "./org-queries";
 
 const now = Date.now();
 const call = (overrides: Record<string, unknown> = {}) => ({
@@ -106,6 +106,36 @@ describe("computeOrgAnalytics KPIs", () => {
   it("carries the org currency for revenue display", async () => {
     const analytics = await computeOrgAnalytics("org-1", 30);
     expect(analytics.currency).toBe("INR");
+  });
+});
+
+describe("getShopifyStatus", () => {
+  it("splits the stored comma-separated scopes string into an array — regression for the Integrations page white-screen bug (frontend calls .map() on scopes, API was passing the raw DB string through)", async () => {
+    rowsByTable = {
+      shop_links: [
+        {
+          shop: "testung-7598.myshopify.com",
+          connectedAt: new Date(),
+          disconnectedAt: null,
+          scopes: "read_checkouts,read_customers,write_discounts,write_orders",
+        },
+      ],
+      org_agent_configs: [{ enabled: true }, { enabled: true }],
+    };
+    const status = await getShopifyStatus("org-1");
+    expect(Array.isArray(status.shops[0].scopes)).toBe(true);
+    expect(status.shops[0].scopes).toEqual(["read_checkouts", "read_customers", "write_discounts", "write_orders"]);
+    expect(status.hasShop).toBe(true);
+    expect(status.enabledAgentCount).toBe(2);
+  });
+
+  it("returns null scopes as null, not an empty array or a crash", async () => {
+    rowsByTable = {
+      shop_links: [{ shop: "x.myshopify.com", connectedAt: new Date(), disconnectedAt: null, scopes: null }],
+      org_agent_configs: [],
+    };
+    const status = await getShopifyStatus("org-1");
+    expect(status.shops[0].scopes).toBeNull();
   });
 });
 
