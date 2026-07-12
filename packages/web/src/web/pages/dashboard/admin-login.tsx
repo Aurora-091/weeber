@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { KeyRound, Mail, Lock, Loader as Loader2 } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
+import { apiFetch } from "../../lib/api";
 
 type Props = {
   onSuccess: () => void;
@@ -19,7 +20,7 @@ export function AdminLoginForm({ onSuccess, onFallbackKey }: Props) {
     setLoading(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -28,6 +29,31 @@ export function AdminLoginForm({ onSuccess, onFallbackKey }: Props) {
       setError(authError.message === "Invalid login credentials"
         ? "Invalid email or password"
         : authError.message);
+      setLoading(false);
+      return;
+    }
+
+    const token = data.session?.access_token;
+    if (!token) {
+      setError("Authentication failed — no session returned");
+      setLoading(false);
+      return;
+    }
+
+    const res = await apiFetch("/api/voice/admin-me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.status === 403) {
+      await supabase.auth.signOut();
+      setError("Access denied — your account is not a platform admin");
+      setLoading(false);
+      return;
+    }
+
+    if (!res.ok) {
+      await supabase.auth.signOut();
+      setError("Could not verify admin access. Try again.");
       setLoading(false);
       return;
     }
@@ -58,7 +84,7 @@ export function AdminLoginForm({ onSuccess, onFallbackKey }: Props) {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
+          placeholder="Admin email"
           aria-label="Email"
           required
           className="w-full rounded-md border border-border bg-card pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
@@ -88,10 +114,14 @@ export function AdminLoginForm({ onSuccess, onFallbackKey }: Props) {
         Sign in
       </button>
 
+      <p className="text-xs text-muted-foreground text-center mt-1">
+        Only authorized administrators can access this dashboard.
+      </p>
+
       <button
         type="button"
         onClick={onFallbackKey}
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <KeyRound className="inline size-3 mr-1" />
         Use API key instead
