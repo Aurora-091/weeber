@@ -152,15 +152,6 @@ export async function getShopifyStatus(orgId: string) {
  * browser to return_url). weebersh must carry BOTH org_id and return_url
  * through its OAuth `state`/session across the Shopify redirect — neither
  * survives on its own past the Shopify consent screen.
- *
- * IMPORTANT: this must be the merchant-facing FRONTEND origin, not
- * PUBLIC_APP_URL (that's the API's own Railway URL, used for Twilio
- * webhooks — see voice/twilio-client.ts). In the split-deploy setup
- * (ADR-035) the frontend lives on Vercel; PUBLIC_WEB_URL should be set to
- * that origin explicitly. Falls back to the first entry in
- * CORS_ALLOWED_ORIGINS (the frontend origin the API already trusts for
- * CORS) if PUBLIC_WEB_URL isn't set, so this doesn't silently regress to
- * pointing at the wrong host again.
  */
 export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
@@ -170,10 +161,9 @@ export function buildInstallUrl(orgId: string, shop?: string): string | null {
   if (shop) {
     url += `&shop=${encodeURIComponent(shop)}`;
   }
-  const webOrigin =
-    process.env.PUBLIC_WEB_URL ?? process.env.CORS_ALLOWED_ORIGINS?.split(",")[0]?.trim();
-  if (webOrigin) {
-    const returnUrl = `${webOrigin.replace(/\/$/, "")}/app/shopify?shopify_connected=1`;
+  const publicAppUrl = process.env.PUBLIC_APP_URL;
+  if (publicAppUrl) {
+    const returnUrl = `${publicAppUrl.replace(/\/$/, "")}/app/shopify?shopify_connected=1`;
     url += `&return_url=${encodeURIComponent(returnUrl)}`;
   }
   return url;
