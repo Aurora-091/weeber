@@ -157,8 +157,12 @@ Follow what's already here, don't introduce a second style:
 
 ## 9. Auth model
 
-- **`/dashboard/*` (internal admin panel):** unchanged — `ADMIN_API_KEY`/`admin_keys` header-based auth,
-  exactly as it is today. Never touched by this build.
+- **`/dashboard/*` (internal admin panel):** as of 2026-07-12 this is no longer just header-based.
+  `platform_admins` (email allowlist, service-role-only RLS) + `middleware/admin-session.ts` now verify a
+  Supabase session JWT first; `requireAdminKey` only runs as a fallback when no Bearer token is present
+  ("Use API key instead" link preserved for CI/scripts). `admin-login.tsx` is the email/password login
+  page (`supabase.auth.signInWithPassword()`). If you're building against `/dashboard/*`, auth is
+  Supabase-session-first, `ADMIN_API_KEY`-second — not `ADMIN_API_KEY`-only as originally planned here.
 - **`/app/*` (merchant-facing):** Supabase Auth, email/password + magic link. `supabase/config.toml` already
   has `[auth]` enabled from ADR-030 — this build wires an actual login flow and session middleware against
   it. A logged-in merchant's Supabase user needs to resolve to an `orgId` (a `users`-to-`orgs` mapping table,

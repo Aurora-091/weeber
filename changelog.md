@@ -4,6 +4,33 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Audit #02 fixes: cross-provider scheduled calls, Exotel frame padding, contract sync, discount amount type
+
+Resolves F1–F4 from `audit/2026-07-12-audit-02.md`. Full reasoning and repro traces in that report;
+this entry covers what actually changed in code.
+
+- **F1 (P0/critical)** — `workflows/scheduler.ts`'s `executeDueScheduledCalls` dialed *unconditionally
+  through Twilio* for every scheduled call, regardless of `org.telephonyProvider`. `getTwilioClientForOrg`
+  silently falls back to the platform Twilio client when an org has no Twilio creds, so every Shopify
+  automation (cart recovery, COD confirmation, feedback) for a Plivo/Exotel BYO org was placing calls from
+  the platform's Twilio number instead of the org's actual number — broken in a way invisible from a
+  manual dashboard test call, since `voice/routes.ts`'s manual-call path already branched correctly.
+  Fixed by extracting a single provider-routing path, `voice/place-outbound-call.ts`, used by both
+  `scheduler.ts` and `voice/routes.ts` — one call-placement function, one place to get provider selection
+  right. 2 new provider-routing tests.
+- **F2** — Exotel outbound PCM16 media wasn't guaranteed to be a multiple of 320 bytes (Exotel's required
+  frame size); `telephony-transport.ts` now pads via `padToFrameMultiple` in `buildOutboundMedia`.
+- **F3** — `docs/contract.md` didn't exist in this repo at all (only in weebersh), and code comments in
+  `routes.ts`/`client.ts`/`secret-auth.ts` cited a stale "v1.4" while weebersh's copy had already moved to
+  1.5 (documenting the whole-number discount-percentage semantics a prior weebersh fix depended on).
+  Copied weebersh's `contract.md@1.5` into `openvent/docs/`, bumped all code comment references to 1.5.
+  Both repos now share one source of truth for the wire contract.
+- **F4** — `recovered_amount` was `text`, not a real numeric type; changed to `numeric(12,2)`
+  (`schema.ts` + migration `0014_jittery_menace.sql`; `platform_settings` CREATE also made
+  `IF NOT EXISTS` in the same migration).
+
+Verified before commit: typecheck 3/3, oxlint 0/0, tests pass (compliance 34, api 176, web 8).
+
 ## 2026-07-12 — Dynamic GTM/GA4 tracking configuration
 
 - **New table:** `platform_settings` (key-value, admin-managed) — stores platform-level config like GTM container ID and GA4 measurement ID. Generic design for future settings without schema changes.
