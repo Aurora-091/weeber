@@ -1,4 +1,4 @@
-import { Route, Switch } from "wouter";                                                                                
+import { Redirect, Route, Switch } from "wouter";                                                                                
 import DocsPage from "./pages/docs";
 import LandingPage from "./pages/landing";                                                                                   
 import { Provider } from "./components/provider";                                                                      
@@ -32,7 +32,7 @@ import { WorkflowRunsPage } from "./pages/dashboard/workflow-runs";
 import { MerchantLoginPage } from "./pages/app/login";
 import { MerchantAuthCallbackPage } from "./pages/app/auth-callback";
 import { ResetPasswordPage } from "./pages/app/reset-password";
-import { MerchantOnboardingPage } from "./pages/app/onboarding";
+import { MerchantHomePage } from "./pages/app/home";
 import { MerchantAgentsPage } from "./pages/app/agents";
 import { MerchantCallsPage } from "./pages/app/calls";
 import { MerchantCallDetailPage } from "./pages/app/call-detail";
@@ -124,10 +124,12 @@ function App() {
         <Route path="/app/auth/reset-password"><ResetPasswordPage /></Route>
         
         <Route path="/app">
-          <MerchantShell><MerchantOnboardingPage /></MerchantShell>
+          <MerchantShell><MerchantHomePage /></MerchantShell>
         </Route>
+        {/* Old bookmarked/linked full-page URL — now just the dashboard with
+            the setup modal force-opened, instead of a dedicated page. */}
         <Route path="/app/onboarding">
-          <MerchantShell><MerchantOnboardingPage /></MerchantShell>
+          <Redirect to="/app?setup=1" />
         </Route>
         <Route path="/app/agents">
           <MerchantShell><MerchantAgentsPage /></MerchantShell>

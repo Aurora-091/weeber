@@ -42,6 +42,8 @@ import {
   buildInstallUrl,
   computeUsage,
   getEffectiveFlags,
+  getOnboardingState,
+  updateOnboardingState,
 } from "../voice/org-queries";
 import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
 import {
@@ -51,6 +53,8 @@ import {
   setByoCredentials,
   resetToPlatformDefault,
 } from "../voice/twilio-provisioning";
+import { getPlivoStatus, setPlivoByoCredentials } from "../voice/plivo-provisioning";
+import { getExotelStatus, setExotelByoCredentials } from "../voice/exotel-provisioning";
 
 type MerchantEnv = { Variables: MerchantSessionVariables };
 
@@ -335,6 +339,33 @@ export const merchantApp = new Hono<MerchantEnv>()
     return c.json(usage, 200);
   })
 
+  // Setup modal state — see components/app/setup-modal.tsx. Steps are a
+  // free-form jsonb bag (ONBOARDING_STEP_KEYS in org-queries.ts) so the
+  // modal can change its step set without a migration.
+  .get("/onboarding", async (c) => {
+    const state = await getOnboardingState(c.get("merchantOrgId")!);
+    return c.json(
+      { steps: state.steps, dismissed: state.dismissed, completedAt: state.completedAt },
+      200,
+    );
+  })
+
+  .patch("/onboarding", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const { steps, dismissed } = (body ?? {}) as { steps?: Record<string, boolean>; dismissed?: boolean };
+    if (steps !== undefined && (typeof steps !== "object" || steps === null)) {
+      return c.json({ error: "`steps`, if present, must be an object" }, 400);
+    }
+    if (dismissed !== undefined && typeof dismissed !== "boolean") {
+      return c.json({ error: "`dismissed`, if present, must be a boolean" }, 400);
+    }
+    const state = await updateOnboardingState(c.get("merchantOrgId")!, { steps, dismissed });
+    return c.json(
+      { steps: state.steps, dismissed: state.dismissed, completedAt: state.completedAt },
+      200,
+    );
+  })
+
   .get("/shopify/status", async (c) => {
     const status = await getShopifyStatus(c.get("merchantOrgId")!);
     return c.json(status, 200);
@@ -380,15 +411,34 @@ export const merchantApp = new Hono<MerchantEnv>()
   // isolation, previously admin-only — see voice/twilio-provisioning.ts for
   // the actual logic, unchanged here, just newly reachable by the org that
   // owns it instead of only an operator). Deliberately no shared number
-  // pool: every org either gets its own dedicated Twilio sub-account +
-  // number, or brings its own credentials — never a number shared across
-  // orgs. Twilio is the only provider wired up today; Plivo/Exotel are
-  // planned (see docs/india-telephony.md) but not implemented, so the
-  // merchant UI should present them as "coming soon", not offer them yet.
+  // pool: every org either gets its own dedicated number, or brings its
+  // own credentials — never a number shared across orgs. Twilio is the
+  // only provider with a platform-owned (non-BYO) path — Plivo and Exotel
+  // are BYO-only per docs/india-telephony.md: no platform Plivo/Exotel
+  // sub-account provisioning exists yet, and Exotel's live-call path needs
+  // a SIP bridge this codebase doesn't have — but a merchant who already
+  // runs their own Plivo/Exotel account can connect it here today.
   .get("/telephony/status", async (c) => {
-    const status = await getTwilioStatus(c.get("merchantOrgId")!);
-    if (!status) return c.json({ error: "org not found" }, 404);
-    return c.json({ telephony: status }, 200);
+    const orgId = c.get("merchantOrgId")!;
+    const [twilio, plivo, exotel] = await Promise.all([
+      getTwilioStatus(orgId),
+      getPlivoStatus(orgId),
+      getExotelStatus(orgId),
+    ]);
+    if (!twilio || !plivo || !exotel) return c.json({ error: "org not found" }, 404);
+    const [org] = await db.select({ provider: orgs.telephonyProvider }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    return c.json(
+      {
+        telephony: {
+          provider: org?.provider ?? "twilio",
+          outboundNumber: twilio.outboundNumber,
+          twilio,
+          plivo,
+          exotel,
+        },
+      },
+      200,
+    );
   })
 
   .post("/telephony/subaccount", async (c) => {
@@ -444,6 +494,53 @@ export const merchantApp = new Hono<MerchantEnv>()
     return c.json({ ok: true }, 200);
   })
 
+  .post("/telephony/plivo/byo", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { authId, authToken, phoneNumber } = (body ?? {}) as {
+      authId?: string;
+      authToken?: string;
+      phoneNumber?: string;
+    };
+    if (!authId?.trim() || !authToken?.trim() || !phoneNumber?.trim()) {
+      return c.json({ error: "`authId`, `authToken`, and `phoneNumber` are all required" }, 400);
+    }
+    const result = await setPlivoByoCredentials(orgId, {
+      authId: authId.trim(),
+      authToken: authToken.trim(),
+      phoneNumber: phoneNumber.trim(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ ok: true }, 200);
+  })
+
+  .post("/telephony/exotel/byo", async (c) => {
+    const orgId = c.get("merchantOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { sid, apiKey, apiToken, subdomain, phoneNumber } = (body ?? {}) as {
+      sid?: string;
+      apiKey?: string;
+      apiToken?: string;
+      subdomain?: string;
+      phoneNumber?: string;
+    };
+    if (!sid?.trim() || !apiKey?.trim() || !apiToken?.trim() || !phoneNumber?.trim()) {
+      return c.json({ error: "`sid`, `apiKey`, `apiToken`, and `phoneNumber` are all required" }, 400);
+    }
+    const result = await setExotelByoCredentials(orgId, {
+      sid: sid.trim(),
+      apiKey: apiKey.trim(),
+      apiToken: apiToken.trim(),
+      subdomain: subdomain?.trim(),
+      phoneNumber: phoneNumber.trim(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ ok: true }, 200);
+  })
+
+  // Shared by all three telephony cards — clears every provider's stored
+  // credentials and reverts to the platform Twilio default, see
+  // resetToPlatformDefault's docstring for why it's not Twilio-only.
   .post("/telephony/reset", async (c) => {
     await resetToPlatformDefault(c.get("merchantOrgId")!);
     return c.json({ ok: true }, 200);

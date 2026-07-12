@@ -13,6 +13,7 @@ import {
   calls,
   callLatency,
   featureFlags,
+  onboardingState,
   orgAgentConfigs,
   orgs,
   scheduledCalls,
@@ -25,6 +26,66 @@ import type { AgentFrame } from "./agent-frame";
 export async function getOrg(orgId: string) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
   return org ?? null;
+}
+
+// Step set the setup modal walks through today. Kept here (not per-vertical)
+// because every vertical shares the same shape for now — connect a data
+// source, create an agent, test it, go live. A vertical that genuinely needs
+// a different step set can branch on org.vertical when reading this.
+export const ONBOARDING_STEP_KEYS = [
+  "pick_vertical",
+  "connect_tools",
+  "create_agent",
+  "test_and_golive",
+] as const;
+
+/** Reads (and lazily seeds) the org's onboarding checklist state. */
+export async function getOnboardingState(orgId: string) {
+  const [row] = await db.select().from(onboardingState).where(eq(onboardingState.orgId, orgId)).limit(1);
+  if (row) return row;
+
+  const seed = Object.fromEntries(ONBOARDING_STEP_KEYS.map((k) => [k, false]));
+  const [inserted] = await db
+    .insert(onboardingState)
+    .values({ orgId, steps: seed })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted) return inserted;
+
+  // Lost an insert race — the other request's row is now there.
+  const [existing] = await db.select().from(onboardingState).where(eq(onboardingState.orgId, orgId)).limit(1);
+  return existing ?? { orgId, steps: seed, dismissed: false, completedAt: null, updatedAt: new Date() };
+}
+
+/** Merge-patch step flags and/or `dismissed`; stamps `completedAt` once every step is true. */
+export async function updateOnboardingState(
+  orgId: string,
+  patch: { steps?: Record<string, boolean>; dismissed?: boolean },
+) {
+  const current = await getOnboardingState(orgId);
+  const mergedSteps = { ...current.steps, ...patch.steps };
+  const allDone = ONBOARDING_STEP_KEYS.every((k) => mergedSteps[k] === true);
+
+  const [row] = await db
+    .insert(onboardingState)
+    .values({
+      orgId,
+      steps: mergedSteps,
+      dismissed: patch.dismissed ?? current.dismissed,
+      completedAt: allDone ? (current.completedAt ?? new Date()) : null,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: onboardingState.orgId,
+      set: {
+        steps: mergedSteps,
+        dismissed: patch.dismissed ?? current.dismissed,
+        completedAt: allDone ? (current.completedAt ?? new Date()) : null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return row;
 }
 
 /** Every active template for the org's vertical, merged with the org's saved config row (or null). */

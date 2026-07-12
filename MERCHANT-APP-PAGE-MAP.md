@@ -14,6 +14,16 @@ not visual design. Pulled from two sources:
 panel (`ADMIN_API_KEY`-gated, one shared key sees every org — see `docs/dashboard.md`). No merchant-facing
 `/app/*` surface exists yet. Everything below is the target to build toward, not what's live.
 
+**Update (2026-07-12):** the merchant `/app/*` v1 from §2 is now built (login, onboarding, agent config,
+calls, analytics, billing, integrations). One architecture change from what's below: item 1, "Onboarding
+wizard," shipped as a **modal** (`components/app/setup-modal.tsx`) opened on top of the dashboard
+(`/app`, `pages/app/home.tsx`), not a dedicated full-page route — see `docs/DECISIONS.md`, "Setup modal,
+not a setup page." `/app` is the default landing route; `/app/onboarding` now redirects to `/app?setup=1`
+which force-opens the modal. Backend: `onboarding_state` table (steps jsonb + dismissed + completedAt),
+`GET`/`PATCH /api/app/onboarding`. `VerticalDefinition` (§4) also gained a `dashboard` shape
+(`metrics`, `emptyState`) so the Home page's content is config-driven per vertical, matching Vocalist's
+`dashboard.metrics`/`dashboard.cards`.
+
 ---
 
 ## 1. Two separate apps, two separate auth models (confirmed architecture, both sources agree)
@@ -34,6 +44,7 @@ Six pages, Team/seats explicitly deferred:
 
 1. **Onboarding wizard** — guided setup ending with a connected Shopify store + at least one agent
    enabled. The "zero setup" pitch lives or dies here — prioritize feeling simple over completeness.
+   **Shipped as a modal over the dashboard, not its own page** — see the 2026-07-12 update above.
 2. **Agent config** — form-based (not a visual flowchart), one form per agent. *(This repo's
    `voice/agent-frame.ts` + the internal `/dashboard/agents` page built 2026-07-10 is the schema/pattern
    to reuse here — same fields, same API shape, just re-scoped to the logged-in merchant's own org
