@@ -112,16 +112,43 @@ export function createVoiceStreamHandlers() {
 
   /**
    * Per-call latency breakdown (see database/schema.ts's callLatency, ADR-022). Each is set at most
-   * once per call — first STT connect, first LLM time-to-first-token, first TTS first-audio-byte —
-   * and persisted as a single row when the call ends, not written continuously (unlike capturedState,
-   * these aren't needed for crash recovery, just for the dashboard after the fact).
+   * once per call — first STT connect, first LLM time-to-first-token, first TTS first-audio-byte.
+   *
+   * Persisted incrementally, the moment each metric is first captured (see persistLatency below) —
+   * NOT batched to write only once at finalizeCall. It used to be finalize-only on the theory that
+   * latency "isn't needed for crash recovery, just for the dashboard after the fact" — but that's
+   * exactly backwards: a process restart or any call-ending path that skips finalizeCall (or runs
+   * before these three ever get set) silently loses every metric captured so far, even though
+   * STT/LLM/TTS all genuinely worked and the data existed in memory. capturedState already persists
+   * continuously for this same reason; latency now does too.
    */
   let sttConnectMs: number | undefined;
   let llmTtftMs: number | undefined;
   let ttsFirstByteMs: number | undefined;
 
+  /**
+   * Upserts whichever of the three metrics are currently set. Safe to call multiple times per call
+   * (once per metric as it's first captured, plus once more at finalizeCall as a final safety net) —
+   * each call just re-upserts the current in-memory snapshot, which is always a superset of the last.
+   */
+  async function persistLatency() {
+    if (!dbCallId) return;
+    if (sttConnectMs === undefined && llmTtftMs === undefined && ttsFirstByteMs === undefined) return;
+    await db
+      .insert(callLatency)
+      .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs })
+      .onConflictDoUpdate({
+        target: callLatency.callId,
+        set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, capturedAt: new Date() },
+      })
+      .catch((err) => console.error("[voice] failed to persist call latency", err));
+  }
+
   function recordLlmLatency(ms: number) {
-    if (llmTtftMs === undefined) llmTtftMs = ms;
+    if (llmTtftMs === undefined) {
+      llmTtftMs = ms;
+      void persistLatency();
+    }
   }
 
   /** Cross-call memory (ADR-023) — the human's number for this call, and their rolling facts, if any. */
@@ -242,19 +269,10 @@ export function createVoiceStreamHandlers() {
         { label: "finalize-call" },
       );
 
-      // Per-call latency breakdown (ADR-022) — only write a row if we actually
-      // captured at least one metric, so a call that failed before Deepgram
-      // ever connected doesn't leave a pointless all-null row behind.
-      if (dbCallId && (sttConnectMs !== undefined || llmTtftMs !== undefined || ttsFirstByteMs !== undefined)) {
-        await db
-          .insert(callLatency)
-          .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs })
-          .onConflictDoUpdate({
-            target: callLatency.callId,
-            set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, capturedAt: new Date() },
-          })
-          .catch((err) => console.error("[voice] failed to persist call latency", err));
-      }
+      // Per-call latency breakdown (ADR-022) — each metric already persisted itself the moment it
+      // was first captured (see persistLatency); this is just a final safety-net upsert in case any
+      // metric was captured in the same tick finalizeCall started running.
+      await persistLatency();
 
       // Cross-call memory (ADR-023) — merge this call's captured facts into
       // the caller's rolling memory. No-op if nothing was captured.
@@ -393,7 +411,10 @@ export function createVoiceStreamHandlers() {
 
     tts = connectTts(
       (base64Audio) => {
-        if (ttsFirstByteMs === undefined) ttsFirstByteMs = Date.now() - ttsRequestedAt;
+        if (ttsFirstByteMs === undefined) {
+          ttsFirstByteMs = Date.now() - ttsRequestedAt;
+          void persistLatency();
+        }
         if (!streamSid) return;
         try {
           ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: base64Audio } }));
@@ -566,6 +587,7 @@ export function createVoiceStreamHandlers() {
       },
       (ms) => {
         sttConnectMs = ms;
+        void persistLatency();
       },
       sttProviderOverride,
       languageOverride,
