@@ -15,16 +15,11 @@ import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
 import { getTwilioClientForOrg } from "./twilio-client";
+import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
-
-type TwilioEvent =
-  | { event: "start"; start: { streamSid: string; callSid: string } }
-  | { event: "media"; media: { payload: string } }
-  | { event: "mark"; mark: { name: string } }
-  | { event: "stop" };
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
 
@@ -81,7 +76,8 @@ const SILENCE_HANGUP_MS = 7000;
  * event or a dropped upstream socket can't silently hang or crash the call —
  * worst case we log and end the call cleanly instead of leaving it stuck.
  */
-export function createVoiceStreamHandlers() {
+export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio") {
+  const transport = getTelephonyTransport(provider);
   let streamSid: string | null = null;
   let callSid: string | null = null;
   let dbCallId: number | null = null;
@@ -312,7 +308,7 @@ export function createVoiceStreamHandlers() {
 
   function endCallOnFatalError(ws: Sendable) {
     try {
-      if (streamSid) ws.send(JSON.stringify({ event: "clear", streamSid }));
+      if (streamSid) ws.send(transport.buildClear(streamSid));
     } catch {
       // socket may already be closed — ignore
     }
@@ -329,15 +325,25 @@ export function createVoiceStreamHandlers() {
 
   /** Actually ends the call — terminates the real Twilio call leg (not just
    * our WebSocket), since the media stream closing on its own doesn't
-   * guarantee the underlying PSTN call hangs up. */
+   * guarantee the underlying PSTN call hangs up.
+   *
+   * Twilio-only for the REST hangup: Plivo/Exotel have their own
+   * equivalent "end this live call" APIs but they haven't been wired up
+   * yet (unverified without a live prototype call — see
+   * docs/india-telephony.md's status note). For those providers this still
+   * closes our WebSocket, which in practice ends the caller's audio and,
+   * for most PSTN carriers, the call itself shortly after — but it's not
+   * the same guaranteed hard-hangup Twilio's REST call gives us. */
   async function performHangUp(ws: Sendable, reason: string) {
     console.log(`[voice] hangUp requested: ${reason}`);
     clearSilenceTimer();
-    if (callSid) {
+    if (callSid && provider === "twilio") {
       await (await getTwilioClientForOrg(humanNumberOrgId))
         .calls(callSid)
         .update({ status: "completed" })
         .catch((err) => console.error("[voice] failed to end Twilio call via REST API", err));
+    } else if (callSid) {
+      console.warn(`[voice] hangUp on ${provider} call ${callSid} — closing the WebSocket only, no REST hangup wired up for this provider yet`);
     }
     try {
       ws.close?.();
@@ -351,10 +357,23 @@ export function createVoiceStreamHandlers() {
    * `<Dial>` to a human — the call keeps going, just no longer through the
    * agent. Falls back to hanging up (rather than silently no-oping) if no
    * transfer number is configured anywhere, since the agent already told
-   * the caller it was transferring them. */
+   * the caller it was transferring them.
+   *
+   * Twilio-only — Plivo/Exotel both have different mid-call transfer APIs
+   * (Plivo: Call.transfer with a new aleg_url; Exotel: the Legs API's
+   * transfer action) that haven't been implemented yet. For those
+   * providers this falls back to a hang-up rather than silently pretending
+   * to transfer and then just dropping the call. */
   async function performTransfer(ws: Sendable, reason: string) {
     console.log(`[voice] transferToHuman requested: ${reason}`);
     clearSilenceTimer();
+
+    if (provider !== "twilio") {
+      console.warn(`[voice] transferToHuman requested on ${provider} call — no transfer API wired up for this provider yet, hanging up instead`);
+      await performHangUp(ws, `${reason} (transfer unsupported on ${provider})`);
+      return;
+    }
+
     const transferNumber = humanNumberOrgId
       ? await resolveHumanTransferNumber(humanNumberOrgId)
       : (process.env.HUMAN_TRANSFER_NUMBER ?? undefined);
@@ -434,9 +453,9 @@ export function createVoiceStreamHandlers() {
         }
         if (!streamSid) return;
         try {
-          ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: base64Audio } }));
+          ws.send(transport.buildOutboundMedia(streamSid, base64Audio));
         } catch (err) {
-          console.error("[voice] failed to forward TTS audio to Twilio", err);
+          console.error(`[voice] failed to forward TTS audio to ${provider}`, err);
         }
       },
       () => {
@@ -569,7 +588,7 @@ export function createVoiceStreamHandlers() {
           // Barge-in: if the agent is mid-response and the caller starts
           // talking again, cut the agent off immediately.
           if (agentIsSpeaking && text.trim().length > 0) {
-            if (streamSid) ws.send(JSON.stringify({ event: "clear", streamSid }));
+            if (streamSid) ws.send(transport.buildClear(streamSid));
             turnAbortController?.abort();
             tts?.close();
             tts = null;
@@ -639,25 +658,45 @@ export function createVoiceStreamHandlers() {
     },
 
     async onMessage(raw: string, ws: Sendable) {
-      let msg: TwilioEvent;
-      try {
-        msg = JSON.parse(raw);
-      } catch {
-        return;
-      }
+      const event = transport.parseInbound(raw);
+      if (event.type === "unknown") return;
 
       try {
-        if (msg.event === "start") {
-          streamSid = msg.start.streamSid;
-          callSid = msg.start.callSid;
+        if (event.type === "start") {
+          streamSid = event.streamId;
+          callSid = event.callId;
           const session = callSid ? await sessionStore.get(callSid) : undefined;
 
           if (callSid) {
-            const [row] = await db
+            let [row] = await db
               .select()
               .from(calls)
               .where(eq(calls.twilioCallSid, callSid))
               .limit(1);
+
+            // Twilio/Plivo both hit an inbound webhook (which inserts the
+            // `calls` row) before the WS ever opens — Exotel's WS-only
+            // AgentStream has no such step (see voice/routes.ts), so if
+            // nothing was pre-created, insert a minimal row now from
+            // whatever the start event itself carried. Best-effort: this
+            // call won't have org/persona/session context an outbound
+            // trigger would have set, only what the wire protocol told us.
+            if (!row && provider !== "twilio" && event.from && event.to) {
+              const [inserted] = await db
+                .insert(calls)
+                .values({
+                  provider,
+                  twilioCallSid: callSid,
+                  direction: "inbound",
+                  fromNumber: event.from,
+                  toNumber: event.to,
+                  status: "in-progress",
+                })
+                .onConflictDoNothing()
+                .returning();
+              row = inserted ?? row;
+            }
+
             dbCallId = row?.id ?? null;
             toNumber = row?.toNumber;
             capturedState = { ...row?.capturedState, ...session?.capturedState };
@@ -702,7 +741,7 @@ export function createVoiceStreamHandlers() {
                 console.warn(`[voice] call ${callSid} hit its max duration — ending`);
                 void finalizeCall("completed");
                 try {
-                  ws.send(JSON.stringify({ event: "clear", streamSid }));
+                  if (streamSid) ws.send(transport.buildClear(streamSid));
                 } catch {
                   // socket may already be closed — ignore
                 }
@@ -716,8 +755,8 @@ export function createVoiceStreamHandlers() {
           return;
         }
 
-        if (msg.event === "media") {
-          const audio = Buffer.from(msg.media.payload, "base64");
+        if (event.type === "media") {
+          const audio = Buffer.from(event.mulawBase64, "base64");
           if (stt) {
             stt.sendAudio(audio);
           } else if (pendingAudioChunks.length < MAX_PENDING_AUDIO_CHUNKS) {
@@ -726,11 +765,11 @@ export function createVoiceStreamHandlers() {
           return;
         }
 
-        if (msg.event === "stop") {
+        if (event.type === "stop") {
           await finalizeCall("completed");
         }
       } catch (err) {
-        console.error("[voice] error handling Twilio event", msg.event, err);
+        console.error(`[voice] error handling ${provider} event`, event.type, err);
       }
     },
 

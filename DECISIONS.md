@@ -1870,5 +1870,173 @@ openvent-compliance tsc + 25/25 tests, root lint — all clean.
 
 ---
 
-*Next entry number: ADR-047. Add new entries above this line, keeping numbering sequential and dates
+## ADR-047: Setup modal, not a setup page — vertical-driven dashboard as the default landing route (2026-07-12)
+
+**Context:** The merchant `/app` route pointed straight at a dedicated full-page onboarding wizard
+(`pages/app/onboarding.tsx`), permanently pinned in the nav as "Setup," with step completion derived
+live from `shopify/status` + `agent-configs` on every load (no persisted step/dismiss state). This is
+a Shopify-only shape: `VerticalDefinition` (`lib/verticals.ts`) only carried `glossary`/`nav`/`copy`,
+no dashboard content, and only one vertical (`shopify`) was ever registered — the "every vertical gets
+its own dashboard metrics/cards" requirement had no seam to hang off of.
+
+Studied two references before deciding: (1) Vocalist (github.com/Aurora-091/Vocalist, read-only
+clone), whose `Dashboard.tsx` mounts an `OnboardingModal` (Dialog/Drawer) that auto-opens only when
+`onboarding_state.steps` is incomplete AND the org has zero agents, with a persistent checklist card
+on the dashboard for any steps the modal doesn't cover; `vertical_configs` is a global DB table
+(`config` jsonb: glossary, recommended integrations/templates, dashboard metrics/cards) so adding a
+vertical is an insert, not a code branch. (2) Vapi/Retell/typical SaaS practice: checklist/progress
+widget on the main dashboard, not a page that gates the rest of the product.
+
+**Decision:**
+- `/app` now renders `pages/app/home.tsx` (a lightweight dashboard: checklist card while setup is
+  incomplete, vertical-driven metric tiles, quick links to Agents/Conversations/Analytics) instead of
+  the onboarding page. `pages/app/onboarding.tsx` is deleted; `/app/onboarding` redirects to
+  `/app?setup=1`, which force-opens the modal for old bookmarks/links.
+- New `components/app/setup-modal.tsx` (Dialog) holds the exact same 3 steps (connect store → pick
+  agents → review & activate) and mutations the old page had — only the shell changed. It auto-opens
+  from `home.tsx` when steps are incomplete and not dismissed, same gate as Vocalist.
+- New `onboarding_state` table (`org_id` PK, `steps` jsonb, `dismissed`, `completed_at`,
+  `updated_at` — drizzle migration `0011_grey_scarlet_spider.sql`) plus `getOnboardingState` /
+  `updateOnboardingState` (`voice/org-queries.ts`) and `GET`/`PATCH /api/app/onboarding`
+  (`app/routes.ts`). Steps are a free-form jsonb bag (`ONBOARDING_STEP_KEYS`), not one column per
+  step, so the step set can change without a migration. The modal PATCHes step flags as they change,
+  so the dashboard checklist and "resume where I left off" stay accurate even if the modal is closed
+  mid-way.
+- `VerticalDefinition` (`lib/verticals.ts`) gained a `dashboard` shape (`metrics[]`, `emptyState`) —
+  the Home page renders these instead of hardcoding Shopify-shaped tiles, so a Clinic/Insurance/Real
+  Estate vertical added later gets its own dashboard content by filling in config, not by branching
+  `home.tsx`. Nav also lost the separate "Setup" entry (folded into "Home").
+
+**Explicitly not built:** no onboarding state-machine library — a jsonb steps column is enough at this
+scale (proven in Vocalist production). No per-vertical dashboard component fork (separate `home.tsx`
+per vertical) — config-driven tiles are enough for now. No change to the dedicated
+Agents/Calls/Analytics/Billing/Integrations pages — only the entry point changed.
+
+**Consequences:** Verified: `packages/api` tsc clean, `packages/web` tsc clean, drizzle migration
+generated and reviewed (also picked up pre-existing unmigrated drift: `workflow_templates`/
+`workflow_runs`/`org_workflow_configs` tables and `orgs.webhook_url`/`scheduled_calls.workflow_run_id`
+columns that existed in `schema.ts` but had no prior migration file — bundled into 0011 rather than
+split out, since it's one accurate diff against the last snapshot). Not yet run against a live
+database (no `DATABASE_URL` in this environment) — run `db:migrate` before deploying. The two
+vertical-dashboard metric tiles (`carts_recovered`, `revenue_recovered`) render as `—` placeholders
+today since no backend aggregation computes them yet; wiring real values is follow-up work, not part
+of this change.
+
+---
+
+## ADR-048: Plivo + Exotel BYO telephony, credential layer only (2026-07-12)
+
+**Context:** `docs/india-telephony.md` (ADR-034-era research, generalized further pre-ADR-047)
+recommended generalizing the existing Twilio BYO/platform-sub-account pattern
+(`voice/twilio-provisioning.ts`, `orgs.twilioMode`/`twilioAccountSid`/`twilioAuthToken`) to Plivo and
+Exotel, since real merchants in India already run one of these and won't switch providers to use
+Weeber. The frontend telephony tiles for both were literal "Coming soon" placeholders with disabled
+Connect buttons.
+
+**Decision:** Wired up BYO (bring-your-own-credentials) for both, matching Twilio's validate-then-store
+shape exactly:
+- `orgs` gained `telephonyProvider` (`twilio`|`plivo`|`exotel`, default `twilio`) plus
+  `plivoAuthId`/`plivoAuthToken` and `exotelSid`/`exotelApiKey`/`exotelApiToken`/`exotelSubdomain`
+  (migration `0012_hesitant_hammerhead.sql`). `exotelSubdomain` exists because Exotel's API host is
+  region-specific per account, unlike Twilio/Plivo's single global host.
+- `voice/plivo-provisioning.ts` / `voice/exotel-provisioning.ts`: `get*Status` + `set*ByoCredentials`,
+  validating against each provider's own Account API before persisting (Plivo: `GET
+  /v1/Account/{authId}/` Basic auth; Exotel: `GET /v1/Accounts/{sid}/` Basic auth against the
+  merchant-supplied subdomain, defaulting to `api.exotel.com`).
+- `app/routes.ts`: `GET /api/app/telephony/status` now returns `{ provider, outboundNumber, twilio,
+  plivo, exotel }` (was Twilio-only shape); new `POST /telephony/plivo/byo` and `/telephony/exotel/byo`;
+  `resetToPlatformDefault` (`voice/twilio-provisioning.ts`) extended to clear all three providers'
+  credentials and revert `telephonyProvider` to `twilio`, since only one provider is active at a time
+  and Reset is the shared button all three cards use. Twilio's own `createSubaccountForOrg`/
+  `setByoCredentials` now also stamp `telephonyProvider: "twilio"`.
+- `pages/app/integrations.tsx`: Plivo and Exotel tiles are real Connect buttons now, each opening a
+  credential dialog (mirrors the Twilio one) instead of a disabled "Coming soon" tile. Added a note that
+  only one provider is active at a time and that Exotel is credentials-only for now (see below).
+
+**Explicitly not built — this is the credential/account layer only, not transport:**
+- No platform-owned Plivo or Exotel sub-account/number-purchase path (unlike Twilio's
+  `createSubaccountForOrg`/`buyNumberForOrg`) — both are BYO-only. A merchant with nothing existing
+  still defaults to Weeber's shared Twilio platform number.
+- **No live call routing through either provider yet.** `voice/stream.ts` is still built against
+  Twilio-shaped WebSocket Media Streams only. Plivo's own WebSocket media adapter (the doc's "closer to
+  Twilio's shape, smaller lift" path) is unbuilt. Exotel's path needs a SIP-trunk bridge into LiveKit
+  (or similar) per the doc — connecting Exotel credentials here does not give Exotel a working
+  call-transport path; the UI says this explicitly in the Exotel dialog and the telephony section note.
+  Neither vendor has had the "one real prototype call" the doc calls for before treating either
+  integration as validated — that's the next real step, not part of this change.
+- No change to number-series/DLT/TRAI compliance workflow (Principal Entity registration, template
+  approval, etc.) — still a real unautomated business process per the doc, unaffected by this.
+
+**Consequences:** Verified: `packages/api` tsc clean, `packages/web` tsc clean, migration generated and
+reviewed (schema-only diff — orgs BYO columns + FK, no unrelated drift this time). Not yet run against a
+live database (no `DATABASE_URL` in this environment) — run `db:migrate` before deploying.
+
+---
+
+## ADR-049: Real Plivo/Exotel call transport — provider wire-format abstraction + a correction (2026-07-12)
+
+**Context:** ADR-048 wired up Plivo/Exotel BYO credentials only — no real call ever routed through
+either. User pushed back: credentials with no working calls "has no purpose," and competitors (Bolna
+etc.) have real SIP-trunk/telephony integrations, so this needed to actually work, not just store keys.
+
+Live protocol docs were fetched directly from Plivo and Exotel while building this (not assumed from
+training knowledge or the earlier india-telephony.md research). **Finding that corrects earlier research:
+Exotel is no longer SIP-trunk-only.** Its AgentStream product now ships a real bidirectional WebSocket
+(VoiceBot Applet) structurally close to Twilio Media Streams — the "Exotel needs a LiveKit SIP bridge"
+framing in `docs/india-telephony.md` is outdated and has been corrected in that doc (kept further down as
+historical record, not current guidance).
+
+**Decision — built a real per-provider transport layer, not just more BYO:**
+- `voice/telephony-transport.ts`: normalizes all three providers' wire formats to one shape
+  (`start`/`media`/`stop`, always mu-law 8kHz) that `stream.ts`'s actual conversation logic consumes,
+  unchanged. Twilio and Plivo already speak mu-law — only field-naming differs (`streamSid`/`callSid` vs
+  `streamId`/`callId`, `media`/`clear` vs `playAudio`/`clearAudio`). Exotel speaks raw linear16 PCM, not
+  mu-law — transcoded at the boundary only (new `pcm16ToMulaw` in `voice/audio-codec.ts`, paired with the
+  pre-existing `mulawToPcm16`).
+- `stream.ts`: `createVoiceStreamHandlers(provider)` takes the provider explicitly and does all wire I/O
+  through the transport adapter. STT/TTS/agent turn logic is byte-for-byte unchanged — this was a
+  boundary-only refactor, confirmed by `stream.test.ts`'s pre-existing pure-function tests still passing
+  untouched.
+- `ws-route.ts`: three WS paths, one per provider (`/api/voice/stream`, `/stream/plivo`, `/stream/exotel`)
+  — provider is known from which path was hit, not sniffed from the first message.
+- `voice/plivo-client.ts` / `voice/exotel-client.ts`: outbound call placement, each provider's real API.
+  Plivo mirrors Twilio's call-then-webhook-returns-XML shape (reuses one `/incoming/plivo` route for both
+  inbound and outbound). Exotel's `/calls/connect` is a single direct API call with no separate XML
+  round-trip — a genuinely different shape, not just a different SDK.
+- `voice/middleware/plivo-signature.ts`: validates Plivo's `X-Plivo-Signature-V3`, algorithm taken
+  directly from Plivo's own docs. Org resolved via `?orgId=` on the answer_url itself, since Plivo's
+  webhook can be the very first request for a fresh call with no DB row yet to resolve an org from.
+- `calls.provider` column added (migration `0013_organic_whizzer.sql`, single-column diff). `stream.ts`'s
+  start handler gained a lazy-insert fallback for Exotel specifically (no separate inbound webhook
+  pre-creates the row the way Twilio/Plivo's do).
+- Mid-call hang-up/transfer (`performHangUp`/`performTransfer`) stay Twilio-only, but now explicitly
+  warn-and-fall-back instead of silently calling the wrong provider's REST API for Plivo/Exotel calls.
+- New `voice/telephony-transport.test.ts`: wire-format parse/build coverage for all three providers plus
+  a real mu-law<->PCM16 round-trip test (sine wave + silence) — this is confidence in the protocol
+  translation logic, not a substitute for a live call.
+
+**Explicitly still open — flagged, not silently assumed correct, because no live prototype call was
+possible in this environment (no real Plivo/Exotel account, no public WS URL, nothing to receive a call
+on):**
+- Whether Plivo's `request_uuid` (returned immediately from Call Create) equals the real `CallUUID` the
+  WS `start` event later carries — the code is written so this isn't load-bearing either way (the answer
+  webhook, not the create response, is where session/org context gets bound to the real CallUUID).
+- Whether Exotel's `/calls/connect` response `call.sid` matches the WS `start` event's `call_sid` — same
+  non-load-bearing treatment via `stream.ts`'s lazy-insert fallback.
+- Real mid-call transfer/hangup APIs for Plivo (`Call.transfer`) and Exotel (Legs API transfer action) —
+  not implemented this pass.
+
+**Consequences:** Verified: `packages/api` tsc clean, full `bun test` suite green (174 tests, 1 pre-existing
+unrelated failure in `getActiveModelLabel` — an env-default-model naming mismatch untouched by this work).
+Found and fixed one **pre-existing test fragility** along the way: `routes.test.ts`'s
+`mock.module("./middleware/admin-auth", ...)` stopped intercepting the moment routes.ts gained *any*
+additional import — reproduced with a zero-dependency dummy import, so it's a Bun `mock.module` quirk
+tied to import-graph shape, not a logic bug in this change. Fixed by having the test explicitly clear
+`process.env.ADMIN_API_KEY` (a real value was leaking in from `packages/api/.env`) so the real
+`requireAdminKey` falls through to its own no-op path even if the mock doesn't apply — makes that test
+robust against the next unrelated import, instead of quietly re-breaking again.
+
+---
+
+*Next entry number: ADR-050. Add new entries above this line, keeping numbering sequential and dates
 accurate to when the decision was actually made.*

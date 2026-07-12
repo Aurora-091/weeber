@@ -40,6 +40,38 @@ export function mulawToPcm16(mulaw: Uint8Array): Uint8Array {
   return out;
 }
 
+const MULAW_BIAS = 0x84;
+const MULAW_CLIP = 32635;
+
+/** Encode one 16-bit signed PCM sample into an 8-bit mu-law byte — standard
+ * ITU-T G.711 encode algorithm (the inverse of MULAW_DECODE_TABLE above). */
+function encodeMulawSample(sampleIn: number): number {
+  let sample = sampleIn;
+  const sign = sample < 0 ? 0x80 : 0;
+  if (sign) sample = -sample;
+  if (sample > MULAW_CLIP) sample = MULAW_CLIP;
+  sample += MULAW_BIAS;
+
+  let exponent = 7;
+  for (let mask = 0x4000; (sample & mask) === 0 && exponent > 0; mask >>= 1) exponent--;
+  const mantissa = (sample >> (exponent + 3)) & 0x0f;
+  const muByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
+  return muByte;
+}
+
+/** Encode 16-bit signed PCM (little-endian bytes) into 8-bit mu-law — the
+ * direction Exotel's raw-PCM streams need (Exotel sends/expects linear16,
+ * not mu-law, unlike Twilio/Plivo — see voice/telephony-transport.ts). */
+export function pcm16ToMulaw(pcm16: Uint8Array): Uint8Array {
+  const sampleCount = Math.floor(pcm16.length / 2);
+  const view = new DataView(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+  const out = new Uint8Array(sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    out[i] = encodeMulawSample(view.getInt16(i * 2, true));
+  }
+  return out;
+}
+
 /** Wrap raw PCM16LE bytes in a minimal 44-byte WAV header (mono). Some
  * providers (Sarvam STT) require a WAV container rather than bare PCM. */
 export function pcm16ToWav(pcm16: Uint8Array, sampleRate: number): Uint8Array {

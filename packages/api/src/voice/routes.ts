@@ -18,6 +18,9 @@ import { Hono } from "hono";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
 import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
+import { createPlivoOutboundCall, buildPlivoStreamXml } from "./plivo-client";
+import { createExotelOutboundCall } from "./exotel-client";
+import { requirePlivoSignature } from "./middleware/plivo-signature";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
@@ -99,6 +102,48 @@ export const voice = new Hono()
     return c.text(twiml.toString(), 200, { "Content-Type": "text/xml" });
   })
 
+  // Plivo answer webhook — the Plivo analog of /incoming above, reused for
+  // both outbound (see plivo-client.ts's createPlivoOutboundCall, which
+  // sets this as answer_url) and inbound (a merchant configures this as
+  // their Plivo Application's Answer URL, with `?orgId=` appended so
+  // requirePlivoSignature and org resolution both work — see that
+  // middleware's doc comment).
+  .post("/incoming/plivo", requirePlivoSignature, async (c) => {
+    const orgId = c.req.query("orgId");
+    const body = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
+    const callUuid = String(body.CallUUID ?? "");
+    const from = String(body.From ?? "");
+    const to = String(body.To ?? "");
+    const direction = String(body.Direction ?? "") === "outbound" ? "outbound" : "inbound";
+
+    if (callUuid) {
+      // This is the authoritative point where session/org context gets
+      // bound to Plivo's real CallUUID — see plivo-client.ts's doc comment
+      // on why the outbound trigger's own request_uuid isn't relied on for
+      // this instead.
+      const priorSession = direction === "outbound" ? await sessionStore.get(callUuid) : undefined;
+      await sessionStore.set(callUuid, { ...priorSession, callSid: callUuid, direction, orgId: priorSession?.orgId ?? orgId });
+
+      await db
+        .insert(calls)
+        .values({
+          provider: "plivo",
+          twilioCallSid: callUuid,
+          direction,
+          fromNumber: from,
+          toNumber: to,
+          status: "in-progress",
+          orgId: priorSession?.orgId ?? orgId ?? null,
+          agentPersona: priorSession?.persona ?? null,
+          webhookUrl: priorSession?.webhookUrl ?? null,
+        })
+        .onConflictDoNothing()
+        .catch(() => undefined as unknown);
+    }
+
+    return c.text(buildPlivoStreamXml(`${getWsUrl()}/api/voice/stream/plivo`), 200, { "Content-Type": "text/xml" });
+  })
+
   // Trigger an outbound call. Body: { to, persona?, webhookUrl? }
   // `webhookUrl` overrides the WEBHOOK_URL env default for this call only —
   // handy for routing different call flows to different n8n/Zapier hooks.
@@ -125,10 +170,12 @@ export const voice = new Hono()
     }
 
     let from = process.env.TWILIO_PHONE_NUMBER;
+    let telephonyProvider: "twilio" | "plivo" | "exotel" = "twilio";
     if (orgId) {
       const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
-      if (org?.outboundNumber) {
-        from = org.outboundNumber;
+      if (org?.outboundNumber) from = org.outboundNumber;
+      if (org?.telephonyProvider === "plivo" || org?.telephonyProvider === "exotel") {
+        telephonyProvider = org.telephonyProvider;
       }
     }
 
@@ -136,13 +183,69 @@ export const voice = new Hono()
 
     // Compliance gates — enforced automatically via @openvent/compliance, no
     // manual step required. A call that fails either check is rejected and
-    // never dials.
+    // never dials. Applies identically regardless of which provider places
+    // the call below.
     const bypassCompliance = process.env.BYPASS_COMPLIANCE === "true" || (parsed as { bypassCompliance?: boolean }).bypassCompliance;
     if (!bypassCompliance) {
       const compliance = await checkOutboundCallCompliance(to, dncAdapter);
       if (!compliance.allowed) {
         return c.json({ error: compliance.reason }, 403);
       }
+    }
+
+    // Plivo and Exotel are genuinely different call-placement shapes, not
+    // just different SDKs — see docs/india-telephony.md's status note and
+    // plivo-client.ts/exotel-client.ts's doc comments for the specific
+    // unverified assumptions in each (no live prototype call yet for
+    // either). Twilio's path below is unchanged from before this work.
+    if (telephonyProvider === "plivo") {
+      if (!orgId) return c.json({ error: "`orgId` is required for Plivo calls (credentials are per-org)" }, 400);
+      const result = await createPlivoOutboundCall({
+        orgId,
+        to,
+        from,
+        answerUrl: `${getPublicUrl()}/api/voice/incoming/plivo?orgId=${encodeURIComponent(orgId)}`,
+      });
+      if (!result.ok) return c.json({ error: result.error }, 502);
+
+      // Provisional session under request_uuid — /incoming/plivo rebinds
+      // this to the real CallUUID once Plivo's answer webhook fires (see
+      // that route and plivo-client.ts for why request_uuid isn't trusted
+      // as the final key on its own).
+      await sessionStore.set(result.requestUuid, {
+        callSid: result.requestUuid,
+        direction: "outbound",
+        persona,
+        webhookUrl,
+        orgId,
+        ttsProvider,
+        sttProvider,
+        language,
+      });
+      return c.json({ callSid: result.requestUuid, status: "queued" }, 201);
+    }
+
+    if (telephonyProvider === "exotel") {
+      if (!orgId) return c.json({ error: "`orgId` is required for Exotel calls (credentials are per-org)" }, 400);
+      const result = await createExotelOutboundCall({
+        orgId,
+        to,
+        from,
+        streamUrl: `${getWsUrl()}/api/voice/stream/exotel`,
+      });
+      if (!result.ok) return c.json({ error: result.error }, 502);
+
+      await sessionStore.set(result.callSid, {
+        callSid: result.callSid,
+        direction: "outbound",
+        persona,
+        webhookUrl,
+        orgId,
+        ttsProvider,
+        sttProvider,
+        language,
+      });
+      return c.json({ callSid: result.callSid, status: "in-progress" }, 201);
     }
 
     const call = await (await getTwilioClientForOrg(orgId)).calls.create({

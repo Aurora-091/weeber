@@ -1,0 +1,1 @@
+ALTER TABLE "calls" ADD COLUMN "provider" text DEFAULT 'twilio' NOT NULL;

@@ -64,7 +64,7 @@ export async function createSubaccountForOrg(orgId: string, friendlyName: string
 
   await db
     .update(orgs)
-    .set({ twilioMode: "platform", twilioAccountSid: account.sid, twilioAuthToken: account.authToken })
+    .set({ telephonyProvider: "twilio", twilioMode: "platform", twilioAccountSid: account.sid, twilioAuthToken: account.authToken })
     .where(eq(orgs.id, orgId));
 
   return { ok: true, accountSid: account.sid };
@@ -140,19 +140,34 @@ export async function setByoCredentials(
 
   await db
     .update(orgs)
-    .set({ twilioMode: "byo", twilioAccountSid: accountSid, twilioAuthToken: authToken, outboundNumber: phoneNumber })
+    .set({ telephonyProvider: "twilio", twilioMode: "byo", twilioAccountSid: accountSid, twilioAuthToken: authToken, outboundNumber: phoneNumber })
     .where(eq(orgs.id, orgId));
 
   return { ok: true };
 }
 
-/** Reverts to the platform global default — clears the dedicated
- * credentials entirely (does not delete the underlying Twilio sub-account
- * or number, just stops using them; that's a deliberate manual Twilio
- * Console action, not something to do silently from a reset button). */
+/** Reverts to the platform global default (Twilio) — clears every
+ * provider's stored credentials, not just Twilio's, since only one
+ * provider can be active at a time and this is the shared "start over"
+ * button all three telephony cards call. Does not delete anything on the
+ * provider's own side (e.g. the underlying Twilio sub-account or number),
+ * just stops using them; that's a deliberate manual action on the
+ * provider's own console, not something to do silently from here. */
 export async function resetToPlatformDefault(orgId: string): Promise<void> {
   await db
     .update(orgs)
-    .set({ twilioMode: "platform", twilioAccountSid: null, twilioAuthToken: null, outboundNumber: null })
+    .set({
+      telephonyProvider: "twilio",
+      twilioMode: "platform",
+      twilioAccountSid: null,
+      twilioAuthToken: null,
+      plivoAuthId: null,
+      plivoAuthToken: null,
+      exotelSid: null,
+      exotelApiKey: null,
+      exotelApiToken: null,
+      exotelSubdomain: null,
+      outboundNumber: null,
+    })
     .where(eq(orgs.id, orgId));
 }

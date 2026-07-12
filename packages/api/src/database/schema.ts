@@ -63,15 +63,41 @@ export const orgs = pgTable("orgs", {
   contactEmail: text("contact_email"),
   outboundNumber: text("outbound_number"),
   webhookUrl: text("webhook_url"),
+  // Which provider is actually live for calls today — generalizes the
+  // Twilio-only shape below to the BYO-per-provider pattern described in
+  // docs/india-telephony.md ("orgs gains a telephonyProvider field").
+  // Twilio is still the only one with a platform-owned (non-BYO)
+  // provisioning path; Plivo/Exotel are BYO-only until a platform-account
+  // path for either is prototyped.
+  telephonyProvider: text("telephony_provider").notNull().default("twilio"),
   twilioMode: text("twilio_mode").notNull().default("platform"),
   twilioAccountSid: text("twilio_account_sid"),
   twilioAuthToken: text("twilio_auth_token"),
+  // Plivo BYO — validated against Plivo's Account API before being stored
+  // (see voice/plivo-provisioning.ts). No platform sub-account path yet.
+  plivoAuthId: text("plivo_auth_id"),
+  plivoAuthToken: text("plivo_auth_token"),
+  // Exotel BYO — validated against Exotel's Accounts API before being
+  // stored (see voice/exotel-provisioning.ts). `exotelSubdomain` because
+  // Exotel's API host is region-specific per account (e.g. api.exotel.com,
+  // api.in1.exotel.com), unlike Twilio/Plivo's single global host.
+  exotelSid: text("exotel_sid"),
+  exotelApiKey: text("exotel_api_key"),
+  exotelApiToken: text("exotel_api_token"),
+  exotelSubdomain: text("exotel_subdomain"),
   humanTransferNumber: text("human_transfer_number"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
 export const calls = pgTable("calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  // Which telephony provider actually carried this call. `twilioCallSid`
+  // (below) is kept as the column name for the provider's own call
+  // identifier regardless of provider — it was Twilio-only when named, but
+  // is just an opaque string key today; renaming it would touch every call
+  // site across the codebase for no functional benefit. See
+  // voice/telephony-transport.ts for the provider-specific wire adapters.
+  provider: text("provider").notNull().default("twilio"),
   twilioCallSid: text("twilio_call_sid").notNull().unique(),
   orgId: text("org_id"),
   direction: text("direction").notNull().$type<"inbound" | "outbound">(),
@@ -163,6 +189,18 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
 }, (table) => [
   uniqueIndex("org_agent_configs_org_key_idx").on(table.orgId, table.templateKey),
 ]);
+
+// One row per org, drives the dashboard "finish setup" checklist + the
+// setup modal's resume/skip state. Steps are free-form jsonb (not one
+// column per step) so the vertical-specific step set can change without a
+// migration — see docs/DECISIONS.md "Setup modal, not a setup page".
+export const onboardingState = pgTable("onboarding_state", {
+  orgId: text("org_id").primaryKey().references(() => orgs.id, { onDelete: "cascade" }),
+  steps: jsonb("steps").$type<Record<string, boolean>>().notNull().default({}),
+  dismissed: boolean("dismissed").notNull().default(false),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+});
 
 export const orgMembers = pgTable("org_members", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

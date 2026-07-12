@@ -1,3 +1,88 @@
+## Status update (2026-07-12, later same day): real call transport built — and a correction
+
+Live protocol docs were pulled directly from Plivo and Exotel (not assumed) while building this, and
+one earlier claim in this doc turned out to be **wrong and is now corrected**: Exotel is NOT SIP-trunk-
+only anymore. Exotel's AgentStream product now ships a real bidirectional WebSocket (the "VoiceBot
+Applet") structurally close to Twilio's Media Streams — no LiveKit SIP bridge needed after all. The
+"Exotel = SIP+LiveKit, Plivo = WebSocket, prototype both" framing further down this doc is superseded by
+what's below; kept in place further down as historical record of the reasoning at the time, not as
+current guidance.
+
+**What's now real, not just credentials:**
+- `voice/telephony-transport.ts` — per-provider wire-format adapter. Twilio and Plivo both speak mu-law
+  8kHz already (Plivo's Audio Streaming protocol is close to a re-skin of Twilio's: `streamId`/`callId`
+  instead of `streamSid`/`callSid`, `playAudio`/`clearAudio` instead of `media`/`clear` on the way out,
+  otherwise the same shape). Exotel sends/expects raw linear16 PCM instead of mu-law — transcoded at the
+  boundary only (`voice/audio-codec.ts` gained `pcm16ToMulaw`, alongside the existing `mulawToPcm16`) so
+  `stream.ts`'s actual STT/agent/TTS pipeline never has to know which provider a call came from.
+- `stream.ts` — `createVoiceStreamHandlers(provider)` now takes the provider explicitly and routes all
+  wire I/O through the transport adapter instead of hardcoded Twilio JSON shapes. STT/TTS/agent logic
+  itself is unchanged.
+- `ws-route.ts` — three WS paths (`/api/voice/stream`, `/stream/plivo`, `/stream/exotel`), one per
+  provider, so the right adapter is selected up front rather than sniffed from the first message.
+- `voice/plivo-client.ts` / `voice/exotel-client.ts` — outbound call placement. Plivo: Call Create API +
+  answer_url returning Plivo Stream XML (same call-then-webhook-returns-XML shape as Twilio — reuses one
+  `/api/voice/incoming/plivo` route for both inbound and outbound, mirroring how `/incoming` already
+  doubles as both for Twilio). Exotel: a single direct `/calls/connect` API call with `streamurl` — no
+  separate webhook/XML round-trip, a genuinely different shape from Twilio/Plivo's.
+- `voice/middleware/plivo-signature.ts` — validates `X-Plivo-Signature-V3`, algorithm taken directly from
+  Plivo's own docs. Org resolution is via an `?orgId=` query param on the answer_url itself (Plivo's
+  webhook is often the first request for a fresh call, with no DB row yet to look an org up from) —
+  merchants wiring a Plivo number for pure inbound use need the same `?orgId=` on their Plivo
+  Application's configured Answer URL.
+- `calls.provider` column added — records which provider actually carried a call. `stream.ts`'s "start"
+  handler also gained a lazy-insert fallback (using from/to off the start event itself) for Exotel, since
+  unlike Twilio/Plivo it has no separate inbound webhook step that pre-creates the `calls` row before the
+  WS opens.
+
+**What's explicitly still not done / unverified — no live prototype call has been made for either
+provider, this sandbox has no way to place one (no real Plivo/Exotel account, no public WS URL, no phone
+to receive a call on):**
+- Whether Plivo's immediate Call Create response (`request_uuid`) reliably equals the real `CallUUID` the
+  WS `start` event later carries is unconfirmed — `plivo-client.ts` and the `/incoming/plivo` route are
+  written so this isn't load-bearing either way (the answer webhook, not the create response, is treated
+  as the authoritative point session/org context gets bound to the real CallUUID).
+- Whether Exotel's `/calls/connect` response `call.sid` matches the `call_sid` in the later WS `start`
+  event is unconfirmed for the same reason — `stream.ts`'s lazy-insert fallback exists specifically so a
+  mismatch here doesn't leave a call with no DB row, just without this request's org/persona context.
+- Mid-call hang-up (`performHangUp`) and transfer-to-human (`performTransfer`) remain Twilio-only. Both
+  now explicitly no-op-with-a-warning (falling back to just closing the socket, or to hang-up) for
+  Plivo/Exotel rather than silently calling the wrong provider's API — implementing their real
+  equivalents (Plivo `Call.transfer`, Exotel's Legs API transfer action) is follow-up work.
+- Unit tests cover the wire-format parsing/building and the mu-law<->PCM16 codec round-trip
+  (`voice/telephony-transport.test.ts`) — that's confidence in the *protocol translation logic*, not a
+  substitute for one real end-to-end call through each provider.
+
+---
+
+## Status update (2026-07-12): Plivo + Exotel BYO wired up
+
+The "generalize the BYO pattern" section below is now implemented for credential storage/validation —
+not for live call routing. Concretely:
+
+- `orgs.telephonyProvider` (`twilio` | `plivo` | `exotel`) plus per-provider credential columns
+  (`plivoAuthId`/`plivoAuthToken`, `exotelSid`/`exotelApiKey`/`exotelApiToken`/`exotelSubdomain`) exist
+  in schema. `voice/plivo-provisioning.ts` and `voice/exotel-provisioning.ts` mirror
+  `voice/twilio-provisioning.ts`'s BYO validate-before-store pattern (Plivo: `GET /v1/Account/{authId}/`;
+  Exotel: `GET /v1/Accounts/{sid}/` against the account's own subdomain). `GET /api/app/telephony/status`
+  returns all three providers' status plus which one is currently active; `POST
+  /api/app/telephony/plivo/byo` and `/exotel/byo` connect them; `/telephony/reset` clears all three back
+  to the Twilio platform default. Merchant Integrations page has real Connect dialogs for both (no more
+  "Coming soon" tiles).
+- **This is credential wiring only, not the transport/media integration.** Plivo's WebSocket media
+  streaming and Exotel's SIP+LiveKit bridge (both described below) are still unbuilt — a merchant who
+  connects Exotel today gets their account recorded and their number set as `outboundNumber`, but calls
+  do not actually route through Exotel's media path yet (`voice/stream.ts` is still Twilio/Plivo-shaped
+  WebSocket only, and even Plivo's WebSocket adapter itself hasn't been built — only its credential
+  validation has). The UI says this explicitly for Exotel. Neither vendor has had the "one real
+  prototype call" this doc calls for below — that's still the next real step, not this credential work.
+- No platform-owned Plivo/Exotel sub-account or number-purchase path exists (unlike Twilio's
+  `createSubaccountForOrg`/`buyNumberForOrg`) — both are BYO-only, consistent with "DLT PE registration
+  is a business-verification process, not an API call" further down this doc. A merchant with nothing
+  existing still gets Weeber's shared Twilio platform default until a platform Plivo path is prototyped.
+
+---
+
 # India Telephony: Numbers, Regulation, and Provisioning
 
 Reference doc for the actual mechanics of getting Weeber's agents onto real Indian phone numbers,

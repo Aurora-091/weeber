@@ -153,18 +153,32 @@ function ExportCard({
   );
 }
 
-type TelephonyStatus = {
+type TwilioSubStatus = {
   mode: "platform" | "byo";
   accountSid: string | null;
   outboundNumber: string | null;
   usingGlobalDefault: boolean;
 };
+type PlivoSubStatus = { connected: boolean; authId: string | null };
+type ExotelSubStatus = { connected: boolean; sid: string | null; subdomain: string | null };
+
+type TelephonyStatus = {
+  /** Which provider is actually live for this org's calls right now. */
+  provider: "twilio" | "plivo" | "exotel";
+  outboundNumber: string | null;
+  twilio: TwilioSubStatus;
+  plivo: PlivoSubStatus;
+  exotel: ExotelSubStatus;
+};
 
 /** One telephony provider tile — mirrors the Shopify/WooCommerce/BigCommerce
- * card pattern above. Only Twilio has a real backend integration today
- * (see voice/twilio-provisioning.ts); Plivo and Exotel are planned (see
- * docs/india-telephony.md) but have no adapter yet, so their Connect
- * buttons are disabled rather than opening a form that would silently fail. */
+ * card pattern above. Twilio has a platform-owned provisioning path
+ * (dedicated sub-account + bought number) on top of BYO; Plivo and Exotel
+ * are BYO-only today (see voice/plivo-provisioning.ts,
+ * voice/exotel-provisioning.ts, and docs/india-telephony.md for why —
+ * Exotel in particular needs a SIP bridge for live calls that doesn't
+ * exist yet, so connecting credentials here records the account but
+ * doesn't yet route real traffic through it). */
 function TelephonyProviderTile({
   name,
   connected,
@@ -271,8 +285,10 @@ export function MerchantIntegrationsPage() {
   }, [queryClient, me.org.id]);
 
   // --- Telephony (BYO/dedicated number) ---
-  const [telephonyDialog, setTelephonyDialog] = useState<"twilio" | null>(null);
+  const [telephonyDialog, setTelephonyDialog] = useState<"twilio" | "plivo" | "exotel" | null>(null);
   const [twilioForm, setTwilioForm] = useState({ accountSid: "", authToken: "", phoneNumber: "" });
+  const [plivoForm, setPlivoForm] = useState({ authId: "", authToken: "", phoneNumber: "" });
+  const [exotelForm, setExotelForm] = useState({ sid: "", apiKey: "", apiToken: "", subdomain: "", phoneNumber: "" });
   const [numberCountryCode, setNumberCountryCode] = useState("US");
   const [numberAreaCode, setNumberAreaCode] = useState("");
 
@@ -303,6 +319,46 @@ export function MerchantIntegrationsPage() {
       toast.success("Twilio connected");
       setTelephonyDialog(null);
       setTwilioForm({ accountSid: "", authToken: "", phoneNumber: "" });
+      void invalidateTelephony();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const plivoByoMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/plivo/byo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(plivoForm),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to connect Plivo");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Plivo connected");
+      setTelephonyDialog(null);
+      setPlivoForm({ authId: "", authToken: "", phoneNumber: "" });
+      void invalidateTelephony();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const exotelByoMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/exotel/byo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(exotelForm),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to connect Exotel");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Exotel connected — credentials saved, but calls don't route through Exotel yet.");
+      setTelephonyDialog(null);
+      setExotelForm({ sid: "", apiKey: "", apiToken: "", subdomain: "", phoneNumber: "" });
       void invalidateTelephony();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -646,12 +702,25 @@ export function MerchantIntegrationsPage() {
         <div className="grid gap-4 sm:grid-cols-3 mb-4">
           <TelephonyProviderTile
             name="Twilio"
-            connected={Boolean(telephonyStatusQuery.data?.accountSid || telephonyStatusQuery.data?.outboundNumber)}
+            connected={telephonyStatusQuery.data?.provider === "twilio" && Boolean(telephonyStatusQuery.data?.outboundNumber)}
             onConnect={() => setTelephonyDialog("twilio")}
           />
-          <TelephonyProviderTile name="Plivo" comingSoon />
-          <TelephonyProviderTile name="Exotel" comingSoon />
+          <TelephonyProviderTile
+            name="Plivo"
+            connected={Boolean(telephonyStatusQuery.data?.plivo.connected)}
+            onConnect={() => setTelephonyDialog("plivo")}
+          />
+          <TelephonyProviderTile
+            name="Exotel"
+            connected={Boolean(telephonyStatusQuery.data?.exotel.connected)}
+            onConnect={() => setTelephonyDialog("exotel")}
+          />
         </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Only one provider can be active at a time — connecting Plivo or Exotel switches your org's number
+          over to it. Exotel credentials are recorded but calls don't route through Exotel yet (needs a SIP
+          bridge — see docs/india-telephony.md); Plivo and Twilio are both live today.
+        </p>
 
         {telephonyStatusQuery.data && (
           <div className="rounded-lg border border-border bg-card p-5">
@@ -662,7 +731,13 @@ export function MerchantIntegrationsPage() {
                   <p className="text-xs text-muted-foreground mt-1">
                     <span className="font-mono text-foreground">{telephonyStatusQuery.data.outboundNumber}</span>
                     {" — "}
-                    {telephonyStatusQuery.data.mode === "byo" ? "your own Twilio account (BYO)" : "dedicated number, provisioned by Weeber"}
+                    {telephonyStatusQuery.data.provider === "twilio"
+                      ? telephonyStatusQuery.data.twilio.mode === "byo"
+                        ? "your own Twilio account (BYO)"
+                        : "dedicated number, provisioned by Weeber"
+                      : telephonyStatusQuery.data.provider === "plivo"
+                        ? "your own Plivo account (BYO)"
+                        : "your own Exotel account (BYO)"}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-1">
@@ -671,7 +746,7 @@ export function MerchantIntegrationsPage() {
                 )}
               </div>
               <div className="flex gap-2 shrink-0">
-                {!telephonyStatusQuery.data.outboundNumber && (
+                {!telephonyStatusQuery.data.outboundNumber && telephonyStatusQuery.data.provider === "twilio" && (
                   <>
                     <Input
                       value={numberCountryCode}
@@ -703,7 +778,9 @@ export function MerchantIntegrationsPage() {
                     </Button>
                   </>
                 )}
-                {(telephonyStatusQuery.data.mode === "byo" || telephonyStatusQuery.data.outboundNumber) && (
+                {(telephonyStatusQuery.data.provider !== "twilio" ||
+                  telephonyStatusQuery.data.twilio.mode === "byo" ||
+                  telephonyStatusQuery.data.outboundNumber) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -775,6 +852,152 @@ export function MerchantIntegrationsPage() {
                 </>
               ) : (
                 "Connect Twilio"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={telephonyDialog === "plivo"} onOpenChange={(open) => !open && setTelephonyDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Plivo</DialogTitle>
+            <DialogDescription>Enter your credentials to connect your own Plivo account.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="plivo-auth-id">Auth ID</Label>
+              <Input
+                id="plivo-auth-id"
+                placeholder="Enter Auth ID"
+                value={plivoForm.authId}
+                onChange={(e) => setPlivoForm({ ...plivoForm, authId: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="plivo-auth-token">Auth Token</Label>
+              <Input
+                id="plivo-auth-token"
+                type="password"
+                placeholder="Enter Auth Token"
+                value={plivoForm.authToken}
+                onChange={(e) => setPlivoForm({ ...plivoForm, authToken: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="plivo-number">Phone Number</Label>
+              <Input
+                id="plivo-number"
+                placeholder="Enter phone number"
+                value={plivoForm.phoneNumber}
+                onChange={(e) => setPlivoForm({ ...plivoForm, phoneNumber: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTelephonyDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                plivoByoMutation.isPending ||
+                !plivoForm.authId.trim() ||
+                !plivoForm.authToken.trim() ||
+                !plivoForm.phoneNumber.trim()
+              }
+              onClick={() => plivoByoMutation.mutate()}
+            >
+              {plivoByoMutation.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect Plivo"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={telephonyDialog === "exotel"} onOpenChange={(open) => !open && setTelephonyDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Exotel</DialogTitle>
+            <DialogDescription>
+              Enter your credentials to connect your own Exotel account. Note: calls don't route through
+              Exotel yet — this records your account for when the integration ships.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="exotel-sid">Account SID</Label>
+              <Input
+                id="exotel-sid"
+                placeholder="Enter account SID"
+                value={exotelForm.sid}
+                onChange={(e) => setExotelForm({ ...exotelForm, sid: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exotel-api-key">API Key</Label>
+              <Input
+                id="exotel-api-key"
+                placeholder="Enter API Key"
+                value={exotelForm.apiKey}
+                onChange={(e) => setExotelForm({ ...exotelForm, apiKey: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exotel-api-token">API Token</Label>
+              <Input
+                id="exotel-api-token"
+                type="password"
+                placeholder="Enter API Token"
+                value={exotelForm.apiToken}
+                onChange={(e) => setExotelForm({ ...exotelForm, apiToken: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exotel-subdomain">API Subdomain (optional)</Label>
+              <Input
+                id="exotel-subdomain"
+                placeholder="api.exotel.com"
+                value={exotelForm.subdomain}
+                onChange={(e) => setExotelForm({ ...exotelForm, subdomain: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exotel-number">Phone Number</Label>
+              <Input
+                id="exotel-number"
+                placeholder="Enter phone number"
+                value={exotelForm.phoneNumber}
+                onChange={(e) => setExotelForm({ ...exotelForm, phoneNumber: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTelephonyDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                exotelByoMutation.isPending ||
+                !exotelForm.sid.trim() ||
+                !exotelForm.apiKey.trim() ||
+                !exotelForm.apiToken.trim() ||
+                !exotelForm.phoneNumber.trim()
+              }
+              onClick={() => exotelByoMutation.mutate()}
+            >
+              {exotelByoMutation.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect Exotel"
               )}
             </Button>
           </DialogFooter>
