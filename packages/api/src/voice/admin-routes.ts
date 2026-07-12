@@ -20,12 +20,14 @@ import {
   featureFlags,
   orgMembers,
   orgs,
+  platformAdmins,
   platformSettings,
   shopLinks,
   toolCalls,
   orgAgentConfigs,
 } from "../database/schema";
 import { requireAdminKey, type AdminAuthVariables } from "./middleware/admin-auth";
+import { adminSessionAuth } from "./middleware/admin-session";
 import {
   startImpersonation,
   stopImpersonation,
@@ -74,7 +76,18 @@ type AdminEnv = { Variables: AdminAuthVariables };
 const GUARDRAIL_TOOL_NAMES = ["flagGuardrailEvent", "guardrail-heuristic-detector"];
 
 export const admin = new Hono<AdminEnv>()
+  .use("*", adminSessionAuth)
   .use("*", requireAdminKey)
+
+  .get("/admin-me", async (c) => {
+    const actor = c.get("adminActor");
+    const [admin] = await db
+      .select({ email: platformAdmins.email, role: platformAdmins.role })
+      .from(platformAdmins)
+      .where(eq(platformAdmins.email, actor))
+      .limit(1);
+    return c.json({ email: actor, role: admin?.role ?? "api-key", authenticated: true }, 200);
+  })
 
   // Org list with rollups for the admin orgs page (the picker keeps using
   // the lighter GET /orgs in routes.ts). Registered before /orgs/:orgId so

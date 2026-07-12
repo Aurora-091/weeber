@@ -3,10 +3,15 @@ import DocsPage from "./pages/docs";
 import LandingPage from "./pages/landing";                                                                                   
 import { Provider } from "./components/provider";                                                                      
 import { AgentFeedback } from "@runablehq/website-runtime";
+
+const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "merchant" | "all";
+const showPublic = surface === "all" || surface === "public";
+const showAdmin = surface === "all" || surface === "admin";
+const showMerchant = surface === "all" || surface === "merchant";
+
+// Admin dashboard pages (lazy-loaded when surface includes admin)
 import { AdminKeyGate } from "./components/dashboard/admin-key-gate";
 import { DashboardShell } from "./components/dashboard/dashboard-shell";
-
-// Admin dashboard pages
 import { CallsListPage } from "./pages/dashboard/calls-list";
 import { CallDetailPage } from "./pages/dashboard/call-detail";
 import { DncPage } from "./pages/dashboard/dnc";
@@ -53,107 +58,161 @@ function App() {
   return (                                                                                                             
     <Provider>                                                                                                         
       <Switch>                                                                                                         
-        <Route path="/" component={LandingPage} />
-        <Route path="/docs" component={DocsPage} />
+        {/* Public pages */}
+        {showPublic && <Route path="/" component={LandingPage} />}
+        {showPublic && <Route path="/docs" component={DocsPage} />}
         
         {/* Admin Dashboard */}
-        <Route path="/dashboard">
-          <Dashboard><CallsListPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/calls/:id">
-          <Dashboard><CallDetailPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/dnc">
-          <Dashboard><DncPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/audit">
-          <Dashboard><AuditPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/settings">
-          <Dashboard><SettingsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/agents">
-          <Dashboard><AgentsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/analytics">
-          <Dashboard><AnalyticsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/orgs">
-          <Dashboard><OrgsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/templates">
-          <Dashboard><TemplatesPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/billing">
-          <Dashboard><BillingPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/compliance">
-          <Dashboard><CompliancePage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/flags">
-          <Dashboard><FlagsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/users">
-          <Dashboard><UsersPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/waitlist">
-          <Dashboard><WaitlistPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/broadcasts">
-          <Dashboard><BroadcastsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/support">
-          <Dashboard><SupportPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/logs">
-          <Dashboard><LogsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/revenue-analytics">
-          <Dashboard><RevenueAnalyticsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/marketing-analytics">
-          <Dashboard><MarketingAnalyticsPage /></Dashboard>
-        </Route>
-        <Route path="/dashboard/workflow-runs">
-          <Dashboard><WorkflowRunsPage /></Dashboard>
-        </Route>
+        {showAdmin && (
+          <Route path="/dashboard">
+            <Dashboard><CallsListPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/calls/:id">
+            <Dashboard><CallDetailPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/dnc">
+            <Dashboard><DncPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/audit">
+            <Dashboard><AuditPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/settings">
+            <Dashboard><SettingsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/agents">
+            <Dashboard><AgentsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/analytics">
+            <Dashboard><AnalyticsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/orgs">
+            <Dashboard><OrgsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/templates">
+            <Dashboard><TemplatesPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/billing">
+            <Dashboard><BillingPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/compliance">
+            <Dashboard><CompliancePage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/flags">
+            <Dashboard><FlagsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/users">
+            <Dashboard><UsersPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/waitlist">
+            <Dashboard><WaitlistPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/broadcasts">
+            <Dashboard><BroadcastsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/support">
+            <Dashboard><SupportPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/logs">
+            <Dashboard><LogsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/revenue-analytics">
+            <Dashboard><RevenueAnalyticsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/marketing-analytics">
+            <Dashboard><MarketingAnalyticsPage /></Dashboard>
+          </Route>
+        )}
+        {showAdmin && (
+          <Route path="/dashboard/workflow-runs">
+            <Dashboard><WorkflowRunsPage /></Dashboard>
+          </Route>
+        )}
 
         {/* Merchant App */}
-        <Route path="/app/login"><MerchantLoginPage /></Route>
-        <Route path="/app/auth/callback"><MerchantAuthCallbackPage /></Route>
-        <Route path="/app/auth/reset-password"><ResetPasswordPage /></Route>
+        {showMerchant && <Route path="/app/login"><MerchantLoginPage /></Route>}
+        {showMerchant && <Route path="/app/auth/callback"><MerchantAuthCallbackPage /></Route>}
+        {showMerchant && <Route path="/app/auth/reset-password"><ResetPasswordPage /></Route>}
         
-        <Route path="/app">
-          <MerchantShell><MerchantHomePage /></MerchantShell>
-        </Route>
-        {/* Old bookmarked/linked full-page URL — now just the dashboard with
-            the setup modal force-opened, instead of a dedicated page. */}
-        <Route path="/app/onboarding">
-          <Redirect to="/app?setup=1" />
-        </Route>
-        <Route path="/app/agents">
-          <MerchantShell><MerchantAgentsPage /></MerchantShell>
-        </Route>
-        <Route path="/app/calls">
-          <MerchantShell><MerchantCallsPage /></MerchantShell>
-        </Route>
-        <Route path="/app/calls/:id">
-          <MerchantShell><MerchantCallDetailPage /></MerchantShell>
-        </Route>
-        <Route path="/app/analytics">
-          <MerchantShell><MerchantAnalyticsPage /></MerchantShell>
-        </Route>
-        <Route path="/app/billing">
-          <MerchantShell><MerchantBillingPage /></MerchantShell>
-        </Route>
-        <Route path="/app/integrations">
-          <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
-        </Route>
+        {showMerchant && (
+          <Route path="/app">
+            <MerchantShell><MerchantHomePage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/onboarding">
+            <Redirect to="/app?setup=1" />
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/agents">
+            <MerchantShell><MerchantAgentsPage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/calls">
+            <MerchantShell><MerchantCallsPage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/calls/:id">
+            <MerchantShell><MerchantCallDetailPage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/analytics">
+            <MerchantShell><MerchantAnalyticsPage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/billing">
+            <MerchantShell><MerchantBillingPage /></MerchantShell>
+          </Route>
+        )}
+        {showMerchant && (
+          <Route path="/app/integrations">
+            <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
+          </Route>
+        )}
       </Switch>                                                                                                        
-      {/* Do not remove — off by default, activated by parent iframe via postMessage */}                                                  
       {import.meta.env.DEV && <AgentFeedback />}
     </Provider>                                                                                                        
   );                                                                                                                   
 }                                                                                                                      
                                                                                                                       
-export default App; 
+export default App;

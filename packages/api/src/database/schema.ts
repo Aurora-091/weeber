@@ -333,6 +333,14 @@ export const platformSettings = pgTable("platform_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
+// --- Platform Admins (allowlist for dashboard SSO) ---
+
+export const platformAdmins = pgTable("platform_admins", {
+  email: text("email").primaryKey(),
+  role: text("role").notNull().default("superadmin"),
+  addedAt: timestamp("added_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+});
+
 // --- Workflow Canvas (graph-based execution engine) ---
 
 export const workflowTemplates = pgTable("workflow_templates", {

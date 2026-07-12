@@ -7,6 +7,8 @@
 import { count as countRows, desc, eq, lte, ne, sql } from "drizzle-orm";
 import { db } from "../database";
 import { waitlistSignups } from "../database/schema";
+import { sendTransactionalEmail } from "./email";
+import { waitlistConfirmationHtml, referralNotificationHtml } from "./email-templates";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[\d\s\-()]{7,20}$/;
@@ -99,6 +101,39 @@ export async function joinWaitlist(input: {
     .select({ value: countRows() })
     .from(waitlistSignups)
     .where(lte(waitlistSignups.createdAt, inserted!.createdAt));
+
+  // --- Fire transactional emails (non-blocking) ---
+  const appUrl = process.env.PUBLIC_APP_URL || "https://weeber.ai";
+  const referralLink = `${appUrl}?ref=${ownReferralCode}`;
+  const unsubscribeLink = `${appUrl}/api/public/waitlist/unsubscribe?token=${unsubscribeToken}`;
+
+  void sendTransactionalEmail({
+    to: email,
+    subject: "You're in — welcome to Weeber",
+    html: waitlistConfirmationHtml({ name: input.name?.trim() || null, referralLink, unsubscribeLink }),
+    tags: [{ name: "category", value: "waitlist-confirmation" }],
+  });
+
+  // Notify the referrer that someone joined via their link
+  if (referrer) {
+    void (async () => {
+      const [referrerRow] = await db
+        .select({ email: waitlistSignups.email, name: waitlistSignups.name, ownReferralCode: waitlistSignups.ownReferralCode, unsubscribeToken: waitlistSignups.unsubscribeToken })
+        .from(waitlistSignups)
+        .where(eq(waitlistSignups.id, referrer!.id))
+        .limit(1);
+      if (referrerRow?.email && referrerRow.unsubscribeToken) {
+        const refLink = `${appUrl}?ref=${referrerRow.ownReferralCode}`;
+        const refUnsub = `${appUrl}/api/public/waitlist/unsubscribe?token=${referrerRow.unsubscribeToken}`;
+        void sendTransactionalEmail({
+          to: referrerRow.email,
+          subject: "Someone joined Weeber using your link!",
+          html: referralNotificationHtml({ name: referrerRow.name, referralLink: refLink, unsubscribeLink: refUnsub }),
+          tags: [{ name: "category", value: "waitlist-referral" }],
+        });
+      }
+    })();
+  }
 
   return {
     ok: true,

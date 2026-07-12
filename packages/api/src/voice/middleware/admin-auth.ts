@@ -31,6 +31,11 @@ let warnedMissingKey = false;
 export type AdminAuthVariables = { adminActor: string };
 
 export const requireAdminKey = createMiddleware<{ Variables: AdminAuthVariables }>(async (c, next) => {
+  // If a prior middleware (adminSessionAuth) already authenticated, skip.
+  if (c.get("adminActor")) {
+    return next();
+  }
+
   const providedKey = c.req.header("X-OpenVent-Admin-Key");
   const configuredKey = process.env.ADMIN_API_KEY;
 

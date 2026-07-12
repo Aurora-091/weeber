@@ -13,6 +13,32 @@ This document tracks system changes, database schemas, API parameters, and archi
 - **Admin UI:** New "Tracking & Analytics" section at top of `/dashboard/settings` with validated inputs, verify-before-save, and inline success/error feedback.
 - **index.html:** Removed hardcoded commented-out GTM/GA4 blocks — replaced by dynamic injection.
 
+## 2026-07-12 — Resend transactional email module
+
+- **New file:** `packages/api/src/app/email.ts` — thin Resend wrapper for single-send transactional emails (non-blocking, graceful no-op when `RESEND_API_KEY` unset).
+- **New file:** `packages/api/src/app/email-templates.ts` — branded HTML templates (warm paper theme, Weeber logo, accent `#C4622D`, responsive).
+- **Waitlist confirmation:** on new signup → "You're in — welcome to Weeber" email with mini pitch, what-to-expect bullets, referral CTA, unsubscribe link. No position number shown.
+- **Referral notification:** when someone joins via a referral link → notifies the referrer.
+- **Enterprise inquiry receipt:** auto-acknowledgment on `/enterprise-inquiry` submit.
+- **Support ticket receipt:** auto-acknowledgment on `/support` submit.
+- **Env vars:** `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (defaults to hello@weeber.ai), `PUBLIC_APP_URL`.
+
+## 2026-07-12 — Admin SSO (Supabase email/password login)
+
+- **New table:** `platform_admins` — email allowlist for admin dashboard access. Service-role-only RLS.
+- **New middleware:** `packages/api/src/voice/middleware/admin-session.ts` — verifies Supabase JWT, checks email against `platform_admins`. Falls through to API-key auth if no Bearer token present.
+- **New endpoint:** `GET /api/voice/admin-me` — returns authenticated admin's email and role.
+- **Updated `requireAdminKey`:** skips if a prior middleware already authenticated (session-based auth takes priority).
+- **Admin login page:** `packages/web/src/web/pages/dashboard/admin-login.tsx` — email/password form via `supabase.auth.signInWithPassword()`.
+- **Updated `AdminKeyGate`:** first tries Supabase session, falls back to API key. "Use API key instead" link preserved for CI/scripts.
+- **Updated `adminHeaders`:** new `adminHeadersAsync()` helper sends Bearer token when session exists.
+
+## 2026-07-12 — Route isolation prep (VITE_APP_SURFACE)
+
+- **New env var:** `VITE_APP_SURFACE` — `"all"` (default), `"public"`, `"admin"`, or `"merchant"`.
+- **Updated `app.tsx`:** routes conditionally rendered based on surface value.
+- Enables future subdomain isolation via multiple Vercel projects (one per surface, same repo, different env vars) without code changes.
+
 ---
 
 ## 2026-07-12 — Setup modal + vertical-driven dashboard, Plivo/Exotel telephony, CI hardening

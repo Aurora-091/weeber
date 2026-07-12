@@ -11,6 +11,8 @@ import { platformSettings } from "../database/schema";
 import { joinWaitlist, addWaitlistPhone, getWaitlistDisplayCount, unsubscribeByToken } from "./waitlist";
 import { broadcastWaitlistCount } from "./waitlist-ws";
 import { submitSupportTicket } from "./support";
+import { sendTransactionalEmail } from "./email";
+import { enterpriseInquiryReceiptHtml, supportTicketReceiptHtml } from "./email-templates";
 
 function unsubscribePageHtml(message: string, isError = false): string {
   const color = isError ? "#dc2626" : "#0a0a0a";
@@ -96,6 +98,12 @@ export const publicRoutes = new Hono()
     }
     const ticket = await submitSupportTicket({ email, subject, message });
     if (!ticket) return c.json({ error: "Failed to submit ticket" }, 500);
+    void sendTransactionalEmail({
+      to: email,
+      subject: "We got your message",
+      html: supportTicketReceiptHtml({ email, subject }),
+      tags: [{ name: "category", value: "support-receipt" }],
+    });
     return c.json({ submitted: true }, 201);
   })
 
@@ -129,6 +137,12 @@ export const publicRoutes = new Hono()
     ].join("\n");
     const ticket = await submitSupportTicket({ email, subject: "Enterprise inquiry", message });
     if (!ticket) return c.json({ error: "Failed to submit inquiry" }, 500);
+    void sendTransactionalEmail({
+      to: email,
+      subject: "Thanks for reaching out to Weeber",
+      html: enterpriseInquiryReceiptHtml({ name: name.trim() }),
+      tags: [{ name: "category", value: "enterprise-inquiry-receipt" }],
+    });
     return c.json({ submitted: true }, 201);
   })
 
