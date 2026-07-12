@@ -1,7 +1,8 @@
 import { db } from "./index";
-import { agentTemplates } from "./schema";
+import { agentTemplates, workflowTemplates } from "./schema";
 import { eq } from "drizzle-orm";
 import { join } from "path";
+import { CART_RECOVERY_TEMPLATE } from "../voice/workflows/seed-graph";
 
 export async function seedAgentTemplates() {
   console.log("[db-seed] Seeding agent templates...");
@@ -103,4 +104,24 @@ export async function seedAgentTemplates() {
   } else {
     console.log(`[db-seed] All ${seededCount} agent templates seeded successfully.`);
   }
+}
+
+export async function seedWorkflowTemplates() {
+  console.log("[db-seed] Seeding workflow templates...");
+  const [existing] = await db
+    .select()
+    .from(workflowTemplates)
+    .where(eq(workflowTemplates.id, CART_RECOVERY_TEMPLATE.id))
+    .limit(1);
+  if (existing) {
+    console.log(`[db-seed] Workflow template "${CART_RECOVERY_TEMPLATE.id}" already exists — skipping.`);
+    return;
+  }
+  await db.insert(workflowTemplates).values({
+    id: CART_RECOVERY_TEMPLATE.id,
+    vertical: CART_RECOVERY_TEMPLATE.vertical,
+    name: CART_RECOVERY_TEMPLATE.name,
+    graph: CART_RECOVERY_TEMPLATE.graph,
+  });
+  console.log(`[db-seed] Workflow template "${CART_RECOVERY_TEMPLATE.id}" seeded.`);
 }

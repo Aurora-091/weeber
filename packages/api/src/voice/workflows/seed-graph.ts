@@ -1,0 +1,140 @@
+import type { WorkflowGraph } from "./graph-types";
+
+/**
+ * The standard Shopify cart recovery workflow — 3 call attempts with
+ * escalating discounts (0% → 10% → 20%), matching the Klaviyo-style
+ * "email 1 = no discount, email 2 = 10%, email 3 = 20%" pattern.
+ */
+export const CART_RECOVERY_GRAPH: WorkflowGraph = {
+  nodes: [
+    {
+      id: "trigger-1",
+      type: "trigger",
+      position: { x: 400, y: 0 },
+      config: { event: "checkout_abandoned" },
+    },
+    {
+      id: "wait-1",
+      type: "wait",
+      position: { x: 400, y: 100 },
+      config: { delayMinutes: 45 },
+    },
+    {
+      id: "call-1",
+      type: "call",
+      position: { x: 400, y: 200 },
+      config: {
+        persona: "shopify-cart-recovery",
+        discountPercent: 0,
+      },
+    },
+    {
+      id: "split-1",
+      type: "conditionalSplit",
+      position: { x: 400, y: 320 },
+      config: {
+        outcomes: ["interested", "no-answer", "busy", "failed", "not-interested"],
+      },
+    },
+    // -- Second attempt branch (no-answer/busy/failed) --
+    {
+      id: "wait-2",
+      type: "wait",
+      position: { x: 650, y: 420 },
+      config: { delayMinutes: 360 },
+    },
+    {
+      id: "call-2",
+      type: "call",
+      position: { x: 650, y: 520 },
+      config: {
+        persona: "shopify-cart-recovery",
+        discountPercent: { "2": 10 },
+      },
+    },
+    {
+      id: "split-2",
+      type: "conditionalSplit",
+      position: { x: 650, y: 640 },
+      config: {
+        outcomes: ["interested", "no-answer", "busy", "failed", "not-interested"],
+      },
+    },
+    // -- Third attempt branch --
+    {
+      id: "wait-3",
+      type: "wait",
+      position: { x: 900, y: 740 },
+      config: { delayMinutes: 1440 },
+    },
+    {
+      id: "call-3",
+      type: "call",
+      position: { x: 900, y: 840 },
+      config: {
+        persona: "shopify-cart-recovery",
+        discountPercent: { "3": 20 },
+      },
+    },
+    {
+      id: "split-3",
+      type: "conditionalSplit",
+      position: { x: 900, y: 960 },
+      config: {
+        outcomes: ["interested", "no-answer", "not-interested"],
+      },
+    },
+    // -- Terminal nodes --
+    {
+      id: "dnc-exhausted",
+      type: "addToDnc",
+      position: { x: 1100, y: 1060 },
+      config: { reason: "cart recovery exhausted" },
+    },
+    {
+      id: "dnc-declined",
+      type: "addToDnc",
+      position: { x: 150, y: 420 },
+      config: { reason: "declined cart recovery" },
+    },
+  ],
+  edges: [
+    { id: "e-trigger-wait1", source: "trigger-1", target: "wait-1" },
+    { id: "e-wait1-call1", source: "wait-1", target: "call-1" },
+    { id: "e-call1-split1", source: "call-1", target: "split-1" },
+
+    // Split 1 branches
+    { id: "e-split1-noanswer", source: "split-1", target: "wait-2", branch: "no-answer" },
+    { id: "e-split1-busy", source: "split-1", target: "wait-2", branch: "busy" },
+    { id: "e-split1-failed", source: "split-1", target: "wait-2", branch: "failed" },
+    { id: "e-split1-notinterested", source: "split-1", target: "dnc-declined", branch: "not-interested" },
+    { id: "e-split1-default", source: "split-1", target: "wait-2", branch: "default" },
+
+    // Second attempt
+    { id: "e-wait2-call2", source: "wait-2", target: "call-2" },
+    { id: "e-call2-split2", source: "call-2", target: "split-2" },
+
+    // Split 2 branches
+    { id: "e-split2-noanswer", source: "split-2", target: "wait-3", branch: "no-answer" },
+    { id: "e-split2-busy", source: "split-2", target: "wait-3", branch: "busy" },
+    { id: "e-split2-failed", source: "split-2", target: "wait-3", branch: "failed" },
+    { id: "e-split2-notinterested", source: "split-2", target: "dnc-declined", branch: "not-interested" },
+    { id: "e-split2-default", source: "split-2", target: "wait-3", branch: "default" },
+
+    // Third attempt
+    { id: "e-wait3-call3", source: "wait-3", target: "call-3" },
+    { id: "e-call3-split3", source: "call-3", target: "split-3" },
+
+    // Split 3 branches — final attempt, all non-interested paths exhaust
+    { id: "e-split3-noanswer", source: "split-3", target: "dnc-exhausted", branch: "no-answer" },
+    { id: "e-split3-notinterested", source: "split-3", target: "dnc-declined", branch: "not-interested" },
+    { id: "e-split3-default", source: "split-3", target: "dnc-exhausted", branch: "default" },
+  ],
+};
+
+export const CART_RECOVERY_TEMPLATE = {
+  id: "shopify-cart-recovery-v1",
+  vertical: "shopify",
+  name: "Cart Recovery",
+  graph: CART_RECOVERY_GRAPH,
+} as const;

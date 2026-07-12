@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { randomUUID } from "crypto";
 import { eq, and, desc, gte } from "drizzle-orm";
 import { db } from "../../database";
-import { orgs, shopLinks, shopifyContacts, scheduledCalls } from "../../database/schema";
+import { orgs, shopLinks, shopifyContacts, scheduledCalls, workflowTemplates, workflowRuns, orgWorkflowConfigs } from "../../database/schema";
 import { requireWeeberSecret } from "./secret-auth";
 import { alreadyProcessed, markProcessed } from "./idempotency";
 import { cancelOrder } from "./client";
 import { isValidE164 } from "../../voice/validation";
 import { eraseOrgDataForPhoneNumber } from "../../voice/compliance/adapters";
 import { resilientCall } from "../../voice/integrations/resilient-fetch";
+import { advanceWorkflow } from "../../voice/workflows/graph-engine";
 
 /**
  * Weeber <-> weebersh contract v1.4 — outbound direction (weebersh calls
@@ -25,6 +26,39 @@ export const shopify = new Hono().basePath("/integrations/shopify").use(requireW
 async function resolveOrgIdForShop(shop: string): Promise<string | undefined> {
   const [link] = await db.select().from(shopLinks).where(eq(shopLinks.shop, shop)).limit(1);
   return link?.orgId;
+}
+
+async function findActiveWorkflowTemplate(orgId: string | undefined, event: string) {
+  // Find a template matching the event; if org has a config, check it's enabled
+  const templates = await db
+    .select()
+    .from(workflowTemplates)
+    .where(and(eq(workflowTemplates.vertical, "shopify"), eq(workflowTemplates.active, true)));
+
+  for (const tpl of templates) {
+    const graph = tpl.graph as import("../../voice/workflows/graph-types").WorkflowGraph;
+    const triggerNode = graph.nodes.find((n) => n.type === "trigger");
+    if (!triggerNode) continue;
+    const config = triggerNode.config as { event?: string };
+    if (config.event !== event) continue;
+
+    // Check if org has explicitly disabled this template
+    if (orgId) {
+      const [orgConfig] = await db
+        .select()
+        .from(orgWorkflowConfigs)
+        .where(
+          and(
+            eq(orgWorkflowConfigs.orgId, orgId),
+            eq(orgWorkflowConfigs.templateKey, tpl.id),
+          ),
+        )
+        .limit(1);
+      if (orgConfig && !orgConfig.enabled) continue;
+    }
+    return tpl;
+  }
+  return null;
 }
 
 shopify
@@ -130,18 +164,50 @@ shopify
     const orgId = await resolveOrgIdForShop(shop);
     const delayMinutes = Number(process.env.SHOPIFY_CART_RECOVERY_DELAY_MINUTES ?? 45);
 
-    await db.insert(scheduledCalls).values({
-      toNumber: phone,
-      workflowName: "shopify-cart-recovery",
-      persona: "shopify-cart-recovery",
-      attempt: 1,
-      maxAttempts: Number(process.env.SHOPIFY_CART_RECOVERY_MAX_ATTEMPTS ?? 2),
-      runAt: new Date(Date.now() + delayMinutes * 60 * 1000),
-      status: "pending",
-      orgId,
-      checkoutToken: token,
-      metadata: { shop, checkoutToken: token, totalPrice: String(body.total_price ?? "") },
-    });
+    // Check if org has a graph-based workflow template for this trigger
+    const graphTemplate = await findActiveWorkflowTemplate(orgId, "checkout_abandoned");
+
+    if (graphTemplate) {
+      // Graph-based path — create a workflow_run and let the graph engine handle everything
+      const abandonedCheckoutUrl = (body.abandoned_checkout_url as string) ?? "";
+      const [run] = await db.insert(workflowRuns).values({
+        orgId,
+        templateKey: graphTemplate.id,
+        context: {
+          to_number: phone,
+          customer_name: String(body.billing_address && (body.billing_address as Record<string, unknown>).first_name || ""),
+          cart_value: String(body.total_price ?? ""),
+          currency: String(body.currency ?? "INR"),
+          checkout_url: String(body.cart_url ?? ""),
+          abandoned_checkout_url: abandonedCheckoutUrl,
+          shop_name: shop,
+          checkout_token: token,
+          attempt_number: 0,
+          discount_percent: 0,
+        },
+        currentNodeId: graphTemplate.graph.nodes.find((n: { type: string }) => n.type === "trigger")?.id ?? graphTemplate.graph.nodes[0]?.id ?? "trigger",
+        status: "running",
+      }).returning();
+
+      // Start advancing the graph (trigger node -> first real node)
+      void advanceWorkflow(run.id).catch((err) =>
+        console.error(`[shopify/checkouts] graph-engine advance failed for run ${run.id}`, err),
+      );
+    } else {
+      // Legacy env-var path — direct scheduledCalls insert
+      await db.insert(scheduledCalls).values({
+        toNumber: phone,
+        workflowName: "shopify-cart-recovery",
+        persona: "shopify-cart-recovery",
+        attempt: 1,
+        maxAttempts: Number(process.env.SHOPIFY_CART_RECOVERY_MAX_ATTEMPTS ?? 2),
+        runAt: new Date(Date.now() + delayMinutes * 60 * 1000),
+        status: "pending",
+        orgId,
+        checkoutToken: token,
+        metadata: { shop, checkoutToken: token, totalPrice: String(body.total_price ?? "") },
+      });
+    }
 
     await markProcessed(shop, "checkouts", token);
     return c.json({ status: "scheduled" }, 200);

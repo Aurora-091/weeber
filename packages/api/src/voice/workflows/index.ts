@@ -33,3 +33,6 @@ export function getWorkflowsForNumber(toNumber: string, list: WorkflowConfig[] =
 }
 
 export type { WorkflowConfig, WorkflowOutcome, WorkflowAction } from "./types";
+export type { WorkflowGraph, WorkflowNode, WorkflowEdge, WorkflowNodeType, NodeConfig } from "./graph-types";
+export { advanceWorkflow, resumeWorkflowAfterCall, executeDueWorkflowRuns } from "./graph-engine";
+export { resolveDiscountPercent, renderTemplate, buildWorkflowFactsBlock, composeCartRecoveryUrl, clampDiscount } from "./variables";

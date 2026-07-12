@@ -26,6 +26,7 @@ import { SupportPage } from "./pages/dashboard/support";
 import { LogsPage } from "./pages/dashboard/logs";
 import { RevenueAnalyticsPage } from "./pages/dashboard/revenue-analytics";
 import { MarketingAnalyticsPage } from "./pages/dashboard/marketing-analytics";
+import { WorkflowRunsPage } from "./pages/dashboard/workflow-runs";
 
 // Merchant app pages
 import { MerchantLoginPage } from "./pages/app/login";
@@ -112,6 +113,9 @@ function App() {
         </Route>
         <Route path="/dashboard/marketing-analytics">
           <Dashboard><MarketingAnalyticsPage /></Dashboard>
+        </Route>
+        <Route path="/dashboard/workflow-runs">
+          <Dashboard><WorkflowRunsPage /></Dashboard>
         </Route>
 
         {/* Merchant App */}

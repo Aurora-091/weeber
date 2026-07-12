@@ -5,6 +5,7 @@ import { getTwilioClientForOrg, getPublicUrl } from "../twilio-client";
 import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
+import { executeDueWorkflowRuns } from "./graph-engine";
 
 const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
 
@@ -99,7 +100,10 @@ export async function executeDueScheduledCalls() {
 
 export function startScheduledCallSweep() {
   if (typeof setInterval === "undefined") return;
-  const run = () => void executeDueScheduledCalls().catch((err) => console.error("[scheduler] sweep failed", err));
+  const run = () => {
+    void executeDueScheduledCalls().catch((err) => console.error("[scheduler] sweep failed", err));
+    void executeDueWorkflowRuns().catch((err) => console.error("[scheduler] workflow-run sweep failed", err));
+  };
   run();
   setInterval(run, SWEEP_INTERVAL_MS).unref?.();
 }

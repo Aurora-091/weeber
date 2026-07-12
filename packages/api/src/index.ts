@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from "hono/cors"
 import { voice } from "./voice/routes";
 import { admin } from "./voice/admin-routes";
+import { workflowAdminRoutes } from "./voice/workflows/admin-routes";
 import { merchantApp } from "./app/routes";
 import { publicRoutes } from "./app/public-routes";
 import { shopify } from "./integrations/shopify/routes";
@@ -68,6 +69,7 @@ const app = new Hono()
   )
   .route('/voice', voice)
   .route('/voice', admin)
+  .route('/workflows', workflowAdminRoutes)
   .route('/app', merchantApp)
   .route('/public', publicRoutes)
   .route('/', shopify);

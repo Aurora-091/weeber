@@ -1,4 +1,4 @@
-import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, Bot, ChartBar as BarChart3, Lock, Users, Building2, CreditCard, Shield, ScrollText, ListChecks, Send, LifeBuoy, History, TrendingUp, Megaphone } from "lucide-react";
+import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, Bot, ChartBar as BarChart3, Lock, Users, Building2, CreditCard, Shield, ScrollText, ListChecks, Send, LifeBuoy, History, TrendingUp, Megaphone, Workflow } from "lucide-react";
 import { clearAdminKey } from "../../lib/admin-key";
 import { AppShell, type NavItem } from "../shell/app-shell";
 
@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard, match: /^\/dashboard\/billing$/ },
   { href: "/dashboard/revenue-analytics", label: "Revenue", icon: TrendingUp, match: /^\/dashboard\/revenue-analytics$/ },
   { href: "/dashboard/marketing-analytics", label: "Marketing", icon: Megaphone, match: /^\/dashboard\/marketing-analytics$/ },
+  { href: "/dashboard/workflow-runs", label: "Workflows", icon: Workflow, match: /^\/dashboard\/workflow-runs$/ },
   { href: "/dashboard/flags", label: "Flags", icon: Shield, match: /^\/dashboard\/flags$/ },
   { href: "/dashboard/support", label: "Support", icon: LifeBuoy, match: /^\/dashboard\/support$/ },
   { href: "/dashboard/logs", label: "Logs", icon: History, match: /^\/dashboard\/logs$/ },
