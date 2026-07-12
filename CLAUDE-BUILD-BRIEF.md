@@ -57,12 +57,16 @@ src/web/
       flags.tsx         # NEW — feature flags
       impersonate.tsx   # NEW — merchant impersonation (see \u00a76 for the hard requirement)
     app/                # NEW ROUTE TREE — merchant-facing, org-scoped
-      onboarding.tsx    # setup wizard
-      agents.tsx        # form-based agent config (persona/tone/KB per agent)
-      calls.tsx         # call history + transcripts, scoped to the logged-in org
-      analytics.tsx     # recovery rate, COD confirm rate, feedback scores
-      billing.tsx       # usage + plan, merchant's own view
-      shopify.tsx       # connection status, disconnect, reconnect
+      home.tsx          # dashboard landing page (/app) — checklist card + vertical-driven metrics;
+                         # setup is now components/app/setup-modal.tsx opened on top of this, not its
+                         # own page (see DECISIONS.md ADR-047 — this line used to say "onboarding.tsx",
+                         # that file no longer exists)
+      agents.tsx         # form-based agent config (persona/tone/KB per agent)
+      calls.tsx          # call history + transcripts, scoped to the logged-in org
+      analytics.tsx      # recovery rate, COD confirm rate, feedback scores
+      billing.tsx        # usage + plan, merchant's own view
+      integrations.tsx   # Shopify connection status + Twilio/Plivo/Exotel telephony BYO (built as
+                         # integrations.tsx, not the originally-planned shopify.tsx name)
   components/
     dashboard/          # existing admin-panel components stay here
     app/                # NEW — merchant-facing components

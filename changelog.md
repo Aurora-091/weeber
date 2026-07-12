@@ -4,6 +4,48 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-12 — Setup modal + vertical-driven dashboard, Plivo/Exotel telephony, CI hardening
+
+Three commits (`497a880`, `0c13b23`, `969861c`) — full reasoning in `DECISIONS.md` ADR-047/048/049,
+summarized here per this file's own convention (routine changes belong here, architectural reasoning
+stays in DECISIONS.md).
+
+**Onboarding/dashboard (ADR-047):** `/app` now renders `pages/app/home.tsx` (checklist card + vertical-
+driven metric tiles) instead of a dedicated onboarding page. Setup moved into
+`components/app/setup-modal.tsx`, opened on top of the dashboard. `pages/app/onboarding.tsx` deleted.
+New `onboarding_state` table (migration `0011`) + `GET`/`PATCH /api/app/onboarding`. `VerticalDefinition`
+(`lib/verticals.ts`) gained a `dashboard{ metrics, emptyState }` shape; the old "Setup" nav entry is
+folded into "Home"; the Integrations nav item's label is now the vertical's own `integrationLabel`
+("Shopify") instead of a hardcoded "Integrations".
+
+**Telephony: Plivo + Exotel (ADR-048, ADR-049):** BYO credentials for both (`orgs.telephonyProvider` +
+per-provider credential columns, migration `0012`) with real validate-before-store checks
+(`voice/plivo-provisioning.ts`, `voice/exotel-provisioning.ts`), plus a real per-provider call transport
+— not just stored credentials. `voice/telephony-transport.ts` normalizes all three providers' WS wire
+formats to one shape; `voice/audio-codec.ts` gained `pcm16ToMulaw` (Exotel is raw PCM, not mu-law like
+Twilio/Plivo); `stream.ts` takes an explicit `provider` param; `ws-route.ts` has one WS path per provider;
+`voice/plivo-client.ts`/`voice/exotel-client.ts` place real outbound calls; `calls.provider` column added
+(migration `0013`). **Not yet live-verified** — no prototype call was possible in this environment; see
+ADR-049 for the specific unconfirmed assumptions (Plivo `request_uuid`↔`CallUUID`, Exotel connect-response
+`sid`↔WS `start` event `call_sid`) and why the code degrades instead of breaking if either is wrong.
+Corrected a stale claim in `docs/india-telephony.md`: Exotel is not SIP-trunk-only anymore (AgentStream
+now has a real bidirectional WebSocket) — the doc's older "needs a LiveKit SIP bridge" framing is outdated.
+
+**CI (no ADR — routine):** `.github/workflows/ci.yml` split into parallel `typecheck`/`test`/`build`/
+`lint` jobs plus a new `migration-drift` job (fails if `drizzle-kit generate` would produce a new file —
+catches an uncommitted schema change), all gated behind one `ci-success` job. Fixed two pre-existing test
+fragilities exposed while landing the above: `routes.test.ts`'s `admin-auth` mock was silently bypassed by
+a real `ADMIN_API_KEY` leaking in from `packages/api/.env` (bun auto-loads it) the moment routes.ts's
+import graph changed at all — traced to a `bun mock.module` quirk via a zero-dependency reproduction, not
+a logic bug — fixed by having the test clear the env var explicitly. `llm/index.test.ts` had the same
+class of issue with `AI_GATEWAY_MODEL`; fixed by asserting against the actual resolved default
+(`GROQ_MODEL` now exported from `voice/llm/index.ts`) instead of a hardcoded model-name literal.
+
+Full verification before each commit: `packages/api` tsc + 174/174 tests, `packages/web` tsc + 8/8 tests +
+production build, `packages/openvent-compliance` tsc + 34/34 tests, root `oxlint` — all clean.
+
+---
+
 ## Completed Backend Workstreams
 
 | Workstream | Module / Component | Focus / Goal | Core Changes & Files |
