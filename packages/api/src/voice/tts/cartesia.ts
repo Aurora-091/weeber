@@ -10,7 +10,7 @@ import type { ConnectTts } from "./types";
  * ends, at which point a final empty-transcript message with
  * `continue: false` flushes and closes out that context.
  */
-export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride) => {
+export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, _language, onWordTimestamp) => {
   const apiKey = process.env.CARTESIA_API_KEY ?? "";
   const voiceId = voiceIdOverride || process.env.CARTESIA_VOICE_ID;
   const cartesiaVersion = "2025-11-04";
@@ -41,6 +41,16 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
     try {
       const msg = JSON.parse(event.data as string);
       if (msg.type === "chunk" && (msg.data || msg.audio)) onAudioChunk((msg.data ?? msg.audio) as string);
+      // Word-level timing (add_timestamps: true below) — see types.ts's
+      // onWordTimestamp doc comment for why stream.ts needs this for
+      // accurate barge-in context reconstruction. Cartesia sends one
+      // "timestamps" message per chunk of words with parallel arrays.
+      if (msg.type === "timestamps" && msg.word_timestamps && onWordTimestamp) {
+        const { words, start, end } = msg.word_timestamps as { words: string[]; start: number[]; end: number[] };
+        for (let i = 0; i < (words?.length ?? 0); i++) {
+          onWordTimestamp(words[i], (start[i] ?? 0) * 1000, (end[i] ?? 0) * 1000);
+        }
+      }
       if (msg.type === "done") {
         finished = true;
         onDone?.();
@@ -75,7 +85,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         voice: { mode: "id", id: voiceId },
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: true,
-        add_timestamps: false,
+        add_timestamps: true,
       });
     },
     endTurn() {
@@ -86,7 +96,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         voice: { mode: "id", id: voiceId },
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: false,
-        add_timestamps: false,
+        add_timestamps: true,
       });
     },
     close() {

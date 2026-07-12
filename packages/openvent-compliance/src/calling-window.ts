@@ -7,13 +7,38 @@
  * guides: 11am-9pm Eastern, which stays within 8am-9pm across all US
  * mainland timezones.
  *
+ * India (+91) is handled as its own jurisdiction, not folded into the NANP
+ * fallback above — see checkCallingWindow's India branch below. Before this
+ * fix, ANY +91 number fell through to the "safe" NANP fallback (11am-9pm US
+ * Eastern), which converts to roughly 8:30pm-6:30am IST: this compliance
+ * gate was treating Indian nighttime as an allowed calling window. TRAI's
+ * TCCCPR framework restricts commercial/telemarketing voice calls to
+ * 9am-9pm local time (blocked 9pm-9am) — corroborated across multiple
+ * independent compliance-guide sources (ClearTouch, TALK-Q, and TRAI's own
+ * referenced circulars) as of this fix. India has a single timezone
+ * (Asia/Kolkata, UTC+5:30) so no area-code-style resolution is needed, only
+ * a +91 country-code check.
+ *
  * This is a best-effort guardrail, not a legal certification — for real
  * production telemarketing volume, pair this with a proper number-intelligence
- * provider (Twilio Lookup, etc) for precise timezone resolution.
+ * provider (Twilio Lookup, etc) for precise timezone resolution, and
+ * re-verify TRAI's permitted hours periodically — enforcement and rules in
+ * this space move faster than this comment will be updated.
  */
 
 const CALL_WINDOW_START_HOUR = 8;
 const CALL_WINDOW_END_HOUR = 21; // 9pm
+
+// TRAI TCCCPR: commercial/telemarketing voice calls permitted 9am-9pm IST,
+// blocked 9pm-9am — distinct from the US TCPA's 8am-9pm above. India is a
+// single timezone, so no area-code map is needed the way NANP requires one.
+const INDIA_CALL_WINDOW_START_HOUR = 9;
+const INDIA_CALL_WINDOW_END_HOUR = 21;
+const INDIA_TIMEZONE = "Asia/Kolkata";
+
+function isIndianNumber(e164: string): boolean {
+  return /^\+91\d{10}$/.test(e164);
+}
 
 // Partial NANP area-code -> IANA timezone map covering the most common US/Canada
 // area codes. Extend as needed; unmapped codes fall back to the safe window.
@@ -78,12 +103,17 @@ export type CallingWindowResult = {
 };
 
 export type CallingWindowOptions = {
-  /** Override the allowed start hour (default 8, i.e. 8am). */
+  /** Override the allowed start hour (default 8, i.e. 8am). Applies to the
+   * NANP/fallback path — see indiaStartHour/indiaEndHour for the +91 path. */
   startHour?: number;
-  /** Override the allowed end hour (default 21, i.e. 9pm). */
+  /** Override the allowed end hour (default 21, i.e. 9pm). NANP/fallback path only. */
   endHour?: number;
   /** Extend or override the built-in area-code -> timezone map. */
   areaCodeTimezones?: Record<string, string>;
+  /** Override TRAI's permitted start hour for +91 numbers (default 9, i.e. 9am). */
+  indiaStartHour?: number;
+  /** Override TRAI's permitted end hour for +91 numbers (default 21, i.e. 9pm). */
+  indiaEndHour?: number;
 };
 
 export function checkCallingWindow(
@@ -91,6 +121,22 @@ export function checkCallingWindow(
   now: Date = new Date(),
   options: CallingWindowOptions = {},
 ): CallingWindowResult {
+  if (isIndianNumber(toNumber)) {
+    const indiaStartHour = options.indiaStartHour ?? INDIA_CALL_WINDOW_START_HOUR;
+    const indiaEndHour = options.indiaEndHour ?? INDIA_CALL_WINDOW_END_HOUR;
+    const localHour = getHourInTimezone(INDIA_TIMEZONE, now);
+    const withinWindow = localHour >= indiaStartHour && localHour < indiaEndHour;
+
+    return {
+      allowed: withinWindow,
+      resolvedTimezone: INDIA_TIMEZONE,
+      localHour,
+      reason: withinWindow
+        ? "within allowed calling window"
+        : `outside TRAI-permitted calling window (local time ${localHour}:00 IST, allowed ${indiaStartHour}:00-${indiaEndHour}:00 IST)`,
+    };
+  }
+
   const startHour = options.startHour ?? CALL_WINDOW_START_HOUR;
   const endHour = options.endHour ?? CALL_WINDOW_END_HOUR;
   const areaCodeMap = options.areaCodeTimezones
