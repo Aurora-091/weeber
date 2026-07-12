@@ -75,22 +75,38 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
   return row ?? { orgId, role: "owner" };
 }
 
+// Per-org fixed-window limiter, reused for anything that reaches a metered
+// upstream (paid TTS API, paid LLM calls) so merchants can't be unmetered —
+// see previewRateLimited (TTS preview) and testChatRateLimited (agent test
+// chat) below, each with their own window/keyspace.
+function makeFixedWindowLimiter(windowMs: number, maxPerWindow: number) {
+  const windows = new Map<string, { start: number; count: number }>();
+  return (key: string): boolean => {
+    const now = Date.now();
+    const window = windows.get(key);
+    if (!window || now - window.start >= windowMs) {
+      windows.set(key, { start: now, count: 1 });
+      return false;
+    }
+    window.count += 1;
+    return window.count > maxPerWindow;
+  };
+}
+
 // Per-org fixed-window limiter for the TTS preview — merchants now reach a
 // paid TTS API, so this can't be unmetered like the admin-key version.
 const PREVIEW_WINDOW_MS = 60_000;
 const PREVIEW_MAX_PER_WINDOW = Number(process.env.VOICE_PREVIEW_RATE_LIMIT ?? 20);
-const previewWindows = new Map<string, { start: number; count: number }>();
+const previewRateLimited = makeFixedWindowLimiter(PREVIEW_WINDOW_MS, PREVIEW_MAX_PER_WINDOW);
 
-function previewRateLimited(orgId: string): boolean {
-  const now = Date.now();
-  const window = previewWindows.get(orgId);
-  if (!window || now - window.start >= PREVIEW_WINDOW_MS) {
-    previewWindows.set(orgId, { start: now, count: 1 });
-    return false;
-  }
-  window.count += 1;
-  return window.count > PREVIEW_MAX_PER_WINDOW;
-}
+// Per-org fixed-window limiter for the agent test-chat sandbox — every
+// message is a real, billed LLM call (same model/provider a live call would
+// use), so this needs the same "can't be unmetered" treatment as TTS
+// preview, not a separate one-off. A tighter default than preview since a
+// chat session is naturally multi-turn (one click can trigger many calls).
+const TEST_CHAT_WINDOW_MS = 60_000;
+const TEST_CHAT_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CHAT_RATE_LIMIT ?? 15);
+const testChatRateLimited = makeFixedWindowLimiter(TEST_CHAT_WINDOW_MS, TEST_CHAT_MAX_PER_WINDOW);
 
 export const merchantApp = new Hono<MerchantEnv>()
   .use("*", requireMerchantSession)
@@ -157,13 +173,19 @@ export const merchantApp = new Hono<MerchantEnv>()
   .post("/agent-configs/:templateKey/test-chat", async (c) => {
     const orgId = c.get("merchantOrgId")!;
     const templateKey = c.req.param("templateKey");
+    if (testChatRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${TEST_CHAT_MAX_PER_WINDOW} test messages per minute. Try again shortly.` },
+        429,
+      );
+    }
     const body = await c.req.json().catch(() => null);
     if (!body || !Array.isArray(body.messages)) {
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
     const { resolveAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
-    const { resolveVoiceModel, getActiveModelLabel } = await import("../voice/llm");
+    const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("../voice/llm");
     const { streamText, stepCountIs } = await import("ai");
 
     const agentConfig = await resolveAgentConfig({ orgId, templateKey });
@@ -212,7 +234,7 @@ export const merchantApp = new Hono<MerchantEnv>()
       const latencyMs = firstTokenAt ? firstTokenAt - startedAt : Date.now() - startedAt;
       const inputTokens = usage?.inputTokens ?? 0;
       const outputTokens = usage?.outputTokens ?? 0;
-      const estimatedCost = (inputTokens * 0.15 + outputTokens * 0.6) / 1_000_000;
+      const estimatedCost = estimateLlmCost(resolveLlmProvider(agentConfig.llmProvider), inputTokens, outputTokens);
 
       return c.json({
         response: fullText || "(No text output — agent may have only called tools.)",

@@ -503,7 +503,7 @@ export const voice = new Hono()
     }
 
     const { resolveAgentConfig } = await import("./agent");
-    const { resolveVoiceModel, getActiveModelLabel } = await import("./llm");
+    const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("./llm");
     const { voiceTools, buildKnownFactsBlock } = await import("./agent");
     const { streamText, stepCountIs } = await import("ai");
 
@@ -560,7 +560,7 @@ export const voice = new Hono()
       const latencyMs = firstTokenAt ? firstTokenAt - startedAt : Date.now() - startedAt;
       const inputTokens = usage?.inputTokens ?? 0;
       const outputTokens = usage?.outputTokens ?? 0;
-      const estimatedCost = (inputTokens * 0.15 + outputTokens * 0.6) / 1_000_000;
+      const estimatedCost = estimateLlmCost(resolveLlmProvider(agentConfig.llmProvider), inputTokens, outputTokens);
 
       return c.json({
         response: fullText || "(No text output — agent may have only called tools.)",

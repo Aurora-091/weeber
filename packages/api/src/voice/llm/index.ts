@@ -38,3 +38,25 @@ export function getActiveModelLabel(override?: LlmProvider, modelOverride?: stri
   const model = modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL);
   return `${provider}/${model}`;
 }
+
+/**
+ * Rough per-provider $/token rates for the agent test-chat sandbox's cost
+ * estimate (routes.ts, app/routes.ts) — NOT used for real billing, just a
+ * "is this roughly cheap or expensive" signal shown next to each test
+ * message. Previously hardcoded to a single OpenAI-mini-ish rate regardless
+ * of which provider/model was actually active, which was flat wrong for
+ * Groq (this env's actual default — see /api/health). Groq rate is real
+ * (llama-3.3-70b-versatile, groq.com/pricing as of mid-2026); gateway rate
+ * is a rough gpt-4o-mini-class placeholder since AI_GATEWAY_MODEL can be
+ * swapped to anything — update both if pricing drifts or the gateway
+ * default model changes.
+ */
+const LLM_PRICE_PER_MILLION_TOKENS: Record<LlmProvider, { input: number; output: number }> = {
+  groq: { input: 0.59, output: 0.79 },
+  gateway: { input: 0.15, output: 0.6 },
+};
+
+export function estimateLlmCost(provider: LlmProvider, inputTokens: number, outputTokens: number): number {
+  const rate = LLM_PRICE_PER_MILLION_TOKENS[provider];
+  return (inputTokens * rate.input + outputTokens * rate.output) / 1_000_000;
+}
