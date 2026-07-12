@@ -37,7 +37,7 @@ import { MerchantCallsPage } from "./pages/app/calls";
 import { MerchantCallDetailPage } from "./pages/app/call-detail";
 import { MerchantAnalyticsPage } from "./pages/app/analytics";
 import { MerchantBillingPage } from "./pages/app/billing";
-import { MerchantShopifyPage } from "./pages/app/shopify";
+import { MerchantIntegrationsPage } from "./pages/app/integrations";
 import { MerchantShell } from "./components/app/merchant-shell";
 
 function Dashboard({ children }: { children: React.ReactNode }) {
@@ -140,8 +140,8 @@ function App() {
         <Route path="/app/billing">
           <MerchantShell><MerchantBillingPage /></MerchantShell>
         </Route>
-        <Route path="/app/shopify">
-          <MerchantShell><MerchantShopifyPage /></MerchantShell>
+        <Route path="/app/integrations">
+          <MerchantShell><MerchantIntegrationsPage /></MerchantShell>
         </Route>
       </Switch>                                                                                                        
       {/* Do not remove — off by default, activated by parent iframe via postMessage */}                                                  

@@ -43,6 +43,7 @@ import {
   computeUsage,
   getEffectiveFlags,
 } from "../voice/org-queries";
+import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
 
 type MerchantEnv = { Variables: MerchantSessionVariables };
 
@@ -246,6 +247,30 @@ export const merchantApp = new Hono<MerchantEnv>()
     const url = buildInstallUrl(c.get("merchantOrgId")!, normalized);
     if (!url) return c.json({ error: "Shopify install is not configured yet" }, 503);
     return c.json({ installUrl: url }, 200);
+  })
+
+  // On-demand .xlsx exports for the Integrations page's "Download as Excel"
+  // cards. No scheduling, no email, no external spreadsheet OAuth — see
+  // export.ts.
+  .get("/export/orders.xlsx", async (c) => {
+    const buffer = await buildOrdersWorkbook(c.get("merchantOrgId")!);
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return c.body(new Uint8Array(buffer));
+  })
+
+  .get("/export/analytics.xlsx", async (c) => {
+    const buffer = await buildAnalyticsWorkbook(c.get("merchantOrgId")!);
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="call-analytics-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return c.body(new Uint8Array(buffer));
+  })
+
+  .get("/export/transcripts.xlsx", async (c) => {
+    const buffer = await buildTranscriptsWorkbook(c.get("merchantOrgId")!);
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="transcripts-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return c.body(new Uint8Array(buffer));
   })
 
   .get("/flags", async (c) => {

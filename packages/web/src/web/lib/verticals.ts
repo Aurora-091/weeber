@@ -1,4 +1,4 @@
-import { Rocket, Bot, PhoneCall, BarChart3, CreditCard, Store } from "lucide-react";
+import { Rocket, Bot, PhoneCall, BarChart3, CreditCard, Plug } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
 
 /**
@@ -37,7 +37,7 @@ const shopify: VerticalDefinition = {
     { href: "/app/calls", label: "Conversations", icon: PhoneCall, match: /^\/app\/calls(\/.*)?$/ },
     { href: "/app/analytics", label: "Analytics", icon: BarChart3, match: /^\/app\/analytics$/ },
     { href: "/app/billing", label: "Billing", icon: CreditCard, match: /^\/app\/billing$/ },
-    { href: "/app/shopify", label: "Shopify", icon: Store, match: /^\/app\/shopify$/ },
+    { href: "/app/integrations", label: "Integrations", icon: Plug, match: /^\/app\/integrations$/ },
   ],
   copy: {
     callsEmptyTitle: "No conversations yet",

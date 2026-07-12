@@ -1,7 +1,22 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Store, Circle as XCircle, ExternalLink, ShieldCheck, ArrowRight, Loader as Loader2, ChevronDown } from "lucide-react";
+import {
+  Store,
+  Circle as XCircle,
+  ExternalLink,
+  ShieldCheck,
+  ArrowRight,
+  Loader as Loader2,
+  ChevronDown,
+  RefreshCw,
+  ShoppingBag,
+  Building2,
+  FileSpreadsheet,
+  Download,
+  PhoneCall,
+  ClipboardList,
+} from "lucide-react";
 import { appFetch } from "../../lib/merchant-session";
 import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
@@ -30,7 +45,112 @@ function relativeTime(dateStr: string): string {
   return "just now";
 }
 
-export function MerchantShopifyPage() {
+/** Compact summary tile in the platform grid — Shopify is live, others are placeholders for what's next. */
+function PlatformTile({
+  icon: Icon,
+  name,
+  status,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  name: string;
+  status: "connected" | "not-connected" | "coming-soon";
+}) {
+  return (
+    <div
+      className={`rounded-lg border border-border bg-card p-5 flex items-center gap-3 ${
+        status === "coming-soon" ? "opacity-60" : "transition-all duration-200 hover:shadow-sm hover:border-foreground/10"
+      }`}
+    >
+      <Icon className="size-7 text-primary shrink-0" />
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-semibold">{name}</h3>
+        {status === "connected" && (
+          <div className="flex items-center gap-1.5 text-xs text-success mt-0.5">
+            <span className="inline-block size-2 rounded-full bg-success pulse-dot" />
+            Connected
+          </div>
+        )}
+        {status === "not-connected" && (
+          <div className="flex items-center gap-1.5 text-xs text-destructive mt-0.5">
+            <XCircle className="size-3.5" />
+            Not connected
+          </div>
+        )}
+        {status === "coming-soon" && <p className="text-xs text-muted-foreground mt-0.5">Coming soon</p>}
+      </div>
+    </div>
+  );
+}
+
+/** One "Download as Excel" export card. */
+function ExportCard({
+  icon: Icon,
+  title,
+  description,
+  path,
+  filename,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  path: string;
+  filename: string;
+}) {
+  const downloadMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch(path);
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      return res.blob();
+    },
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${title} exported`);
+    },
+    onError: () => {
+      toast.error(`Couldn't export ${title.toLowerCase()} — try again.`);
+    },
+  });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 flex flex-col gap-3 transition-all duration-200 hover:shadow-sm hover:border-foreground/10">
+      <div className="flex items-start gap-3">
+        <Icon className="size-6 text-primary shrink-0" />
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        </div>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 self-start"
+        disabled={downloadMutation.isPending}
+        onClick={() => downloadMutation.mutate()}
+      >
+        {downloadMutation.isPending ? (
+          <>
+            <Loader2 className="size-3.5 animate-spin" />
+            Preparing...
+          </>
+        ) : (
+          <>
+            <Download className="size-3.5" />
+            Download as Excel
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+export function MerchantIntegrationsPage() {
   const { me } = useMerchant();
   const [storeDomain, setStoreDomain] = useState("");
   const queryClient = useQueryClient();
@@ -53,7 +173,7 @@ export function MerchantShopifyPage() {
   // "not connected" card with no explanation.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("shopify_connected") !== "1") return;
+    if (params.get("shopify_connected") !== "1" && params.get("connected") !== "1") return;
 
     window.history.replaceState({}, "", window.location.pathname);
 
@@ -122,6 +242,18 @@ export function MerchantShopifyPage() {
     },
   });
 
+  const resyncMutation = useMutation({
+    mutationFn: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-shopify-status", me.org.id] });
+      return queryClient.fetchQuery({ queryKey: ["app-shopify-status", me.org.id] });
+    },
+    onSuccess: (fresh) => {
+      const status = fresh as ShopifyStatus | undefined;
+      toast.success(status?.hasShop ? "Status refreshed — store is connected" : "Status refreshed — no store connected");
+    },
+    onError: () => toast.error("Couldn't refresh connection status — try again."),
+  });
+
   const data = statusQuery.data;
   const activeShop = data?.shops.find((s) => !s.disconnectedAt);
 
@@ -135,9 +267,19 @@ export function MerchantShopifyPage() {
   return (
     <div className="space-y-8 font-sans text-foreground bg-background page-enter">
       <PageHeader
-        title="Shopify Integration"
-        description="Connect your Shopify store to enable voice-powered cart recovery, COD confirmation, and post-delivery feedback."
+        title="Integrations"
+        description="Connect commerce platforms so your agents can react to checkouts, orders, and fulfillments — and export your data whenever you need it."
       />
+
+      {/* Connected platforms grid */}
+      <div>
+        <h2 className="text-sm font-semibold mb-3">Platforms</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <PlatformTile icon={Store} name="Shopify" status={activeShop ? "connected" : "not-connected"} />
+          <PlatformTile icon={ShoppingBag} name="WooCommerce" status="coming-soon" />
+          <PlatformTile icon={Building2} name="BigCommerce" status="coming-soon" />
+        </div>
+      </div>
 
       {statusQuery.isLoading && (
         <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
@@ -147,13 +289,13 @@ export function MerchantShopifyPage() {
 
       {data && (
         <div className="space-y-6 content-fade-in">
-          {/* Connection Status Card */}
+          {/* Manage Shopify */}
           <div className="rounded-lg border border-border bg-card p-5">
             <div className="flex sm:flex-row flex-col justify-between sm:items-center gap-4">
               <div className="flex items-start gap-3">
                 <Store className="size-8 text-primary shrink-0" />
                 <div>
-                  <h2 className="text-base font-semibold">Store Connection</h2>
+                  <h2 className="text-base font-semibold">Shopify — Store Connection</h2>
                   {activeShop ? (
                     <div className="flex items-center gap-1.5 text-xs text-success mt-1">
                       <span className="inline-block size-2 rounded-full bg-success pulse-dot" />
@@ -167,6 +309,16 @@ export function MerchantShopifyPage() {
                   )}
                 </div>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 self-start sm:self-auto"
+                disabled={resyncMutation.isPending}
+                onClick={() => resyncMutation.mutate()}
+              >
+                <RefreshCw className={`size-3.5 ${resyncMutation.isPending ? "animate-spin" : ""}`} />
+                Resync status
+              </Button>
             </div>
           </div>
 
@@ -357,6 +509,37 @@ export function MerchantShopifyPage() {
           </div>
         </div>
       )}
+
+      {/* Data export */}
+      <div>
+        <h2 className="text-sm font-semibold mb-1">Export Data</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Download a spreadsheet snapshot any time — no live sync, just an on-demand .xlsx.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <ExportCard
+            icon={ClipboardList}
+            title="Orders"
+            description="Cart recovery, COD confirmation, and feedback call attempts, with recovered order value."
+            path="/api/app/export/orders.xlsx"
+            filename="orders.xlsx"
+          />
+          <ExportCard
+            icon={PhoneCall}
+            title="Call Analytics"
+            description="Volume, duration, outcomes, and latency for every call."
+            path="/api/app/export/analytics.xlsx"
+            filename="call-analytics.xlsx"
+          />
+          <ExportCard
+            icon={FileSpreadsheet}
+            title="Transcripts"
+            description="Full turn-by-turn transcripts for every call."
+            path="/api/app/export/transcripts.xlsx"
+            filename="transcripts.xlsx"
+          />
+        </div>
+      </div>
     </div>
   );
 }
