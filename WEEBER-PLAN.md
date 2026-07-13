@@ -314,3 +314,30 @@ in `CLAUDE.md`'s STOP-AND-ASK list as needing your confirmation before treating 
 The original open question here ("move persona/workflow config from env-var to a DB table before
 building any form UI") is resolved and done: `org_agent_configs`/`org_workflow_configs` are real,
 DB-backed, read at call-time — not `process.env`. Nothing left to decide on this point.
+
+---
+
+## Misc — small items, batch these together rather than one-off
+
+Small, scoped enhancements that came up in passing — each cheap on its own, deliberately not built
+immediately so they can be picked up together in one pass instead of as scattered one-offs.
+
+- [ ] **Misc-1 — Real phone-number callback on the Agent Preview ("enter your number, call me").**
+  Distinct from the existing web-based Agent Preview (`voice/test-call-stream.ts`'s `/api/voice/
+  test-call` WS path — confirmed real and working 2026-07-13: no Twilio, no phone number, no
+  per-minute cost, rate-limited, 19/19 backend tests pass). This is a genuinely different feature: a
+  **real outbound PSTN call** to a merchant-entered number, so real telephony/STT/LLM/TTS cost applies,
+  unlike the free web preview.
+  - Reuse `voice/place-outbound-call.ts` + `resolveOutboundRouting` (already provider-agnostic across
+    Twilio/Plivo/Exotel) — no new telephony code needed.
+  - Reuse the same `configOverride` mechanism the web preview already uses, so it tests the
+    in-progress form, not the saved DB row — consistent with the existing "test chat"/"test call"
+    contract.
+  - Needs its **own** rate limiter (`makeFixedWindowLimiter`, same pattern as `testCallRateLimited`) —
+    separate from the web preview's, because this one has real COGS per call, not just abuse
+    prevention.
+  - Judgment call, not yet confirmed: skip the DNC/calling-window compliance gate for this flow
+    specifically (merchant testing their own number, by their own immediate request — not a cold
+    marketing call) — still validate E.164 format and keep it rate-limited.
+  - UI: phone input + "Call me" button next to the existing Preview button in `AgentEditForm`
+    (`pages/app/agents.tsx`, `pages/dashboard/agents.tsx`).
