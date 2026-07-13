@@ -82,3 +82,39 @@ export async function createExotelOutboundCall(input: {
     return { ok: false, error: `Failed to reach Exotel: ${(err as Error).message}` };
   }
 }
+
+export type ExotelSmsResult = { ok: true; smsSid: string } | { ok: false; error: string };
+
+/** Sends an SMS via Exotel's Campaigns/Sms API — the SMS analog of
+ * createExotelOutboundCall. Added for Misc-4: Plivo/Exotel orgs previously
+ * had no SMS path at all (workflows/engine.ts's sendSms action was
+ * hardcoded to Twilio). */
+export async function sendExotelSms(input: {
+  orgId: string;
+  to: string;
+  from: string;
+  body: string;
+}): Promise<ExotelSmsResult> {
+  const creds = await getExotelCredsForOrg(input.orgId);
+  if (!creds) return { ok: false, error: "No Exotel credentials configured for this org" };
+
+  try {
+    const body = new URLSearchParams({ From: input.from, To: input.to, Body: input.body });
+    const res = await fetch(
+      `https://${creds.subdomain}/v1/accounts/${encodeURIComponent(creds.sid)}/sms/send`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${creds.apiKey}:${creds.apiToken}`).toString("base64")}`,
+        },
+        body,
+      },
+    );
+    const data = (await res.json().catch(() => ({}))) as { SMSMessage?: { Sid?: string }; message?: string };
+    if (!res.ok) return { ok: false, error: data.message ?? `Exotel SMS send failed (status ${res.status})` };
+    return { ok: true, smsSid: data.SMSMessage?.Sid ?? "" };
+  } catch (err) {
+    return { ok: false, error: `Failed to reach Exotel: ${(err as Error).message}` };
+  }
+}

@@ -19,6 +19,8 @@ const AVAILABLE_TOOL_NAMES = [
   "hangUp",
   "transferToHuman",
   "flagGuardrailEvent",
+  "sendSms",
+  "sendDtmf",
 ] as const;
 const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },

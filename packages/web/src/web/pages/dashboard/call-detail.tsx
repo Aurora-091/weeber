@@ -103,6 +103,7 @@ export function CallDetailPage() {
           <p className="text-sm text-muted-foreground mt-1">
             {row.direction} · {row.status}
             {row.disposition ? ` · ${row.disposition}` : ""}
+            {"sentiment" in row && row.sentiment ? ` · ${row.sentiment}` : ""}
           </p>
           <div className="flex items-center gap-4 mt-3">
             {row.recordingUrl && (

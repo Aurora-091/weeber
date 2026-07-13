@@ -78,3 +78,35 @@ export async function createPlivoOutboundCall(input: {
 export function buildPlivoStreamXml(wsUrl: string): string {
   return `<Response><Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000">${wsUrl}</Stream></Response>`;
 }
+
+export type PlivoSmsResult = { ok: true; messageUuid: string } | { ok: false; error: string };
+
+/** Sends an SMS via Plivo's Message Create API — the SMS analog of
+ * createPlivoOutboundCall. Added for Misc-4: Plivo/Exotel orgs previously
+ * had no SMS path at all (workflows/engine.ts's sendSms action was
+ * hardcoded to Twilio). */
+export async function sendPlivoSms(input: {
+  orgId: string;
+  to: string;
+  from: string;
+  body: string;
+}): Promise<PlivoSmsResult> {
+  const creds = await getPlivoCredsForOrg(input.orgId);
+  if (!creds) return { ok: false, error: "No Plivo credentials configured for this org" };
+
+  try {
+    const res = await fetch(`https://api.plivo.com/v1/Account/${encodeURIComponent(creds.authId)}/Message/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${creds.authId}:${creds.authToken}`).toString("base64")}`,
+      },
+      body: JSON.stringify({ src: input.from, dst: input.to, text: input.body }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { message_uuid?: string[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error ?? `Plivo message create failed (status ${res.status})` };
+    return { ok: true, messageUuid: data.message_uuid?.[0] ?? "" };
+  } catch (err) {
+    return { ok: false, error: `Failed to reach Plivo: ${(err as Error).message}` };
+  }
+}

@@ -22,6 +22,8 @@ export const AVAILABLE_TOOL_NAMES = [
   "hangUp",
   "transferToHuman",
   "flagGuardrailEvent",
+  "sendSms",
+  "sendDtmf",
 ] as const;
 
 export type AvailableToolName = (typeof AVAILABLE_TOOL_NAMES)[number];

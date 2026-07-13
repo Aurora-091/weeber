@@ -111,6 +111,10 @@ export const calls = pgTable("calls", {
   recordingUrl: text("recording_url"),
   webhookUrl: text("webhook_url"),
   disposition: text("disposition"),
+  /** Misc-5: post-call sentiment (positive/neutral/negative), captured by the
+   * setDisposition tool call alongside disposition — teardown's recommended
+   * "outcome, sentiment, next action" fields, sentiment was the missing one. */
+  sentiment: text("sentiment"),
   sttReconnectCount: integer("stt_reconnect_count").default(0),
   capturedState: jsonb("captured_state").$type<Record<string, string>>().default({}),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

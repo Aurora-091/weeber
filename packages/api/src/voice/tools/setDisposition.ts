@@ -19,9 +19,13 @@ export const setDisposition = tool({
     disposition: z
       .enum(["interested", "not-interested", "callback-requested", "booked", "no-decision", "wrong-number"])
       .describe("The outcome of this call"),
+    sentiment: z
+      .enum(["positive", "neutral", "negative"])
+      .optional()
+      .describe("Overall tone of the caller during this call — how they seemed to feel, not the outcome itself"),
     notes: z.string().optional().describe("Brief context for why this disposition was chosen"),
   }),
-  async execute({ disposition, notes }) {
-    return { recorded: true, disposition, notes: notes ?? null };
+  async execute({ disposition, sentiment, notes }) {
+    return { recorded: true, disposition, sentiment: sentiment ?? null, notes: notes ?? null };
   },
 });

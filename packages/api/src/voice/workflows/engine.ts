@@ -1,11 +1,9 @@
 import { db } from "../../database";
-import { scheduledCalls, orgs } from "../../database/schema";
-import { eq } from "drizzle-orm";
+import { scheduledCalls } from "../../database/schema";
 import { addToDoNotCallList } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { dispatchWebhook, resolveWebhookUrl } from "../webhooks";
-import { getTwilioClientForOrg } from "../twilio-client";
-import { isValidE164 } from "../validation";
+import { sendSmsForOrg } from "../send-sms";
 import { getWorkflowsForNumber } from "./index";
 import type { WorkflowOutcome } from "./types";
 import { resolveRetryConfig, isShopifyWorkflow } from "../retry-config";
@@ -188,24 +186,14 @@ export async function runWorkflowForOutcome(params: {
           break;
         }
         case "sendSms": {
-          let from = process.env.TWILIO_PHONE_NUMBER;
-          if (orgId) {
-            const [org] = await db.select({ outboundNumber: orgs.outboundNumber }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
-            if (org?.outboundNumber) from = org.outboundNumber;
-          }
-          if (!from) {
-            console.error(`[workflow:${workflow.name}] cannot send SMS — no outbound number configured (platform or org)`);
-            break;
-          }
-          if (!isValidE164(toNumber)) {
-            console.error(`[workflow:${workflow.name}] cannot send SMS — invalid destination number ${toNumber}`);
-            break;
-          }
-          try {
-            await (await getTwilioClientForOrg(orgId)).messages.create({ to: toNumber, from, body: action.template });
+          // Routed through the provider-agnostic dispatcher (Misc-4 fix) —
+          // this used to call getTwilioClientForOrg directly, so a
+          // BYO-Plivo/Exotel org's post-call SMS silently failed.
+          const result = await sendSmsForOrg({ orgId, to: toNumber, body: action.template });
+          if (result.ok) {
             console.log(`[workflow:${workflow.name}] sent SMS to ${toNumber}`);
-          } catch (err) {
-            console.error(`[workflow:${workflow.name}] failed to send SMS to ${toNumber}`, err);
+          } else {
+            console.error(`[workflow:${workflow.name}] failed to send SMS to ${toNumber}: ${result.error}`);
           }
           break;
         }

@@ -15,6 +15,8 @@ import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
 import { getTwilioClientForOrg } from "./twilio-client";
+import { sendSmsForOrg } from "./send-sms";
+import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -94,6 +96,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let enabledToolsOverride: AvailableToolName[] | undefined;
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
+  let capturedSentiment: string | undefined;
   let history: ModelMessage[] = [];
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
@@ -202,7 +205,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     ).catch((err) => console.error("[voice] failed to persist captured state", err));
   }
 
-  async function logToolCall(name: string, input: unknown, output: unknown) {
+  async function logToolCall(ws: Sendable, name: string, input: unknown, output: unknown) {
     if (name === "captureField" && input && typeof input === "object" && "field" in input && "value" in input) {
       const { field, value } = input as { field: string; value: string };
       void mergeCapturedField(field, value);
@@ -215,6 +218,34 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
     if (name === "transferToHuman" && input && typeof input === "object" && "reason" in input) {
       pendingTransfer = { reason: String((input as { reason: unknown }).reason) };
+    }
+    // sendDtmf (Misc-2): generate the tone audio and play it straight into
+    // the live media stream, same channel/format as TTS speech — see
+    // dtmf.ts's doc comment on why this needs no provider-specific API.
+    if (name === "sendDtmf" && input && typeof input === "object" && "digits" in input) {
+      const digits = String((input as { digits: unknown }).digits);
+      if (streamSid && isValidDtmfSequence(digits)) {
+        try {
+          ws.send(transport.buildOutboundMedia(streamSid, buildDtmfAudio(digits)));
+        } catch (err) {
+          console.error("[voice] failed to send DTMF tone audio", err);
+        }
+      } else {
+        console.error(`[voice] sendDtmf tool called with invalid/unusable digits "${digits}" — skipped`);
+      }
+    }
+    // sendSms only *signals intent* too (see its tool definition) — the
+    // actual send happens here via the provider-agnostic dispatcher
+    // (Misc-4), fire-and-forget so it never blocks the live call.
+    if (name === "sendSms" && input && typeof input === "object" && "body" in input) {
+      const smsBody = String((input as { body: unknown }).body);
+      if (humanNumber) {
+        void sendSmsForOrg({ orgId: humanNumberOrgId, to: humanNumber, body: smsBody }).then((result) => {
+          if (!result.ok) console.error(`[voice] mid-call sendSms failed: ${result.error}`);
+        });
+      } else {
+        console.error("[voice] mid-call sendSms tool called with no resolved caller number — skipped");
+      }
     }
 
     if (!dbCallId) return;
@@ -235,6 +266,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // matching workflow action once the call actually ends (finalizeCall).
     if (name === "setDisposition" && input && typeof input === "object" && "disposition" in input) {
       capturedDisposition = String((input as { disposition: unknown }).disposition);
+      const sentimentInput = (input as { sentiment?: unknown }).sentiment;
+      if (typeof sentimentInput === "string") capturedSentiment = sentimentInput;
     }
   }
 
@@ -261,6 +294,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               status,
               endedAt: new Date(),
               ...(capturedDisposition ? { disposition: capturedDisposition } : {}),
+              ...(capturedSentiment ? { sentiment: capturedSentiment } : {}),
             })
             .where(eq(calls.twilioCallSid, callSid!)),
         { label: "finalize-call" },
@@ -536,7 +570,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         persona,
         signal,
         onTextDelta: (delta) => tts?.sendText(delta),
-        onToolCall: (name, input, output) => void logToolCall(name, input, output),
+        onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
         onLatency: (ms, model) => {
           console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
           recordLlmLatency(ms);
@@ -606,6 +640,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // whether the model itself calls flagGuardrailEvent (see agent.ts).
           if (looksLikePromptInjection(text)) {
             void logToolCall(
+              ws,
               "guardrail-heuristic-detector",
               { category: "prompt-injection", callerText: text },
               { detectedBy: "heuristic-phrase-match" },

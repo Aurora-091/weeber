@@ -14,6 +14,7 @@ type CallRow = {
   toNumber: string;
   status: string;
   disposition: string | null;
+  sentiment: string | null;
   recordingUrl: string | null;
   capturedState: Record<string, unknown> | null;
 };
@@ -35,6 +36,8 @@ const TOOL_LABELS: Record<string, string> = {
   transferToHuman: "Transferred to human",
   hangUp: "Ended call",
   flagGuardrailEvent: "Flagged compliance event",
+  sendSms: "Sent a text message",
+  sendDtmf: "Pressed keys on a phone menu",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -129,6 +132,22 @@ export function UserCallDetailPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               {row.direction} · {row.status}
               {row.disposition ? ` · ${row.disposition}` : ""}
+              {row.sentiment ? (
+                <span
+                  className={
+                    row.sentiment === "positive"
+                      ? " text-weeber-success"
+                      : row.sentiment === "negative"
+                        ? " text-weeber-error"
+                        : ""
+                  }
+                >
+                  {" "}
+                  · {row.sentiment}
+                </span>
+              ) : (
+                ""
+              )}
             </p>
             {row.recordingUrl && (
               <div className="mt-3">

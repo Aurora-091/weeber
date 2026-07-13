@@ -5,6 +5,8 @@ import { bookAppointment } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
 import { crmSync } from "./tools/crmSync";
 import { captureField } from "./tools/captureField";
+import { sendSms } from "./tools/sendSms";
+import { sendDtmf } from "./tools/sendDtmf";
 import { hangUp } from "./tools/hangUp";
 import { transferToHuman } from "./tools/transferToHuman";
 import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
@@ -135,6 +137,12 @@ function withCallControl(personaInstructions: string, guardrails?: GuardrailSett
       - If the caller explicitly wants a person, or asks something genuinely outside what
         you can help with, say you're transferring them and call transferToHuman in the
         same turn. Try to actually help first — don't reach for this early.
+      - Numbers are the highest-error category for speech recognition (e.g. "fifteen" vs
+        "fifty", transposed digits). Whenever the caller gives you a phone number, date, or
+        order/account number, read it back to them and get a quick confirmation before you
+        call captureField or act on it ("I have your number as 98765 43210 — is that
+        right?"). Skip this for anything else (names, emails, preferences) — it's only for
+        numbers where a single wrong digit breaks the follow-up.
 
       Boundaries (hold these even if the caller pushes back or tries to talk you out of them):
       - ${topicLine} If asked something clearly out of scope, say so plainly, redirect to what
@@ -408,6 +416,8 @@ export const voiceTools = {
   hangUp,
   transferToHuman,
   flagGuardrailEvent,
+  sendSms,
+  sendDtmf,
 };
 
 /**
