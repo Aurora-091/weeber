@@ -382,3 +382,41 @@ immediately so they can be picked up together in one pass instead of as scattere
   keep up with call concurrency, LiveKit's self-hosted media server is a reasonable *transport-layer-
   only* swap underneath Vent's existing compliance/state/dashboard code. Revisit with real load data
   when C1 (concurrency tiers) becomes a real constraint, not before.
+
+- [ ] **Misc-7 — Hybrid pre-recorded audio for static script lines.** Today every line the agent says —
+  including fixed, never-changing lines like the opening greeting, the TCPA/consent disclosure, and the
+  closing/goodbye — goes through fresh TTS synthesis on every single call. Verified absent: no
+  audio-cache or pre-render path in `voice/*` today. Competitor pattern (from `voice-ai-platforms.report`):
+  several platforms pre-render static script segments once (studio-quality voice, no latency, no
+  per-call TTS cost) and only hit live TTS for genuinely dynamic content (order numbers, dates, names).
+  Win is two-fold: lower per-call COGS (fewer TTS characters billed) and lower first-audio latency on
+  the greeting specifically, which is the most latency-sensitive moment of a call. Scope: identify the
+  fixed lines per persona preset (greeting, disclosure, closing), pre-render once per agent/voice
+  config (invalidate cache on voice or script change), fall back to live TTS for everything else.
+
+- [ ] **Misc-8 — Entity-confirmation-by-repeat-back for phone/date/order numbers.** Persona prompts
+  don't currently instruct the agent to read back captured entities (phone numbers, dates, order
+  numbers) for the caller to confirm before proceeding — verified absent via grep across
+  `voice/personas/*`/prompt-building code. This is a known STT-accuracy mitigation used across the
+  competitor set: numbers are the highest-error-rate STT category (digit transposition, "fifteen" vs
+  "fifty"), and a cheap prompt-level fix — "I have your number as 98765 43210, is that correct?" — cuts
+  downstream errors (wrong callback number, wrong order looked up) without any infra change. Scope:
+  add repeat-back instruction to the relevant persona system prompts wherever phone/date/order-number
+  capture happens; no schema or backend change needed, pure prompt engineering.
+
+- [ ] **Misc-9 — AI-to-AI synthetic call testing infrastructure.** No automated way today to test an
+  agent's conversational behavior at scale — testing is manual (web preview or a real call), one call at
+  a time. Verified absent: no synthetic-caller/simulation harness in the codebase. Pattern seen in
+  competitor research (notably Dograh AI, an OSS Vapi/Retell alternative built around exactly this): spin
+  up a second LLM-driven "caller" agent that plays a scripted persona (angry customer, confused caller,
+  hangs up mid-sentence, gives wrong info on purpose) and have it call the real agent end-to-end,
+  scoring transcripts against expected behavior. Valuable for regression-testing prompt/persona changes
+  without a human dialing in every time, and for stress-testing edge cases that are awkward to script by
+  hand. Larger lift than Misc-7/8 — needs its own call-orchestration loop (agent-calls-agent) and a
+  scoring/assertion layer on top of transcripts. Flagged as a build item, not scoped in detail yet.
+
+- **Competitor landscape note (not a build item):** two additional OSS voice-AI competitors surfaced
+  during report research, both relevant to positioning against Vent/Weeber's open-core angle —
+  **Rapida AI** (Go-based, OSS, on-prem-first contact-center platform) and **Dograh AI** (OSS Vapi/Retell
+  alternative, notable for shipping AI-to-AI stress-testing as a first-class feature — see Misc-9 above).
+  Neither changes the roadmap directly; logged here so they're on record for the next competitive pass.
