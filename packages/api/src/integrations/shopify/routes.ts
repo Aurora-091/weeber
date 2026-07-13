@@ -10,7 +10,6 @@ import { isValidE164 } from "../../voice/validation";
 import { eraseOrgDataForPhoneNumber } from "../../voice/compliance/adapters";
 import { resilientCall } from "../../voice/integrations/resilient-fetch";
 import { advanceWorkflow } from "../../voice/workflows/graph-engine";
-import { resolveRetryConfig } from "../../voice/retry-config";
 
 /**
  * Weeber <-> weebersh contract v1.5 — outbound direction (weebersh calls
@@ -63,7 +62,7 @@ async function findActiveWorkflowTemplate(orgId: string | undefined, event: stri
 }
 
 shopify
-  // 1. POST /connected — user clicks "Connect to Weeber" (fires from
+  // 1. POST /connected — merchant clicks "Connect to Weeber" (fires from
   // webbersh's UI button, not automatically from OAuth — see contract 1.4).
   .post("/connected", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -99,7 +98,7 @@ shopify
     // shop was already linked to (if any) instead of minting a fresh one.
     // Without this, every retry/reconnect while that bug is live mints a
     // brand-new orphan org and silently re-points the shop at it, which is
-    // exactly what leaves the user's real dashboard org looking
+    // exactly what leaves the merchant's real dashboard org looking
     // "disconnected" forever even though weebersh reports success.
     let resolvedOrgId = orgId ?? undefined;
     if (!resolvedOrgId) {
@@ -111,7 +110,7 @@ shopify
           (existingOrgId
             ? `Reusing this shop's existing linked org (${existingOrgId}) instead of minting a new one.`
             : `No prior link found for this shop either — minting a new org (${resolvedOrgId}) as a ` +
-              `last resort. This org will NOT match any user's dashboard session.`),
+              `last resort. This org will NOT match any merchant's dashboard session.`),
       );
     }
 
@@ -163,8 +162,7 @@ shopify
     }
 
     const orgId = await resolveOrgIdForShop(shop);
-    const retryConfig = await resolveRetryConfig(orgId, "shopify-cart-recovery");
-    const delayMinutes = retryConfig.firstCallDelayMinutes;
+    const delayMinutes = Number(process.env.SHOPIFY_CART_RECOVERY_DELAY_MINUTES ?? 45);
 
     // Check if org has a graph-based workflow template for this trigger
     const graphTemplate = await findActiveWorkflowTemplate(orgId, "checkout_abandoned");
@@ -196,15 +194,13 @@ shopify
         console.error(`[shopify/checkouts] graph-engine advance failed for run ${run.id}`, err),
       );
     } else {
-      // Legacy path — direct scheduledCalls insert. maxAttempts/delay now
-      // come from resolveRetryConfig (org override, falling back to the
-      // platform default) instead of reading the env var directly here.
+      // Legacy env-var path — direct scheduledCalls insert
       await db.insert(scheduledCalls).values({
         toNumber: phone,
         workflowName: "shopify-cart-recovery",
         persona: "shopify-cart-recovery",
         attempt: 1,
-        maxAttempts: retryConfig.maxAttempts,
+        maxAttempts: Number(process.env.SHOPIFY_CART_RECOVERY_MAX_ATTEMPTS ?? 2),
         runAt: new Date(Date.now() + delayMinutes * 60 * 1000),
         status: "pending",
         orgId,
@@ -329,14 +325,13 @@ shopify
       (gateways ?? []).some((g) => /cash_on_delivery|cod/i.test(g)) || financialStatus === "pending";
 
     if (isCod && phone && isValidE164(phone)) {
-      const codRetryConfig = await resolveRetryConfig(orgId, "shopify-cod-confirmation");
       await db.insert(scheduledCalls).values({
         toNumber: phone,
         workflowName: "shopify-cod-confirmation",
         persona: "shopify-cod-confirmation",
         attempt: 1,
-        maxAttempts: codRetryConfig.maxAttempts,
-        runAt: new Date(Date.now() + codRetryConfig.firstCallDelayMinutes * 60 * 1000),
+        maxAttempts: Number(process.env.SHOPIFY_COD_MAX_ATTEMPTS ?? 3),
+        runAt: new Date(Date.now() + Number(process.env.SHOPIFY_COD_DELAY_MINUTES ?? 30) * 60 * 1000),
         status: "pending",
         orgId,
         metadata: { shop, orderId },
@@ -367,15 +362,15 @@ shopify
     }
 
     const orgId = await resolveOrgIdForShop(shop);
-    const feedbackRetryConfig = await resolveRetryConfig(orgId, "shopify-feedback");
+    const delayDays = Number(process.env.SHOPIFY_FEEDBACK_DELAY_DAYS ?? 3);
 
     await db.insert(scheduledCalls).values({
       toNumber: phone,
       workflowName: "shopify-feedback",
       persona: "shopify-feedback",
       attempt: 1,
-      maxAttempts: feedbackRetryConfig.maxAttempts, // feedback calls don't retry by default — a missed call just means no feedback this time
-      runAt: new Date(Date.now() + feedbackRetryConfig.firstCallDelayMinutes * 60 * 1000),
+      maxAttempts: 1, // feedback calls don't retry — a missed call just means no feedback this time
+      runAt: new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000),
       status: "pending",
       orgId,
       metadata: { shop, orderId },

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Loader2, Play, Search, Volume2, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
-import { appFetch } from "../../lib/user-session";
+import { appFetch } from "../../lib/merchant-session";
 
 export type VoiceOption = {
   id: string;
@@ -14,7 +14,7 @@ export type VoiceOption = {
   previewUrl: string | null;
 };
 
-type VoicePickerScope = "admin" | "user";
+type VoicePickerScope = "admin" | "merchant";
 
 type VoicePickerProps = {
   provider: string;

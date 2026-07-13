@@ -41,17 +41,4 @@ describe("verticals helper", () => {
     // integrationLabel, not a hardcoded "Integrations" — "Shopify" here.
     expect(labels).toContain("Shopify");
   });
-
-  it("resolves insurance vertical with Policyholder glossary and no Integrations nav item", () => {
-    const v = getVertical("insurance");
-    expect(v.key).toBe("insurance");
-    expect(v.glossary.customer).toBe("Policyholder");
-    expect(v.glossary.customers).toBe("Policyholders");
-    // Deliberately 5 items, not 6 — no live policy-system integration exists
-    // yet, so no "Integrations"-equivalent nav entry (see verticals.ts's own
-    // comment on why, right above the insurance definition).
-    expect(v.nav).toHaveLength(5);
-    const labels = v.nav.map((n) => n.label);
-    expect(labels).not.toContain("Policy System");
-  });
 });

@@ -8,84 +8,6 @@ import { getTwilioClientForOrg } from "../twilio-client";
 import { isValidE164 } from "../validation";
 import { getWorkflowsForNumber } from "./index";
 import type { WorkflowOutcome } from "./types";
-import { resolveRetryConfig, isShopifyWorkflow } from "../retry-config";
-import { cancelOrder } from "../../integrations/shopify/client";
-
-const RETRYABLE_OUTCOMES: WorkflowOutcome[] = ["no-answer", "busy", "failed"];
-
-/**
- * Org-scoped retry path for Shopify's built-in workflows (issue 3 feature).
- * Runs INSTEAD of the generic WORKFLOWS-env-var path below for these three
- * workflow names, because that global env var is unconfigured in production
- * today (confirmed directly against Railway's live env) — relying on it
- * would mean this per-org retry cadence silently does nothing, the same way
- * retries have been silently inert for Shopify calls until this fix.
- * Non-retryable outcomes for these workflows (e.g. a disposition other than
- * no-answer/busy/failed) still fall through to the generic path unchanged
- * below — this only intercepts the "we don't know what happened, try again"
- * case, which is the one that actually needs org-configurable cadence.
- */
-async function runShopifyOrgScopedRetry(params: {
-  toNumber: string;
-  outcome: WorkflowOutcome;
-  workflowName: string;
-  webhookUrl?: string | null;
-  previousAttempt?: number;
-  orgId: string;
-  checkoutToken?: string | null;
-  metadata?: Record<string, string | number>;
-}) {
-  const { toNumber, outcome, workflowName, webhookUrl, previousAttempt, orgId, checkoutToken, metadata } = params;
-  const config = await resolveRetryConfig(orgId, workflowName);
-  const nextAttempt = (previousAttempt ?? 0) + 1;
-
-  if (nextAttempt > config.maxAttempts) {
-    console.log(
-      `[shopify-retry:${workflowName}] retry limit reached for ${toNumber} after outcome "${outcome}" (${nextAttempt - 1}/${config.maxAttempts}) — not scheduling another`,
-    );
-    // Only shopify-cod-confirmation has an exhaustion action today (cancel
-    // the unconfirmed order) — cart-recovery and feedback just stop trying,
-    // no further action needed. Calls cancelOrder directly in-process
-    // rather than round-tripping through /internal/cod-confirmation-
-    // exhausted's HTTP route (that route's own comment says it's meant to
-    // be invoked via the workflow engine's onExhausted webhook action —
-    // which, since WORKFLOWS was never configured, has never actually
-    // fired in production; this is the same underlying cancelOrder call,
-    // just reached directly instead of through a webhook to itself).
-    if (workflowName === "shopify-cod-confirmation" && metadata?.shop && metadata?.orderId !== undefined) {
-      try {
-        await cancelOrder({
-          shop: String(metadata.shop),
-          orderId: Number(metadata.orderId),
-          reason: "CUSTOMER",
-          notifyCustomer: false,
-          restock: true,
-          staffNote: "No COD confirmation after max call attempts",
-        });
-      } catch (err) {
-        console.error(`[shopify-retry:${workflowName}] failed to cancel exhausted COD order`, err);
-      }
-    }
-    return;
-  }
-
-  await db.insert(scheduledCalls).values({
-    toNumber,
-    workflowName,
-    persona: workflowName,
-    webhookUrl: webhookUrl ?? undefined,
-    attempt: nextAttempt,
-    maxAttempts: config.maxAttempts,
-    runAt: new Date(Date.now() + config.retryDelayMinutes * 60 * 1000),
-    status: "pending",
-    orgId,
-    checkoutToken: checkoutToken ?? undefined,
-    metadata,
-  });
-  console.log(
-    `[shopify-retry:${workflowName}] scheduled retry ${nextAttempt}/${config.maxAttempts} for ${toNumber} in ${config.retryDelayMinutes}min`,
-  );
-}
 
 /**
  * Runs whenever a call ends with a known outcome (disposition, or an inferred
@@ -114,21 +36,6 @@ export async function runWorkflowForOutcome(params: {
   metadata?: Record<string, string | number>;
 }) {
   const { toNumber, outcome, persona, webhookUrl, previousAttempt, orgId, checkoutToken, metadata } = params;
-
-  if (isShopifyWorkflow(persona) && orgId && RETRYABLE_OUTCOMES.includes(outcome)) {
-    await runShopifyOrgScopedRetry({
-      toNumber,
-      outcome,
-      workflowName: persona!,
-      webhookUrl,
-      previousAttempt,
-      orgId,
-      checkoutToken,
-      metadata,
-    });
-    return;
-  }
-
   const matches = getWorkflowsForNumber(toNumber);
 
   for (const workflow of matches) {

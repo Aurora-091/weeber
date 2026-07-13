@@ -40,7 +40,7 @@ export type JoinWaitlistResult =
   | { ok: false; error: string };
 
 /** Idempotent — re-submitting the same email is a no-op, not an error, so a
- * user double-clicking "Join" doesn't see a confusing failure. */
+ * merchant double-clicking "Join" doesn't see a confusing failure. */
 export async function joinWaitlist(input: {
   email: string;
   name?: string;
@@ -103,14 +103,9 @@ export async function joinWaitlist(input: {
     .where(lte(waitlistSignups.createdAt, inserted!.createdAt));
 
   // --- Fire transactional emails (non-blocking) ---
-  // Referral links must land on the marketing site (landing.tsx consumes
-  // `?ref=`); unsubscribe links hit an /api route, so they stay on the API's
-  // own origin (PUBLIC_APP_URL is the backend's public URL — Twilio webhook
-  // construction depends on that meaning, so it can't double as a web origin).
-  const webUrl = process.env.PUBLIC_WEB_URL || "https://www.weeber.ai";
-  const apiOrigin = process.env.PUBLIC_APP_URL || webUrl;
-  const referralLink = `${webUrl}?ref=${ownReferralCode}`;
-  const unsubscribeLink = `${apiOrigin}/api/public/waitlist/unsubscribe?token=${unsubscribeToken}`;
+  const appUrl = process.env.PUBLIC_APP_URL || "https://weeber.ai";
+  const referralLink = `${appUrl}?ref=${ownReferralCode}`;
+  const unsubscribeLink = `${appUrl}/api/public/waitlist/unsubscribe?token=${unsubscribeToken}`;
 
   void sendTransactionalEmail({
     to: email,
@@ -128,8 +123,8 @@ export async function joinWaitlist(input: {
         .where(eq(waitlistSignups.id, referrer!.id))
         .limit(1);
       if (referrerRow?.email && referrerRow.unsubscribeToken) {
-        const refLink = `${webUrl}?ref=${referrerRow.ownReferralCode}`;
-        const refUnsub = `${apiOrigin}/api/public/waitlist/unsubscribe?token=${referrerRow.unsubscribeToken}`;
+        const refLink = `${appUrl}?ref=${referrerRow.ownReferralCode}`;
+        const refUnsub = `${appUrl}/api/public/waitlist/unsubscribe?token=${referrerRow.unsubscribeToken}`;
         void sendTransactionalEmail({
           to: referrerRow.email,
           subject: "Someone joined Weeber using your link!",
@@ -165,7 +160,7 @@ export async function addWaitlistPhone(email: string, phone: string): Promise<bo
 
 /** Real, non-guessable total for the WS live-count broadcast and the
  * post-signup "you're #N" number — excludes unsubscribed rows, matching
- * what a user would actually consider "on the list". */
+ * what a merchant would actually consider "on the list". */
 export async function getWaitlistDisplayCount(): Promise<number> {
   const [{ value }] = await db.select({ value: countRows() }).from(waitlistSignups).where(ne(waitlistSignups.unsubscribed, true));
   return WAITLIST_DISPLAY_OFFSET + value;

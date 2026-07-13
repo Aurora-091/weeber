@@ -5,8 +5,7 @@ import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
 import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useSelectedOrgId } from "../../lib/org-id";
-import { PreviewButton } from "../../components/agent-preview/PreviewButton";
-import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
+import { AgentTestChat } from "../../components/agent-test-chat";
 
 const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
 const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
@@ -60,9 +59,6 @@ type AgentConfigRow = {
     toolsEnabled: string[] | null;
     guardrails: { topicBoundaryStrictness?: string; injectionSensitivity?: string; abuseHandlingEnabled?: boolean } | null;
     enabled: boolean;
-    firstCallDelayMinutes: number | null;
-    retryDelayMinutes: number | null;
-    maxAttempts: number | null;
   } | null;
 };
 
@@ -83,12 +79,6 @@ type FormState = {
   injectionSensitivity: string;
   abuseHandlingEnabled: boolean;
   enabled: boolean;
-  /** Empty string = "use the platform default" — kept as strings since these
-   * are plain number inputs; parsed to number|undefined at submit time in
-   * formToAgentFrame. */
-  firstCallDelayMinutes: string;
-  retryDelayMinutes: string;
-  maxAttempts: string;
 };
 
 function toFormState(row: AgentConfigRow): FormState {
@@ -110,9 +100,6 @@ function toFormState(row: AgentConfigRow): FormState {
     injectionSensitivity: c?.guardrails?.injectionSensitivity ?? "medium",
     abuseHandlingEnabled: c?.guardrails?.abuseHandlingEnabled ?? true,
     enabled: c?.enabled ?? true,
-    firstCallDelayMinutes: c?.firstCallDelayMinutes != null ? String(c.firstCallDelayMinutes) : "",
-    retryDelayMinutes: c?.retryDelayMinutes != null ? String(c.retryDelayMinutes) : "",
-    maxAttempts: c?.maxAttempts != null ? String(c.maxAttempts) : "",
   };
 }
 
@@ -126,49 +113,39 @@ function labelClass() {
   return "block text-xs font-medium text-muted-foreground mb-1";
 }
 
-/** Same shape the PUT save mutation sends — the Preview drawer's configOverride
- * uses this identical conversion so "what you're previewing" and "what Save
- * would write" never drift apart. */
-function formToAgentFrame(form: FormState) {
-  return {
-    name: form.name || undefined,
-    greetingLine: form.greetingLine || undefined,
-    closingLine: form.closingLine || undefined,
-    toneStyle: form.toneStyle || undefined,
-    personaPrompt: form.personaPrompt || undefined,
-    voiceProvider: form.voiceProvider,
-    voiceId: form.voiceId || undefined,
-    language: form.language || undefined,
-    sttProvider: form.sttProvider,
-    llmProvider: form.llmProvider,
-    llmModel: form.llmModel || undefined,
-    toolsEnabled: form.toolsEnabled,
-    guardrails: {
-      topicBoundaryStrictness: form.topicBoundaryStrictness,
-      injectionSensitivity: form.injectionSensitivity,
-      abuseHandlingEnabled: form.abuseHandlingEnabled,
-    },
-    enabled: form.enabled,
-    firstCallDelayMinutes: form.firstCallDelayMinutes.trim() ? Number(form.firstCallDelayMinutes) : undefined,
-    retryDelayMinutes: form.retryDelayMinutes.trim() ? Number(form.retryDelayMinutes) : undefined,
-    maxAttempts: form.maxAttempts.trim() ? Number(form.maxAttempts) : undefined,
-  };
-}
-
 function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"config" | "test">("config");
 
   const save = useMutation({
     mutationFn: async () => {
       const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify(formToAgentFrame(form)),
+        body: JSON.stringify({
+          name: form.name || undefined,
+          greetingLine: form.greetingLine || undefined,
+          closingLine: form.closingLine || undefined,
+          toneStyle: form.toneStyle || undefined,
+          personaPrompt: form.personaPrompt || undefined,
+          voiceProvider: form.voiceProvider,
+          voiceId: form.voiceId || undefined,
+          language: form.language || undefined,
+          sttProvider: form.sttProvider,
+          llmProvider: form.llmProvider,
+          llmModel: form.llmModel || undefined,
+          toolsEnabled: form.toolsEnabled,
+          guardrails: {
+            topicBoundaryStrictness: form.topicBoundaryStrictness,
+            injectionSensitivity: form.injectionSensitivity,
+            abuseHandlingEnabled: form.abuseHandlingEnabled,
+          },
+          enabled: form.enabled,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -209,51 +186,43 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     }));
   }
 
-  /** Sends the current, in-progress form as configOverride — the backend
-   * (buildPreviewAgentConfig, voice/agent.ts) builds the system prompt/voice/
-   * LLM/tools straight from it instead of the saved DB row, so this really
-   * tests what's on screen right now, not just the last saved version. */
   const testChatFetch = async (messages: { role: string; content: string }[]) => {
     return apiFetch(
       `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
-      },
-    );
-  };
-
-  /** Issues a short-lived token for the Voice tab's live test call — same
-   * configOverride contract as testChatFetch, see test-call-tokens.ts. */
-  const testCallTokenFetch = async () => {
-    return apiFetch(
-      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+        body: JSON.stringify({ messages }),
       },
     );
   };
 
   return (
     <div className="border-t border-border bg-muted/40 p-5">
-      <div className="flex justify-end mb-5">
-        <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
+      <div className="flex gap-1 mb-5">
+        <button
+          onClick={() => setActiveTab("config")}
+          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+            activeTab === "config" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          Configuration
+        </button>
+        <button
+          onClick={() => setActiveTab("test")}
+          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+            activeTab === "test" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          Test Agent
+        </button>
       </div>
-      <PreviewDrawer
-        open={previewDrawerOpen}
-        onOpenChange={setPreviewDrawerOpen}
-        templateName={row.config?.name || row.templateName}
-        chatFetchFn={testChatFetch}
-        testCallTokenFetchFn={testCallTokenFetch}
-        previewState={previewState}
-        previewUrl={previewUrl}
-        onPlayPreview={playPreview}
-      />
 
-      {(
+      {activeTab === "test" && (
+        <AgentTestChat fetchFn={testChatFetch} templateName={row.config?.name || row.templateName} />
+      )}
+
+      {activeTab === "config" && (
         <div className="space-y-5">
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -494,61 +463,6 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 />
                 End call on sustained abuse
               </label>
-            </div>
-          </div>
-
-          {/* Retry cadence — per-org override, empty = platform default */}
-          <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70 pt-3 pb-1">
-            Retry cadence
-          </div>
-          <p className="text-xs text-muted-foreground -mt-1">
-            Leave any field blank to use the platform default. Max attempts is capped at 20 either way.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label htmlFor={`first-call-delay-${row.templateKey}`} className={labelClass()}>
-                Delay before first call (minutes)
-              </label>
-              <input
-                id={`first-call-delay-${row.templateKey}`}
-                type="number"
-                min={0}
-                max={43200}
-                value={form.firstCallDelayMinutes}
-                onChange={(e) => setForm({ ...form, firstCallDelayMinutes: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
-            </div>
-            <div>
-              <label htmlFor={`retry-delay-${row.templateKey}`} className={labelClass()}>
-                Delay between retries (minutes)
-              </label>
-              <input
-                id={`retry-delay-${row.templateKey}`}
-                type="number"
-                min={0}
-                max={43200}
-                value={form.retryDelayMinutes}
-                onChange={(e) => setForm({ ...form, retryDelayMinutes: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
-            </div>
-            <div>
-              <label htmlFor={`max-attempts-${row.templateKey}`} className={labelClass()}>
-                Max attempts (1–20)
-              </label>
-              <input
-                id={`max-attempts-${row.templateKey}`}
-                type="number"
-                min={1}
-                max={20}
-                value={form.maxAttempts}
-                onChange={(e) => setForm({ ...form, maxAttempts: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
             </div>
           </div>
 

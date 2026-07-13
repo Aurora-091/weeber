@@ -1,5 +1,5 @@
 /**
- * User-facing data export — "Download as Excel" on the Integrations
+ * Merchant-facing data export — "Download as Excel" on the Integrations
  * page. On-demand .xlsx generation via exceljs, no scheduling/email, no
  * external spreadsheet OAuth (Google Sheets is explicitly out of scope for
  * now — see integrations.tsx). Every query here is org-scoped the same way

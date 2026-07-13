@@ -1,11 +1,11 @@
 /**
- * Exotel BYO telephony — validate + store a user's own Exotel
+ * Exotel BYO telephony — validate + store a merchant's own Exotel
  * credentials. See docs/india-telephony.md: Exotel's AI-agent path is
  * SIP-trunk-based (bridged into LiveKit), not a drop-in replacement for
  * the WebSocket Media-Streams-style transport this codebase is built
  * against today — so wiring credentials here does NOT mean live calls can
  * route through Exotel yet, that needs the SIP bridge work described in
- * the doc. This covers the "user already has an Exotel account and
+ * the doc. This covers the "merchant already has an Exotel account and
  * wants Weeber to recognize it" half: BYO-only, no platform sub-account
  * path, same shape as Plivo's.
  */

@@ -134,20 +134,6 @@
       "when": 1783853949428,
       "tag": "0018_curly_logan",
       "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1783884666390,
-      "tag": "0019_chubby_terrax",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1783900343137,
-      "tag": "0020_tearful_union_jack",
-      "breakpoints": true
     }
   ]
 }

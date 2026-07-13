@@ -18,7 +18,7 @@ import { orgs } from "../../database/schema";
  * request for a fresh outbound call — there's no row yet to look up an org
  * from. Resolved instead from an `orgId` query param on the answer_url
  * itself (plivo-client.ts's `createPlivoOutboundCall` appends it) — a
- * user wiring up a Plivo number for pure inbound use needs to include
+ * merchant wiring up a Plivo number for pure inbound use needs to include
  * the same `?orgId=` on the Answer URL configured in their Plivo
  * Application. Falls back to skipping validation (loud warning) if no
  * org/token can be resolved, matching requireTwilioSignature's fail-open

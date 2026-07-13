@@ -4,7 +4,6 @@ import { motion } from "motion/react";
 import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge } from "lucide-react";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
-import { adminPath } from "../../lib/route-base";
 
 /**
  * Downloads the compliance audit trail for this call as a plain-text file —
@@ -39,7 +38,7 @@ function LatencyRow({ label, ms }: { label: string; ms: number | null }) {
 }
 
 export function CallDetailPage() {
-  const [, params] = useRoute<{ id: string }>(adminPath("/calls/:id"));
+  const [, params] = useRoute("/dashboard/calls/:id");
   const id = params?.id ?? "";
 
   const call = useQuery({
@@ -90,7 +89,7 @@ export function CallDetailPage() {
 
   return (
     <div>
-      <Link href={adminPath()} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
         <ArrowLeft className="size-3.5" />
         All calls
       </Link>

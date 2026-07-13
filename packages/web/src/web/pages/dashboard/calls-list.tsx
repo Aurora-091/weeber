@@ -3,7 +3,6 @@ import { Link } from "wouter";
 import { PhoneIncoming, PhoneOutgoing, Sparkles, Clock } from "lucide-react";
 import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
-import { adminPath } from "../../lib/route-base";
 
 const STATUS_STYLES: Record<string, string> = {
   "in-progress": "bg-success-soft text-success",
@@ -65,7 +64,7 @@ export function CallsListPage() {
           return (
             <Link
               key={call.id}
-              href={adminPath(`/calls/${call.id}`)}
+              href={`/dashboard/calls/${call.id}`}
               className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/60 transition-colors"
             >
               <div className="shrink-0">

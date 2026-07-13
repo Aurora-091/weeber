@@ -4,7 +4,6 @@ import { Loader as Loader2, Mail } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
-import { appPath } from "../../lib/route-base";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -19,7 +18,7 @@ type Mode = "signin" | "signup";
  *   ADR-043 — no link), verified inline on this same screen. */
 type SignupState = "idle" | "needs-confirmation";
 
-export function UserLoginPage() {
+export function MerchantLoginPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<Mode>("signin");
@@ -44,7 +43,7 @@ export function UserLoginPage() {
   // Already signed in? Straight to the app.
   useEffect(() => {
     supabase?.auth.getSession().then(({ data }) => {
-      if (data.session) navigate(appPath());
+      if (data.session) navigate("/app");
     });
   }, [navigate]);
 
@@ -61,7 +60,7 @@ export function UserLoginPage() {
         setError(authError.message);
         return;
       }
-      navigate(appPath());
+      navigate("/app");
       return;
     }
 
@@ -76,7 +75,7 @@ export function UserLoginPage() {
       return;
     }
     if (data.session) {
-      navigate(appPath());
+      navigate("/app");
       return;
     }
     setSignupState("needs-confirmation");
@@ -97,7 +96,7 @@ export function UserLoginPage() {
       setError(authError.message);
       return;
     }
-    navigate(appPath());
+    navigate("/app");
   }
 
   async function resendConfirmation() {
@@ -145,7 +144,7 @@ export function UserLoginPage() {
       setError(authError.message);
       return;
     }
-    navigate(appPath());
+    navigate("/app");
   }
 
   async function resendSigninCode() {
@@ -208,7 +207,7 @@ export function UserLoginPage() {
       return;
     }
     setResetDone(true);
-    setTimeout(() => navigate(appPath()), 1500);
+    setTimeout(() => navigate("/app"), 1500);
   }
 
   const shellClass = cn(
@@ -220,7 +219,7 @@ export function UserLoginPage() {
     return (
       <div className={shellClass}>
         <p className="text-center text-sm text-muted-foreground">
-          User login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+          Merchant login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
         </p>
       </div>
     );

@@ -1,4 +1,4 @@
-# CLAUDE-BUILD-BRIEF.md — Admin Panel + User Dashboard
+# CLAUDE-BUILD-BRIEF.md — Admin Panel + Merchant Dashboard
 
 Execution-level brief for building the two dashboards on top of this fork. Read `WEEBER-PLAN.md` and ADR-030/
 ADR-031 in `DECISIONS.md` first — this doc is the "how to build it" layer on top of "what to build" from
@@ -21,12 +21,12 @@ those. Every decision below was explicitly confirmed, not assumed — treat it a
 
 ## 2. Brand direction — starting proposal, not final
 
-No brand assets exist yet for the user-facing product. Rather than block on that, here's a concrete
+No brand assets exist yet for the merchant-facing product. Rather than block on that, here's a concrete
 starting point that's clearly *not* a reskin of OpenVent's editorial serif/ember landing page, and is
 swappable later since it's just CSS variables in `styles.css`:
 
 - **Type:** A clean grotesque/geometric sans for UI (e.g. Inter or Geist — either is a safe, neutral,
-  user-SaaS-appropriate choice, unlike OpenVent's editorial Fraunces serif). Keep JetBrains Mono for any
+  merchant-SaaS-appropriate choice, unlike OpenVent's editorial Fraunces serif). Keep JetBrains Mono for any
   code/API-key display, matching the existing convention.
 - **Palette direction:** A trust-oriented SaaS palette — a single confident accent (blue or a deep teal/green
   reads well for "commerce ops" tools) on a neutral zinc/slate base, not the ember/warm-editorial palette.
@@ -58,7 +58,7 @@ src/web/
       # impersonate.tsx never shipped as its own page (folded into users.tsx's "Log in as"
       # action instead, see \u00a74 point 6) -- and the whole capability was later removed
       # entirely. No impersonation exists in this codebase anymore.
-    app/                # NEW ROUTE TREE — user-facing, org-scoped
+    app/                # NEW ROUTE TREE — merchant-facing, org-scoped
       home.tsx          # dashboard landing page (/app) — checklist card + vertical-driven metrics;
                          # setup is now components/app/setup-modal.tsx opened on top of this, not its
                          # own page (see DECISIONS.md ADR-047 — this line used to say "onboarding.tsx",
@@ -66,12 +66,12 @@ src/web/
       agents.tsx         # form-based agent config (persona/tone/KB per agent)
       calls.tsx          # call history + transcripts, scoped to the logged-in org
       analytics.tsx      # recovery rate, COD confirm rate, feedback scores
-      billing.tsx        # usage + plan, user's own view
+      billing.tsx        # usage + plan, merchant's own view
       integrations.tsx   # Shopify connection status + Twilio/Plivo/Exotel telephony BYO (built as
                          # integrations.tsx, not the originally-planned shopify.tsx name)
   components/
     dashboard/          # existing admin-panel components stay here
-    app/                # NEW — user-facing components
+    app/                # NEW — merchant-facing components
 ```
 
 `/dashboard/*` continues to be gated by `requireAdminKey` (existing middleware, unchanged). `/app/*` gets a
@@ -95,14 +95,14 @@ Confirmed scope (originally six, now five — impersonation removed):
    that lands, not imply per-org isolation that doesn't exist yet)
 5. Feature flags (new, simplest possible implementation is fine — a flat table, org-scoped or global boolean
    flags, no need for a full flag-management product)
-6. **User account impersonation — hard requirement: every impersonation action must write an audit log
+6. **Merchant account impersonation — hard requirement: every impersonation action must write an audit log
    entry** (who impersonated which org, start time, end time/duration, at minimum). This was explicitly kept
    in scope despite being a real security surface — the audit trail is the non-negotiable part of that
    decision, not optional hardening to add later. Reuse the existing audit-trail patterns in
    `packages/openvent-compliance/src/audit-trail.ts` as the model for how this should be structured (append-only,
    queryable, not just a console log line).
 
-## 5. User dashboard — pages in v1
+## 5. Merchant dashboard — pages in v1
 
 Confirmed scope (six pages, Team/seats explicitly deferred per the org-lite decision):
 1. **Onboarding wizard** — guided setup, ends with a connected Shopify store and at least one agent enabled.
@@ -117,7 +117,7 @@ Confirmed scope (six pages, Team/seats explicitly deferred per the org-lite deci
 4. **Analytics/KPIs** — recovery rate, COD confirm rate, feedback scores. **Blocked on order-value
    attribution not existing yet** (flagged in `WEEBER-PLAN.md`'s Phase 2 list) — don't ship a recovery-rate
    number until that's real; a fabricated metric is worse than no metric for a compliance-first product.
-5. **Billing/usage** — user's own plan + usage, depends on the billing integration workstream.
+5. **Billing/usage** — merchant's own plan + usage, depends on the billing integration workstream.
 6. **Shopify connection/settings** — status (connected/disconnected), reconnect flow, links back to the
    weebersh OAuth install URL.
 
@@ -139,7 +139,7 @@ with real logic (form validation, KPI calculation) should still get a test.
 Fully separate, top to bottom:
 - Separate Fly.io (or Railway) app for staging vs. production.
 - Separate Supabase project for staging vs. production (different `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`).
-- Separate Twilio subaccount for staging, with dedicated test numbers — never test against real user
+- Separate Twilio subaccount for staging, with dedicated test numbers — never test against real merchant
   Twilio numbers.
 - `weebersh` needs a staging install target too (a dev Shopify store) — coordinate with whoever owns that
   repo's staging setup; the contract (`WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET`) needs distinct
@@ -170,9 +170,9 @@ Follow what's already here, don't introduce a second style:
   ("Use API key instead" link preserved for CI/scripts). `admin-login.tsx` is the email/password login
   page (`supabase.auth.signInWithPassword()`). If you're building against `/dashboard/*`, auth is
   Supabase-session-first, `ADMIN_API_KEY`-second — not `ADMIN_API_KEY`-only as originally planned here.
-- **`/app/*` (user-facing):** Supabase Auth, email/password + magic link. `supabase/config.toml` already
+- **`/app/*` (merchant-facing):** Supabase Auth, email/password + magic link. `supabase/config.toml` already
   has `[auth]` enabled from ADR-030 — this build wires an actual login flow and session middleware against
-  it. A logged-in user's Supabase user needs to resolve to an `orgId` (a `users`-to-`orgs` mapping table,
+  it. A logged-in merchant's Supabase user needs to resolve to an `orgId` (a `users`-to-`orgs` mapping table,
   not yet in the schema — add it as part of this build, keyed by Supabase user id).
 
 ## 10. Vertical-agnostic architecture

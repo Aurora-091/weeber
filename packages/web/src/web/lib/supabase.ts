@@ -1,10 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Supabase Auth client for the user app (/app/*) only — the admin panel
+ * Supabase Auth client for the merchant app (/app/*) only — the admin panel
  * keeps its separate admin-key auth (two systems on purpose, see CLAUDE.md).
  * Configured via VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (build-time,
- * same regime as VITE_API_BASE_URL). When unconfigured, the user app
+ * same regime as VITE_API_BASE_URL). When unconfigured, the merchant app
  * renders a "not configured" notice instead of crashing — local dashboards
  * that only use /dashboard never need these set.
  */

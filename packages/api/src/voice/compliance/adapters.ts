@@ -113,7 +113,7 @@ export async function eraseOrgDataForPhoneNumber(orgId: string, phoneNumber: str
 
   // Delete caller memory row for this org + phone number only (audit #01,
   // D2 fix) — callerMemory is now scoped per-org (see schema comment), so a
-  // redact request from one user no longer wipes another user's
+  // redact request from one merchant no longer wipes another merchant's
   // memory of the same phone number. Self-hosted/no-org callers pass
   // orgId === "" here, matching the "" sentinel used everywhere else.
   await db

@@ -266,7 +266,7 @@ export function OrgsPage() {
           Organizations
         </h1>
         <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-          Overview of all user workspaces, seats, agents, and store connection status.
+          Overview of all merchant workspaces, seats, agents, and store connection status.
         </p>
       </div>
 

@@ -10,7 +10,7 @@
  * overwrites it with a new value for the same key.
  *
  * Scoped by `orgId` (audit #01, D2) — the same phone number can call two
- * different Weeber users, and memory (and its erasure) must not leak
+ * different Weeber merchants, and memory (and its erasure) must not leak
  * across that boundary. `orgId` is `""` for self-hosted OpenVent usage with
  * no org concept — see the schema comment on `callerMemory` for why that's
  * `""` and not `undefined`/`NULL`.

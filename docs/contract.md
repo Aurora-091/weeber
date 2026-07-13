@@ -20,7 +20,7 @@
 
 ## Endpoints (outbound, all under `/api/integrations/shopify`)
 
-### 1. `POST /connected` — user clicks "Connect to Weeber" ⚠️ changed in 1.2, timing changed in 1.4
+### 1. `POST /connected` — merchant clicks "Connect to Weeber" ⚠️ changed in 1.2, timing changed in 1.4
 ```json
 { "shop": "x.myshopify.com", "scopes": "read_orders,...",
   "org_id": "uuid|null", "plan_name": "...", "currency": "INR",
@@ -30,7 +30,7 @@
 ```
 **Breaking change in 1.2:** `access_token` is no longer sent. webbersh is the sole holder/refresher of Shopify offline tokens (it now has `expiring_offline_access_tokens` on, so any token captured here would go stale with no refresh path on Weeber's side); use the new inbound write-back endpoints below instead of calling Shopify directly. `product_count` is now always `null` — webbersh never had the `read_products` scope, so this call always failed silently; dropped the dead call rather than add a scope nothing else needed.
 
-**Timing changed in 1.4:** this no longer fires automatically from the OAuth `afterAuth` hook. `afterAuth` only registers webhooks now, so install completes independent of Weeber's availability. The user instead lands on a "Connect to Weeber" button (`app._index.jsx`) and this fires when they click it — retryable from the UI if it fails. Install is assumed to always be initiated from inside Weeber's dashboard, so `org_id` still arrives on the Shopify OAuth install URL; webbersh persists it at `afterAuth` time (keyed by shop, in a new `ShopOrgLink` table — one org can own multiple shops) and reads it back here, since the button click itself has no `org_id` on its URL.
+**Timing changed in 1.4:** this no longer fires automatically from the OAuth `afterAuth` hook. `afterAuth` only registers webhooks now, so install completes independent of Weeber's availability. The merchant instead lands on a "Connect to Weeber" button (`app._index.jsx`) and this fires when they click it — retryable from the UI if it fails. Install is assumed to always be initiated from inside Weeber's dashboard, so `org_id` still arrives on the Shopify OAuth install URL; webbersh persists it at `afterAuth` time (keyed by shop, in a new `ShopOrgLink` table — one org can own multiple shops) and reads it back here, since the button click itself has no `org_id` on its URL.
 
 ### 2. `POST /webhooks/checkouts` — checkout created/updated 🆕 backend
 ```json
@@ -88,7 +88,7 @@ Backend behavior: delete/anonymize matching contacts + call metadata within 30 d
 { "shop": "...", "customer": { "id": 1, "email": "...", "phone": "..." },
   "orders_requested": [123, 456], "data_request": { "id": 789 } }
 ```
-Backend behavior: Weeber is the system of record for call/contact metadata, so it must compile and be ready to disclose whatever it holds on this customer to fulfill the user's data-subject access request. Return 200.
+Backend behavior: Weeber is the system of record for call/contact metadata, so it must compile and be ready to disclose whatever it holds on this customer to fulfill the merchant's data-subject access request. Return 200.
 
 ## Endpoints (inbound, all under webbersh's `/api/weeber`, auth via `X-Weeber-Callback-Secret`)
 
@@ -135,4 +135,4 @@ webbersh behavior: Weeber **must** generate a stable, retry-safe `code` (e.g. su
 - 1.2 — Transport is now bidirectional. Added inbound write-back endpoints 9–11 (orders/annotate, orders/cancel, discounts/create), authenticated via new `X-Weeber-Callback-Secret` / `WEEBER_CALLBACK_SECRET`. Added endpoint 8 (`customers/data_request`), previously acknowledged by webbersh but never forwarded. Removed `access_token` from the `/connected` payload (endpoint 1) — webbersh remains the sole holder/refresher of Shopify tokens. `product_count` in endpoint 1 is now always `null` (dead call removed, no `read_products` scope).
 - 1.3 — Weeber backend base URL is now overridable via `WEEBER_API_URL` on webbersh (still defaults to `https://api.weeber.ai`).
 - 1.5 — Bumped Shopify API version from retired `2025-01` to `2026-04` (toml + weeber.server.js + SDK `ApiVersion.April26`). Clarified endpoint 11 percentage semantics: `value` is a whole number 0–100; webbersh now converts to Shopify's 0.00–1.00 scale (`value / 100`) and range-guards it (previously sent the raw whole number, producing a 1000%-scale discount). Missing `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` now hard-fail at boot (was log-only). `shop/redact` now erases local `Session` + `ShopOrgLink` rows. `/auth` no longer deletes offline sessions on every hit.
-- 1.4 — `POST /connected` (endpoint 1) no longer fires automatically from OAuth `afterAuth` — it now fires when the user clicks "Connect to Weeber" on webbersh's post-install screen, so install no longer depends on Weeber being reachable. `org_id` is still sourced from the Shopify install URL (install is always initiated from Weeber's dashboard) but is now persisted by webbersh (new `ShopOrgLink` table, keyed by shop) and read back at connect time, since the button click has no `org_id` on its own URL. Also fixed the `webhooks.app.uninstalled` (and all other webhook routes) 500-on-retry bug: `authenticate.webhook` was throwing an uncaught token-refresh error for shops that had already uninstalled, which is now caught and turned into the mandated 200.
+- 1.4 — `POST /connected` (endpoint 1) no longer fires automatically from OAuth `afterAuth` — it now fires when the merchant clicks "Connect to Weeber" on webbersh's post-install screen, so install no longer depends on Weeber being reachable. `org_id` is still sourced from the Shopify install URL (install is always initiated from Weeber's dashboard) but is now persisted by webbersh (new `ShopOrgLink` table, keyed by shop) and read back at connect time, since the button click has no `org_id` on its own URL. Also fixed the `webhooks.app.uninstalled` (and all other webhook routes) 500-on-retry bug: `authenticate.webhook` was throwing an uncaught token-refresh error for shops that had already uninstalled, which is now caught and turned into the mandated 200.

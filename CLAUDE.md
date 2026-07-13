@@ -16,7 +16,7 @@ side of it (`packages/web/src/api/integrations/shopify/`).
 not background reading:
 
 1. `WEEBER-PLAN.md` — what's built, what's Phase 2/deferred, sized workstreams, assignable tasks.
-2. `CLAUDE-BUILD-BRIEF.md` — admin panel + user dashboard scope, codebase structure, API conventions.
+2. `CLAUDE-BUILD-BRIEF.md` — admin panel + merchant dashboard scope, codebase structure, API conventions.
 3. `UI-DESIGN-BRIEF.md` — the confirmed design system (Arc-like warm paper theme, tokens already implemented
    in `styles.css`'s `.theme-weeber`).
 4. `DECISIONS.md` — every consequential decision, in order, with full reasoning (ADR-030 onward are
@@ -31,7 +31,7 @@ before assuming it's a mistake or before changing it.
 **ADR vs `changelog.md` (decided 2026-07-10, audit #01 D3/D8):** `DECISIONS.md` is reserved for real
 *decisions* — anything where a call was made between real alternatives, especially anything touching
 architecture, compliance/`packages/openvent-compliance`, data model semantics (e.g. what a column scopes to),
-or user-facing behavior a user would notice. `changelog.md` is the source of truth for routine feature
+or user-facing behavior a merchant would notice. `changelog.md` is the source of truth for routine feature
 work — new tables/columns, new endpoint params, wiring that follows an already-decided pattern. If you're not
 sure which one a change belongs in, ask: "did this require picking between two real options?" — if yes, it's
 an ADR (and possibly still a gate-#6 STOP-AND-ASK item); if no, a `changelog.md` entry is enough. Don't skip
@@ -144,9 +144,9 @@ Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
 
 - **Two dashboards, one app.** `/dashboard/*` (existing) is the internal admin panel — org/shop list, agent
   template catalog, billing oversight, compliance/DNC oversight, feature flags. `/app/*` (new) is the
-  user-facing surface — onboarding wizard, agent config, call history, analytics, billing, Shopify
-  connection status. Both live in `packages/web`, not separate packages. (User impersonation existed
-  briefly and was removed entirely — see DECISIONS.md's removal ADR — there is no "log in as a user"
+  merchant-facing surface — onboarding wizard, agent config, call history, analytics, billing, Shopify
+  connection status. Both live in `packages/web`, not separate packages. (Merchant impersonation existed
+  briefly and was removed entirely — see DECISIONS.md's removal ADR — there is no "log in as a merchant"
   capability in this codebase.)
 - **Frontend↔backend boundary rule (ADR-035/036 — the split is done):** the backend is `packages/api`
   (`@weeber/api`), the frontend is `packages/web` (`@weeber/web`). Frontend code never imports anything
@@ -268,5 +268,5 @@ unresolved product/business decisions:
 - `packages/openvent-compliance` is no longer framed as an externally-publishable npm package (no `license`/
   `keywords` fields, marked `private: true`) — it's Weeber-internal code, just held to a higher bar. If the
   business decides to open-source it again later, that's a deliberate call to revisit, not a default.
-- `ADMIN_API_KEY`/`admin_keys` (internal ops auth) and the planned Supabase-Auth-based user login are two
+- `ADMIN_API_KEY`/`admin_keys` (internal ops auth) and the planned Supabase-Auth-based merchant login are two
   separate, intentionally non-unified auth systems for two different audiences — don't merge them.

@@ -56,7 +56,7 @@ describe("seedAgentTemplates", () => {
     updated = [];
   });
 
-  it("resolves the real docs/agent-prompts directory and seeds all real templates (not skipped)", async () => {
+  it("resolves the real docs/agent-prompts directory and seeds all 3 real templates (not skipped)", async () => {
     const consoleErrors: unknown[][] = [];
     const originalError = console.error;
     console.error = (...args: unknown[]) => consoleErrors.push(args);
@@ -72,11 +72,10 @@ describe("seedAgentTemplates", () => {
     const missingFileErrors = consoleErrors.filter((args) => String(args[0]).includes("Prompt file does not exist"));
     expect(missingFileErrors).toEqual([]);
 
-    // All 5 templates (3 Shopify + 2 Insurance, as of the insurance-vertical
-    // prep work) should have gone through insert (since existingKeys is
+    // All 3 templates should have gone through insert (since existingKeys is
     // always empty in this mock) with real, non-empty prompt content read
     // off disk.
-    expect(inserted.length).toBe(5);
+    expect(inserted.length).toBe(3);
     for (const row of inserted) {
       expect(row.defaultPersonaPrompt.length).toBeGreaterThan(0);
     }

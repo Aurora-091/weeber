@@ -42,8 +42,8 @@ scripts you want, informed by the tone/persona-preset pattern already documented
 ## Config storage — the one thing to decide before building the form UI
 
 Today, persona text and workflow configs (`AGENT_PERSONAS`, `WORKFLOWS`) are **env-var JSON, edited by hand,
-requiring a redeploy.** That's fine for a single self-hosted operator; it does not work for a user-facing
-"zero setup" onboarding form, since users can't edit your Railway env vars.
+requiring a redeploy.** That's fine for a single self-hosted operator; it does not work for a merchant-facing
+"zero setup" onboarding form, since merchants can't edit your Railway env vars.
 
 **Before building the form-based config UI, move persona/workflow config from env-var to a DB table**
 (straightforward — a `personaConfigs`/`workflowConfigs` table keyed by `orgId`, read at call-time instead of
@@ -54,7 +54,7 @@ from `process.env`). This is the actual prerequisite for the form UI, not the fo
 
 | Workstream | Depends on | Notes |
 |---|---|---|
-| **A. Config storage (env-var -> DB) + form-based agent config UI** | Nothing (DB is live) | The actual bottleneck for user-facing onboarding. Backend half (tables + read path) first; the form UI waits for the frontend round. Wire `docs/agent-prompts/` in as the seed data. |
+| **A. Config storage (env-var -> DB) + form-based agent config UI** | Nothing (DB is live) | The actual bottleneck for merchant-facing onboarding. Backend half (tables + read path) first; the form UI waits for the frontend round. Wire `docs/agent-prompts/` in as the seed data. |
 | ~~B. Persona/prompt copy~~ | — | **DONE** — `docs/agent-prompts/01..03` (commit bc5600a); feedback agent still flagged needs-review. |
 | ~~C. Wire real Supabase project~~ | — | **DONE** — production is `openvent2` (`wtqohdcghmxuujqyhlkz`, ap-south-1 Mumbai), schema applied, service connected via pooler. Staging project still to create. |
 | ~~D. Railway deploy~~ | — | **DONE** — `weeber-backend` project, api service (Singapore) from Aurora-091/openvent, domain `api-production-c1bb.up.railway.app`, health + WS-through-edge verified live, all provider keys set. |
@@ -62,15 +62,15 @@ from `process.env`). This is the actual prerequisite for the form UI, not the fo
 | **F. Real `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` in both repos** | Nothing | Coordinate with the weebersh deploy — must match exactly in both places or every webhook 401s. |
 | **G. End-to-end test against a real (dev-store) Shopify checkout** | F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. |
 | ~~H. Turso → Supabase Postgres migration~~ | — | **DONE (ADR-034)** — pgTable schema live in Mumbai, 14 tables, driver swapped, tests green. RLS policies for `orgId` scoping still worth considering (fits N/Q work). |
-| **I. India-compliance review of the calling-window/DNC model** | Nothing (research); hard gate before first real India user campaign | TRAI territory: NDNC/DND registry, 9am-9pm IST norms, 140-series telemarketing headers. Touches `packages/openvent-compliance` — confirm findings with the user before changing anything there. |
+| **I. India-compliance review of the calling-window/DNC model** | Nothing (research); hard gate before first real India merchant campaign | TRAI territory: NDNC/DND registry, 9am-9pm IST norms, 140-series telemarketing headers. Touches `packages/openvent-compliance` — confirm findings with the user before changing anything there. |
 | **J. Checkout-token-based cancellation matching** | Nothing | Correctness fix — cancellation currently matches on phone number only (ADR-030 known gap). Small: index/column for `checkoutToken` + matching logic. ~2-3 days. |
-| **K. Order-value attribution for recovered carts** | Nothing | Mark a completed call "recovered" with the order's value — prerequisite for any user-facing revenue metric. ~2-3 days. |
+| **K. Order-value attribution for recovered carts** | Nothing | Mark a completed call "recovered" with the order's value — prerequisite for any merchant-facing revenue metric. ~2-3 days. |
 | **L. Org-scoped GDPR erasure into `calls`/`transcripts`** | Nothing | Today only `shopifyContacts` is org-scoped; call/transcript erasure is global phone-number-keyed. ~2-3 days. |
 | **M. Wire `gdpr-redact-notify` edge function to `/customers/redact`** | Nothing | Stub exists in `supabase/functions/`. ~1 day. |
 | **N. Per-org outbound caller ID** | Nothing | `orgs`-linked number resolution at dial time (scheduler + outbound route), global `TWILIO_PHONE_NUMBER` demotes to fallback. Design the seam so O plugs in later. ~3-5 days. |
 | **O. Per-tenant Twilio sub-accounts / BYO number provisioning** | N | Provisioning flow, credential storage, billing separation. 2-3 weeks. Build after N proves the per-org number seam. |
 | **P. Per-org DNC lists** | I (India model shapes it) | Consent is per business relationship — global list is conservative but wrong long-term. **Touches `packages/openvent-compliance` — user confirmation gate applies.** ~1 week. |
-| **Q. Full RBAC / multi-seat user accounts** | Supabase Auth wiring (frontend round) | Roles on top of user login. 2-3 weeks. Sequence with the frontend auth work, not before it. |
+| **Q. Full RBAC / multi-seat merchant accounts** | Supabase Auth wiring (frontend round) | Roles on top of merchant login. 2-3 weeks. Sequence with the frontend auth work, not before it. |
 | **R. Per-org CRM connections (Nango embedded iPaaS)** | Nothing (spike) | Research spike 2-3 days, then 1-2 weeks: per-org tokens behind the existing adapter interface, not a rebuild of the integrations. |
 | **S. Entry-condition branching ("trigger split", ADR-033)** | A (config storage is where `entryConditions` lives) | Engine change ~1 week. **Config-driven vs visual-canvas-from-day-one is still an open user decision — ask before starting (gate #4).** |
 
@@ -86,32 +86,32 @@ Full reasoning for workstreams J-S above, kept verbatim since the constraints ha
 scheduling has:
 
 - **Per-tenant Twilio sub-accounts** — all orgs currently share the pool of numbers configured via
-  `TWILIO_PHONE_NUMBER`/per-number config. Fine for early users; revisit once volume or a specific
-  user's compliance needs (e.g. wanting their own caller ID) demands it.
+  `TWILIO_PHONE_NUMBER`/per-number config. Fine for early merchants; revisit once volume or a specific
+  merchant's compliance needs (e.g. wanting their own caller ID) demands it.
 - **Per-org DNC lists** — the DNC list is currently global (one list for the whole Weeber deployment). A
-  number that opts out via one user's calls is opted out for all users. This is arguably *more*
+  number that opts out via one merchant's calls is opted out for all merchants. This is arguably *more*
   conservative than per-org lists (errs toward not calling), so it's a reasonable interim state, but isn't
   strictly correct TCPA modeling long-term (consent is per business relationship). Revisit before this
   becomes a compliance question with a real regulator or lawyer involved, not after.
-- **Full RBAC / multi-seat user accounts** — one owner login per org for now.
+- **Full RBAC / multi-seat merchant accounts** — one owner login per org for now.
 - **Checkout-token-based cancellation matching** (currently phone-number-only — see ADR-030's "known gaps").
 - **Order-value attribution** for recovered carts (marking a completed call "recovered" with the order's
   value) — needed for any dashboard number claiming a cart-recovery revenue figure. Don't publish a recovery-
-  rate metric to users until this exists; the data isn't captured yet.
+  rate metric to merchants until this exists; the data isn't captured yet.
 - **Org-scoped GDPR erasure reaching into `calls`/`transcripts`** — today only `shopifyContacts` rows get
   redacted per-org; call/transcript erasure uses the base repo's existing (global, phone-number-keyed) path.
 - **Per-org outbound caller ID** (currently single global `TWILIO_PHONE_NUMBER` for every Shopify agent call).
 - **The `gdpr-redact-notify` edge function** exists as a stub only — not called from `/customers/redact` yet.
 - **Per-org CRM connections (embedded iPaaS).** Today's CRM integrations (HubSpot, Salesforce,
   GoHighLevel, Google Calendar) each use one shared, globally-configured access token — fine for a single
-  self-hosted operator, not fine once a user wants to connect *their own* HubSpot/Salesforce account
+  self-hosted operator, not fine once a merchant wants to connect *their own* HubSpot/Salesforce account
   instead of a shared one. Per-org OAuth (per-org encrypted token storage, per-org refresh handling) is a
   genuinely different, harder problem than the current setup — don't build it from scratch. Evaluate
   **Nango** (open source, self-hostable, purpose-built for "let your SaaS users connect their own accounts")
   as the credential layer sitting underneath the existing `resilientCall`/adapter pattern — this would
   replace "one global token in an env var" with "per-org token, fetched by the same adapter interface,"
   not a rebuild of the integrations themselves. Size: research spike (2-3 days) + integration (1-2 weeks) —
-  not urgent until a user actually asks to connect their own CRM, but worth knowing the answer before
+  not urgent until a merchant actually asks to connect their own CRM, but worth knowing the answer before
   that request arrives rather than scrambling then.
 - **Entry-condition branching ("trigger split") for workflows.** Researched against Klaviyo's and Shopify
   Flow's flow-builder models (see ADR-033). Today's `WorkflowConfig` can branch on *how a call ended*

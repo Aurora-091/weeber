@@ -2,16 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Sparkles, Bot, PhoneCall, BarChart3 } from "lucide-react";
-import { appFetch } from "../../lib/user-session";
-import { appPath } from "../../lib/route-base";
-import { useUser } from "../../components/app/user-shell";
+import { appFetch } from "../../lib/merchant-session";
+import { useMerchant } from "../../components/app/merchant-shell";
 import { SetupModal } from "../../components/app/setup-modal";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 
 /**
- * The user's default landing page (`/app`) — replaces the old
+ * The merchant's default landing page (`/app`) — replaces the old
  * full-page onboarding route. See docs/DECISIONS.md "Setup modal, not a
  * setup page": setup now happens in <SetupModal>, opened on top of this
  * page instead of gating it.
@@ -31,8 +30,8 @@ const STEP_LABELS: Record<string, string> = {
 type OnboardingState = { steps: Record<string, boolean>; dismissed: boolean; completedAt: string | null };
 type AnalyticsOverview = { totalCalls: number };
 
-export function UserHomePage() {
-  const { vertical } = useUser();
+export function MerchantHomePage() {
+  const { vertical } = useMerchant();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const [setupOpen, setSetupOpen] = useState(false);
@@ -59,7 +58,7 @@ export function UserHomePage() {
   });
 
   // Auto-open once we know setup is incomplete — same gate Vocalist uses
-  // (incomplete AND nothing live yet), so a user who explicitly
+  // (incomplete AND nothing live yet), so a merchant who explicitly
   // dismissed/skipped isn't re-interrupted on every visit.
   useEffect(() => {
     if (!onboarding.data) return;
@@ -158,7 +157,7 @@ export function UserHomePage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Link to={appPath("/agents")}>
+        <Link to="/app/agents">
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <Bot className="mt-0.5 size-5 text-primary" />
             <div>
@@ -167,7 +166,7 @@ export function UserHomePage() {
             </div>
           </div>
         </Link>
-        <Link to={appPath("/calls")}>
+        <Link to="/app/calls">
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <PhoneCall className="mt-0.5 size-5 text-primary" />
             <div>
@@ -176,7 +175,7 @@ export function UserHomePage() {
             </div>
           </div>
         </Link>
-        <Link to={appPath("/analytics")}>
+        <Link to="/app/analytics">
           <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
             <BarChart3 className="mt-0.5 size-5 text-primary" />
             <div>
@@ -193,7 +192,7 @@ export function UserHomePage() {
         onFinished={() => {
           queryClient.invalidateQueries({ queryKey: ["app-onboarding"] });
           queryClient.invalidateQueries({ queryKey: ["app-analytics-overview"] });
-          navigate(appPath());
+          navigate("/app");
         }}
       />
     </div>

@@ -102,7 +102,7 @@ export function BroadcastsPage() {
     <div>
       <PageHeader
         title="Broadcasts"
-        description="Message users or the waitlist. Sending needs RESEND_API_KEY configured \u2014 without it, broadcasts are marked \u201cqueued,\u201d not silently faked as sent."
+        description="Message merchants or the waitlist. Sending needs RESEND_API_KEY configured \u2014 without it, broadcasts are marked \u201cqueued,\u201d not silently faked as sent."
       />
 
       <div className="rounded-lg border border-border p-4 mb-6 space-y-3">
@@ -125,7 +125,7 @@ export function BroadcastsPage() {
             onChange={(e) => setAudience(e.target.value)}
             className="rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
           >
-            <option value="all">All users</option>
+            <option value="all">All merchants</option>
             <option value="waitlist">Waitlist</option>
           </select>
           <Button onClick={() => create.mutate()} disabled={!title.trim() || !body.trim() || create.isPending} className="ml-auto">
@@ -137,7 +137,7 @@ export function BroadcastsPage() {
 
       {broadcasts.isLoading && <SkeletonTable columns={6} />}
       {!broadcasts.isLoading && rows.length === 0 && (
-        <EmptyState title="No broadcasts yet" description="Create one above to message users or the waitlist." />
+        <EmptyState title="No broadcasts yet" description="Create one above to message merchants or the waitlist." />
       )}
       {rows.length > 0 && <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />}
     </div>

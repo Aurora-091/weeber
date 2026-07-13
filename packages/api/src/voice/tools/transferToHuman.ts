@@ -2,7 +2,7 @@ import z from "zod";
 import { tool } from "ai";
 
 /**
- * Lets the agent hand a live call off to a real person — the user's own
+ * Lets the agent hand a live call off to a real person — the merchant's own
  * number (see `orgs.humanTransferNumber` / `HUMAN_TRANSFER_NUMBER` env var).
  *
  * Signals intent only, same pattern as every other tool here. The actual

@@ -31,25 +31,25 @@ mock.module("../../database", () => ({
 
 process.env.SUPABASE_JWT_SECRET = "test-jwt-secret";
 
-import { requireUserSession, requireUserOrg } from "./supabase-auth";
+import { requireMerchantSession, requireMerchantOrg } from "./supabase-auth";
 
 const app = new Hono()
-  .use("*", requireUserSession)
+  .use("*", requireMerchantSession)
   .get("/session", (c) =>
     c.json({
-      userId: c.get("userUserId"),
-      orgId: c.get("userOrgId"),
-      role: c.get("userRole"),
+      userId: c.get("merchantUserId"),
+      orgId: c.get("merchantOrgId"),
+      role: c.get("merchantRole"),
     }),
   )
-  .use("*", requireUserOrg)
+  .use("*", requireMerchantOrg)
   .get("/gated", (c) => c.json({ ok: true }));
 
 async function signToken(claims: Record<string, unknown>) {
   return sign({ exp: Math.floor(Date.now() / 1000) + 600, ...claims }, "test-jwt-secret", "HS256");
 }
 
-describe("requireUserSession", () => {
+describe("requireMerchantSession", () => {
   beforeEach(() => {
     mockMemberships = [];
   });

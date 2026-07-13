@@ -14,8 +14,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { appFetch } from "../../lib/user-session";
-import { useUser } from "../../components/app/user-shell";
+import { appFetch } from "../../lib/merchant-session";
+import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
@@ -204,8 +204,8 @@ function useDaysParam(defaultDays = 30): [number, (d: number) => void] {
   return [days, setDays];
 }
 
-export function UserAnalyticsPage() {
-  const { me } = useUser();
+export function MerchantAnalyticsPage() {
+  const { me } = useMerchant();
   const [days, setDays] = useDaysParam(30);
 
   const analytics = useQuery({

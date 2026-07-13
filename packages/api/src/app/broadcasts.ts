@@ -1,5 +1,5 @@
 /**
- * Admin-authored broadcasts to users or the whole waitlist (see
+ * Admin-authored broadcasts to merchants or the whole waitlist (see
  * schema.ts's `broadcasts`). Deliberately honest about what actually
  * happened: `status` only becomes "sent" if an email actually went out
  * through a configured provider; with no `RESEND_API_KEY` set, sending

@@ -18,7 +18,7 @@ import { calls, orgs } from "../../database/schema";
  *
  * Org-aware (ADR-042): Twilio signs every webhook with the auth token of
  * whichever ACCOUNT actually placed/owns the call — the platform default
- * for most calls, but a sub-account's or BYO user's own token for calls
+ * for most calls, but a sub-account's or BYO merchant's own token for calls
  * on their dedicated Twilio account (see twilio-provisioning.ts). Validating
  * everything against only the global TWILIO_AUTH_TOKEN would silently
  * reject every one of those orgs' webhooks. Resolution order:

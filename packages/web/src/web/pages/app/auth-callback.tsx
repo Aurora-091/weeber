@@ -3,14 +3,13 @@ import { useLocation } from "wouter";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
-import { appPath } from "../../lib/route-base";
 
 /**
  * Magic-link landing page. supabase-js (detectSessionInUrl, the default)
  * consumes the tokens from the URL itself — this page just waits for the
  * session to materialize and forwards into the app.
  */
-export function UserAuthCallbackPage() {
+export function MerchantAuthCallbackPage() {
   const { theme } = useTheme();
   const [, navigate] = useLocation();
   const [failed, setFailed] = useState(false);
@@ -24,13 +23,13 @@ export function UserAuthCallbackPage() {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && !done) {
         done = true;
-        navigate(appPath());
+        navigate("/app");
       }
     });
     supabase.auth.getSession().then(({ data }) => {
       if (data.session && !done) {
         done = true;
-        navigate(appPath());
+        navigate("/app");
       }
     });
     const timeout = setTimeout(() => {
@@ -59,7 +58,7 @@ export function UserAuthCallbackPage() {
         {failed && (
           <button
             type="button"
-            onClick={() => navigate(appPath("/login"))}
+            onClick={() => navigate("/app/login")}
             className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Back to sign-in

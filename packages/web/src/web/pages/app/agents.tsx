@@ -2,22 +2,20 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
-import { appFetch } from "../../lib/user-session";
+import { appFetch } from "../../lib/merchant-session";
 import { VoicePicker } from "../../components/voice/VoicePicker";
-import { useUser } from "../../components/app/user-shell";
+import { useMerchant } from "../../components/app/merchant-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Switch } from "../../components/ui/switch";
-import { PreviewButton } from "../../components/agent-preview/PreviewButton";
-import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { cn } from "../../lib/utils";
 
 /**
- * User agent config — the same "frame" form as the admin panel's
+ * Merchant agent config — the same "frame" form as the admin panel's
  * /dashboard/agents (voice/agent-frame.ts is the shared schema), re-scoped
  * to the session's own org: no org picker, /api/app endpoints, and the
- * model/provider knobs tucked behind an Advanced disclosure since users
+ * model/provider knobs tucked behind an Advanced disclosure since merchants
  * shouldn't need to pick LLMs to get value.
  */
 
@@ -73,9 +71,6 @@ type AgentConfigRow = {
     toolsEnabled: string[] | null;
     guardrails: { topicBoundaryStrictness?: string; injectionSensitivity?: string; abuseHandlingEnabled?: boolean } | null;
     enabled: boolean;
-    firstCallDelayMinutes: number | null;
-    retryDelayMinutes: number | null;
-    maxAttempts: number | null;
   } | null;
 };
 
@@ -96,12 +91,6 @@ type FormState = {
   injectionSensitivity: string;
   abuseHandlingEnabled: boolean;
   enabled: boolean;
-  /** Empty string = "use the platform default" — kept as strings since these
-   * are plain number inputs; parsed to number|undefined at submit time in
-   * formToAgentFrame. */
-  firstCallDelayMinutes: string;
-  retryDelayMinutes: string;
-  maxAttempts: string;
 };
 
 function toFormState(row: AgentConfigRow): FormState {
@@ -123,9 +112,6 @@ function toFormState(row: AgentConfigRow): FormState {
     injectionSensitivity: c?.guardrails?.injectionSensitivity ?? "medium",
     abuseHandlingEnabled: c?.guardrails?.abuseHandlingEnabled ?? true,
     enabled: c?.enabled ?? true,
-    firstCallDelayMinutes: c?.firstCallDelayMinutes != null ? String(c.firstCallDelayMinutes) : "",
-    retryDelayMinutes: c?.retryDelayMinutes != null ? String(c.retryDelayMinutes) : "",
-    maxAttempts: c?.maxAttempts != null ? String(c.maxAttempts) : "",
   };
 }
 
@@ -141,35 +127,6 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Same shape the PUT save mutation sends — the Preview drawer's configOverride
- * uses this identical conversion so "what you're previewing" and "what Save
- * would write" never drift apart. */
-function formToAgentFrame(form: FormState) {
-  return {
-    name: form.name || undefined,
-    greetingLine: form.greetingLine || undefined,
-    closingLine: form.closingLine || undefined,
-    toneStyle: form.toneStyle || undefined,
-    personaPrompt: form.personaPrompt || undefined,
-    voiceProvider: form.voiceProvider,
-    voiceId: form.voiceId || undefined,
-    language: form.language || undefined,
-    sttProvider: form.sttProvider,
-    llmProvider: form.llmProvider,
-    llmModel: form.llmModel || undefined,
-    toolsEnabled: form.toolsEnabled,
-    guardrails: {
-      topicBoundaryStrictness: form.topicBoundaryStrictness,
-      injectionSensitivity: form.injectionSensitivity,
-      abuseHandlingEnabled: form.abuseHandlingEnabled,
-    },
-    enabled: form.enabled,
-    firstCallDelayMinutes: form.firstCallDelayMinutes.trim() ? Number(form.firstCallDelayMinutes) : undefined,
-    retryDelayMinutes: form.retryDelayMinutes.trim() ? Number(form.retryDelayMinutes) : undefined,
-    maxAttempts: form.maxAttempts.trim() ? Number(form.maxAttempts) : undefined,
-  };
-}
-
 function AgentEditForm({ row }: { row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
@@ -177,14 +134,32 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
 
   const save = useMutation({
     mutationFn: async () => {
       const res = await appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formToAgentFrame(form)),
+        body: JSON.stringify({
+          name: form.name || undefined,
+          greetingLine: form.greetingLine || undefined,
+          closingLine: form.closingLine || undefined,
+          toneStyle: form.toneStyle || undefined,
+          personaPrompt: form.personaPrompt || undefined,
+          voiceProvider: form.voiceProvider,
+          voiceId: form.voiceId || undefined,
+          language: form.language || undefined,
+          sttProvider: form.sttProvider,
+          llmProvider: form.llmProvider,
+          llmModel: form.llmModel || undefined,
+          toolsEnabled: form.toolsEnabled,
+          guardrails: {
+            topicBoundaryStrictness: form.topicBoundaryStrictness,
+            injectionSensitivity: form.injectionSensitivity,
+            abuseHandlingEnabled: form.abuseHandlingEnabled,
+          },
+          enabled: form.enabled,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -223,28 +198,6 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
     }
   }
 
-  /** Sends the current, in-progress form as configOverride — the backend
-   * (buildPreviewAgentConfig, voice/agent.ts) builds the system prompt/voice/
-   * LLM/tools straight from it instead of the saved DB row, so this really
-   * tests what's on screen right now. */
-  async function chatFetchFn(messages: { role: string; content: string }[]) {
-    return appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
-    });
-  }
-
-  /** Issues a short-lived token for the Voice tab's live test call — same
-   * configOverride contract as chatFetchFn, see test-call-tokens.ts. */
-  async function testCallTokenFetchFn() {
-    return appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
-    });
-  }
-
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
@@ -254,20 +207,6 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
 
   return (
     <div className="space-y-5 border-t border-border bg-muted/40 p-5">
-      <div className="flex justify-end">
-        <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
-      </div>
-      <PreviewDrawer
-        open={previewDrawerOpen}
-        onOpenChange={setPreviewDrawerOpen}
-        templateName={row.config?.name || row.templateName}
-        chatFetchFn={chatFetchFn}
-        testCallTokenFetchFn={testCallTokenFetchFn}
-        previewState={previewState}
-        previewUrl={previewUrl}
-        onPlayPreview={playPreview}
-      />
-
       {/* Identity & Tone */}
       <SectionHeader>Identity &amp; Tone</SectionHeader>
 
@@ -361,7 +300,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
             value={form.voiceId}
             language={form.language}
             onChange={(voiceId) => setForm({ ...form, voiceId })}
-            scope="user"
+            scope="merchant"
             previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
           />
         </div>
@@ -466,59 +405,6 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
               </div>
             </div>
 
-            {/* Retry cadence — per-org override, empty = platform default */}
-            <SectionHeader>Retry cadence</SectionHeader>
-            <p className="text-xs text-muted-foreground -mt-1">
-              Leave any field blank to use the platform default. Max attempts is capped at 20 either way.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label htmlFor={`first-call-delay-${row.templateKey}`} className={labelClass}>
-                  Delay before first call (minutes)
-                </label>
-                <input
-                  id={`first-call-delay-${row.templateKey}`}
-                  type="number"
-                  min={0}
-                  max={43200}
-                  value={form.firstCallDelayMinutes}
-                  onChange={(e) => setForm({ ...form, firstCallDelayMinutes: e.target.value })}
-                  placeholder="Platform default"
-                  className={fieldClass}
-                />
-              </div>
-              <div>
-                <label htmlFor={`retry-delay-${row.templateKey}`} className={labelClass}>
-                  Delay between retries (minutes)
-                </label>
-                <input
-                  id={`retry-delay-${row.templateKey}`}
-                  type="number"
-                  min={0}
-                  max={43200}
-                  value={form.retryDelayMinutes}
-                  onChange={(e) => setForm({ ...form, retryDelayMinutes: e.target.value })}
-                  placeholder="Platform default"
-                  className={fieldClass}
-                />
-              </div>
-              <div>
-                <label htmlFor={`max-attempts-${row.templateKey}`} className={labelClass}>
-                  Max attempts (1–20)
-                </label>
-                <input
-                  id={`max-attempts-${row.templateKey}`}
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={form.maxAttempts}
-                  onChange={(e) => setForm({ ...form, maxAttempts: e.target.value })}
-                  placeholder="Platform default"
-                  className={fieldClass}
-                />
-              </div>
-            </div>
-
             {/* Provider / Model */}
             <SectionHeader>Provider &amp; Model</SectionHeader>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -611,8 +497,8 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
   );
 }
 
-export function UserAgentsPage() {
-  const { vertical } = useUser();
+export function MerchantAgentsPage() {
+  const { vertical } = useMerchant();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const configs = useQuery({

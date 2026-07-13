@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { appFetch } from "../../lib/user-session";
+import { appFetch } from "../../lib/merchant-session";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -149,7 +149,7 @@ export function SetupModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called once when the user reaches "You're all set" — parent refetches its own dashboard queries. */
+  /** Called once when the merchant reaches "You're all set" — parent refetches its own dashboard queries. */
   onFinished?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -219,7 +219,7 @@ export function SetupModal({
 
   // Mirror step completion server-side as it happens, so the dashboard
   // checklist card and "resume setup" state stay accurate even if the
-  // user closes the modal mid-way.
+  // merchant closes the modal mid-way.
   useEffect(() => {
     if (!open) return;
     patchOnboarding.mutate({

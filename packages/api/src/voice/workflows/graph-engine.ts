@@ -11,7 +11,7 @@ import type { WorkflowGraph, WorkflowNode, WorkflowEdge, CallConfig, WaitConfig,
 
 /**
  * Merge a template node's config with the org's overrides for that node.
- * Only user-overridable fields get merged — structural fields stay from the template.
+ * Only merchant-overridable fields get merged — structural fields stay from the template.
  */
 function mergeNodeConfig(
   node: WorkflowNode,
