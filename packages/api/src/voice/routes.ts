@@ -70,6 +70,12 @@ const adminTestCallPhoneRateLimited = makeFixedWindowLimiter(
   ADMIN_TEST_CALL_PHONE_MAX_PER_WINDOW,
 );
 
+// Misc-9: real LLM cost (a handful of small-model calls per scenario run) —
+// generous enough for iterating on a persona, tight enough to bound cost.
+const SYNTHETIC_TEST_WINDOW_MS = 60_000;
+const SYNTHETIC_TEST_MAX_PER_WINDOW = Number(process.env.SYNTHETIC_TEST_RATE_LIMIT ?? 5);
+const syntheticTestRateLimited = makeFixedWindowLimiter(SYNTHETIC_TEST_WINDOW_MS, SYNTHETIC_TEST_MAX_PER_WINDOW);
+
 export const voice = new Hono()
   // Twilio webhook — set this as the phone number's "A call comes in" Voice URL.
   // Also reused as the TwiML endpoint for outbound calls we place ourselves.
@@ -711,6 +717,67 @@ export const voice = new Hono()
     });
 
     return c.json({ callSid: placed.sessionKey, status: placed.status }, 201);
+  })
+
+  // Misc-9: AI-to-AI synthetic call testing — lists the built-in scenarios
+  // (see synthetic-scenarios.ts). No org context needed, so no admin-key
+  // gate — this is static metadata, not org data.
+  .get("/synthetic-scenarios", async (c) => {
+    const { SYNTHETIC_SCENARIOS } = await import("./synthetic-scenarios");
+    return c.json(
+      { scenarios: SYNTHETIC_SCENARIOS.map((s) => ({ key: s.key, label: s.label })) },
+      200,
+    );
+  })
+
+  // Misc-9: runs one built-in scenario end-to-end against this org's real
+  // agent config (or an in-progress configOverride, same contract as
+  // test-chat/test-call-token) and scores it against the scenario's
+  // deterministic assertions. Real LLM cost (a handful of small-model
+  // calls per run, not telephony) — own tighter rate limiter.
+  .post("/orgs/:orgId/agent-configs/:templateKey/synthetic-test", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    if (syntheticTestRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${SYNTHETIC_TEST_MAX_PER_WINDOW} synthetic tests per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const scenarioKey = typeof body?.scenarioKey === "string" ? body.scenarioKey : "";
+
+    const { SYNTHETIC_SCENARIOS } = await import("./synthetic-scenarios");
+    const scenario = SYNTHETIC_SCENARIOS.find((s) => s.key === scenarioKey);
+    if (!scenario) {
+      return c.json(
+        { error: `Unknown scenarioKey — must be one of: ${SYNTHETIC_SCENARIOS.map((s) => s.key).join(", ")}` },
+        400,
+      );
+    }
+
+    let configOverride = {};
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+
+    const { buildPreviewAgentConfig } = await import("./agent");
+    const { runSyntheticTest } = await import("./synthetic-test");
+    const agentConfig = await buildPreviewAgentConfig(templateKey, configOverride);
+
+    try {
+      const result = await runSyntheticTest(agentConfig, scenario);
+      return c.json(result, 200);
+    } catch (err) {
+      return c.json({ error: "Synthetic test run failed", detail: String(err) }, 502);
+    }
   })
 
   // Dynamic per-provider voice list for the dashboard's voice picker — see

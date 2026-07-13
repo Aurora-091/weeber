@@ -157,6 +157,127 @@ function formToAgentFrame(form: FormState) {
   };
 }
 
+type SyntheticAssertionResult = {
+  assertion: { type: string; description: string; tool?: string; text?: string };
+  passed: boolean;
+};
+type SyntheticTestResult = {
+  scenarioKey: string;
+  transcript: { role: "caller" | "agent"; text: string }[];
+  toolCallsByAgent: string[];
+  endedBy: "hangup" | "max-turns";
+  assertions: SyntheticAssertionResult[];
+  allPassed: boolean;
+};
+
+/**
+ * Misc-9: AI-to-AI synthetic call testing — runs a built-in scripted-caller
+ * scenario against this exact in-progress form (same configOverride
+ * contract as the Preview drawer) and shows pass/fail per assertion + the
+ * full transcript. Real LLM cost, so this is an explicit "Run" click, not
+ * something that fires automatically on every edit.
+ */
+function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templateKey: string; form: FormState }) {
+  const [expanded, setExpanded] = useState(false);
+  const scenarios = useQuery({
+    queryKey: ["synthetic-scenarios"],
+    enabled: expanded,
+    queryFn: async () => {
+      const res = await apiFetch("/api/voice/synthetic-scenarios", { headers: adminHeaders() });
+      if (!res.ok) throw new Error(`scenarios failed (${res.status})`);
+      return (await res.json()) as { scenarios: { key: string; label: string }[] };
+    },
+  });
+  const [scenarioKey, setScenarioKey] = useState("");
+  const [result, setResult] = useState<SyntheticTestResult | null>(null);
+
+  const run = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch(
+        `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(templateKey)}/synthetic-test`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...adminHeaders() },
+          body: JSON.stringify({ scenarioKey, configOverride: formToAgentFrame(form) }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Test run failed (${res.status})`);
+      return data as SyntheticTestResult;
+    },
+    onSuccess: (data) => setResult(data),
+  });
+
+  const scenarioOptions = scenarios.data?.scenarios ?? [];
+
+  return (
+    <div className="mb-5 rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium"
+      >
+        <span>Synthetic call test (AI-to-AI)</span>
+        {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+      </button>
+      {expanded && (
+        <div className="border-t border-border p-4 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            A scripted LLM plays a caller persona and calls this exact in-progress config end-to-end — real LLM
+            cost, but no telephony.
+          </p>
+          <div className="flex gap-2">
+            <select
+              value={scenarioKey}
+              onChange={(e) => setScenarioKey(e.target.value)}
+              className="flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            >
+              <option value="">Select a scenario…</option>
+              {scenarioOptions.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => run.mutate()}
+              disabled={!scenarioKey || run.isPending}
+              className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+              Run
+            </button>
+          </div>
+          {run.isError && <p className="text-xs text-destructive">{(run.error as Error).message}</p>}
+          {result && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className={result.allPassed ? "text-success font-medium" : "text-destructive font-medium"}>
+                  {result.allPassed ? "All assertions passed" : "Some assertions failed"}
+                </span>
+                <span className="text-xs text-muted-foreground">— ended by {result.endedBy === "hangup" ? "agent hangUp" : "max turns"}</span>
+              </div>
+              <ul className="space-y-1">
+                {result.assertions.map((a, i) => (
+                  <li key={i} className={`text-xs ${a.passed ? "text-success" : "text-destructive"}`}>
+                    {a.passed ? "✓" : "✗"} {a.assertion.description}
+                  </li>
+                ))}
+              </ul>
+              <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-background/60 p-2 text-xs space-y-1">
+                {result.transcript.map((t, i) => (
+                  <p key={i}>
+                    <span className="font-medium">{t.role === "caller" ? "Caller" : "Agent"}:</span> {t.text}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
@@ -268,6 +389,8 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         previewUrl={previewUrl}
         onPlayPreview={playPreview}
       />
+
+      <SyntheticTestPanel orgId={orgId} templateKey={row.templateKey} form={form} />
 
       {(
         <div className="space-y-5">
