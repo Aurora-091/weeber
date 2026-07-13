@@ -231,7 +231,7 @@ export function UserLoginPage() {
   if (signupState === "needs-confirmation") {
     return (
       <div className={shellClass}>
-        <div className="w-full max-w-sm text-center">
+        <div className="card-weeber w-full max-w-sm p-8 text-center" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
           <Mail className="mx-auto size-6 text-primary" aria-hidden />
           <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -290,7 +290,7 @@ export function UserLoginPage() {
   if (forgotOpen) {
     return (
       <div className={shellClass}>
-        <div className="w-full max-w-sm">
+        <div className="card-weeber w-full max-w-sm p-8" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
           {resetDone ? (
             <div className="text-center">
               <h1 className="text-xl font-medium">Password updated</h1>
@@ -408,12 +408,14 @@ export function UserLoginPage() {
   }
 
   return (
-    <div className={shellClass} style={{ background: 'radial-gradient(ellipse at top, var(--weeber-primary)/0.03 0%, transparent 50%)' }}>
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card shadow-sm p-8 scale-in">
+    <div className={shellClass}>
+      <div className="card-weeber w-full max-w-sm p-8 scale-in" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
         <div className="mb-8 text-center">
-          <img src="/weeber_logo_transparent.png" alt="Weeber" className="mx-auto h-10 w-auto" />
-          <h1 className="text-3xl font-medium tracking-tight">Weeber</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your store.</p>
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary shadow-sm">
+            <span className="font-display text-lg font-bold text-primary-foreground select-none">W</span>
+          </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Weeber</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your Shopify store.</p>
         </div>
 
         <Tabs defaultValue="password">

@@ -186,8 +186,8 @@ export function UserHomePage() {
 
       {/* Quick navigation cards */}
       <div className="grid gap-5 sm:grid-cols-3">
-        <Link to={appPath("/agents")}>
-          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+        <Link href={appPath("/agents")}>
+          <div className="card-action flex items-start gap-3 p-5">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
               <Bot className="size-4 text-muted-foreground" />
             </div>
@@ -199,8 +199,8 @@ export function UserHomePage() {
             </div>
           </div>
         </Link>
-        <Link to={appPath("/calls")}>
-          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+        <Link href={appPath("/calls")}>
+          <div className="card-action flex items-start gap-3 p-5">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
               <PhoneCall className="size-4 text-muted-foreground" />
             </div>
@@ -212,8 +212,8 @@ export function UserHomePage() {
             </div>
           </div>
         </Link>
-        <Link to={appPath("/analytics")}>
-          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+        <Link href={appPath("/analytics")}>
+          <div className="card-action flex items-start gap-3 p-5">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
               <BarChart3 className="size-4 text-muted-foreground" />
             </div>

@@ -129,12 +129,12 @@ function toFormState(row: AgentConfigRow): FormState {
 }
 
 const fieldClass =
-  "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
+  "rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full transition-colors";
 const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70 pt-3 pb-1">
+    <div className="border-t border-border pt-5 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60 first:border-t-0 first:pt-0">
       {children}
     </div>
   );
@@ -598,14 +598,17 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         <button
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50 active:scale-[0.97]"
         >
-          {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-          Save
+          {save.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : save.isSuccess && !saveError ? (
+            <svg className="size-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 8l3.5 3.5L13 4.5"/></svg>
+          ) : null}
+          {save.isSuccess && !saveError ? "Saved" : "Save"}
         </button>
       </div>
-      {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-      {save.isSuccess && !saveError && <p className="text-xs text-muted-foreground">Saved.</p>}
+      {saveError && <p className="mt-1 text-xs text-destructive">{saveError}</p>}
     </div>
   );
 }
@@ -656,12 +659,12 @@ export function UserAgentsPage() {
         </div>
       )}
 
-      {rows.length <= 1 && (
-        <PageHeader
-          title="Agents"
-          description="Tune how each agent sounds and what it says. Changes apply from the next call."
-        />
-      )}
+      <PageHeader
+        title={rows.length === 1 && activeRow ? (activeRow.config?.name || activeRow.templateName) : "Agents"}
+        description={rows.length === 1 && activeRow
+          ? (activeRow.templateDescription || "Tune how this agent sounds and what it says.")
+          : "Tune how each agent sounds and what it says. Changes apply from the next call."}
+      />
 
       {configs.isLoading && <SkeletonCards count={3} lines={2} />}
 

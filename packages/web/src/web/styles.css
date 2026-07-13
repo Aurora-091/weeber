@@ -335,6 +335,11 @@
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: oklch(0.9 0.003 80);
   --sidebar-ring: oklch(0.55 0 0);
+
+  /* Utility vars for inline style references (e.g. status dots) */
+  --weeber-success-color: var(--weeber-success);
+  --weeber-warning-color: var(--weeber-warning);
+  --weeber-error-color: var(--weeber-error);
 }
 
 /*
@@ -407,7 +412,12 @@
 .theme-weeber a.card-weeber:hover {
   box-shadow: var(--weeber-shadow-card-hover);
   transform: translateY(-2px);
-  border-color: oklch(from var(--border) calc(l - 0.06) c h);
+  border-color: oklch(0.78 0.004 80);
+}
+
+.theme-weeber.dark .card-weeber[data-interactive]:hover,
+.theme-weeber.dark a.card-weeber:hover {
+  border-color: oklch(0.38 0.002 240);
 }
 
 /* Legacy elevated card */
@@ -448,6 +458,15 @@
 .edge-warning { border-left: 3px solid var(--weeber-warning); }
 .edge-muted { border-left: 3px solid oklch(0.88 0.004 80); }
 
+/* ─── Semantic status background utility classes ──────────────────────────── */
+.bg-weeber-success { background-color: var(--weeber-success); }
+.bg-weeber-warning { background-color: var(--weeber-warning); }
+.bg-weeber-error { background-color: var(--weeber-error); }
+.text-weeber-success { color: var(--weeber-success); }
+.text-weeber-warning { color: var(--weeber-warning); }
+.text-weeber-error { color: var(--weeber-error); }
+.border-weeber-success { border-color: var(--weeber-success); }
+
 /* ─── Interactive card hover lift ──────────────────────────────────────────── */
 .theme-weeber .card-lift {
   transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
@@ -455,6 +474,28 @@
 .theme-weeber .card-lift:hover {
   box-shadow: var(--weeber-shadow-card-hover);
   transform: translateY(-2px);
+}
+
+/* Shorthand: action card = weeber card + hover lift */
+.theme-weeber .card-action {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--weeber-shadow-card);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+}
+.theme-weeber .card-action:hover {
+  box-shadow: var(--weeber-shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+/* Input + select focus — use ring token */
+.theme-weeber input:focus-visible,
+.theme-weeber select:focus-visible,
+.theme-weeber textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
 /* ─── Button micro-interactions ──────────────────────────────────────────── */
@@ -513,6 +554,39 @@
   --sidebar-accent-foreground: var(--weeber-ink);
   --sidebar-border: var(--weeber-border);
   --sidebar-ring: oklch(0.5 0 0);
+}
+
+/* ─── Sidebar mobile sheet — spring open/close ───────────────────────────── */
+.theme-weeber [data-radix-dialog-content][data-side="left"] {
+  transform-origin: left center;
+}
+.theme-weeber [data-radix-dialog-content][data-state="open"] {
+  animation: sidebar-slide-in 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.theme-weeber [data-radix-dialog-content][data-state="closed"] {
+  animation: sidebar-slide-out 0.22s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes sidebar-slide-in {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes sidebar-slide-out {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-100%); }
+}
+
+/* ─── Input / select / textarea — shared field style ──────────────────────── */
+.theme-weeber input::placeholder,
+.theme-weeber textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+/* ─── Select option — match card bg ──────────────────────────────────────── */
+.theme-weeber select option {
+  background: var(--background);
+  color: var(--foreground);
 }
 
 /*

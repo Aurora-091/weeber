@@ -21,16 +21,14 @@ type CallRow = {
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
 
 function StatusBadge({ status }: { status: string }) {
-  let dotColor = "bg-gray-400";
-  if (status === "in-progress" || status === "ringing" || status === "queued") {
-    dotColor = "bg-green-500";
-  } else if (status === "failed" || status === "busy" || status === "no-answer") {
-    dotColor = "bg-red-500";
-  }
+  let dotClass = "bg-muted-foreground/40";
+  if (status === "completed") dotClass = "bg-weeber-success";
+  else if (status === "in-progress" || status === "ringing" || status === "queued") dotClass = "bg-weeber-warning pulse-dot";
+  else if (status === "failed" || status === "busy" || status === "no-answer") dotClass = "bg-weeber-error";
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-      <span className={`size-2 rounded-full ${dotColor}`} />
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground" style={{boxShadow:"var(--weeber-shadow-card)"}}>
+      <span className={`size-2 rounded-full ${dotClass}`} />
       {status}
     </span>
   );
@@ -181,12 +179,12 @@ export function UserCallDetailPage() {
                 <Sparkles className="size-3.5 text-success" aria-hidden />
                 What the agent learned
               </h2>
-              <div className="rounded-lg border border-success/25 bg-success-soft/40 p-4">
+              <div className="card-weeber p-4" style={{borderColor:"color-mix(in oklch, var(--weeber-success) 25%, var(--border))"}}>
                 {facts.length === 0 && <p className="text-sm italic text-muted-foreground">Nothing captured yet.</p>}
                 <dl className="space-y-2">
                   {facts.map(([field, value]) => (
                     <div key={field}>
-                      <dt className="font-mono text-[10px] uppercase tracking-wider text-success">{field}</dt>
+                      <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">{field}</dt>
                       <dd className="text-sm font-medium">{String(value)}</dd>
                     </div>
                   ))}

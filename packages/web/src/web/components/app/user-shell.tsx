@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
+import { useTheme } from "../../lib/theme";
+import { cn } from "../../lib/utils";
 import { appFetch } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { appPath } from "../../lib/route-base";
@@ -34,13 +36,23 @@ export function useUser() {
 
 /** Full-screen themed notice used by every pre-shell state (loading/errors). */
 function Notice({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
+  const { theme } = useTheme();
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans"
+      className={cn(
+        "theme-weeber shell-spacious min-h-screen flex flex-col items-center justify-center px-6",
+        "bg-background text-foreground font-sans",
+        theme === "dark" && "dark",
+      )}
     >
+      <div className="mb-8">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-primary shadow-sm">
+          <span className="font-display text-base font-bold text-primary-foreground select-none">W</span>
+        </div>
+      </div>
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-medium">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+        <h1 className="font-display text-xl font-semibold">{title}</h1>
+        <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{body}</p>
         {action && <div className="mt-5 flex justify-center">{action}</div>}
       </div>
     </div>
@@ -108,7 +120,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={signOut}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
             >
               Back to sign-in
             </button>
@@ -127,7 +139,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
         density="spacious"
         collapsible
         nav={vertical.nav}
-        brand={<span className="font-serif text-lg font-medium tracking-tight">Weeber</span>}
+        brand={<span className="font-display text-base font-semibold tracking-tight">Weeber</span>}
         footer={
           <button
             type="button"
