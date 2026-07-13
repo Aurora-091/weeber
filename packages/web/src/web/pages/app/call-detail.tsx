@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check } from "lucide-react";
+import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -19,6 +19,23 @@ type CallRow = {
 };
 
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
+type ToolCallRow = { id: number; toolName: string; input: unknown };
+
+/** Merchant-friendly labels for internal tool names — falls back to the raw
+ * name for anything not in this list (new tools show up immediately, just
+ * unstyled, rather than being hidden). */
+const TOOL_LABELS: Record<string, string> = {
+  captureField: "Captured info",
+  confirmCodOrder: "Confirmed COD order",
+  bookAppointment: "Booked appointment",
+  crmSync: "Synced to CRM",
+  lookupInfo: "Looked up info",
+  offerCartRecoveryDiscount: "Offered discount",
+  setDisposition: "Set call outcome",
+  transferToHuman: "Transferred to human",
+  hangUp: "Ended call",
+  flagGuardrailEvent: "Flagged compliance event",
+};
 
 function StatusBadge({ status }: { status: string }) {
   let dotClass = "bg-muted-foreground/40";
@@ -61,9 +78,21 @@ export function UserCallDetailPage() {
     refetchInterval: 8000,
   });
 
+  const toolCalls = useQuery({
+    queryKey: ["app-call-tool-calls", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const res = await appFetch(`/api/app/calls/${id}/tool-calls`);
+      if (!res.ok) throw new Error(`tool-calls failed (${res.status})`);
+      return (await res.json()) as { toolCalls: ToolCallRow[] };
+    },
+    refetchInterval: 8000,
+  });
+
   const row = call.data?.call;
   const facts = Object.entries(row?.capturedState ?? {});
   const transcriptRows = transcript.data?.transcript ?? [];
+  const toolCallRows = toolCalls.data?.toolCalls ?? [];
 
   function copyTranscript() {
     const text = transcriptRows
@@ -189,6 +218,21 @@ export function UserCallDetailPage() {
                     </div>
                   ))}
                 </dl>
+              </div>
+
+              <h2 className="mb-3 mt-6 flex items-center gap-1.5 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                <Wrench className="size-3.5" aria-hidden />
+                What the agent did
+              </h2>
+              <div className="rounded-lg border border-border divide-y divide-border">
+                {toolCallRows.length === 0 && (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">Nothing yet.</div>
+                )}
+                {toolCallRows.map((tc) => (
+                  <div key={tc.id} className="px-4 py-2.5 text-sm">
+                    {TOOL_LABELS[tc.toolName] ?? tc.toolName}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

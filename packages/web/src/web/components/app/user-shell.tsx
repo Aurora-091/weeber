@@ -23,16 +23,24 @@ export type UserMe = {
     countryCode: string | null;
     timezone: string | null;
     contactEmail: string | null;
+    webhookUrl: string | null;
   };
 };
 
-const UserContext = createContext<{ me: UserMe; vertical: VerticalDefinition } | null>(null);
+const UserContext = createContext<{
+  me: UserMe;
+  vertical: VerticalDefinition;
+  flags: Record<string, boolean>;
+  isFlagEnabled: (key: string) => boolean;
+} | null>(null);
 
 export function useUser() {
   const ctx = useContext(UserContext);
   if (!ctx) throw new Error("useUser must be used inside UserShell");
   return ctx;
 }
+
+
 
 /** Full-screen themed notice used by every pre-shell state (loading/errors). */
 function Notice({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
@@ -91,6 +99,23 @@ export function UserShell({ children, fullBleed }: { children: React.ReactNode; 
     },
   });
 
+  // Org-scoped feature flags, set by admins via the dashboard's Flags page
+  // (`getEffectiveFlags` — org rows overlay global rows). Wired here as
+  // plumbing only: no page currently gates behavior on a specific key. Read
+  // with `useUser().isFlagEnabled("some-key")` wherever a staged rollout is
+  // needed — deciding *what* to gate is a separate product call.
+  const flagsQuery = useQuery({
+    queryKey: ["app-flags"],
+    enabled: Boolean(session) && Boolean(me.data),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await appFetch("/api/app/flags");
+      if (!res.ok) throw new Error(`flags failed (${res.status})`);
+      return (await res.json()) as { flags: Record<string, boolean> };
+    },
+  });
+  const flags = flagsQuery.data?.flags ?? {};
+
   if (!supabaseConfigured) {
     return (
       <Notice
@@ -134,7 +159,9 @@ export function UserShell({ children, fullBleed }: { children: React.ReactNode; 
   const vertical = getVertical(me.data.org.vertical);
 
   return (
-    <UserContext.Provider value={{ me: me.data, vertical }}>
+    <UserContext.Provider
+      value={{ me: me.data, vertical, flags, isFlagEnabled: (key) => flags[key] === true }}
+    >
       <AppShell
         density="spacious"
         collapsible

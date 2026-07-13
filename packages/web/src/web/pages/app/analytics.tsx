@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Clock, Wrench, ShieldAlert, TrendingUp, TrendingDown, ChartBar as BarChart3, PhoneOff, Wallet } from "lucide-react";
+import { Phone, Clock, Wrench, ShieldAlert, TrendingUp, TrendingDown, ChartBar as BarChart3, PhoneOff, Wallet, Sparkles } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -327,6 +327,26 @@ export function UserAnalyticsPage() {
                   trend={null}
                 />
               )}
+            </div>
+          )}
+
+          {/* Customer feedback (delivery_rating captured state, 1-5). Backend has
+           * computed this all along (kpis.feedback via computeKpis) — same shape as
+           * the Misc-3 fix above, just never had a card. */}
+          {data.kpis?.feedback && (
+            <div className="grid sm:grid-cols-4 gap-4">
+              <StatCard
+                label="Customer feedback"
+                value={`${data.kpis.feedback.averageRating.toFixed(1)} / 5`}
+                icon={Sparkles}
+                trend={null}
+              />
+              <StatCard
+                label="Feedback responses"
+                value={String(data.kpis.feedback.responses)}
+                icon={Phone}
+                trend={null}
+              />
             </div>
           )}
 

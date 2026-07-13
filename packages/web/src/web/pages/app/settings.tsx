@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
@@ -58,6 +58,7 @@ export function UserSettingsPage() {
   const [timezone, setTimezone] = useState(me.org.timezone ?? "Asia/Kolkata");
   const [countryCode, setCountryCode] = useState(me.org.countryCode ?? "IN");
   const [contactEmail, setContactEmail] = useState(me.org.contactEmail ?? "");
+  const [webhookUrl, setWebhookUrl] = useState(me.org.webhookUrl ?? "");
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -67,6 +68,7 @@ export function UserSettingsPage() {
     setTimezone(me.org.timezone ?? "Asia/Kolkata");
     setCountryCode(me.org.countryCode ?? "IN");
     setContactEmail(me.org.contactEmail ?? "");
+    setWebhookUrl(me.org.webhookUrl ?? "");
   }, [me.org]);
 
   const saveOrg = useMutation({
@@ -74,7 +76,13 @@ export function UserSettingsPage() {
       const res = await appFetch("/api/app/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: orgName, timezone, countryCode, contactEmail: contactEmail || null }),
+        body: JSON.stringify({
+          name: orgName,
+          timezone,
+          countryCode,
+          contactEmail: contactEmail || null,
+          webhookUrl: webhookUrl || null,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -85,6 +93,25 @@ export function UserSettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["app-me"] });
       toast.success("Organization settings saved");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const testWebhook = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/webhooks/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: webhookUrl || undefined }),
+      });
+      const data = await res.json().catch(() => ({ error: "Unknown error" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to send test event");
+      return data as { sent: boolean; target: string };
+    },
+    onSuccess: (data) => {
+      toast.success(`Test event sent to ${data.target}`);
     },
     onError: (err) => {
       toast.error(err.message);
@@ -209,6 +236,35 @@ export function UserSettingsPage() {
           >
             {saveOrg.isPending ? "Saving…" : "Save changes"}
           </Button>
+        </Section>
+
+        <Section icon={Webhook} title="Webhooks">
+          <p className="mb-4 text-sm text-muted-foreground">
+            Get call events (started, completed, recording ready) pushed to n8n, Zapier, Make, or your own
+            endpoint. Leave blank to use the <code className="font-mono text-xs">WEBHOOK_URL</code> default, if set.
+          </p>
+          <div className="max-w-md space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Webhook URL</Label>
+            <Input
+              type="url"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder="https://your-n8n-instance/webhook/abc123"
+            />
+          </div>
+          <div className="mt-5 flex gap-2">
+            <Button size="sm" disabled={saveOrg.isPending} onClick={() => saveOrg.mutate()}>
+              {saveOrg.isPending ? "Saving…" : "Save changes"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={testWebhook.isPending}
+              onClick={() => testWebhook.mutate()}
+            >
+              {testWebhook.isPending ? "Sending…" : "Send test event"}
+            </Button>
+          </div>
         </Section>
 
         <Section icon={Bell} title="Notifications">

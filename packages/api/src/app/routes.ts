@@ -56,6 +56,7 @@ import {
 } from "../voice/twilio-provisioning";
 import { getPlivoStatus, setPlivoByoCredentials } from "../voice/plivo-provisioning";
 import { getExotelStatus, setExotelByoCredentials } from "../voice/exotel-provisioning";
+import { dispatchWebhook, resolveWebhookUrl } from "../voice/webhooks";
 
 type UserEnv = { Variables: UserSessionVariables };
 
@@ -96,6 +97,12 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
 const PREVIEW_WINDOW_MS = 60_000;
 const PREVIEW_MAX_PER_WINDOW = Number(process.env.VOICE_PREVIEW_RATE_LIMIT ?? 20);
 const previewRateLimited = makeFixedWindowLimiter(PREVIEW_WINDOW_MS, PREVIEW_MAX_PER_WINDOW);
+
+// Webhook test-send: merchant-triggered, so cheap abuse gate rather than a
+// COGS concern (no telephony/TTS spend) — same shape as previewRateLimited.
+const WEBHOOK_TEST_WINDOW_MS = 60_000;
+const WEBHOOK_TEST_MAX_PER_WINDOW = Number(process.env.WEBHOOK_TEST_RATE_LIMIT ?? 10);
+const webhookTestRateLimited = makeFixedWindowLimiter(WEBHOOK_TEST_WINDOW_MS, WEBHOOK_TEST_MAX_PER_WINDOW);
 
 // Per-org fixed-window limiter for the agent test-chat sandbox — every
 // message is a real, billed LLM call (same model/provider a live call would
@@ -148,6 +155,7 @@ export const userApp = new Hono<UserEnv>()
           countryCode: org.countryCode,
           timezone: org.timezone,
           contactEmail: org.contactEmail,
+          webhookUrl: org.webhookUrl,
         },
       },
       200,
@@ -163,13 +171,18 @@ export const userApp = new Hono<UserEnv>()
     if (!body || typeof body !== "object") {
       return c.json({ error: "Expected a JSON object" }, 400);
     }
-    const allowed = ["name", "timezone", "countryCode", "contactEmail"] as const;
+    const allowed = ["name", "timezone", "countryCode", "contactEmail", "webhookUrl"] as const;
     const updates: Record<string, string | null> = {};
     for (const key of allowed) {
       if (key in body) {
         const val = body[key];
         if (val !== null && typeof val !== "string") {
           return c.json({ error: `${key} must be a string or null` }, 400);
+        }
+        if (key === "webhookUrl" && val) {
+          if (!/^https?:\/\//i.test(val)) {
+            return c.json({ error: "webhookUrl must start with http:// or https://" }, 400);
+          }
         }
         updates[key] = val ?? null;
       }
@@ -189,8 +202,34 @@ export const userApp = new Hono<UserEnv>()
         countryCode: org!.countryCode,
         timezone: org!.timezone,
         contactEmail: org!.contactEmail,
+        webhookUrl: org!.webhookUrl,
       },
     }, 200);
+  })
+
+  // Org-scoped mirror of voice/routes.ts's admin /webhooks/test — fires a
+  // sample call.started event at the org's saved webhookUrl (or an
+  // explicit override in the body), so merchants can verify their
+  // n8n/Zapier/Make target before it matters on a real call.
+  .post("/webhooks/test", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    if (webhookTestRateLimited(orgId)) {
+      return c.json({ error: "Too many test sends — try again in a minute." }, 429);
+    }
+    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+    const org = await getOrg(orgId);
+    const target = resolveWebhookUrl(body.url || org?.webhookUrl);
+    if (!target) {
+      return c.json({ error: "No webhook URL set. Save one in Settings first, or pass one in the request." }, 400);
+    }
+    await dispatchWebhook(target, "call.started", {
+      callSid: "TEST_CALL_SID",
+      direction: "outbound",
+      from: "+15550000000",
+      to: "+15550000001",
+      note: "This is a test event from /api/app/webhooks/test",
+    });
+    return c.json({ sent: true, target }, 200);
   })
 
   .get("/agent-configs", async (c) => {
