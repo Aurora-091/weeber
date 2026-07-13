@@ -4,6 +4,31 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — WEEBER-PLAN.md sharpened with two pre-existing research reports (A1, D1-D4)
+
+Folded findings from `voice-ai-orchestration.report` and `weeber-stack-decision.report` (both
+2026-07-12, predate this session's work) into the roadmap written earlier today. Docs only.
+
+- **A1 gained a real sub-item, A1b**: a VAD/endpointing audit against the actual competitive bar
+  (4-state VAD machine, adaptive noise filtering, rule+ML+regex endpointing, speculative/"greedy"
+  inference, sub-100ms interruption handling) — the report is explicit this is the real gap between
+  "production-grade" and "demo," not vendor choice. A1 was previously checked off; it still is for the
+  pipeline itself, but A1b makes clear that isn't the same as matching Retell/Vapi's orchestration
+  quality.
+- **D1 (TTS in-house)** got a concrete first target: Kokoro v1.0 (82M params, Apache 2.0, CPU-viable),
+  Orpheus as the voice-cloning upgrade path — replacing a vague "evaluate later."
+- **D2 (fine-tuned LLM/S2S)** got a harder "don't yet": small-model function-calling reliability is a
+  documented regression for tool-heavy flows, not just a cost/effort tradeoff. STT self-hosting has its
+  own separate "not yet" (Groq Whisper-v3 at $0.04/hr is already cheap without owning infra).
+- **D3 (prepaid wallet)** now cites a sourced, sharper COGS figure to price against: openvent's own
+  runtime blends to ~$0.048/min, cheaper than the round "~$0.06/min" used elsewhere.
+- **New D4 — GPU credits, concrete path**: join NVIDIA Inception now (free, no gate, unlocks Nebius AI
+  Lift's $150K+$10K neocloud credits later); AWS Activate's $1-5K self-serve tier is reachable now; the
+  larger Google/AWS Portfolio tiers gate behind funding/accelerator credentials not yet held.
+- **One stale claim resolved**: `weeber-stack-decision.report` said no per-tenant Twilio isolation
+  existed — confirmed stale, A2's `twilio-provisioning.ts` work closed that gap after the report was
+  written.
+
 ## 2026-07-13 — New architecture/ folder, WEEBER-PLAN.md rewritten as the phase roadmap, doc cleanup
 
 Restructuring pass, no code behavior changes (one comment-only edit in `voice/routes.ts`, verified with

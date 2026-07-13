@@ -13,6 +13,12 @@
 >
 > See `architecture/README.md` for the codebase map these file paths live in, and `DECISIONS.md` for
 > the reasoning behind any decision referenced here.
+>
+> **Sharpened 2026-07-13 (same day, second pass)** against two research reports that predate this
+> session's work (`voice-ai-orchestration.report`, `weeber-stack-decision.report`, both 2026-07-12) —
+> folded into A1/D1/D2/D3 below with concrete targets, not just "evaluate later." One factual conflict
+> resolved: `weeber-stack-decision.report` claimed no per-tenant Twilio isolation existed yet — that's
+> now stale, A2 below (`twilio-provisioning.ts`) closed that gap after the report was written.
 
 ---
 
@@ -24,7 +30,10 @@ with revenue attribution, a real Workflow Canvas, real compliance scaffolding. W
 thing that actually differentiates Weeber from the horizontal builders and from BiteSpeed (the direct
 Shopify-vertical competitor): true dual-language-in-one-call. Phase A and most of Phase B are done;
 Phase B2 is the one open item that matters most before a serious pitch or pilot; Phase C is
-started-but-partial and not currently blocking anything; Phase D is correctly untouched.
+started-but-partial and not currently blocking anything; Phase D is correctly untouched, though D1
+(Kokoro TTS pilot) and D4 (join NVIDIA Inception) are both cheap enough to start opportunistically.
+A1 also picked up a real sub-item (A1b, VAD/endpointing audit) that shouldn't be assumed done just
+because the pipeline itself works.
 
 ---
 
@@ -36,6 +45,25 @@ started-but-partial and not currently blocking anything; Phase D is correctly un
   cartesia}.ts`, `voice/llm/index.ts`. Barge-in and mid-turn tool-calls are real, tested
   (`test-call-stream.test.ts`: "barge-in: a transcript while the agent is speaking sends clear and
   aborts", "surfaces real tool calls as a transcript-adjacent event").
+  **Architecture choice validated** (`voice-ai-orchestration.report`, 2026-07-12, predates this
+  session's work): cascaded over speech-to-speech is correct *specifically because of compliance*, not
+  latency — cascade produces an inspectable text boundary at every stage, which is what HIPAA Audit
+  Controls / SOC 2 Processing Integrity actually require; S2S has no equivalent without bolting a
+  parallel transcription layer back on, which erases the latency advantage you adopted it for. None of
+  Vapi/Retell/Bland/Bolna run true native S2S in production for the same reason. Current LLM default
+  (`groq/llama-3.3-70b-versatile`) is validated too — every competitor converges on "fast-tier, not
+  reasoning-tier" for live turns, reserving reasoning models for async/post-call work.
+  - [ ] **A1b — VAD/endpointing audit against the orchestration-quality bar.** **Not yet done — this is
+    the real remaining gap, not "A1 is finished."** The same report is explicit that the actual
+    competitive line between "production-grade" and "demo" isn't vendor choice, it's orchestration
+    engineering: a 4-state VAD machine (STARTING/SPEAKING/STOPPING/SILENT, not a volume threshold), a
+    rolling-RMS adaptive noise filter, endpointing as rule-based + ML + regex-context combined (Vapi
+    reports this cut premature interruptions 73% vs. a fixed timeout), speculative/"greedy" LLM
+    inference (send the instant the system *thinks* the caller is done, cancel-and-restart silently if
+    they keep talking), and sub-100ms interruption handling reconciled against TTS word-level
+    timestamps. **Action: audit `voice/stream.ts`'s current VAD/endpointing implementation line-by-line
+    against this list before claiming A1 matches the competitive bar** — a bad turn-taking model costs
+    500ms+ of *perceived* latency even when every component benchmark looks fine.
 - [x] **A2 — Per-tenant Twilio sub-accounts + Plivo/Exotel SIP for India.**
   `voice/twilio-provisioning.ts` (real sub-account creation, not a stub), `voice/telephony-transport.ts`
   (wire-format abstraction), `voice/{plivo,exotel}-{client,provisioning}.ts`. `orgs.twilioMode`
@@ -168,17 +196,57 @@ an investor demo today.**
 
 ## Phase D — Cost / In-house *(only if unit economics force it — do not start early)*
 
-- [ ] **D1 — In-house TTS evaluation.** Not started. Correct — biggest COGS line, but nowhere near the
-  volume where this pays off. Keep ElevenLabs/Cartesia (English) + Sarvam (Indic).
-- [ ] **D2 — Fine-tuned small LLM / speech-to-speech pilot.** Not started. Correct — speech-to-speech
-  is immature on tool-calling/voice-choice/cost across every platform in the competitive teardown, not
-  just for Weeber.
+**Sharpened 2026-07-13 against `voice-ai-orchestration.report` (2026-07-12) — same "not started, don't
+start early" verdict, but now with concrete targets instead of a vague "evaluate in-house":**
+
+- [ ] **D1 — In-house TTS evaluation.** Not started. Correct call to defer, but this is now **the one
+  layer where self-hosting is genuinely cheap and credible today**, not just theoretical:
+  - **Kokoro v1.0** (82M params, Apache 2.0) — the concrete first pilot target. Runs on CPU, ~200x
+    real-time on a single RTX 4090, extremely low footprint. No voice cloning, mid-tier naturalness
+    (44% win rate on TTS Arena head-to-heads) — good enough for template-driven scripted flows
+    (cart-recovery, COD confirmation) where cloning isn't required.
+  - **Orpheus** (3B/1B/400M/150M, Llama-based, Apache 2.0) — the upgrade path *if and only if*
+    brand-voice cloning becomes a real product requirement. Larger variants need real GPU, not
+    CPU-viable like Kokoro.
+  - Both Apache 2.0 — no licensing blocker either way. Keep ElevenLabs/Cartesia (English) + Sarvam
+    (Indic) as the default; this is a pilot to validate cost/quality, not a cutover plan.
+- [ ] **D2 — Fine-tuned small LLM / speech-to-speech pilot.** Not started. **Harder "don't yet" than
+  previously written** — this isn't just "speech-to-speech is immature," the small-LLM half is a
+  documented reliability regression, not a cost optimization: nano/lite-tier models measurably drop
+  multi-turn function-calling reliability vs. GPT-4.1/5.x-class models even when the conversation itself
+  sounds fine — directly threatens tool-heavy flows like `offerCartRecoveryDiscount`/`confirmCodOrder`.
+  Revisit only if a specific small model publishes voice-workload function-calling benchmarks
+  competitive with GPT-4.1-class. STT self-hosting is a separate "not yet, different reason": Groq-hosted
+  Whisper-v3 at **$0.04/hr** is already the cheap option without owning infrastructure — self-hosting
+  Whisper yourself only wins past a volume threshold Weeber isn't at.
 - [ ] **D3 — Prepaid credit wallet billing engine.** Not started. Current billing is Razorpay,
   flat-tier subscription (ADR-034) — not a usage-metered prepaid wallet. Worth building once you have
   enough paying merchants that a bundled ₹-native prepaid model (Bolna's pattern) becomes worth the
-  engineering, not before.
+  engineering, not before. **Reference COGS to price against** (`weeber-stack-decision.report`,
+  sourced): openvent's own runtime blends to **~$0.048/min** (Twilio + Deepgram + gpt-4o-mini/Gemini
+  Flash + Cartesia, no platform fee) — sharper than the round "~$0.06/min" figure used elsewhere, and
+  worth quoting this way in any pricing/investor conversation instead.
+- [ ] **D4 — GPU credits, concrete path (new, from `voice-ai-orchestration.report`).** "Free" GPU
+  credits are real but the headline number is inflated 2-3x vs. what it actually buys at a hyperscaler's
+  list price.
+  - **Join NVIDIA Inception now** — free, no equity, no application fee, no gate. It doesn't hand you
+    compute directly; it's the *unlock key* for the programs below. Zero-cost, no reason to delay this
+    one specifically.
+  - **Nebius AI Lift** (gated behind Inception membership) — up to $150K cloud credits + $10K dedicated
+    inference credits. Ranks highest in real terms because Nebius is a neocloud priced well below
+    hyperscaler list rates — a credit dollar here stretches 2-3x further than the same dollar at AWS/
+    Google.
+  - **AWS Activate's self-serve $1K-5K tier** — realistically reachable now, no VC/accelerator
+    relationship required. The larger Portfolio tier ($100K-300K) and Google for Startups' $350K tier
+    both gate behind funding-stage/accelerator credentials Weeber doesn't have yet — don't plan around
+    those until that changes.
+  - Treat any credit secured as **pilot runway** (e.g., standing up the D1 Kokoro pilot), not a
+    long-term compute budget line — the "credit cliff" (e.g., Google's tier drops from 100% to 20%
+    coverage in Year 2, to 0% in Year 3) arrives faster than the headline number suggests.
 
-**Phase D: correctly untouched. Nothing here is blocking anything else on this list.**
+**Phase D: correctly untouched, still not urgent — but D1 (Kokoro pilot) and D4 (join NVIDIA Inception)
+are both genuinely low-cost/zero-cost to start whenever there's spare time, unlike D2/D3 which should
+stay parked until volume/revenue actually demands them.**
 
 ---
 
