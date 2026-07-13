@@ -4,6 +4,26 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Number management gap confirmed and fully spec'd (C2b) — docs only, not built
+
+Traced exactly what exists today for phone numbers, prompted by a direct question about how a
+merchant would assign/reassign/decommission a number to a specific agent — there was no answer in the
+code, and now there's a concrete spec instead of "not verified."
+
+- **Confirmed**: `orgs.outboundNumber` is a single text column — one number per org, period.
+  `voice/twilio-provisioning.ts`'s `buyNumberForOrg` searches with `limit: 1` and auto-buys the first
+  match, no picker. No release/decommission function exists anywhere. `org_agent_configs` has no
+  number field, so every agent on an org shares the one number. No dedicated Numbers page — the only UI
+  is a single-number connect form inside `pages/app/integrations.tsx`. Plivo/Exotel provisioning is
+  BYO-only (no platform-purchase flow like Twilio's).
+- **Spec'd for when it's built** (`WEEBER-PLAN.md`, Phase C, workstream C2b): a new `org_phone_numbers`
+  table (replaces the single column, supports N numbers per org from mixed providers), a
+  `phone_number_id` FK on `org_agent_configs` (per-agent assignment, falls back to the org's primary
+  number if unset), a new `/app/numbers` page scoped strictly to the caller's own org (real
+  candidate-picker for buying, a release action), and a dropdown on the agent config page wired to that
+  same per-org number list. Also flagged in `architecture/data-model.md`'s "notable absences."
+- Not built this session — documented per explicit direction to stop for the day after this.
+
 ## 2026-07-13 — WEEBER-PLAN.md sharpened with two pre-existing research reports (A1, D1-D4)
 
 Folded findings from `voice-ai-orchestration.report` and `weeber-stack-decision.report` (both

@@ -105,3 +105,7 @@ erDiagram
   exists (Phase C, workstream Q).
 - **No `crm_connections`/per-org-token table** — HubSpot/Salesforce/GoHighLevel/Google Calendar adapters
   all read one shared, globally-configured token per integration (Phase C, workstream R).
+- **No `org_phone_numbers` table** — `orgs.outboundNumber` is a single column, one number per org, no
+  per-agent assignment, no release/decommission path. Full spec for the replacement table + the
+  Numbers page + the agent-page number dropdown is in `WEEBER-PLAN.md`, Phase C, workstream C2b
+  (confirmed real gap 2026-07-13, not just unverified).

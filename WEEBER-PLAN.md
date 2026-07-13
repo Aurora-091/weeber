@@ -152,8 +152,44 @@ because the pipeline itself works.
 - [x] **C2a — BYO-SIP + retry dialer.** Per-org retry cadence (`voice/retry-config.ts`: first-call
   delay, delay-between-retries, max-attempts, capped 1-20) shipped 2026-07-13. Plivo/Exotel BYO-SIP:
   done (A2). `confirmCodOrder`'s immediate-cancel-on-decline fix: done same session.
-- [ ] **C2b — Number pooling.** Not found — per-org number provisioning exists (A2), but no evidence
-  of a pool/rotation mechanism across multiple numbers per org.
+- [ ] **C2b — Number management: pooling, per-agent assignment, decommission.** **Confirmed real gap,
+  verified in code 2026-07-13** (not just "not found" — traced exactly what exists and what doesn't):
+  - `orgs.outboundNumber` is a **single text column** — one number per org, full stop. There is no
+    `org_phone_numbers`-style table; an org cannot own two numbers today.
+  - `voice/twilio-provisioning.ts`'s `buyNumberForOrg(orgId, countryCode, areaCode)` doesn't give the
+    user a choice — it searches Twilio's available-numbers API with `limit: 1` and **buys the first
+    match automatically**. No candidate list, no picker.
+  - **No release/decommission function exists anywhere** — once a number is bought, there is no code
+    path to release it back to Twilio or unassign it from the org.
+  - **No per-agent number assignment** — `org_agent_configs` has no `phoneNumberId`/number field. Every
+    agent on an org shares whatever single number `orgs.outboundNumber` holds; there's no way for a
+    Shopify cart-recovery agent and a clinic booking agent under the same org to use different numbers.
+  - **No dedicated Numbers page** — the only UI is a "connect one number" form buried inside
+    `pages/app/integrations.tsx` (BYO Twilio/Plivo/Exotel credentials, or buy-one-Twilio-number). No
+    page lists what an org already owns.
+  - Plivo/Exotel provisioning is asymmetric with Twilio's: `plivo-provisioning.ts`/
+    `exotel-provisioning.ts` only expose `getStatus`/`setByoCredentials` (bring-your-own number only) —
+    no platform-purchase flow like Twilio's `buyNumberForOrg` exists for either.
+
+  **Concrete spec for when this gets built** (matches the actual ask — assign/deassign per agent,
+  numbers scoped strictly to the owning org, from any source):
+  1. New table `org_phone_numbers` (`id`, `org_id` FK, `provider` [twilio|plivo|exotel], `phone_number`,
+     `status` [active|released], `purchased_at`) — replaces the single `orgs.outboundNumber` column,
+     lets one org hold N numbers from mixed sources.
+  2. New field on `org_agent_configs`: `phone_number_id` FK into `org_phone_numbers`, nullable — falls
+     back to the org's first/primary active number if unset, so nothing breaks for orgs that only ever
+     have one number.
+  3. **Numbers page** (`/app/numbers`, new): lists every row in `org_phone_numbers` for the caller's own
+     org only (never cross-org — this is the "stay for user, not for everyone" requirement), with
+     source/status per row, a real "Buy a number" flow that shows the actual candidate list from
+     `availablePhoneNumbers().list()` instead of auto-buying the first match, and a "Release" action
+     wired to a new `releaseNumberForOrg` function (doesn't exist yet — needs Twilio's
+     `incomingPhoneNumbers(sid).remove()` equivalent, and the Plivo/Exotel counterparts).
+  4. **Agent page addition**: a dropdown in the agent config form (`pages/app/agents.tsx`,
+     `AgentEditForm`) populated from that same org's `org_phone_numbers`, writing to the new
+     `phone_number_id` field on save — this is the actual "assign this agent to that number" UI.
+  5. Symmetric buy-flow for Plivo/Exotel (currently BYO-only) — lower priority than 1-4, only needed if
+     a merchant wants the platform to purchase an India number for them rather than bringing their own.
 - [x] **C3a — Shopify integration.** Deep — 9 contract-defined webhook receivers
   (`integrations/shopify/routes.ts`), checkout-token-based cancellation matching, GDPR
   redact/erasure wired to `/customers/redact`.
