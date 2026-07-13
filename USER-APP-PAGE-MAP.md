@@ -24,6 +24,12 @@ which force-opens the modal. Backend: `onboarding_state` table (steps jsonb + di
 (`metrics`, `emptyState`) so the Home page's content is config-driven per vertical, matching Vocalist's
 `dashboard.metrics`/`dashboard.cards`.
 
+**Correction (2026-07-13, per `WEEBER-PLAN.md`'s tech-debt update):** the claim in the paragraph above
+that "the Home page's content is config-driven per vertical" from `dashboard.metrics`/`emptyState` was
+**wrong** — the field is defined in `verticals.ts` but `pages/app/home.tsx` never actually reads it
+(grepped for `vertical.dashboard`/`dashboard.metrics` and the literal metric labels — none appear).
+The type/data shape landed, the wiring didn't. Still a real, open gap as of this correction.
+
 ---
 
 ## 1. Two separate apps, two separate auth models (confirmed architecture, both sources agree)
@@ -31,12 +37,12 @@ which force-opens the modal. Backend: `onboarding_state` table (steps jsonb + di
 Vocalist actually shipped this as two physically separate route trees (`CustomerApp.tsx` vs
 `AdminApp.tsx`), not one app with role-based hiding — worth keeping that split:
 
-| | This repo's existing `/dashboard/*` | User `/app/*` (not built yet) | Vocalist's admin app (reference only) |
+| | This repo's existing `/dashboard/*` | User `/app/*` (built 2026-07-12, see update above) | Vocalist's admin app (reference only) |
 |---|---|---|---|
 | Who | You (operator) | Users (Shopify store owners) | Platform super-admins |
 | Auth | `ADMIN_API_KEY` / labeled keys | Supabase Auth (email+password, magic link) | Supabase Auth + `platform_role === "super_admin"` check |
 | Scope | Sees every org | Scoped to the logged-in user's own org | Sees every org, platform-wide |
-| Status | **Live today** | **Not built** — this doc is prep for it | Reference only, not being rebuilt as-is |
+| Status | **Live today** | **Live today** — this doc was written as prep for it, kept for its original page-inventory/routing detail | Reference only, not being rebuilt as-is |
 
 ## 2. User app (`/app/*`) — confirmed v1 scope (`CLAUDE-BUILD-BRIEF.md` §5)
 

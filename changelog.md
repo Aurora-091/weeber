@@ -4,6 +4,32 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Doc sweep: WEEBER-PLAN/CLAUDE-BUILD-BRIEF/USER-APP-PAGE-MAP synced to actual code
+
+Full cross-check of pending-work docs against current code (backend/infra/integration scope, separate
+from the UI-focused doc sweep earlier the same day). Findings:
+
+- **`WEEBER-PLAN.md`**: workstreams J (checkout-token cancellation), K (order-value attribution), L
+  (org-scoped GDPR erasure), M (`gdpr-redact-notify` wiring), N (per-org caller ID), O (Twilio
+  sub-accounts), and E (Vercel deploy) were all listed as open/remaining but are actually **done** and
+  verified in code (tests exist for J/K/L; `twilio-provisioning.ts` is real, not a stub; three Vercel
+  projects are live per the Merchant→User rename entries). Marked done in the workstream table and the
+  "Merged backlog detail" section. P (per-org DNC), Q (RBAC/multi-seat), R (Nango/per-org CRM), S
+  (entry-condition "trigger split") confirmed still genuinely open — no code found for any of them.
+  G (real Shopify checkout E2E test) and I (India compliance confirmation) flagged as needing a real
+  answer outside a sandbox, not more code.
+- **New gap found**: `VerticalDefinition.dashboard.metrics/cards` (`verticals.ts`) is defined but never
+  read by `pages/app/home.tsx` — dead config. This directly contradicts a claim in
+  `USER-APP-PAGE-MAP.md`'s 2026-07-12 update note ("Home page's content is config-driven per vertical")
+  — corrected there too.
+- **`USER-APP-PAGE-MAP.md`**: fixed a stale table row still saying `/app/*` was "not built yet" despite
+  the doc's own 2026-07-12 update note confirming it shipped; added the dashboard-config correction
+  above.
+- **`CLAUDE-BUILD-BRIEF.md`**: added a status banner — this was the pre-build spec for both dashboards,
+  both are now live; kept as historical design record, not a current TODO.
+
+No code changed in this pass — docs only.
+
 ## 2026-07-13 — UI/UX audit #04 fixes: theme portal-scoping, agent full-window console, Workflow Canvas P1 bugs, Dependabot cleared
 
 Full details in `audit/2026-07-13-audit-04-uiux.md` (the audit itself) and ADR-054/ADR-055

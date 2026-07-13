@@ -1,5 +1,14 @@
 # WEEBER-PLAN.md — Shopify Vertical Build Plan
 
+> **STATUS (2026-07-13): partially stale — see the workstream table below for what's actually done.**
+> Workstreams B, C, D, E, H, J, K, L, M, N, O are all **DONE** (verified against current code, several
+> were previously marked open/remaining in this doc when they'd already shipped). Workstreams F, G, I,
+> P, Q, R, S are still genuinely open as of this update — G and I in particular need a real answer
+> from outside this sandbox (manual QA / a compliance-lawyer-style confirmation), not more code.
+> Also: `VerticalDefinition.dashboard.metrics/cards` (mentioned under workstream A's spirit) is defined
+> in `verticals.ts` but **not actually read by `home.tsx`** — dead config, flagged in the tech-debt
+> section below, not previously known.
+
 This is the working plan for turning this fork into Weeber's live Shopify-vertical backend. See ADR-030 in
 `DECISIONS.md` for the full reasoning behind every decision below — this doc is the assignable, execution-
 level version of it.
@@ -58,21 +67,21 @@ from `process.env`). This is the actual prerequisite for the form UI, not the fo
 | ~~B. Persona/prompt copy~~ | — | **DONE** — `docs/agent-prompts/01..03` (commit bc5600a); feedback agent still flagged needs-review. |
 | ~~C. Wire real Supabase project~~ | — | **DONE** — production is `openvent2` (`wtqohdcghmxuujqyhlkz`, ap-south-1 Mumbai), schema applied, service connected via pooler. Staging project still to create. |
 | ~~D. Railway deploy~~ | — | **DONE** — `weeber-backend` project, api service (Singapore) from Aurora-091/openvent, domain `api-production-c1bb.up.railway.app`, health + WS-through-edge verified live, all provider keys set. |
-| **E. Vercel deploy** | Frontend round | **Code half done (ADR-035).** Remaining: set `VITE_API_BASE_URL` in Vercel's build env, `CORS_ALLOWED_ORIGINS` on Railway, deploy, verify. |
+| **E. Vercel deploy** | Frontend round | **DONE** — three Vercel projects live (`www`/`admin`/`app` subdomains per the 2026-07-13 Merchant→User rename), `CORS_ALLOWED_ORIGINS` set on Railway to all three, verified live. |
 | **F. Real `WEEBER_INTERNAL_SECRET`/`WEEBER_CALLBACK_SECRET` in both repos** | Nothing | Coordinate with the weebersh deploy — must match exactly in both places or every webhook 401s. |
-| **G. End-to-end test against a real (dev-store) Shopify checkout** | F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. |
+| **G. End-to-end test against a real (dev-store) Shopify checkout** | F | Install weebersh on a Shopify dev store, abandon a checkout, confirm a `scheduledCalls` row appears with the right `runAt`/`metadata`. **Still open — this needs a real manual run, can't be verified from a sandbox.** |
 | ~~H. Turso → Supabase Postgres migration~~ | — | **DONE (ADR-034)** — pgTable schema live in Mumbai, 14 tables, driver swapped, tests green. RLS policies for `orgId` scoping still worth considering (fits N/Q work). |
-| **I. India-compliance review of the calling-window/DNC model** | Nothing (research); hard gate before first real India user campaign | TRAI territory: NDNC/DND registry, 9am-9pm IST norms, 140-series telemarketing headers. Touches `packages/openvent-compliance` — confirm findings with the user before changing anything there. |
-| **J. Checkout-token-based cancellation matching** | Nothing | Correctness fix — cancellation currently matches on phone number only (ADR-030 known gap). Small: index/column for `checkoutToken` + matching logic. ~2-3 days. |
-| **K. Order-value attribution for recovered carts** | Nothing | Mark a completed call "recovered" with the order's value — prerequisite for any user-facing revenue metric. ~2-3 days. |
-| **L. Org-scoped GDPR erasure into `calls`/`transcripts`** | Nothing | Today only `shopifyContacts` is org-scoped; call/transcript erasure is global phone-number-keyed. ~2-3 days. |
-| **M. Wire `gdpr-redact-notify` edge function to `/customers/redact`** | Nothing | Stub exists in `supabase/functions/`. ~1 day. |
-| **N. Per-org outbound caller ID** | Nothing | `orgs`-linked number resolution at dial time (scheduler + outbound route), global `TWILIO_PHONE_NUMBER` demotes to fallback. Design the seam so O plugs in later. ~3-5 days. |
-| **O. Per-tenant Twilio sub-accounts / BYO number provisioning** | N | Provisioning flow, credential storage, billing separation. 2-3 weeks. Build after N proves the per-org number seam. |
-| **P. Per-org DNC lists** | I (India model shapes it) | Consent is per business relationship — global list is conservative but wrong long-term. **Touches `packages/openvent-compliance` — user confirmation gate applies.** ~1 week. |
-| **Q. Full RBAC / multi-seat user accounts** | Supabase Auth wiring (frontend round) | Roles on top of user login. 2-3 weeks. Sequence with the frontend auth work, not before it. |
-| **R. Per-org CRM connections (Nango embedded iPaaS)** | Nothing (spike) | Research spike 2-3 days, then 1-2 weeks: per-org tokens behind the existing adapter interface, not a rebuild of the integrations. |
-| **S. Entry-condition branching ("trigger split", ADR-033)** | A (config storage is where `entryConditions` lives) | Engine change ~1 week. **Config-driven vs visual-canvas-from-day-one is still an open user decision — ask before starting (gate #4).** |
+| **I. India-compliance review of the calling-window/DNC model** | Nothing (research); hard gate before first real India user campaign | TRAI territory: NDNC/DND registry, 9am-9pm IST norms, 140-series telemarketing headers. Touches `packages/openvent-compliance` — confirm findings with the user before changing anything there. **Code exists (`calling-window.ts` has IST calling-window logic) but whether findings were ever actually confirmed with the user is unclear — still flag as open until that's explicit.** |
+| ~~J. Checkout-token-based cancellation matching~~ | — | **DONE** — `scheduledCalls.checkoutToken` column + index, cancellation matches by checkout token first with phone-number fallback (`integrations/shopify/routes.ts`, covered by tests). |
+| ~~K. Order-value attribution for recovered carts~~ | — | **DONE** — `scheduledCalls.recoveredOrderId`/`recoveredAmount` columns, order value attributed to the executed cart-recovery call within a 7-day window (covered by tests). |
+| ~~L. Org-scoped GDPR erasure into `calls`/`transcripts`~~ | — | **DONE** — `eraseOrgDataForPhoneNumber(orgId, phoneNumber)` scopes `caller_memory`/calls/transcripts deletes by org, not just phone number (covered by tests, audit #02's D2 regression). |
+| ~~M. Wire `gdpr-redact-notify` edge function to `/customers/redact`~~ | — | **DONE** — `/customers/redact` fires a resilient, fire-and-forget call to the edge function (`integrations/shopify/routes.ts`). |
+| ~~N. Per-org outbound caller ID~~ | — | **DONE** — real dial-time number resolution wired into `twilio-client.ts`/`admin-routes.ts`/`app/routes.ts`, not just a stub. |
+| ~~O. Per-tenant Twilio sub-accounts / BYO number provisioning~~ | N | **DONE** — `voice/twilio-provisioning.ts`: real sub-account creation under the platform's parent account, org-scoped number purchase, `orgs.twilioMode` (`platform`/own sub-account). |
+| **P. Per-org DNC lists** | I (India model shapes it) | Consent is per business relationship — global list is conservative but wrong long-term. **Touches `packages/openvent-compliance` — user confirmation gate applies.** ~1 week. **Still open** — `do_not_call` table has no `orgId` column as of this update; it's a single global list. |
+| **Q. Full RBAC / multi-seat user accounts** | Supabase Auth wiring (frontend round) | Roles on top of user login. 2-3 weeks. Sequence with the frontend auth work, not before it. **Still open** — `org_members.role` defaults to `"owner"` only, no invite/multi-seat flow exists. |
+| **R. Per-org CRM connections (Nango embedded iPaaS)** | Nothing (spike) | Research spike 2-3 days, then 1-2 weeks: per-org tokens behind the existing adapter interface, not a rebuild of the integrations. **Still open** — HubSpot/Salesforce/GoHighLevel/Google Calendar adapters (`voice/integrations/*.ts`) all still read one shared, globally-configured token; no Nango or per-org OAuth exists. |
+| **S. Entry-condition branching ("trigger split", ADR-033)** | A (config storage is where `entryConditions` lives) | Engine change ~1 week. **Config-driven vs visual-canvas-from-day-one is still an open user decision — ask before starting (gate #4).** **Still open** — no `entryConditions` anywhere in the codebase as of this update; the Workflow Canvas that did ship (`docs/workflow-canvas-architecture.md`) branches on *call outcome*, not on entry conditions at flow-start — a different capability, doesn't substitute for this. |
 
 Everything is now Phase 1 (ADR-037) — but sequencing still matters. Backend-first order per explicit
 direction: A (backend half), J, K, L, M, N are all parallel-friendly and unblocked today; F unblocks G;
@@ -81,6 +90,10 @@ frontend round. The compliance-package gate (CLAUDE.md #6) and the trigger-split
 the merge unchanged.
 
 ## Merged backlog detail (formerly "Phase 2" — merged into Phase 1 by ADR-037)
+
+> **Note (2026-07-13): J, K, L, M, N, O below are DONE — see the workstream table above for current
+> status and where each landed in code. This section is kept verbatim for its original reasoning on
+> *why* each item matters, not as a current TODO — only P, Q, R, S are still open.**
 
 Full reasoning for workstreams J-S above, kept verbatim since the constraints haven't changed — only the
 scheduling has:
@@ -132,10 +145,20 @@ scheduling has:
 
 ## Immediate technical debt to flag, not hide
 
-- `vercel.json` (repo root) builds only the static frontend — it does not serve `/api/*`. The code half of
-  the absolute-API-base-URL fix is done (ADR-035); the env vars get set when the Vercel deploy happens
-  (workstream E).
+- ~~`vercel.json` (repo root) builds only the static frontend~~ **Superseded (2026-07-13):** the
+  deployment model moved to three separate Vercel projects (`www`/`admin`/`app` subdomains) with the
+  API served entirely from Railway, not from a Vercel rewrite — see `changelog.md`'s Merchant→User
+  rename entries. This bullet's original concern no longer applies to the current architecture.
 - ~~Railway WebSocket path untested~~ **Verified live (2026-07-10):** WS upgrade completes (101) through
   Railway's edge on the production domain.
 - Staging environment exists on Railway but its `DATABASE_URL` is a placeholder — create a staging Supabase
-  project and mirror the production wiring before using staging for anything real.
+  project and mirror the production wiring before using staging for anything real. **Still open as of
+  2026-07-13 — not re-verified this update, flagging as unconfirmed rather than assuming it's fixed.**
+- **New (2026-07-13):** `VerticalDefinition.dashboard.metrics`/`dashboard.cards`/`dashboard.emptyState`
+  (`packages/web/src/web/lib/verticals.ts`) is defined for both the `shopify` and `insurance` verticals
+  but **`pages/app/home.tsx` never reads it** — grepped for `vertical.dashboard`, `dashboard.metrics`,
+  the literal metric labels ("Carts recovered", "Revenue recovered") — none appear in `home.tsx`. This
+  contradicts `USER-APP-PAGE-MAP.md`'s 2026-07-12 update note, which claimed the Home page's content
+  was already config-driven per vertical from this field — it wasn't actually wired up, only the type/
+  data shape landed. Small fix once picked up: read `vertical.dashboard` in `home.tsx` instead of
+  whatever it renders today.

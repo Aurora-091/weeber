@@ -1,5 +1,14 @@
 # CLAUDE-BUILD-BRIEF.md — Admin Panel + User Dashboard
 
+> **STATUS (2026-07-13): superseded by the actual build.** This was the pre-build execution spec for
+> both dashboards; both are now live (`/dashboard/*` admin panel, `/app/*` user dashboard — see
+> `USER-APP-PAGE-MAP.md`'s 2026-07-12/07-13 update notes for exactly what shipped and where it
+> diverged from this spec, e.g. the onboarding wizard became a modal, not a dedicated page). Kept as a
+> historical design record for the reasoning behind early decisions (design system choice, auth model,
+> vertical-agnostic architecture) — don't treat anything below as a current build TODO without checking
+> the real code first. The "Open questions" section at the bottom is fully resolved (auth middleware,
+> users-to-orgs mapping, personas) except final brand assets, which are still a placeholder.
+
 Execution-level brief for building the two dashboards on top of this fork. Read `WEEBER-PLAN.md` and ADR-030/
 ADR-031 in `DECISIONS.md` first — this doc is the "how to build it" layer on top of "what to build" from
 those. Every decision below was explicitly confirmed, not assumed — treat it as a spec, not a suggestion.
