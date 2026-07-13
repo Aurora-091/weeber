@@ -3,7 +3,7 @@ import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
 import { connectStt } from "./stt";
 import type { SttConnection } from "./stt";
-import { connectTts } from "./tts";
+import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
 import type { AvailableToolName } from "./agent-frame";
@@ -17,6 +17,8 @@ import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./calle
 import { getTwilioClientForOrg } from "./twilio-client";
 import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
+import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
+import { getEffectiveFlags } from "./org-queries";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -431,9 +433,49 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
   /** Speaks a fixed line with no LLM call involved — used for the silence
    * re-prompt/goodbye so a flaky LLM turn can't compound an already-quiet
-   * caller into an even longer wait. */
+   * caller into an even longer wait.
+   *
+   * Misc-7: these two lines are the one genuinely verbatim, deterministic
+   * spot in an otherwise LLM-paraphrased call (see tts-cache.ts's doc
+   * comment on why greeting/closing aren't in scope) — behind the
+   * "hybrid-audio-cache" flag, replay pre-synthesized audio instead of
+   * paying live TTS latency/cost for text that's byte-identical every
+   * time. Also fixes a pre-existing bug: this function never actually
+   * called tts.sendText, so these lines were logged to the transcript but
+   * never spoken out loud.
+   */
   async function speakCannedLine(ws: Sendable, text: string) {
-    await speak(ws, async () => text);
+    const flagOrgId = humanNumberOrgId ?? undefined;
+    const flags: Record<string, boolean> = flagOrgId
+      ? await getEffectiveFlags(flagOrgId).catch(() => ({}))
+      : {};
+    const hybridCacheEnabled = flags[HYBRID_AUDIO_CACHE_FLAG] === true;
+
+    if (!hybridCacheEnabled) {
+      await speak(ws, async () => {
+        tts?.sendText(text);
+        return text;
+      });
+      return;
+    }
+
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    if (cached) {
+      await speak(ws, async () => text, { cachedAudioBase64: cached });
+      return;
+    }
+
+    const chunks: string[] = [];
+    await speak(
+      ws,
+      async () => {
+        tts?.sendText(text);
+        return text;
+      },
+      { onAudioChunk: (base64Audio) => chunks.push(base64Audio) },
+    );
+    setCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text, chunks);
   }
 
   function armSilenceTimer(ws: Sendable) {
@@ -457,7 +499,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   /** Shared turn runner — used for both the opening greeting and normal replies. */
-  async function speak(ws: Sendable, generate: (signal: AbortSignal) => Promise<string>) {
+  async function speak(
+    ws: Sendable,
+    generate: (signal: AbortSignal) => Promise<string>,
+    options?: {
+      /** Misc-7: a cache hit — skip live TTS entirely and replay this
+       * pre-synthesized audio as one outbound frame instead. */
+      cachedAudioBase64?: string;
+      /** Misc-7: a cache miss on a cacheable line — called with every raw
+       * audio chunk as it streams, alongside the normal forward-to-caller
+       * path, so the caller can accumulate + store it once the turn ends. */
+      onAudioChunk?: (base64Audio: string) => void;
+    },
+  ) {
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
 
@@ -479,20 +533,40 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // onWordTimestamp doc comment in tts/types.ts for the full reasoning.
     const spokenWords: string[] = [];
 
-    tts = connectTts(
-      (base64Audio) => {
-        if (ttsFirstByteMs === undefined) {
-          ttsFirstByteMs = Date.now() - ttsRequestedAt;
-          void persistLatency();
-        }
-        if (!streamSid) return;
+    if (options?.cachedAudioBase64) {
+      // Cache hit (Misc-7): no TTS connection at all — just replay the
+      // pre-synthesized audio as a single frame, same shape dtmf.ts uses
+      // for tone playback.
+      tts = null;
+      if (ttsFirstByteMs === undefined) {
+        ttsFirstByteMs = 0;
+        void persistLatency();
+      }
+      if (streamSid) {
         try {
-          ws.send(transport.buildOutboundMedia(streamSid, base64Audio));
+          ws.send(transport.buildOutboundMedia(streamSid, options.cachedAudioBase64));
         } catch (err) {
-          console.error(`[voice] failed to forward TTS audio to ${provider}`, err);
+          console.error(`[voice] failed to forward cached audio to ${provider}`, err);
         }
-      },
-      () => {
+      }
+      agentIsSpeaking = false;
+      resolveTtsDone?.();
+    } else {
+      tts = connectTts(
+        (base64Audio) => {
+          if (ttsFirstByteMs === undefined) {
+            ttsFirstByteMs = Date.now() - ttsRequestedAt;
+            void persistLatency();
+          }
+          options?.onAudioChunk?.(base64Audio);
+          if (!streamSid) return;
+          try {
+            ws.send(transport.buildOutboundMedia(streamSid, base64Audio));
+          } catch (err) {
+            console.error(`[voice] failed to forward TTS audio to ${provider}`, err);
+          }
+        },
+        () => {
         agentIsSpeaking = false;
         resolveTtsDone?.();
       },
@@ -505,7 +579,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       ttsVoiceIdOverride,
       languageOverride,
       (word) => spokenWords.push(word),
-    );
+      );
+    }
 
     let fullText = "";
     let wasInterrupted = false;
