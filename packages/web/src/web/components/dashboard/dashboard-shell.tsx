@@ -1,26 +1,32 @@
 import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, Bot, ChartBar as BarChart3, Lock, Users, Building2, CreditCard, Shield, ScrollText, ListChecks, Send, LifeBuoy, History, TrendingUp, Megaphone, Workflow } from "lucide-react";
 import { clearAdminKey } from "../../lib/admin-key";
+import { adminPath } from "../../lib/route-base";
 import { AppShell, type NavItem } from "../shell/app-shell";
 
+function navMatch(subpath: string, tail: string): RegExp {
+  const base = adminPath(subpath);
+  return new RegExp("^" + base + tail + "$");
+}
+
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Calls", icon: PhoneCall, match: /^\/dashboard(\/calls\/.*)?$/ },
-  { href: "/dashboard/agents", label: "Agents", icon: Bot, match: /^\/dashboard\/agents$/ },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, match: /^\/dashboard\/analytics$/ },
-  { href: "/dashboard/compliance", label: "Compliance", icon: ShieldCheck, match: /^\/dashboard\/compliance$/ },
-  { href: "/dashboard/dnc", label: "Do Not Call", icon: ShieldOff, match: /^\/dashboard\/dnc$/ },
-  { href: "/dashboard/orgs", label: "Orgs", icon: Building2, match: /^\/dashboard\/orgs$/ },
-  { href: "/dashboard/users", label: "Users", icon: Users, match: /^\/dashboard\/users$/ },
-  { href: "/dashboard/waitlist", label: "Waitlist", icon: ListChecks, match: /^\/dashboard\/waitlist$/ },
-  { href: "/dashboard/broadcasts", label: "Broadcasts", icon: Send, match: /^\/dashboard\/broadcasts$/ },
-  { href: "/dashboard/templates", label: "Templates", icon: ScrollText, match: /^\/dashboard\/templates$/ },
-  { href: "/dashboard/billing", label: "Billing", icon: CreditCard, match: /^\/dashboard\/billing$/ },
-  { href: "/dashboard/revenue-analytics", label: "Revenue", icon: TrendingUp, match: /^\/dashboard\/revenue-analytics$/ },
-  { href: "/dashboard/marketing-analytics", label: "Marketing", icon: Megaphone, match: /^\/dashboard\/marketing-analytics$/ },
-  { href: "/dashboard/workflow-runs", label: "Workflows", icon: Workflow, match: /^\/dashboard\/workflow-runs$/ },
-  { href: "/dashboard/flags", label: "Flags", icon: Shield, match: /^\/dashboard\/flags$/ },
-  { href: "/dashboard/support", label: "Support", icon: LifeBuoy, match: /^\/dashboard\/support$/ },
-  { href: "/dashboard/logs", label: "Logs", icon: History, match: /^\/dashboard\/logs$/ },
-  { href: "/dashboard/settings", label: "Keys", icon: KeyRound, match: /^\/dashboard\/settings$/ },
+  { href: adminPath(), label: "Calls", icon: PhoneCall, match: navMatch("", "(/calls/.*)?") },
+  { href: adminPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
+  { href: adminPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
+  { href: adminPath("/compliance"), label: "Compliance", icon: ShieldCheck, match: navMatch("/compliance", "") },
+  { href: adminPath("/dnc"), label: "Do Not Call", icon: ShieldOff, match: navMatch("/dnc", "") },
+  { href: adminPath("/orgs"), label: "Orgs", icon: Building2, match: navMatch("/orgs", "") },
+  { href: adminPath("/users"), label: "Users", icon: Users, match: navMatch("/users", "") },
+  { href: adminPath("/waitlist"), label: "Waitlist", icon: ListChecks, match: navMatch("/waitlist", "") },
+  { href: adminPath("/broadcasts"), label: "Broadcasts", icon: Send, match: navMatch("/broadcasts", "") },
+  { href: adminPath("/templates"), label: "Templates", icon: ScrollText, match: navMatch("/templates", "") },
+  { href: adminPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
+  { href: adminPath("/revenue-analytics"), label: "Revenue", icon: TrendingUp, match: navMatch("/revenue-analytics", "") },
+  { href: adminPath("/marketing-analytics"), label: "Marketing", icon: Megaphone, match: navMatch("/marketing-analytics", "") },
+  { href: adminPath("/workflow-runs"), label: "Workflows", icon: Workflow, match: navMatch("/workflow-runs", "") },
+  { href: adminPath("/flags"), label: "Flags", icon: Shield, match: navMatch("/flags", "") },
+  { href: adminPath("/support"), label: "Support", icon: LifeBuoy, match: navMatch("/support", "") },
+  { href: adminPath("/logs"), label: "Logs", icon: History, match: navMatch("/logs", "") },
+  { href: adminPath("/settings"), label: "Keys", icon: KeyRound, match: navMatch("/settings", "") },
 ];
 
 function Brand() {

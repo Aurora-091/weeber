@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, Phone, Clock, ShieldCheck, Check } from "lucide-react";
-import { appFetch } from "../../lib/merchant-session";
-import { useMerchant } from "../../components/app/merchant-shell";
+import { appFetch } from "../../lib/user-session";
+import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 
@@ -34,8 +34,8 @@ function getDaysUntilReset(): number {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
-export function MerchantBillingPage() {
-  const { me } = useMerchant();
+export function UserBillingPage() {
+  const { me } = useUser();
 
   const usageQuery = useQuery<BillingUsage>({
     queryKey: ["app-billing-usage", me.org.id],

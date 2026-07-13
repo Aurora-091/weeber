@@ -31,7 +31,7 @@ mock.module("../database", () => ({
   },
 }));
 
-import { computeOrgAnalytics, getEffectiveFlags, getShopifyStatus } from "./org-queries";
+import { computeOrgAnalytics, getEffectiveFlags, getShopifyStatus, buildInstallUrl } from "./org-queries";
 
 const now = Date.now();
 const call = (overrides: Record<string, unknown> = {}) => ({
@@ -136,6 +136,49 @@ describe("getShopifyStatus", () => {
     };
     const status = await getShopifyStatus("org-1");
     expect(status.shops[0].scopes).toBeNull();
+  });
+});
+
+describe("buildInstallUrl", () => {
+  const ORIGINAL_ENV = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.WEEBERSH_INSTALL_URL;
+    delete process.env.PUBLIC_MERCHANT_APP_URL;
+    delete process.env.PUBLIC_APP_URL;
+  });
+
+  it("returns null when WEEBERSH_INSTALL_URL is unconfigured", () => {
+    expect(buildInstallUrl("org-1")).toBeNull();
+  });
+
+  it("regression: return_url must be the merchant app origin + /integrations, never the API's own origin or the stale /app/shopify path", () => {
+    process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
+    process.env.PUBLIC_MERCHANT_APP_URL = "https://app.weeber.ai";
+    // A real, live value this bug actually leaked in production -- included to make the
+    // regression concrete, not just a synthetic string.
+    process.env.PUBLIC_APP_URL = "https://api-production-c1bb.up.railway.app";
+
+    const url = buildInstallUrl("org-1", "teststore");
+    expect(url).toContain("org_id=org-1");
+    expect(url).toContain("shop=teststore");
+    expect(url).toContain(encodeURIComponent("https://app.weeber.ai/integrations?shopify_connected=1"));
+    expect(url).not.toContain("api-production-c1bb.up.railway.app");
+    expect(url).not.toContain(encodeURIComponent("/app/shopify"));
+  });
+
+  it("falls back to PUBLIC_APP_URL only when PUBLIC_MERCHANT_APP_URL is unset (last-resort, not the primary path)", () => {
+    process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
+    process.env.PUBLIC_APP_URL = "https://api-production-c1bb.up.railway.app";
+
+    const url = buildInstallUrl("org-1");
+    expect(url).toContain(encodeURIComponent("https://api-production-c1bb.up.railway.app/integrations?shopify_connected=1"));
+  });
+
+  it("omits return_url entirely when neither URL env var is set, rather than building a broken one", () => {
+    process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
+    const url = buildInstallUrl("org-1");
+    expect(url).not.toContain("return_url");
   });
 });
 

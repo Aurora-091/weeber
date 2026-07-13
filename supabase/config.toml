@@ -25,9 +25,20 @@ file_size_limit = "20MiB"
 [auth]
 enabled = true
 site_url = "https://app.weeber.ai"
-# Only the password-reset email still carries a redirect link (ADR-043 —
-# sign-in/confirmation emails are OTP-code-only and need no allowlist entry).
-additional_redirect_urls = ["https://app.weeber.ai", "https://admin.weeber.ai", "http://localhost:5173"]
+# All auth emails are OTP-code-only (ADR-043; templates/recovery.html made
+# password reset code-only too), so no live flow depends on this allowlist —
+# it covers the /auth/callback and /auth/reset-password fallback routes and
+# any future OAuth flow. Bare origins exact-match the root; `/**` globs cover
+# every subpath on the three legitimate surfaces. No other domains belong
+# here (stale *.vercel.app entries are removed by `supabase config push`).
+additional_redirect_urls = [
+  "https://app.weeber.ai",
+  "https://app.weeber.ai/**",
+  "https://admin.weeber.ai",
+  "https://admin.weeber.ai/**",
+  "http://localhost:5173",
+  "http://localhost:5173/**",
+]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -36,9 +47,9 @@ enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
 
-# Weeber-branded email templates (ADR-043). Sign-in ("magic link") and signup
-# confirmation render {{ .Token }} only — a 6-digit code, no URL — so those
-# flows never depend on the redirect allowlist; recovery keeps its link.
+# Weeber-branded email templates (ADR-043). All three render {{ .Token }}
+# only — a 6-digit code, no URL — so no email flow depends on the redirect
+# allowlist (recovery went code-only too; see templates/recovery.html).
 # NOTE for the hosted project: these apply locally / via `supabase config push`.
 # If pushing isn't set up, paste each file's HTML + subject into
 # Dashboard -> Authentication -> Emails (templates) — keep both in sync.

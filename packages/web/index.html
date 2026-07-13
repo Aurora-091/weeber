@@ -24,7 +24,12 @@
 		/>
 		<meta name="author" content="Weeber" />
 		<meta name="publisher" content="Weeber" />
-		<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+		<!-- VITE_ROBOTS_META defaults to fully indexable (see .env.example). The admin
+		     and merchant Vercel projects must override it to "noindex, nofollow" --
+		     this is the one directly-crawlable signal (static in the served HTML,
+		     unlike the client-rendered app) that actually protects those subdomains
+		     once they serve bare paths that no longer live under /dashboard or /app. -->
+		<meta name="robots" content="%VITE_ROBOTS_META%" />
 		<link rel="canonical" href="https://www.weeber.ai/" />
 
 		<!-- Open Graph -->

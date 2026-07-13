@@ -59,7 +59,7 @@ export function MarketingNav() {
             Help
           </a>
           <a
-            href={appUrl("/app/login")}
+            href={appUrl("/login")}
             className="px-4 py-2 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
           >
             Log in
@@ -95,7 +95,7 @@ export function MarketingNav() {
               Help
             </a>
             <a
-              href={appUrl("/app/login")}
+              href={appUrl("/login")}
               className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
             >
               Log in

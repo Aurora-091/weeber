@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check } from "lucide-react";
-import { appFetch } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/user-session";
+import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
@@ -35,8 +36,8 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function MerchantCallDetailPage() {
-  const [, params] = useRoute("/app/calls/:id");
+export function UserCallDetailPage() {
+  const [, params] = useRoute<{ id: string }>(appPath("/calls/:id"));
   const id = params?.id ?? "";
   const [copied, setCopied] = useState(false);
 
@@ -79,7 +80,7 @@ export function MerchantCallDetailPage() {
   return (
     <div className="page-enter">
       <Link
-        href="/app/calls"
+        href={appPath("/calls")}
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" aria-hidden />

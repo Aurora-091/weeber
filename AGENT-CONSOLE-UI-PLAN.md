@@ -1,5 +1,9 @@
 # AGENT-CONSOLE-UI-PLAN.md — Agent config + live preview upgrade
 
+> **Status: Phase 1 and Phase 2 shipped 2026-07-12** (commits `03b3d40`, `8001d9d`). See
+> `changelog.md`'s two "Agent Preview drawer" entries and `DECISIONS.md` ADR-051 for what actually
+> got built vs. this plan. Phase 3 remains deliberately not started — see §3 below for why.
+
 **Reference:** two ElevenLabs Conversational AI screenshots (agent config editor with a right-side
 property rail; a separate live "Preview" experience — animated voice orb, phone-call button, text-chat
 fallback, Inline/Widget toggle, Mock tools toggle). Confirmed scope from the requesting round:
@@ -59,7 +63,7 @@ live.
 
 ## 3. Phasing (biggest lift is real, sizing it honestly)
 
-### Phase 1 — Text tab + orb shell (ships fast, de-risks the drawer/layout work first)
+### Phase 1 — Text tab + orb shell (ships fast, de-risks the drawer/layout work first) ✅ SHIPPED
 - Build `PreviewButton` + `PreviewDrawer` shell, Text tab wired to the *existing* test-chat endpoint
   (already real, already rate-limited) — **new work here is just exposing it on the merchant surface**
   (currently admin-only) and restyling it to sit in the drawer instead of inline in the page.
@@ -69,7 +73,7 @@ live.
 - Ships value on its own: merchants get a real conversation test for the first time (today they only get
   "hear one sentence" or nothing). Low backend risk — no new transport, no new billing-shaped surface.
 
-### Phase 2 — Real full-duplex voice test call (the actual "biggest lift" piece)
+### Phase 2 — Real full-duplex voice test call (the actual "biggest lift" piece) ✅ SHIPPED
 This needs a new, browser-native call transport — mic in, agent voice out, no telephony vendor:
 - **Backend**: add a 4th provider to the existing abstraction — `createVoiceStreamHandlers("browser")`,
   mounted at e.g. `/api/voice/stream/browser`. Framing differs from Twilio/Plivo/Exotel (no vendor

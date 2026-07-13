@@ -1,10 +1,10 @@
 /**
- * Merchant-facing API — everything under /api/app/*. Mounted once in
- * ../index.ts via `.route('/app', merchantApp)`.
+ * User-facing API — everything under /api/app/*. Mounted once in
+ * ../index.ts via `.route('/app', userApp)`.
  *
- * Auth: Supabase session via requireMerchantSession — see
+ * Auth: Supabase session via requireUserSession — see
  * middleware/supabase-auth.ts. The org is always resolved from the
- * session's membership row, never from a path param: a merchant can't
+ * session's membership row, never from a path param: a user can't
  * address another org by construction. Query/aggregation logic is shared
  * with the admin panel's /api/voice/orgs/:orgId/* routes
  * (voice/org-queries.ts) so both surfaces report identical data.
@@ -22,10 +22,12 @@ import { orgMembers, orgs } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
+import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
+import { issueTestCallToken } from "../voice/test-call-tokens";
 import {
-  requireMerchantSession,
-  requireMerchantOrg,
-  type MerchantSessionVariables,
+  requireUserSession,
+  requireUserOrg,
+  type UserSessionVariables,
 } from "./middleware/supabase-auth";
 import { submitSupportTicket } from "./support";
 import {
@@ -55,7 +57,7 @@ import {
 import { getPlivoStatus, setPlivoByoCredentials } from "../voice/plivo-provisioning";
 import { getExotelStatus, setExotelByoCredentials } from "../voice/exotel-provisioning";
 
-type MerchantEnv = { Variables: MerchantSessionVariables };
+type UserEnv = { Variables: UserSessionVariables };
 
 /**
  * First-login bootstrap: one org + owner membership per new user.
@@ -85,25 +87,11 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
   return row ?? { orgId, role: "owner" };
 }
 
-// Per-org fixed-window limiter, reused for anything that reaches a metered
-// upstream (paid TTS API, paid LLM calls) so merchants can't be unmetered —
-// see previewRateLimited (TTS preview) and testChatRateLimited (agent test
-// chat) below, each with their own window/keyspace.
-function makeFixedWindowLimiter(windowMs: number, maxPerWindow: number) {
-  const windows = new Map<string, { start: number; count: number }>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const window = windows.get(key);
-    if (!window || now - window.start >= windowMs) {
-      windows.set(key, { start: now, count: 1 });
-      return false;
-    }
-    window.count += 1;
-    return window.count > maxPerWindow;
-  };
-}
+// makeFixedWindowLimiter now lives in voice/fixed-window-limiter.ts (shared
+// with test-call-tokens.ts's issuance limiter) — see that file's doc
+// comment. Kept the same per-org fixed-window shape, just extracted.
 
-// Per-org fixed-window limiter for the TTS preview — merchants now reach a
+// Per-org fixed-window limiter for the TTS preview — users now reach a
 // paid TTS API, so this can't be unmetered like the admin-key version.
 const PREVIEW_WINDOW_MS = 60_000;
 const PREVIEW_MAX_PER_WINDOW = Number(process.env.VOICE_PREVIEW_RATE_LIMIT ?? 20);
@@ -118,15 +106,22 @@ const TEST_CHAT_WINDOW_MS = 60_000;
 const TEST_CHAT_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CHAT_RATE_LIMIT ?? 15);
 const testChatRateLimited = makeFixedWindowLimiter(TEST_CHAT_WINDOW_MS, TEST_CHAT_MAX_PER_WINDOW);
 
-export const merchantApp = new Hono<MerchantEnv>()
-  .use("*", requireMerchantSession)
+// Per-org fixed-window limiter for issuing live voice test-call tokens —
+// each token leads to a real STT+LLM+TTS session (metered upstreams), so
+// this gates issuance the same way testChatRateLimited gates test-chat.
+const TEST_CALL_WINDOW_MS = 60_000;
+const TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
+const testCallRateLimited = makeFixedWindowLimiter(TEST_CALL_WINDOW_MS, TEST_CALL_MAX_PER_WINDOW);
 
-  // Session/org resolution + first-login bootstrap. The one route without requireMerchantOrg.
+export const userApp = new Hono<UserEnv>()
+  .use("*", requireUserSession)
+
+  // Session/org resolution + first-login bootstrap. The one route without requireUserOrg.
   .get("/me", async (c) => {
-    let orgId = c.get("merchantOrgId");
-    let role = c.get("merchantRole");
-    const userId = c.get("merchantUserId");
-    const email = c.get("merchantEmail");
+    let orgId = c.get("userOrgId");
+    let role = c.get("userRole");
+    const userId = c.get("userUserId");
+    const email = c.get("userEmail");
 
     if (!orgId && userId) {
       const membership = await resolveOrCreateMembership(userId, email);
@@ -160,10 +155,10 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   // Everything below requires a resolved org.
-  .use("*", requireMerchantOrg)
+  .use("*", requireUserOrg)
 
   .get("/agent-configs", async (c) => {
-    const merged = await getAgentConfigsForOrg(c.get("merchantOrgId")!);
+    const merged = await getAgentConfigsForOrg(c.get("userOrgId")!);
     if (!merged) return c.json({ error: "org not found" }, 404);
     return c.json({ agentConfigs: merged }, 200);
   })
@@ -174,12 +169,12 @@ export const merchantApp = new Hono<MerchantEnv>()
     if (!parsed.success) {
       return c.json({ error: "Invalid agent config", details: parsed.error.issues }, 400);
     }
-    const row = await upsertAgentConfig(c.get("merchantOrgId")!, c.req.param("templateKey"), parsed.data);
+    const row = await upsertAgentConfig(c.get("userOrgId")!, c.req.param("templateKey"), parsed.data);
     return c.json({ agentConfig: row }, 200);
   })
 
   .post("/agent-configs/:templateKey/test-chat", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const templateKey = c.req.param("templateKey");
     if (testChatRateLimited(orgId)) {
       return c.json(
@@ -192,11 +187,23 @@ export const merchantApp = new Hono<MerchantEnv>()
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
-    const { resolveAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
+    const { resolveAgentConfig, buildPreviewAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("../voice/llm");
     const { streamText, stepCountIs } = await import("ai");
 
-    const agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    // configOverride (optional): the Preview drawer's whole point is testing
+    // what's currently in the form, not what's already saved — see
+    // buildPreviewAgentConfig's doc comment in voice/agent.ts.
+    let agentConfig;
+    if (body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
     const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
     const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
 
@@ -258,6 +265,28 @@ export const merchantApp = new Hono<MerchantEnv>()
     }
   })
 
+  .post("/agent-configs/:templateKey/test-call-token", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    if (testCallRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${TEST_CALL_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    let configOverride;
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: orgId });
+    return c.json({ token }, 201);
+  })
+
   .get("/voices", async (c) => {
     const provider = c.req.query("provider") ?? "";
     if (!["elevenlabs", "cartesia", "sarvam"].includes(provider)) {
@@ -274,7 +303,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/voice-preview", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     if (previewRateLimited(orgId)) {
       return c.json({ error: "Too many voice previews — try again in a minute" }, 429);
     }
@@ -296,14 +325,14 @@ export const merchantApp = new Hono<MerchantEnv>()
 
   .get("/calls", async (c) => {
     const limit = Number(c.req.query("limit")) || 200;
-    const rows = await listOrgCalls(c.get("merchantOrgId")!, limit);
+    const rows = await listOrgCalls(c.get("userOrgId")!, limit);
     return c.json({ calls: rows }, 200);
   })
 
   .get("/calls/:id", async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
-    const row = await getOrgCall(c.get("merchantOrgId")!, id);
+    const row = await getOrgCall(c.get("userOrgId")!, id);
     if (!row) return c.json({ error: "call not found" }, 404);
     return c.json({ call: row }, 200);
   })
@@ -311,7 +340,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   .get("/calls/:id/transcript", async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
-    const rows = await getOrgCallTranscript(c.get("merchantOrgId")!, id);
+    const rows = await getOrgCallTranscript(c.get("userOrgId")!, id);
     if (!rows) return c.json({ error: "call not found" }, 404);
     return c.json({ transcript: rows }, 200);
   })
@@ -319,19 +348,19 @@ export const merchantApp = new Hono<MerchantEnv>()
   .get("/calls/:id/tool-calls", async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
-    const rows = await getOrgCallToolCalls(c.get("merchantOrgId")!, id);
+    const rows = await getOrgCallToolCalls(c.get("userOrgId")!, id);
     if (!rows) return c.json({ error: "call not found" }, 404);
     return c.json({ toolCalls: rows }, 200);
   })
 
   .get("/analytics", async (c) => {
     const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 365);
-    const analytics = await computeOrgAnalytics(c.get("merchantOrgId")!, days);
+    const analytics = await computeOrgAnalytics(c.get("userOrgId")!, days);
     return c.json(analytics, 200);
   })
 
   .get("/billing/usage", async (c) => {
-    const usage = await computeUsage(c.get("merchantOrgId")!);
+    const usage = await computeUsage(c.get("userOrgId")!);
     if (!usage) return c.json({ error: "org not found" }, 404);
     return c.json(usage, 200);
   })
@@ -340,7 +369,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   // free-form jsonb bag (ONBOARDING_STEP_KEYS in org-queries.ts) so the
   // modal can change its step set without a migration.
   .get("/onboarding", async (c) => {
-    const state = await getOnboardingState(c.get("merchantOrgId")!);
+    const state = await getOnboardingState(c.get("userOrgId")!);
     return c.json(
       { steps: state.steps, dismissed: state.dismissed, completedAt: state.completedAt },
       200,
@@ -356,7 +385,7 @@ export const merchantApp = new Hono<MerchantEnv>()
     if (dismissed !== undefined && typeof dismissed !== "boolean") {
       return c.json({ error: "`dismissed`, if present, must be a boolean" }, 400);
     }
-    const state = await updateOnboardingState(c.get("merchantOrgId")!, { steps, dismissed });
+    const state = await updateOnboardingState(c.get("userOrgId")!, { steps, dismissed });
     return c.json(
       { steps: state.steps, dismissed: state.dismissed, completedAt: state.completedAt },
       200,
@@ -364,7 +393,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .get("/shopify/status", async (c) => {
-    const status = await getShopifyStatus(c.get("merchantOrgId")!);
+    const status = await getShopifyStatus(c.get("userOrgId")!);
     return c.json(status, 200);
   })
 
@@ -375,7 +404,7 @@ export const merchantApp = new Hono<MerchantEnv>()
     if (!shop?.trim()) return c.json({ error: "`shop` is required" }, 400);
     const domain = shop.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
     const normalized = domain.endsWith(".myshopify.com") ? domain : `${domain}.myshopify.com`;
-    const url = buildInstallUrl(c.get("merchantOrgId")!, normalized);
+    const url = buildInstallUrl(c.get("userOrgId")!, normalized);
     if (!url) return c.json({ error: "Shopify install is not configured yet" }, 503);
     return c.json({ installUrl: url }, 200);
   })
@@ -384,27 +413,27 @@ export const merchantApp = new Hono<MerchantEnv>()
   // cards. No scheduling, no email, no external spreadsheet OAuth — see
   // export.ts.
   .get("/export/orders.xlsx", async (c) => {
-    const buffer = await buildOrdersWorkbook(c.get("merchantOrgId")!);
+    const buffer = await buildOrdersWorkbook(c.get("userOrgId")!);
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     c.header("Content-Disposition", `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     return c.body(new Uint8Array(buffer));
   })
 
   .get("/export/analytics.xlsx", async (c) => {
-    const buffer = await buildAnalyticsWorkbook(c.get("merchantOrgId")!);
+    const buffer = await buildAnalyticsWorkbook(c.get("userOrgId")!);
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     c.header("Content-Disposition", `attachment; filename="call-analytics-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     return c.body(new Uint8Array(buffer));
   })
 
   .get("/export/transcripts.xlsx", async (c) => {
-    const buffer = await buildTranscriptsWorkbook(c.get("merchantOrgId")!);
+    const buffer = await buildTranscriptsWorkbook(c.get("userOrgId")!);
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     c.header("Content-Disposition", `attachment; filename="transcripts-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     return c.body(new Uint8Array(buffer));
   })
 
-  // Merchant-facing telephony/number self-serve (ADR-042's per-org Twilio
+  // User-facing telephony/number self-serve (ADR-042's per-org Twilio
   // isolation, previously admin-only — see voice/twilio-provisioning.ts for
   // the actual logic, unchanged here, just newly reachable by the org that
   // owns it instead of only an operator). Deliberately no shared number
@@ -413,10 +442,10 @@ export const merchantApp = new Hono<MerchantEnv>()
   // only provider with a platform-owned (non-BYO) path — Plivo and Exotel
   // are BYO-only per docs/india-telephony.md: no platform Plivo/Exotel
   // sub-account provisioning exists yet, and Exotel's live-call path needs
-  // a SIP bridge this codebase doesn't have — but a merchant who already
+  // a SIP bridge this codebase doesn't have — but a user who already
   // runs their own Plivo/Exotel account can connect it here today.
   .get("/telephony/status", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const [twilio, plivo, exotel] = await Promise.all([
       getTwilioStatus(orgId),
       getPlivoStatus(orgId),
@@ -439,7 +468,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/telephony/subaccount", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const existing = await getTwilioStatus(orgId);
     if (existing?.accountSid) {
       return c.json({ error: "This org already has a Twilio sub-account provisioned — reset first to start over." }, 409);
@@ -453,10 +482,10 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/telephony/number", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const existing = await getTwilioStatus(orgId);
     // A dedicated number is a real recurring Twilio charge — guard against
-    // a merchant accidentally buying a second one via a repeated click/call
+    // a user accidentally buying a second one via a repeated click/call
     // before billing exists to catch it. Reset first to replace one.
     if (existing?.outboundNumber) {
       return c.json({ error: `This org already has a dedicated number (${existing.outboundNumber}) — reset first to buy a different one.` }, 409);
@@ -471,7 +500,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/telephony/byo", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const body = await c.req.json().catch(() => null);
     const { accountSid, authToken, phoneNumber } = (body ?? {}) as {
       accountSid?: string;
@@ -492,7 +521,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/telephony/plivo/byo", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const body = await c.req.json().catch(() => null);
     const { authId, authToken, phoneNumber } = (body ?? {}) as {
       authId?: string;
@@ -512,7 +541,7 @@ export const merchantApp = new Hono<MerchantEnv>()
   })
 
   .post("/telephony/exotel/byo", async (c) => {
-    const orgId = c.get("merchantOrgId")!;
+    const orgId = c.get("userOrgId")!;
     const body = await c.req.json().catch(() => null);
     const { sid, apiKey, apiToken, subdomain, phoneNumber } = (body ?? {}) as {
       sid?: string;
@@ -539,16 +568,16 @@ export const merchantApp = new Hono<MerchantEnv>()
   // credentials and reverts to the platform Twilio default, see
   // resetToPlatformDefault's docstring for why it's not Twilio-only.
   .post("/telephony/reset", async (c) => {
-    await resetToPlatformDefault(c.get("merchantOrgId")!);
+    await resetToPlatformDefault(c.get("userOrgId")!);
     return c.json({ ok: true }, 200);
   })
 
   .get("/flags", async (c) => {
-    const flags = await getEffectiveFlags(c.get("merchantOrgId")!);
+    const flags = await getEffectiveFlags(c.get("userOrgId")!);
     return c.json({ flags }, 200);
   })
 
-  // Merchant support submission — same underlying table as the public
+  // User support submission — same underlying table as the public
   // landing-page form (public-routes.ts), just with orgId known.
   .post("/support", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -556,8 +585,8 @@ export const merchantApp = new Hono<MerchantEnv>()
     const { subject, message } = body as { subject?: string; message?: string };
     if (!subject?.trim() || !message?.trim()) return c.json({ error: "`subject` and `message` are required" }, 400);
     const ticket = await submitSupportTicket({
-      orgId: c.get("merchantOrgId"),
-      email: c.get("merchantEmail") ?? "unknown",
+      orgId: c.get("userOrgId"),
+      email: c.get("userEmail") ?? "unknown",
       subject,
       message,
     });

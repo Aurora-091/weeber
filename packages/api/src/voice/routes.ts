@@ -27,6 +27,8 @@ import { db } from "../database";
 import { calls, callLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
+import { makeFixedWindowLimiter } from "./fixed-window-limiter";
+import { issueTestCallToken } from "./test-call-tokens";
 import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
 import { generatePreviewAudio } from "./tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
@@ -50,6 +52,14 @@ import { requireTwilioSignature } from "./middleware/twilio-signature";
 import { rateLimitOutboundCalls } from "./middleware/rate-limit";
 import { isValidE164 } from "./validation";
 import { createAdminKey, listAdminKeys, revokeAdminKey } from "./admin-keys";
+
+// Per-org fixed-window limiter for issuing live voice test-call tokens from
+// the admin dashboard — same reasoning as app/routes.ts's testCallRateLimited
+// (each token leads to a real STT+LLM+TTS session), just keyed for the
+// admin-key-gated surface instead of user sessions.
+const ADMIN_TEST_CALL_WINDOW_MS = 60_000;
+const ADMIN_TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
+const adminTestCallRateLimited = makeFixedWindowLimiter(ADMIN_TEST_CALL_WINDOW_MS, ADMIN_TEST_CALL_MAX_PER_WINDOW);
 
 export const voice = new Hono()
   // Twilio webhook — set this as the phone number's "A call comes in" Voice URL.
@@ -104,7 +114,7 @@ export const voice = new Hono()
 
   // Plivo answer webhook — the Plivo analog of /incoming above, reused for
   // both outbound (see plivo-client.ts's createPlivoOutboundCall, which
-  // sets this as answer_url) and inbound (a merchant configures this as
+  // sets this as answer_url) and inbound (a user configures this as
   // their Plivo Application's Answer URL, with `?orgId=` appended so
   // requirePlivoSignature and org resolution both work — see that
   // middleware's doc comment).
@@ -540,15 +550,23 @@ export const voice = new Hono()
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
-    const { resolveAgentConfig } = await import("./agent");
+    const { resolveAgentConfig, buildPreviewAgentConfig } = await import("./agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("./llm");
     const { voiceTools, buildKnownFactsBlock } = await import("./agent");
     const { streamText, stepCountIs } = await import("ai");
 
-    const agentConfig = await resolveAgentConfig({
-      orgId,
-      templateKey,
-    });
+    // configOverride (optional): preview the admin's in-progress edits, not
+    // just the last-saved row — see buildPreviewAgentConfig in voice/agent.ts.
+    let agentConfig;
+    if (body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
 
     const model = resolveVoiceModel(
       agentConfig.llmProvider,
@@ -614,6 +632,34 @@ export const voice = new Hono()
     }
   })
 
+  // Issues a short-lived, single-use token for the admin dashboard's live
+  // voice test call (Preview drawer's Voice tab) — see test-call-tokens.ts's
+  // doc comment for the full two-step handshake this feeds into.
+  .post("/orgs/:orgId/agent-configs/:templateKey/test-call-token", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    if (adminTestCallRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${ADMIN_TEST_CALL_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    let configOverride;
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}` });
+    return c.json({ token }, 201);
+  })
+
   // Dynamic per-provider voice list for the dashboard's voice picker — see
   // voices-catalog.ts for why each provider's preview capability differs.
   .get("/voices", requireAdminKey, async (c) => {
@@ -659,7 +705,7 @@ export const voice = new Hono()
     }
   })
 
-  // Merchant-dashboard analytics — simple v1, aggregated directly off
+  // User-dashboard analytics — simple v1, aggregated directly off
   // existing tables (calls/callLatency/toolCalls), no separate rollup
   // tables yet. `days` bounds how far back to look (default 30).
   .get("/orgs/:orgId/analytics", requireAdminKey, async (c) => {

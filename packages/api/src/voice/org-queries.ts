@@ -1,9 +1,9 @@
 /**
  * Org-scoped query/aggregation helpers shared by two surfaces with different
  * auth: the admin panel's /api/voice/orgs/:orgId/* routes (admin key, any
- * org) and the merchant app's /api/app/* routes (Supabase session, own org
+ * org) and the user app's /api/app/* routes (Supabase session, own org
  * only — see app/routes.ts). One implementation, two thin route wrappers, so
- * the numbers a merchant sees are by construction the same ones the admin
+ * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
@@ -126,6 +126,9 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     llmModel: frame.llmModel,
     toolsEnabled: frame.toolsEnabled,
     guardrails: frame.guardrails,
+    firstCallDelayMinutes: frame.firstCallDelayMinutes,
+    retryDelayMinutes: frame.retryDelayMinutes,
+    maxAttempts: frame.maxAttempts,
     updatedAt: new Date(),
   };
   const [row] = await db
@@ -148,7 +151,7 @@ export async function listOrgCalls(orgId: string, limit = 200) {
     .limit(Math.min(Math.max(limit, 1), 500));
 }
 
-/** One call, only if it belongs to this org — the merchant-side 404 guard. */
+/** One call, only if it belongs to this org — the user-side 404 guard. */
 export async function getOrgCall(orgId: string, callId: number) {
   const [row] = await db
     .select()
@@ -216,7 +219,7 @@ export async function getShopifyStatus(orgId: string) {
  * entry point; org_id is appended as a query param. Null when unconfigured
  * (the UI shows a "not configured yet" state instead of a dead link).
  *
- * Also stamps `return_url` — where weebersh should send the merchant's
+ * Also stamps `return_url` — where weebersh should send the user's
  * browser once its OAuth flow + /connected callback both succeed. This is
  * the explicit contract for "redirect back to Weeber" (full lifecycle:
  * enter domain on Weeber -> redirect to Shopify install (via weebersh) ->
@@ -224,6 +227,20 @@ export async function getShopifyStatus(orgId: string) {
  * browser to return_url). weebersh must carry BOTH org_id and return_url
  * through its OAuth `state`/session across the Shopify redirect — neither
  * survives on its own past the Shopify consent screen.
+ *
+ * PUBLIC_MERCHANT_APP_URL (not PUBLIC_APP_URL) is the correct source here —
+ * audit finding: this used to read PUBLIC_APP_URL, which is the *backend's
+ * own* Railway origin (used elsewhere for Twilio's public URL), not a
+ * browser-facing page. That sent merchants' browsers to
+ * https://api-production-....railway.app/app/shopify -- a URL with no
+ * frontend behind it at all, and a stale path to boot (the real route is
+ * /integrations, not /app/shopify). PUBLIC_MERCHANT_APP_URL is a distinct
+ * var (e.g. https://app.weeber.ai) specifically for "a browser-facing page
+ * a human actually lands on" -- same category as PUBLIC_WEB_URL (marketing
+ * site) but for the merchant app surface. Falls back to PUBLIC_APP_URL only
+ * if the new var isn't set yet, so this doesn't regress into a dead link on
+ * an unconfigured deploy -- but a real deployment should always set
+ * PUBLIC_MERCHANT_APP_URL explicitly.
  */
 export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
@@ -233,9 +250,9 @@ export function buildInstallUrl(orgId: string, shop?: string): string | null {
   if (shop) {
     url += `&shop=${encodeURIComponent(shop)}`;
   }
-  const publicAppUrl = process.env.PUBLIC_APP_URL;
-  if (publicAppUrl) {
-    const returnUrl = `${publicAppUrl.replace(/\/$/, "")}/app/shopify?shopify_connected=1`;
+  const merchantAppUrl = process.env.PUBLIC_MERCHANT_APP_URL || process.env.PUBLIC_APP_URL;
+  if (merchantAppUrl) {
+    const returnUrl = `${merchantAppUrl.replace(/\/$/, "")}/integrations?shopify_connected=1`;
     url += `&return_url=${encodeURIComponent(returnUrl)}`;
   }
   return url;
@@ -279,7 +296,7 @@ export async function getEffectiveFlags(orgId: string): Promise<Record<string, b
 
 /**
  * Org analytics: operational stats (calls/minutes/latency/dispositions/
- * tools/guardrails — the original shape) plus merchant KPIs. KPI rules
+ * tools/guardrails — the original shape) plus user KPIs. KPI rules
  * (CLAUDE-BUILD-BRIEF §5.4, "no fabricated metrics"):
  *   - a rate is null, not 0, when its denominator is 0 — the UI renders an
  *     empty state instead of a made-up 0%;

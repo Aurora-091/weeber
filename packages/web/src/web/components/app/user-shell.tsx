@@ -4,13 +4,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
-import { appFetch } from "../../lib/merchant-session";
+import { appFetch } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
+import { appPath } from "../../lib/route-base";
 import { AppShell } from "../shell/app-shell";
 
-export type MerchantMe = {
+export type UserMe = {
   user: { id: string; email: string | null } | null;
   role: string | null;
   org: {
@@ -25,11 +26,11 @@ export type MerchantMe = {
   };
 };
 
-const MerchantContext = createContext<{ me: MerchantMe; vertical: VerticalDefinition } | null>(null);
+const UserContext = createContext<{ me: UserMe; vertical: VerticalDefinition } | null>(null);
 
-export function useMerchant() {
-  const ctx = useContext(MerchantContext);
-  if (!ctx) throw new Error("useMerchant must be used inside MerchantShell");
+export function useUser() {
+  const ctx = useContext(UserContext);
+  if (!ctx) throw new Error("useUser must be used inside UserShell");
   return ctx;
 }
 
@@ -57,7 +58,7 @@ function Notice({ title, body, action }: { title: string; body: string; action?:
  * only (impersonation removed — see DECISIONS.md). GET /api/app/me both
  * resolves the org and performs the first-login bootstrap server-side.
  */
-export function MerchantShell({ children }: { children: React.ReactNode }) {
+export function UserShell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   // undefined = still resolving, null = definitely signed out
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -80,15 +81,15 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
     queryFn: async () => {
       const res = await appFetch("/api/app/me");
       if (!res.ok) throw new Error(`me failed (${res.status})`);
-      return (await res.json()) as MerchantMe;
+      return (await res.json()) as UserMe;
     },
   });
 
   if (!supabaseConfigured) {
     return (
       <Notice
-        title="Merchant login isn't configured"
-        body="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time to enable the merchant dashboard."
+        title="User login isn't configured"
+        body="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time to enable the user dashboard."
       />
     );
   }
@@ -96,14 +97,14 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
     return <Notice title="Weeber" body="Checking your session…" />;
   }
   if (!session) {
-    return <Redirect to="/app/login" />;
+    return <Redirect to={appPath("/login")} />;
   }
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
       const signOut = async () => {
         await supabase?.auth.signOut();
-        window.location.href = "/app/login";
+        window.location.href = appPath("/login");
       };
       return (
         <Notice
@@ -127,7 +128,7 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
   const vertical = getVertical(me.data.org.vertical);
 
   return (
-    <MerchantContext.Provider value={{ me: me.data, vertical }}>
+    <UserContext.Provider value={{ me: me.data, vertical }}>
       <AppShell
         density="spacious"
         nav={vertical.nav}
@@ -137,7 +138,7 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={async () => {
               await supabase?.auth.signOut();
-              window.location.href = "/app/login";
+              window.location.href = appPath("/login");
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >
@@ -148,6 +149,6 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
       >
         {children}
       </AppShell>
-    </MerchantContext.Provider>
+    </UserContext.Provider>
   );
 }

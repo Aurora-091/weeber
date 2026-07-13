@@ -52,7 +52,7 @@ export function UsersPage() {
 
       {users.isLoading && <SkeletonTable columns={4} />}
       {!users.isLoading && rows.length === 0 && (
-        <EmptyState title="No users yet" description="Accounts appear here once a merchant signs up and completes onboarding." />
+        <EmptyState title="No users yet" description="Accounts appear here once a user signs up and completes onboarding." />
       )}
       {rows.length > 0 && <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />}
     </div>

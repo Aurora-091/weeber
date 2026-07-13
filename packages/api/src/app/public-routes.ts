@@ -1,7 +1,7 @@
 /**
  * Public, unauthenticated endpoints for the landing page — no admin key, no
  * Supabase session. Deliberately its own small router (not tucked into
- * voice/routes.ts or the merchant-authed app router) so "what needs zero
+ * voice/routes.ts or the user-authed app router) so "what needs zero
  * auth" stays obvious from the file, not buried in a middleware chain.
  */
 import { Hono } from "hono";

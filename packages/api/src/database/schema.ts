@@ -174,6 +174,19 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   llmModel: text("llm_model"),
   toolsEnabled: jsonb("tools_enabled").$type<unknown[]>(),
   guardrails: jsonb("guardrails").$type<Record<string, unknown>>(),
+  // Per-org retry cadence overrides (issue 3 feature) — nullable = "use the
+  // platform default" (see integrations/shopify/routes.ts's
+  // SHOPIFY_*_DELAY_MINUTES/SHOPIFY_*_MAX_ATTEMPTS env vars for what those
+  // defaults are). Three explicit knobs, deliberately no customer-driven
+  // reschedule override on top of these — user's own call. firstCallDelayMinutes
+  // controls the delay before the very first call for this template;
+  // retryDelayMinutes controls the gap between a no-answer/busy/failed
+  // outcome and the next attempt (read by workflows/engine.ts's org-scoped
+  // retry path, not the global WORKFLOWS env var); maxAttempts caps total
+  // attempts for both.
+  firstCallDelayMinutes: integer("first_call_delay_minutes"),
+  retryDelayMinutes: integer("retry_delay_minutes"),
+  maxAttempts: integer("max_attempts"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
@@ -200,9 +213,14 @@ export const orgMembers = pgTable("org_members", {
   email: text("email"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
-  uniqueIndex("org_members_user_org_idx").on(table.supabaseUserId, table.orgId),
-  index("org_members_user_idx").on(table.supabaseUserId),
+  // Real uniqueness on the user alone (audit#03 P1 fix) -- the product model is one org per
+  // user, and resolveOrCreateMembership's race-safety (routes.ts) depends on THIS constraint,
+  // not the old composite one below. Two concurrent first-logins each generate a different
+  // random orgId before inserting, so a composite (user, org) key never actually conflicts
+  // between them -- only a standalone unique constraint on the user catches that race.
+  uniqueIndex("org_members_user_idx").on(table.supabaseUserId),
 ]);
+
 
 export const scheduledCalls = pgTable("scheduled_calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

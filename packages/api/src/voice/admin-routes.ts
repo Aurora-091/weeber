@@ -446,7 +446,7 @@ export const admin = new Hono<AdminEnv>()
   })
 
   // Support tickets — list/update. Submission itself happens via
-  // routes.ts's public/merchant endpoints, not here.
+  // routes.ts's public/user endpoints, not here.
   .get("/support", async (c) => {
     const status = c.req.query("status") || undefined;
     const rows = await listSupportTickets(status, Number(c.req.query("limit")) || undefined);

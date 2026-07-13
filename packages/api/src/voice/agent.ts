@@ -13,7 +13,7 @@ import { resolveVoiceModel, getActiveModelLabel } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates } from "../database/schema";
 import { and, eq } from "drizzle-orm";
-import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings } from "./agent-frame";
+import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
 
 function languageLabel(code?: string): string {
   if (!code) return "English";
@@ -361,6 +361,42 @@ export async function resolveAgentConfig(opts: {
   // to the plain persona-resolution chain, no frame overrides.
   const systemPrompt = await resolvePersona(opts);
   return { systemPrompt };
+}
+
+/**
+ * Builds a ResolvedAgentConfig directly from an in-progress (not-yet-saved)
+ * agent frame — the Preview drawer's whole point is letting a user/admin
+ * hear/test what they're *about* to save, not what's already saved. Same
+ * composition logic as resolveAgentConfig's DB-row branch (buildIdentityBlock
+ * + buildLanguageInstructionBlock + withDisclosure + withCallControl), just
+ * fed from the request body instead of `orgAgentConfigs`. `templateKey` is
+ * still needed for the persona-prompt fallback (agentTemplates.defaultPersonaPrompt)
+ * when the override's personaPrompt is empty — a user clearing the field
+ * shouldn't preview an empty prompt, it should preview the template default,
+ * exactly like a real (unconfigured) call would.
+ */
+export async function buildPreviewAgentConfig(templateKey: string, override: AgentFrame): Promise<ResolvedAgentConfig> {
+  let jobDescription = override.personaPrompt;
+  if (!jobDescription?.trim()) {
+    const [tmpl] = await db.select().from(agentTemplates).where(eq(agentTemplates.key, templateKey)).limit(1);
+    jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
+  }
+
+  const systemPrompt = withCallControl(
+    buildLanguageInstructionBlock(override.language) + buildIdentityBlock(override) + withDisclosure(jobDescription),
+    override.guardrails,
+  );
+
+  return {
+    systemPrompt,
+    ttsProvider: override.voiceProvider,
+    voiceId: override.voiceId,
+    llmProvider: override.llmProvider,
+    llmModel: override.llmModel,
+    enabledTools: override.toolsEnabled,
+    sttProvider: override.sttProvider,
+    language: override.language,
+  };
 }
 
 export const voiceTools = {
