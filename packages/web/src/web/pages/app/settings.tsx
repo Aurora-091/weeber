@@ -40,7 +40,7 @@ const COUNTRIES = [
 
 function Section({ icon: Icon, title, children }: { icon: typeof Settings; title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-6">
+    <section className="card-weeber p-6">
       <div className="flex items-center gap-2.5 mb-5">
         <Icon className="size-4 text-muted-foreground" aria-hidden />
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
@@ -59,7 +59,6 @@ export function UserSettingsPage() {
   const [countryCode, setCountryCode] = useState(me.org.countryCode ?? "IN");
   const [contactEmail, setContactEmail] = useState(me.org.contactEmail ?? "");
 
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -100,7 +99,6 @@ export function UserSettingsPage() {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       toast.success("Password updated");
@@ -130,16 +128,7 @@ export function UserSettingsPage() {
 
           <div className="mt-6 border-t border-border pt-5">
             <h3 className="text-xs font-medium text-muted-foreground mb-4">Change password</h3>
-            <div className="grid gap-4 sm:grid-cols-3 max-w-2xl">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Current password</Label>
-                <Input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
-              </div>
+            <div className="grid gap-4 sm:grid-cols-2 max-w-lg">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">New password</Label>
                 <Input
@@ -147,6 +136,7 @@ export function UserSettingsPage() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Min 8 characters"
+                  autoComplete="new-password"
                 />
               </div>
               <div className="space-y-1.5">
@@ -156,6 +146,7 @@ export function UserSettingsPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
+                  autoComplete="new-password"
                 />
               </div>
             </div>

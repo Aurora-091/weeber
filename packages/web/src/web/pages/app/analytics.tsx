@@ -108,7 +108,7 @@ function StatCard({
   sparkData?: number[];
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 hover:shadow-sm transition-shadow">
+    <div className="card-weeber p-4">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
         <Icon className="size-3.5" />
         {label}
@@ -131,7 +131,7 @@ function BreakdownList({ title, counts }: { title: string; counts: Record<string
   const max = Math.max(1, ...entries.map(([, v]) => v));
   const total = entries.reduce((sum, [, v]) => sum + v, 0);
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className="card-weeber p-4">
       {title && <div className="text-sm font-medium mb-3">{title}</div>}
       {entries.length === 0 && <p className="text-xs text-muted-foreground">No data in this range.</p>}
       <div className="space-y-2">
@@ -163,7 +163,7 @@ function BreakdownList({ title, counts }: { title: string; counts: Record<string
 
 function AnalyticsEmptyState() {
   return (
-    <div className="rounded-lg border border-border px-6 py-16 text-center content-fade-in">
+    <div className="card-weeber px-6 py-16 text-center content-fade-in">
       <div className="mx-auto mb-5 flex items-center justify-center gap-3">
         <div className="rounded-full bg-muted p-3">
           <PhoneOff className="size-6 text-muted-foreground" />
@@ -273,7 +273,7 @@ export function UserAnalyticsPage() {
 
           {/* Call volume time-series chart */}
           {data.dailyVolume && data.dailyVolume.length > 0 && (
-            <div className="rounded-lg border border-border bg-card p-5">
+            <div className="card-weeber p-5">
               <h3 className="text-sm font-medium mb-4">Call volume</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={data.dailyVolume} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -301,7 +301,7 @@ export function UserAnalyticsPage() {
           {/* Outcomes donut + Latency bar */}
           <div className="grid sm:grid-cols-2 gap-4">
             {Object.keys(data.dispositionBreakdown).length > 0 && (
-              <div className="rounded-lg border border-border bg-card p-5">
+              <div className="card-weeber p-5">
                 <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
@@ -335,7 +335,7 @@ export function UserAnalyticsPage() {
               </div>
             )}
             <div className="space-y-4">
-              <div className="rounded-lg border border-border p-4">
+              <div className="card-weeber p-4">
                 <div className="flex items-center gap-1.5 text-sm font-medium mb-3">
                   <Clock className="size-3.5" />
                   Latency breakdown (avg)

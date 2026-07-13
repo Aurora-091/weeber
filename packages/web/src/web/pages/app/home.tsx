@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Sparkles, Bot, PhoneCall, BarChart3 } from "lucide-react";
+import { Check, Sparkles, Bot, PhoneCall, ChartBar as BarChart3, X } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { useUser } from "../../components/app/user-shell";
@@ -9,17 +9,6 @@ import { SetupModal } from "../../components/app/setup-modal";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
-
-/**
- * The user's default landing page (`/app`) — replaces the old
- * full-page onboarding route. See docs/DECISIONS.md "Setup modal, not a
- * setup page": setup now happens in <SetupModal>, opened on top of this
- * page instead of gating it.
- *
- * Layout mirrors Vocalist's Dashboard.tsx: a "finish setup" checklist card
- * while incomplete, vertical-driven metric tiles below it, quick links to
- * the deeper pages (Agents/Conversations/Analytics own their own detail).
- */
 
 const STEP_LABELS: Record<string, string> = {
   pick_vertical: "Pick your business type",
@@ -29,7 +18,12 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 type OnboardingState = { steps: Record<string, boolean>; dismissed: boolean; completedAt: string | null };
-type AnalyticsOverview = { totalCalls: number };
+type AnalyticsOverview = {
+  totalCalls: number;
+  totalMinutes: number;
+  callsPerDay?: number[];
+  avgConversionRate?: number | null;
+};
 
 export function UserHomePage() {
   const { vertical } = useUser();
@@ -58,9 +52,6 @@ export function UserHomePage() {
     },
   });
 
-  // Auto-open once we know setup is incomplete — same gate Vocalist uses
-  // (incomplete AND nothing live yet), so a user who explicitly
-  // dismissed/skipped isn't re-interrupted on every visit.
   useEffect(() => {
     if (!onboarding.data) return;
     const steps = onboarding.data.steps ?? {};
@@ -88,48 +79,68 @@ export function UserHomePage() {
     }).then(() => queryClient.invalidateQueries({ queryKey: ["app-onboarding"] }));
   }
 
+  const data = analytics.data;
+
   return (
     <div className="page-enter space-y-6">
-      <PageHeader title="Home" description="Live operations across your agents and conversations." />
+      <PageHeader
+        title="Home"
+        description="Live operations across your agents and conversations."
+      />
 
+      {/* Setup checklist */}
       {onboarding.isLoading ? (
-        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full rounded-lg" />
       ) : (
         !checklistDone &&
         !onboarding.data?.dismissed && (
-          <div className="rounded-lg border border-border">
-            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div className="card-weeber">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
-                <div className="font-medium">Finish setting up Weeber</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {stepEntries.filter(([, done]) => done).length} of {stepEntries.length || 4} done
+                <div className="text-sm font-medium">Finish setting up Weeber</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {stepEntries.filter(([, done]) => done).length} of {stepEntries.length || 4} steps done
                 </p>
               </div>
-              <Button size="sm" variant="ghost" onClick={dismissChecklist}>
-                Dismiss
-              </Button>
+              <button
+                type="button"
+                onClick={dismissChecklist}
+                aria-label="Dismiss checklist"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <X className="size-4" />
+              </button>
             </div>
-            <div className="px-6 py-5">
-              <ul className="space-y-2">
+            <div className="px-5 py-4">
+              <ul className="space-y-2.5">
                 {stepEntries.map(([key, done]) => (
-                  <li key={key} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`flex size-5 items-center justify-center rounded-full ${
-                          done ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {done ? <Check className="size-3" /> : null}
-                      </span>
-                      <span className={done ? "text-muted-foreground line-through" : ""}>
-                        {STEP_LABELS[key] || key}
-                      </span>
-                    </div>
+                  <li key={key} className="flex items-center gap-3">
+                    <span
+                      className={`flex size-5 shrink-0 items-center justify-center rounded-full transition-colors ${
+                        done
+                          ? "bg-success/15 text-success"
+                          : "border border-border text-transparent"
+                      }`}
+                    >
+                      {done && <Check className="size-3" />}
+                    </span>
+                    <span
+                      className={`text-sm ${
+                        done ? "text-muted-foreground line-through" : "text-foreground"
+                      }`}
+                    >
+                      {STEP_LABELS[key] || key}
+                    </span>
                   </li>
                 ))}
               </ul>
-              <Button size="sm" variant="outline" className="mt-4" onClick={() => setSetupOpen(true)}>
-                <Sparkles className="mr-1.5 size-3.5" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-4 gap-1.5"
+                onClick={() => setSetupOpen(true)}
+              >
+                <Sparkles className="size-3.5" />
                 Resume setup
               </Button>
             </div>
@@ -137,51 +148,80 @@ export function UserHomePage() {
         )
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stat tiles */}
+      <div className="grid gap-5 sm:grid-cols-3">
         {analytics.isLoading ? (
-          [...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)
+          <>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="card-weeber h-24 animate-pulse bg-muted/40" />
+            ))}
+          </>
         ) : (
           <>
-            <div className="rounded-lg border border-border p-4">
+            <div className="card-weeber p-5">
               <div className="text-xs text-muted-foreground">Total calls (30d)</div>
-              <div className="mt-1.5 text-xl font-semibold">{analytics.data?.totalCalls ?? 0}</div>
-            </div>
-            {vertical.dashboard.metrics.map((m) => (
-              <div key={m.key} className="rounded-lg border border-border p-4">
-                <div className="text-xs text-muted-foreground">{m.label}</div>
-                <div className="mt-1.5 text-xl font-semibold">—</div>
-                {m.hint && <div className="mt-1 text-[11px] text-muted-foreground">{m.hint}</div>}
+              <div className="mt-2 text-3xl font-bold tracking-tight font-mono">
+                {data?.totalCalls ?? 0}
               </div>
-            ))}
+            </div>
+            <div className="card-weeber p-5">
+              <div className="text-xs text-muted-foreground">Total minutes (30d)</div>
+              <div className="mt-2 text-3xl font-bold tracking-tight font-mono">
+                {data?.totalMinutes ?? 0}
+              </div>
+            </div>
+            <div className="card-weeber p-5">
+              <div className="text-xs text-muted-foreground">Agents active</div>
+              <div className="mt-2 text-3xl font-bold tracking-tight font-mono">
+                {/* derived from vertical nav or agent count — show em-dash until wired */}
+                —
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Configure on the Agents page.
+              </p>
+            </div>
           </>
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* Quick navigation cards */}
+      <div className="grid gap-5 sm:grid-cols-3">
         <Link to={appPath("/agents")}>
-          <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
-            <Bot className="mt-0.5 size-5 text-primary" />
+          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Bot className="size-4 text-muted-foreground" />
+            </div>
             <div>
-              <div className="font-medium">Agents</div>
-              <p className="mt-1 text-sm text-muted-foreground">Configure voice, tone, and tools per agent.</p>
+              <div className="text-sm font-medium">Agents</div>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                Configure voice, tone, and tools per agent.
+              </p>
             </div>
           </div>
         </Link>
         <Link to={appPath("/calls")}>
-          <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
-            <PhoneCall className="mt-0.5 size-5 text-primary" />
+          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <PhoneCall className="size-4 text-muted-foreground" />
+            </div>
             <div>
-              <div className="font-medium">Conversations</div>
-              <p className="mt-1 text-sm text-muted-foreground">{vertical.copy.callsEmptyBody}</p>
+              <div className="text-sm font-medium">Conversations</div>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                {vertical.copy.callsEmptyBody}
+              </p>
             </div>
           </div>
         </Link>
         <Link to={appPath("/analytics")}>
-          <div className="flex items-start gap-3 rounded-lg border border-border p-5 transition-colors hover:border-primary/30">
-            <BarChart3 className="mt-0.5 size-5 text-primary" />
+          <div className="card-lift card-weeber flex items-start gap-3 p-5 cursor-pointer">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <BarChart3 className="size-4 text-muted-foreground" />
+            </div>
             <div>
-              <div className="font-medium">Analytics</div>
-              <p className="mt-1 text-sm text-muted-foreground">Latency, tool usage, and outcomes in depth.</p>
+              <div className="text-sm font-medium">Analytics</div>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                Latency, tool usage, and outcomes in depth.
+              </p>
             </div>
           </div>
         </Link>

@@ -169,7 +169,7 @@ export function UserCallDetailPage() {
                   </div>
                 ))}
                 {transcriptRows.length === 0 && (
-                  <div className="rounded-lg border border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                  <div className="card-weeber px-4 py-6 text-center text-sm text-muted-foreground">
                     No transcript yet.
                   </div>
                 )}

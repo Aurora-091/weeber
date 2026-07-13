@@ -60,8 +60,10 @@ function PlatformTile({
 }) {
   return (
     <div
-      className={`rounded-lg border border-border bg-card p-5 flex items-center gap-3 ${
-        status === "coming-soon" ? "opacity-60" : "transition-all duration-200 hover:shadow-sm hover:border-foreground/10"
+      className={`flex items-center gap-3 p-5 rounded-lg border bg-card transition-colors duration-150 ${
+        status === "coming-soon"
+          ? "opacity-50 border-dashed border-border"
+          : "card-weeber card-lift"
       }`}
     >
       <Icon className="size-7 text-primary shrink-0" />
@@ -122,7 +124,7 @@ function ExportCard({
   });
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5 flex flex-col gap-3 transition-all duration-200 hover:shadow-sm hover:border-foreground/10">
+    <div className="card-weeber card-lift flex flex-col gap-3 p-5">
       <div className="flex items-start gap-3">
         <Icon className="size-6 text-primary shrink-0" />
         <div>
@@ -192,8 +194,10 @@ function TelephonyProviderTile({
 }) {
   return (
     <div
-      className={`rounded-lg border border-border bg-card p-5 flex items-center gap-3 ${
-        comingSoon ? "opacity-60" : "transition-all duration-200 hover:shadow-sm hover:border-foreground/10"
+      className={`flex items-center gap-3 p-5 rounded-lg border bg-card transition-colors duration-150 ${
+        comingSoon
+          ? "opacity-50 border-dashed border-border"
+          : "card-weeber card-lift"
       }`}
     >
       <Phone className="size-7 text-primary shrink-0" />
@@ -501,7 +505,7 @@ export function UserIntegrationsPage() {
       {data && (
         <div className="space-y-6 content-fade-in">
           {/* Manage Shopify */}
-          <div className="rounded-lg border border-border bg-card p-5">
+          <div className="card-weeber p-5">
             <div className="flex sm:flex-row flex-col justify-between sm:items-center gap-4">
               <div className="flex items-start gap-3">
                 <Store className="size-8 text-primary shrink-0" />
@@ -536,7 +540,7 @@ export function UserIntegrationsPage() {
 
           {/* Install / Connect Form */}
           {!activeShop && (
-            <div className="rounded-lg border border-border bg-card p-6">
+            <div className="card-weeber p-6">
               <h3 className="text-sm font-semibold mb-1">Connect your Shopify store</h3>
               <p className="text-xs text-muted-foreground mb-5 max-w-lg">
                 Enter your Shopify store domain below. You'll be redirected to Shopify to authorize the Weeber app.
@@ -586,7 +590,7 @@ export function UserIntegrationsPage() {
 
           {/* Reconnect for already-connected shop (collapsed) */}
           {activeShop && (
-            <details className="rounded-lg border border-border bg-card">
+            <details className="card-weeber">
               <summary className="cursor-pointer px-6 py-4 text-sm font-semibold hover:bg-muted/40 transition-colors list-none flex items-center justify-between">
                 <span>Need to reconnect or switch stores?</span>
                 <ChevronDown className="size-4 text-muted-foreground" />
@@ -643,7 +647,7 @@ export function UserIntegrationsPage() {
           {/* Connection Details & Scopes */}
           {activeShop && (
             <div className="grid gap-6 sm:grid-cols-2">
-              <div className="rounded-lg border border-border bg-card p-5 transition-all duration-200 hover:shadow-sm hover:border-foreground/10">
+              <div className="card-weeber card-lift p-5">
                 <h3 className="text-sm font-semibold">Connection Details</h3>
                 <div className="mt-4 space-y-3 text-xs text-muted-foreground">
                   <div className="flex justify-between border-b border-border pb-2">
@@ -665,7 +669,7 @@ export function UserIntegrationsPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border bg-card p-5 transition-all duration-200 hover:shadow-sm hover:border-foreground/10">
+              <div className="card-weeber card-lift p-5">
                 <h3 className="text-sm font-semibold flex items-center gap-1.5">
                   <ShieldCheck className="size-4 text-success" />
                   OAuth Scopes Approved
@@ -752,7 +756,7 @@ export function UserIntegrationsPage() {
         </p>
 
         {telephonyStatusQuery.data && (
-          <div className="rounded-lg border border-border bg-card p-5">
+          <div className="card-weeber p-5">
             <div className="flex sm:flex-row flex-col justify-between sm:items-center gap-4">
               <div>
                 <h3 className="text-sm font-semibold">Current number</h3>

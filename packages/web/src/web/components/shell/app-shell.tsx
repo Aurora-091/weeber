@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../lib/theme";
@@ -30,45 +30,119 @@ type AppShellProps = {
 
 const STORAGE_KEY = "weeber_sidebar_collapsed";
 
-const SidebarContext = createContext<{ collapsed: boolean; toggle: () => void }>({ collapsed: false, toggle: () => {} });
-export function useSidebar() { return useContext(SidebarContext); }
+const SidebarContext = createContext<{ collapsed: boolean; toggle: () => void }>({
+  collapsed: false,
+  toggle: () => {},
+});
+export function useSidebar() {
+  return useContext(SidebarContext);
+}
 
-function NavLinks({ nav, collapsed, onNavigate }: { nav: NavItem[]; collapsed?: boolean; onNavigate?: () => void }) {
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  match,
+  collapsed,
+  onClick,
+}: NavItem & { collapsed?: boolean; onClick?: () => void }) {
   const [location] = useLocation();
-  return (
-    <nav className="flex flex-col gap-0.5 px-2" aria-label="Primary">
-      {nav.map(({ href, label, icon: Icon, match }) => {
-        const active = match ? match.test(location) : location === href;
-        const link = (
-          <Link
-            key={href}
-            href={href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "flex items-center rounded-md text-sm font-medium transition-colors duration-150",
-              collapsed ? "justify-center px-2 py-2" : "gap-2.5 px-2.5 py-1.5",
-              active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-            )}
-          >
-            <Icon className="size-4 shrink-0" aria-hidden />
-            {!collapsed && label}
-          </Link>
-        );
+  const active = match ? match.test(location) : location === href;
 
-        if (collapsed) {
-          return (
-            <Tooltip key={href} delayDuration={0}>
-              <TooltipTrigger asChild>{link}</TooltipTrigger>
-              <TooltipContent side="right" className="text-xs">{label}</TooltipContent>
-            </Tooltip>
-          );
-        }
-        return link;
-      })}
+  const linkEl = (
+    <Link
+      href={href}
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "group relative flex items-center gap-2.5 rounded-md text-sm font-medium outline-none",
+        "transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        collapsed ? "h-9 w-9 justify-center px-0" : "px-3 py-2",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+      )}
+    >
+      {/* Active left-accent bar */}
+      <span
+        className={cn(
+          "absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-sidebar-primary",
+          "transition-all duration-200",
+          active ? "h-5 opacity-100" : "h-0 opacity-0",
+        )}
+        aria-hidden
+      />
+      <Icon className="size-[15px] shrink-0" aria-hidden />
+      {/* Label fades out when collapsing */}
+      <span
+        className={cn(
+          "truncate transition-[opacity,transform] duration-200",
+          collapsed ? "pointer-events-none w-0 translate-x-1 opacity-0" : "opacity-100 translate-x-0",
+        )}
+      >
+        {label}
+      </span>
+    </Link>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>{linkEl}</TooltipTrigger>
+        <TooltipContent side="right" sideOffset={6} className="text-xs font-medium">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return linkEl;
+}
+
+function NavLinks({
+  nav,
+  collapsed,
+  onNavigate,
+}: {
+  nav: NavItem[];
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav
+      className={cn("flex flex-col gap-0.5 py-1", collapsed ? "px-1.5" : "px-2")}
+      aria-label="Primary"
+    >
+      {nav.map((item) => (
+        <NavLink key={item.href} {...item} collapsed={collapsed} onClick={onNavigate} />
+      ))}
     </nav>
+  );
+}
+
+function SidebarCollapseButton({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      className={cn(
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+        "text-sidebar-foreground/40 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+        "transition-colors duration-150",
+      )}
+    >
+      {collapsed ? (
+        <PanelLeftOpen className="size-3.5" aria-hidden />
+      ) : (
+        <PanelLeftClose className="size-3.5" aria-hidden />
+      )}
+    </button>
   );
 }
 
@@ -90,38 +164,64 @@ function SidebarBody({
   onNavigate?: () => void;
 }) {
   return (
-    <>
-      <div className={cn("flex h-14 items-center", collapsed ? "justify-center px-2" : "px-4")}>
-        {!collapsed && brand}
-        {collapsed && <span className="font-serif text-lg font-bold">W</span>}
+    <div className="flex h-full flex-col">
+      {/* Brand row */}
+      <div
+        className={cn(
+          "flex h-14 shrink-0 items-center border-b border-sidebar-border",
+          collapsed ? "justify-center px-2" : "justify-between px-4",
+        )}
+      >
+        <div
+          className={cn(
+            "overflow-hidden transition-[width,opacity] duration-200",
+            collapsed ? "w-0 opacity-0" : "min-w-0 flex-1 opacity-100",
+          )}
+        >
+          {brand}
+        </div>
+        {collapsed && (
+          <span className="font-display text-base font-semibold text-sidebar-foreground select-none">
+            W
+          </span>
+        )}
+        {collapsible && !collapsed && (
+          <SidebarCollapseButton collapsed={false} onToggle={onToggle!} />
+        )}
       </div>
+
+      {/* Nav items */}
       <div className="flex-1 overflow-y-auto py-2">
         <NavLinks nav={nav} collapsed={collapsed} onNavigate={onNavigate} />
       </div>
-      <div className={cn(
-        "border-t border-sidebar-border py-2 flex items-center",
-        collapsed ? "flex-col gap-1.5 px-1" : "justify-between gap-2 px-2",
-      )}>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-        </div>
-        {!collapsed && footer}
-        {collapsible && (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="rounded-md p-1.5 text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
-          >
-            {collapsed ? <ChevronsRight className="size-3.5" /> : <ChevronsLeft className="size-3.5" />}
-          </button>
+
+      {/* Footer row */}
+      <div
+        className={cn(
+          "flex shrink-0 items-center border-t border-sidebar-border py-2",
+          collapsed ? "flex-col gap-1.5 px-1.5" : "gap-2 px-3",
+        )}
+      >
+        <ThemeToggle />
+        {!collapsed && <div className="flex-1 overflow-hidden">{footer}</div>}
+        {collapsible && collapsed && (
+          <SidebarCollapseButton collapsed onToggle={onToggle!} />
         )}
       </div>
-    </>
+    </div>
   );
 }
 
-export function AppShell({ density, nav, brand, banner, footer, actions, collapsible = false, children }: AppShellProps) {
+export function AppShell({
+  density,
+  nav,
+  brand,
+  banner,
+  footer,
+  actions,
+  collapsible = false,
+  children,
+}: AppShellProps) {
   const { theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
@@ -129,13 +229,19 @@ export function AppShell({ density, nav, brand, banner, footer, actions, collaps
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     if (!collapsible) return false;
-    try { return localStorage.getItem(STORAGE_KEY) === "true"; } catch { return false; }
+    try {
+      return localStorage.getItem(STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
   });
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
       const next = !prev;
-      try { localStorage.setItem(STORAGE_KEY, String(next)); } catch {}
+      try {
+        localStorage.setItem(STORAGE_KEY, String(next));
+      } catch {}
       return next;
     });
   }
@@ -151,8 +257,10 @@ export function AppShell({ density, nav, brand, banner, footer, actions, collaps
     }
   }, [location, pageKey]);
 
+  const activeCollapsed = collapsible && collapsed;
+
   return (
-    <SidebarContext.Provider value={{ collapsed: collapsible && collapsed, toggle: toggleCollapsed }}>
+    <SidebarContext.Provider value={{ collapsed: activeCollapsed, toggle: toggleCollapsed }}>
       <TooltipProvider>
         <div
           className={cn(
@@ -164,41 +272,60 @@ export function AppShell({ density, nav, brand, banner, footer, actions, collaps
           <CommandPalette nav={nav} actions={actions} />
           <Toaster position="bottom-right" />
           <div className="flex min-h-screen">
+            {/* Desktop sidebar */}
             <aside
               className={cn(
-                "sticky top-0 hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex transition-[width] duration-200",
-                collapsible && collapsed ? "w-14" : "w-56",
+                "sticky top-0 hidden h-screen shrink-0 flex-col md:flex",
+                "bg-sidebar text-sidebar-foreground",
+                "border-r border-sidebar-border",
+                "transition-[width] duration-200 ease-out",
+                activeCollapsed ? "w-[3.25rem]" : "w-56",
               )}
+              style={{ boxShadow: "var(--weeber-shadow-sidebar)" }}
             >
               <SidebarBody
                 nav={nav}
                 brand={brand}
                 footer={footer}
-                collapsed={collapsible && collapsed}
+                collapsed={activeCollapsed}
                 collapsible={collapsible}
                 onToggle={toggleCollapsed}
               />
             </aside>
+
+            {/* Content area */}
             <div className="min-w-0 flex-1">
-              <div className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur md:hidden">
+              {/* Mobile topbar */}
+              <div className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-sm md:hidden">
                 <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
                   <SheetTrigger asChild>
                     <button
                       type="button"
                       aria-label="Open navigation"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     >
                       <Menu className="size-5" aria-hidden />
                     </button>
                   </SheetTrigger>
-                  <SheetContent side="left" className="flex w-64 flex-col bg-sidebar p-0 text-sidebar-foreground">
+                  <SheetContent
+                    side="left"
+                    className="flex w-60 flex-col bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+                    style={{ boxShadow: "var(--weeber-shadow-elevated)" }}
+                  >
                     <SheetTitle className="sr-only">Navigation</SheetTitle>
-                    <SidebarBody nav={nav} brand={brand} footer={footer} onNavigate={() => setMobileOpen(false)} />
+                    <SidebarBody
+                      nav={nav}
+                      brand={brand}
+                      footer={footer}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
                   </SheetContent>
                 </Sheet>
                 {brand}
               </div>
+
               {banner}
+
               <main
                 className="mx-auto w-full"
                 style={{
@@ -209,8 +336,8 @@ export function AppShell({ density, nav, brand, banner, footer, actions, collaps
                 <div
                   key={pageKey}
                   className={cn(
-                    "page-enter",
-                    isTransitioning && "opacity-0",
+                    "transition-opacity duration-75",
+                    isTransitioning ? "opacity-40" : "opacity-100 page-enter",
                   )}
                 >
                   {children}

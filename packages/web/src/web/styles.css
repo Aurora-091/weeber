@@ -281,23 +281,27 @@
  * glance).
  */
 .theme-weeber {
-  --radius: 0.625rem; /* 10px — unchanged, orthogonal to the color round */
+  --radius: 0.5rem; /* 8px — mid-rounded, not pillow-soft */
 
-  /* Monochrome surfaces — chroma 0 throughout, only lightness varies. */
-  --weeber-paper: oklch(0.99 0 0); /* near-white background */
-  --weeber-paper-2: oklch(0.96 0 0); /* slightly recessed surface */
-  --weeber-ink: oklch(0.16 0 0); /* near-black foreground */
-  --weeber-ink-soft: oklch(0.46 0 0); /* muted/secondary text */
-  --weeber-border: oklch(0.87 0 0);
+  /* Monochrome surfaces — faint warm tint on background for texture warmth */
+  --weeber-paper: oklch(0.985 0.003 80);   /* warm near-white */
+  --weeber-paper-2: oklch(0.995 0.001 80); /* elevated card surface — brighter than bg */
+  --weeber-ink: oklch(0.14 0 0);
+  --weeber-ink-soft: oklch(0.46 0 0);
+  --weeber-border: oklch(0.88 0.004 80);   /* warm-tinted border */
 
-  /* No brand/accent hue — inverted black-on-white, the monochrome
-     equivalent of a filled button, not a color. */
-  --weeber-accent: oklch(0.16 0 0);
-  --weeber-accent-soft: oklch(0.91 0 0);
+  /* Accent */
+  --weeber-accent: oklch(0.14 0 0);
+  --weeber-accent-soft: oklch(0.92 0 0);
   --weeber-accent-foreground: oklch(0.99 0 0);
 
-  /* Semantic status set — the one deliberate exception to monochrome, see
-     the comment above this block for why. Tuned for a light background. */
+  /* Shadow tokens — components lift off the background */
+  --weeber-shadow-card: 0 1px 2px oklch(0 0 0 / 0.05), 0 4px 16px oklch(0 0 0 / 0.04);
+  --weeber-shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.07), 0 8px 24px oklch(0 0 0 / 0.06);
+  --weeber-shadow-sidebar: 2px 0 16px oklch(0 0 0 / 0.06);
+  --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.1), 0 1px 4px oklch(0 0 0 / 0.06);
+
+  /* Status */
   --weeber-success: oklch(0.52 0.14 150);
   --weeber-success-soft: oklch(0.93 0.05 150);
   --weeber-warning: oklch(0.62 0.15 80);
@@ -313,24 +317,24 @@
   --popover-foreground: var(--weeber-ink);
   --primary: var(--weeber-accent);
   --primary-foreground: var(--weeber-accent-foreground);
-  --secondary: var(--weeber-paper-2);
+  --secondary: oklch(0.95 0.002 80);
   --secondary-foreground: var(--weeber-ink);
-  --muted: var(--weeber-paper-2);
+  --muted: oklch(0.95 0.002 80);
   --muted-foreground: var(--weeber-ink-soft);
   --accent: var(--weeber-accent-soft);
   --accent-foreground: var(--weeber-ink);
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
   --input: var(--weeber-border);
-  --ring: oklch(0.6 0 0);
-  --sidebar: oklch(0.97 0 0);
+  --ring: oklch(0.55 0 0);
+  --sidebar: oklch(0.975 0.002 80); /* warm sidebar bg */
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);
-  --sidebar-accent: var(--weeber-accent-soft);
+  --sidebar-accent: oklch(0.95 0.002 80);
   --sidebar-accent-foreground: var(--weeber-ink);
-  --sidebar-border: var(--weeber-border);
-  --sidebar-ring: oklch(0.6 0 0);
+  --sidebar-border: oklch(0.9 0.003 80);
+  --sidebar-ring: oklch(0.55 0 0);
 }
 
 /*
@@ -357,63 +361,131 @@
   --shell-section-gap: 2rem;
 }
 
-/*
- * Elevation shadow for floating surfaces (modals, popovers, dropdowns, toasts)
- * — per UI-DESIGN-BRIEF "Component shape & surfaces": floating elements get
- * soft elevation shadow, inline content stays flat + thin border only.
- */
+/* ─── Grain / texture overlay — soft warm background texture both modes ───── */
+.theme-weeber {
+  position: relative;
+}
+
+.theme-weeber::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.028;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+.theme-weeber.dark::before {
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+}
+
+.theme-weeber > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Card elevation system ─────────────────────────────────────────────── */
+
+/* Standard elevated card — white/dark surface with shadow lifting above bg */
+.theme-weeber .card-weeber {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--weeber-shadow-card);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-weeber .card-weeber:where([data-interactive], a, button) {
+  cursor: pointer;
+}
+
+.theme-weeber .card-weeber[data-interactive]:hover,
+.theme-weeber a.card-weeber:hover {
+  box-shadow: var(--weeber-shadow-card-hover);
+  transform: translateY(-2px);
+  border-color: oklch(from var(--border) calc(l - 0.06) c h);
+}
+
+/* Legacy elevated card */
+.theme-weeber .card-elevated {
+  box-shadow: var(--weeber-shadow-elevated);
+}
+
+/* ─── Toast redesign ─────────────────────────────────────────────────────── */
 .theme-weeber [data-sonner-toaster] [data-sonner-toast] {
   --normal-bg: var(--weeber-paper-2);
   --normal-text: var(--weeber-ink);
   --normal-border: var(--weeber-border);
-  box-shadow: 0 4px 24px oklch(0 0 0 / 0.5), 0 1px 4px oklch(0 0 0 / 0.3);
+  border-radius: var(--radius) !important;
+  box-shadow: var(--weeber-shadow-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-left-width: 1px !important;
+  padding: 12px 14px !important;
 }
 
 .theme-weeber [data-sonner-toaster] [data-sonner-toast][data-type="success"] {
-  border-left: 3px solid var(--weeber-success);
+  border-left: 3px solid var(--weeber-success) !important;
 }
 .theme-weeber [data-sonner-toaster] [data-sonner-toast][data-type="error"] {
-  border-left: 3px solid var(--weeber-error);
+  border-left: 3px solid var(--weeber-error) !important;
 }
 .theme-weeber [data-sonner-toaster] [data-sonner-toast][data-type="warning"] {
-  border-left: 3px solid var(--weeber-warning);
+  border-left: 3px solid var(--weeber-warning) !important;
 }
 
-/* Elevated card — for cards that need the "floating above" treatment */
-.theme-weeber .card-elevated {
-  box-shadow: 0 4px 24px oklch(0 0 0 / 0.4), 0 1px 4px oklch(0 0 0 / 0.2);
-}
-
-/* Row hover lift — subtle border-highlight on hoverable list items */
+/* ─── Row hover lift ─────────────────────────────────────────────────────── */
 .theme-weeber .row-hover:hover {
   border-color: oklch(0.4 0 0);
 }
 
-/* Edge accent — semantic left-border on list items for status */
+/* ─── Edge accent — semantic left-border on list items for status ─────────── */
 .edge-success { border-left: 3px solid var(--weeber-success); }
 .edge-error { border-left: 3px solid var(--weeber-error); }
 .edge-warning { border-left: 3px solid var(--weeber-warning); }
-.edge-muted { border-left: 3px solid var(--weeber-border); }
+.edge-muted { border-left: 3px solid oklch(0.88 0.004 80); }
+
+/* ─── Interactive card hover lift ──────────────────────────────────────────── */
+.theme-weeber .card-lift {
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+.theme-weeber .card-lift:hover {
+  box-shadow: var(--weeber-shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+/* ─── Button micro-interactions ──────────────────────────────────────────── */
+.theme-weeber button:active:not(:disabled),
+.theme-weeber [role="button"]:active:not(:disabled) {
+  transform: scale(0.97);
+}
 
 .theme-weeber.dark {
-  /* The correct near-black monochrome palette — moved here from base
-     `.theme-weeber` as part of the ADR-044 fix (see comment above). */
-  --weeber-paper: oklch(0.145 0 0);
-  --weeber-paper-2: oklch(0.2 0 0);
+  --weeber-paper: oklch(0.13 0.003 240);   /* very dark blue-black for warmth in dark */
+  --weeber-paper-2: oklch(0.185 0.003 240); /* card surface — lifted above bg */
   --weeber-ink: oklch(0.93 0 0);
-  --weeber-ink-soft: oklch(0.64 0 0);
-  --weeber-border: oklch(0.26 0 0);
+  --weeber-ink-soft: oklch(0.62 0 0);
+  --weeber-border: oklch(0.27 0.002 240);
 
   --weeber-accent: oklch(0.93 0 0);
-  --weeber-accent-soft: oklch(0.24 0 0);
-  --weeber-accent-foreground: oklch(0.145 0 0);
+  --weeber-accent-soft: oklch(0.22 0.003 240);
+  --weeber-accent-foreground: oklch(0.13 0 0);
+
+  /* Shadow tokens for dark mode */
+  --weeber-shadow-card: 0 1px 3px oklch(0 0 0 / 0.4), 0 4px 16px oklch(0 0 0 / 0.3);
+  --weeber-shadow-card-hover: 0 2px 6px oklch(0 0 0 / 0.5), 0 8px 24px oklch(0 0 0 / 0.35);
+  --weeber-shadow-sidebar: 2px 0 16px oklch(0 0 0 / 0.4);
+  --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.5), 0 1px 4px oklch(0 0 0 / 0.3);
 
   --weeber-success: oklch(0.6 0.14 150);
-  --weeber-success-soft: oklch(0.27 0.05 150);
+  --weeber-success-soft: oklch(0.25 0.06 150);
   --weeber-warning: oklch(0.75 0.15 80);
-  --weeber-warning-soft: oklch(0.3 0.06 80);
+  --weeber-warning-soft: oklch(0.28 0.07 80);
   --weeber-error: oklch(0.62 0.2 25);
-  --weeber-error-soft: oklch(0.28 0.06 25);
+  --weeber-error-soft: oklch(0.26 0.07 25);
 
   --background: var(--weeber-paper);
   --foreground: var(--weeber-ink);
@@ -433,7 +505,7 @@
   --border: var(--weeber-border);
   --input: var(--weeber-border);
   --ring: oklch(0.5 0 0);
-  --sidebar: oklch(0.11 0 0);
+  --sidebar: oklch(0.1 0.003 240);
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);

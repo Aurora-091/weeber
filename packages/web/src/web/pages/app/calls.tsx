@@ -171,7 +171,6 @@ export function UserCallsPage() {
             <PillToggle
               options={[
                 { label: "All", value: "all" as StatusFilter },
-                { label: "In Progress", value: "in-progress" as StatusFilter },
                 { label: "Completed", value: "completed" as StatusFilter },
                 { label: "Failed", value: "failed" as StatusFilter },
               ]}
@@ -200,12 +199,12 @@ export function UserCallsPage() {
           {filteredRows.length === 0 ? (
             <EmptyState title="No matching calls" description="Try adjusting your filters or search query." />
           ) : (
-            <div className="content-fade-in divide-y divide-border overflow-hidden rounded-lg border border-border">
+            <div className="card-weeber content-fade-in divide-y divide-border overflow-hidden">
               {filteredRows.map((call) => (
                 <Link
                   key={call.id}
                   href={appPath(`/calls/${call.id}`)}
-                  className={`flex items-center gap-4 px-5 transition-all duration-150 hover:bg-muted/60 hover:border-foreground/10 hover:scale-[1.005] ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
+                  className={`flex items-center gap-4 px-5 transition-colors duration-150 hover:bg-muted/40 ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
                   style={{ paddingTop: "var(--shell-row-py)", paddingBottom: "var(--shell-row-py)" }}
                 >
                   <div className="shrink-0">

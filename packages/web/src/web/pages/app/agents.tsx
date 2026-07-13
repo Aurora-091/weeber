@@ -252,7 +252,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
   }
 
   return (
-    <div className="space-y-5 border-t border-border bg-muted/40 p-5">
+    <div className="card-weeber space-y-5 p-6">
       <div className="flex justify-end">
         <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
       </div>
