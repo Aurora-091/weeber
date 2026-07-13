@@ -4,6 +4,19 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — Misc-3: revenue-attribution stat cards on the merchant Analytics page
+
+Picked as the lowest-risk, highest-reward item on the Misc list (`WEEBER-PLAN.md`) — turned out to be
+even cheaper than scoped: `computeKpis` (`packages/api/src/voice/org-queries.ts`) already computed
+`kpis.recovery` (recovered revenue/orders/rate) and `kpis.codConfirmation` (confirm rate) as part of
+`/api/app/analytics` — the frontend simply never rendered it. Zero backend or schema changes.
+
+- `pages/app/analytics.tsx`: new stat-card row — "Revenue recovered" (currency-formatted via
+  `Intl.NumberFormat`, keyed off `org.currency`, defaults to INR), "Carts recovered", "Cart recovery
+  rate", "COD confirm rate" — each only rendered when that vertical actually has activity (same
+  pattern the rest of the page already uses for its other sections).
+- Verified: typecheck (3 packages), 9/9 web tests, oxlint 0/0, vite build all clean.
+
 ## 2026-07-13 — Number management gap confirmed and fully spec'd (C2b) — docs only, not built
 
 Traced exactly what exists today for phone numbers, prompted by a direct question about how a

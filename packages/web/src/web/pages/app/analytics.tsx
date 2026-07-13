@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Clock, Wrench, ShieldAlert, TrendingUp, TrendingDown, ChartBar as BarChart3, PhoneOff } from "lucide-react";
+import { Phone, Clock, Wrench, ShieldAlert, TrendingUp, TrendingDown, ChartBar as BarChart3, PhoneOff, Wallet } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -189,6 +189,26 @@ function fmtMs(ms: number | null): string {
   return ms == null ? "—" : `${Math.round(ms)}ms`;
 }
 
+/** The backend already computes this (org-queries.ts's computeKpis) and has since
+ * before this card existed — it just wasn't rendered anywhere (Misc-3, WEEBER-PLAN.md).
+ * Defaults to INR since that's every current org's currency; falls back gracefully
+ * for any org.currency value the backend ever returns. */
+function fmtCurrency(amount: number, currency: string | null): string {
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: currency || "INR",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currency ?? "INR"} ${amount.toFixed(0)}`;
+  }
+}
+
+function fmtPercent(ratio: number | null): string {
+  return ratio == null ? "—" : `${Math.round(ratio * 100)}%`;
+}
+
 /* ─── Main Page ─── */
 
 function useDaysParam(defaultDays = 30): [number, (d: number) => void] {
@@ -270,6 +290,45 @@ export function UserAnalyticsPage() {
               trend={null}
             />
           </div>
+
+          {/* Revenue attribution — cart recovery + COD confirmation. Backend has computed
+           * this all along (kpis.recovery/kpis.codConfirmation); this section just makes
+           * it visible (Misc-3). Only renders per-vertical section when there's activity
+           * to show, same pattern as the rest of this page. */}
+          {(data.kpis?.recovery || data.kpis?.codConfirmation) && (
+            <div className="grid sm:grid-cols-4 gap-4">
+              {data.kpis?.recovery && (
+                <>
+                  <StatCard
+                    label="Revenue recovered"
+                    value={fmtCurrency(data.kpis.recovery.recoveredRevenue, data.currency)}
+                    icon={Wallet}
+                    trend={null}
+                  />
+                  <StatCard
+                    label="Carts recovered"
+                    value={String(data.kpis.recovery.recoveredOrders)}
+                    icon={TrendingUp}
+                    trend={null}
+                  />
+                  <StatCard
+                    label="Cart recovery rate"
+                    value={fmtPercent(data.kpis.recovery.recoveryRate)}
+                    icon={TrendingUp}
+                    trend={null}
+                  />
+                </>
+              )}
+              {data.kpis?.codConfirmation && (
+                <StatCard
+                  label="COD confirm rate"
+                  value={fmtPercent(data.kpis.codConfirmation.confirmRate)}
+                  icon={Phone}
+                  trend={null}
+                />
+              )}
+            </div>
+          )}
 
           {/* Call volume time-series chart */}
           {data.dailyVolume && data.dailyVolume.length > 0 && (

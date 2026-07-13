@@ -349,13 +349,15 @@ immediately so they can be picked up together in one pass instead of as scattere
   where the agent has to navigate *someone else's* phone tree (e.g. calling an insurer, a courier), not
   for Weeber's current inbound/outbound-to-a-known-number flows — low priority until that need is real.
 
-- [ ] **Misc-3 — Revenue-attribution ("₹ recovered") isn't actually shown in the merchant dashboard.**
-  Backend is real and tested (`scheduled_calls.recoveredAmount`/`recoveredOrderId`, B3 above) — but
-  grepped `pages/app/analytics.tsx` and `pages/app/home.tsx` for it and found nothing. The data exists,
-  nothing displays it. This is the exact BiteSpeed-style "₹ recovered, not just call counts" framing the
-  platform teardown recommends leading with — currently the number literally isn't on screen anywhere a
-  merchant would see it. Cheap fix once picked up: one stat card on Home or Analytics reading
-  `SUM(recoveredAmount)` for the org.
+- [x] **Misc-3 — Revenue-attribution ("₹ recovered") now shown in the merchant dashboard.**
+  Backend was already real and tested (`scheduled_calls.recoveredAmount`/`recoveredOrderId`, B3
+  above) — turned out `computeKpis` (`voice/org-queries.ts`) had *already computed* `kpis.recovery`
+  (revenue, orders, rate) and `kpis.codConfirmation` (confirm rate) as part of `/api/app/analytics`;
+  the frontend just never rendered it. Fixed 2026-07-13: `pages/app/analytics.tsx` now shows "Revenue
+  recovered" (currency-formatted via `org.currency`, defaults to INR), "Carts recovered", "Cart
+  recovery rate", and "COD confirm rate" stat cards — only rendered when that vertical has activity,
+  matching the page's existing pattern. Zero backend changes, zero schema changes — the data was
+  already there.
 
 - [ ] **Misc-4 — Live in-call SMS tool doesn't exist; SMS is post-call-only today.** The cart-recovery
   persona prompt has the agent say "I can send the checkout link again by SMS — should I?" as if it can
