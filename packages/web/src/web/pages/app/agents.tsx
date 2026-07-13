@@ -73,6 +73,9 @@ type AgentConfigRow = {
     toolsEnabled: string[] | null;
     guardrails: { topicBoundaryStrictness?: string; injectionSensitivity?: string; abuseHandlingEnabled?: boolean } | null;
     enabled: boolean;
+    firstCallDelayMinutes: number | null;
+    retryDelayMinutes: number | null;
+    maxAttempts: number | null;
   } | null;
 };
 
@@ -93,6 +96,12 @@ type FormState = {
   injectionSensitivity: string;
   abuseHandlingEnabled: boolean;
   enabled: boolean;
+  /** Empty string = "use the platform default" — kept as strings since these
+   * are plain number inputs; parsed to number|undefined at submit time in
+   * formToAgentFrame. */
+  firstCallDelayMinutes: string;
+  retryDelayMinutes: string;
+  maxAttempts: string;
 };
 
 function toFormState(row: AgentConfigRow): FormState {
@@ -114,6 +123,9 @@ function toFormState(row: AgentConfigRow): FormState {
     injectionSensitivity: c?.guardrails?.injectionSensitivity ?? "medium",
     abuseHandlingEnabled: c?.guardrails?.abuseHandlingEnabled ?? true,
     enabled: c?.enabled ?? true,
+    firstCallDelayMinutes: c?.firstCallDelayMinutes != null ? String(c.firstCallDelayMinutes) : "",
+    retryDelayMinutes: c?.retryDelayMinutes != null ? String(c.retryDelayMinutes) : "",
+    maxAttempts: c?.maxAttempts != null ? String(c.maxAttempts) : "",
   };
 }
 
@@ -152,6 +164,9 @@ function formToAgentFrame(form: FormState) {
       abuseHandlingEnabled: form.abuseHandlingEnabled,
     },
     enabled: form.enabled,
+    firstCallDelayMinutes: form.firstCallDelayMinutes.trim() ? Number(form.firstCallDelayMinutes) : undefined,
+    retryDelayMinutes: form.retryDelayMinutes.trim() ? Number(form.retryDelayMinutes) : undefined,
+    maxAttempts: form.maxAttempts.trim() ? Number(form.maxAttempts) : undefined,
   };
 }
 
@@ -448,6 +463,59 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
                   />
                   End call on sustained abuse
                 </label>
+              </div>
+            </div>
+
+            {/* Retry cadence — per-org override, empty = platform default */}
+            <SectionHeader>Retry cadence</SectionHeader>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Leave any field blank to use the platform default. Max attempts is capped at 20 either way.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label htmlFor={`first-call-delay-${row.templateKey}`} className={labelClass}>
+                  Delay before first call (minutes)
+                </label>
+                <input
+                  id={`first-call-delay-${row.templateKey}`}
+                  type="number"
+                  min={0}
+                  max={43200}
+                  value={form.firstCallDelayMinutes}
+                  onChange={(e) => setForm({ ...form, firstCallDelayMinutes: e.target.value })}
+                  placeholder="Platform default"
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label htmlFor={`retry-delay-${row.templateKey}`} className={labelClass}>
+                  Delay between retries (minutes)
+                </label>
+                <input
+                  id={`retry-delay-${row.templateKey}`}
+                  type="number"
+                  min={0}
+                  max={43200}
+                  value={form.retryDelayMinutes}
+                  onChange={(e) => setForm({ ...form, retryDelayMinutes: e.target.value })}
+                  placeholder="Platform default"
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label htmlFor={`max-attempts-${row.templateKey}`} className={labelClass}>
+                  Max attempts (1–20)
+                </label>
+                <input
+                  id={`max-attempts-${row.templateKey}`}
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={form.maxAttempts}
+                  onChange={(e) => setForm({ ...form, maxAttempts: e.target.value })}
+                  placeholder="Platform default"
+                  className={fieldClass}
+                />
               </div>
             </div>
 

@@ -99,5 +99,16 @@ export const AgentFrameSchema = z.object({
   toolsEnabled: z.array(z.enum(AVAILABLE_TOOL_NAMES)).optional(),
   guardrails: GuardrailSettingsSchema.optional(),
   enabled: z.boolean().optional(),
+  /**
+   * Per-org retry cadence overrides (issue 3 feature) — see
+   * voice/retry-config.ts for the resolution logic and platform defaults.
+   * Unset = use the platform default. maxAttempts capped at 20 — the
+   * cap exists specifically so this can't be configured into an
+   * effectively-unlimited or abusive call volume ("he can't call 100
+   * times").
+   */
+  firstCallDelayMinutes: z.number().int().min(0).max(43200).optional(),
+  retryDelayMinutes: z.number().int().min(0).max(43200).optional(),
+  maxAttempts: z.number().int().min(1).max(20).optional(),
 });
 export type AgentFrame = z.infer<typeof AgentFrameSchema>;

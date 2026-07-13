@@ -10,6 +10,7 @@ import { isValidE164 } from "../../voice/validation";
 import { eraseOrgDataForPhoneNumber } from "../../voice/compliance/adapters";
 import { resilientCall } from "../../voice/integrations/resilient-fetch";
 import { advanceWorkflow } from "../../voice/workflows/graph-engine";
+import { resolveRetryConfig } from "../../voice/retry-config";
 
 /**
  * Weeber <-> weebersh contract v1.5 — outbound direction (weebersh calls
@@ -162,7 +163,8 @@ shopify
     }
 
     const orgId = await resolveOrgIdForShop(shop);
-    const delayMinutes = Number(process.env.SHOPIFY_CART_RECOVERY_DELAY_MINUTES ?? 45);
+    const retryConfig = await resolveRetryConfig(orgId, "shopify-cart-recovery");
+    const delayMinutes = retryConfig.firstCallDelayMinutes;
 
     // Check if org has a graph-based workflow template for this trigger
     const graphTemplate = await findActiveWorkflowTemplate(orgId, "checkout_abandoned");
@@ -194,13 +196,15 @@ shopify
         console.error(`[shopify/checkouts] graph-engine advance failed for run ${run.id}`, err),
       );
     } else {
-      // Legacy env-var path — direct scheduledCalls insert
+      // Legacy path — direct scheduledCalls insert. maxAttempts/delay now
+      // come from resolveRetryConfig (org override, falling back to the
+      // platform default) instead of reading the env var directly here.
       await db.insert(scheduledCalls).values({
         toNumber: phone,
         workflowName: "shopify-cart-recovery",
         persona: "shopify-cart-recovery",
         attempt: 1,
-        maxAttempts: Number(process.env.SHOPIFY_CART_RECOVERY_MAX_ATTEMPTS ?? 2),
+        maxAttempts: retryConfig.maxAttempts,
         runAt: new Date(Date.now() + delayMinutes * 60 * 1000),
         status: "pending",
         orgId,
@@ -325,13 +329,14 @@ shopify
       (gateways ?? []).some((g) => /cash_on_delivery|cod/i.test(g)) || financialStatus === "pending";
 
     if (isCod && phone && isValidE164(phone)) {
+      const codRetryConfig = await resolveRetryConfig(orgId, "shopify-cod-confirmation");
       await db.insert(scheduledCalls).values({
         toNumber: phone,
         workflowName: "shopify-cod-confirmation",
         persona: "shopify-cod-confirmation",
         attempt: 1,
-        maxAttempts: Number(process.env.SHOPIFY_COD_MAX_ATTEMPTS ?? 3),
-        runAt: new Date(Date.now() + Number(process.env.SHOPIFY_COD_DELAY_MINUTES ?? 30) * 60 * 1000),
+        maxAttempts: codRetryConfig.maxAttempts,
+        runAt: new Date(Date.now() + codRetryConfig.firstCallDelayMinutes * 60 * 1000),
         status: "pending",
         orgId,
         metadata: { shop, orderId },
@@ -362,15 +367,15 @@ shopify
     }
 
     const orgId = await resolveOrgIdForShop(shop);
-    const delayDays = Number(process.env.SHOPIFY_FEEDBACK_DELAY_DAYS ?? 3);
+    const feedbackRetryConfig = await resolveRetryConfig(orgId, "shopify-feedback");
 
     await db.insert(scheduledCalls).values({
       toNumber: phone,
       workflowName: "shopify-feedback",
       persona: "shopify-feedback",
       attempt: 1,
-      maxAttempts: 1, // feedback calls don't retry — a missed call just means no feedback this time
-      runAt: new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000),
+      maxAttempts: feedbackRetryConfig.maxAttempts, // feedback calls don't retry by default — a missed call just means no feedback this time
+      runAt: new Date(Date.now() + feedbackRetryConfig.firstCallDelayMinutes * 60 * 1000),
       status: "pending",
       orgId,
       metadata: { shop, orderId },

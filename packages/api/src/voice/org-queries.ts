@@ -126,6 +126,9 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     llmModel: frame.llmModel,
     toolsEnabled: frame.toolsEnabled,
     guardrails: frame.guardrails,
+    firstCallDelayMinutes: frame.firstCallDelayMinutes,
+    retryDelayMinutes: frame.retryDelayMinutes,
+    maxAttempts: frame.maxAttempts,
     updatedAt: new Date(),
   };
   const [row] = await db
