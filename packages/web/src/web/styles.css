@@ -557,13 +557,13 @@
 }
 
 /* ─── Sidebar mobile sheet — spring open/close ───────────────────────────── */
-.theme-weeber [data-radix-dialog-content][data-side="left"] {
+.theme-weeber [data-slot="sheet-content"][data-side="left"] {
   transform-origin: left center;
 }
-.theme-weeber [data-radix-dialog-content][data-state="open"] {
+.theme-weeber [data-slot="sheet-content"][data-state="open"] {
   animation: sidebar-slide-in 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.theme-weeber [data-radix-dialog-content][data-state="closed"] {
+.theme-weeber [data-slot="sheet-content"][data-state="closed"] {
   animation: sidebar-slide-out 0.22s cubic-bezier(0.4, 0, 0.6, 1);
 }
 

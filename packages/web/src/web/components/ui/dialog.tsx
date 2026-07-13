@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { usePortalContainer } from "@/lib/portal-container"
 
 function Dialog({
   ...props
@@ -18,9 +19,17 @@ function DialogTrigger({
 }
 
 function DialogPortal({
+  container,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  const shellContainer = usePortalContainer()
+  return (
+    <DialogPrimitive.Portal
+      data-slot="dialog-portal"
+      container={container ?? shellContainer ?? undefined}
+      {...props}
+    />
+  )
 }
 
 function DialogClose({

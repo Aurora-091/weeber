@@ -4,6 +4,7 @@ import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../lib/theme";
+import { PortalContainerContext } from "../../lib/portal-container";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "../ui/sheet";
 import { Toaster } from "../ui/sonner";
 import { CommandPalette, type PaletteAction } from "./command-palette";
@@ -265,16 +266,20 @@ export function AppShell({
 
   const activeCollapsed = collapsible && collapsed;
 
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+
   return (
     <SidebarContext.Provider value={{ collapsed: activeCollapsed, toggle: toggleCollapsed }}>
       <TooltipProvider>
         <div
+          ref={setPortalContainer}
           className={cn(
             "theme-weeber min-h-screen bg-background text-foreground font-sans",
             theme === "dark" && "dark",
             density === "dense" ? "shell-dense" : "shell-spacious",
           )}
         >
+          <PortalContainerContext.Provider value={portalContainer}>
           <CommandPalette nav={nav} actions={actions} />
           <Toaster position="bottom-right" />
           <div className="flex min-h-screen">
@@ -356,6 +361,7 @@ export function AppShell({
               </main>
             </div>
           </div>
+          </PortalContainerContext.Provider>
         </div>
       </TooltipProvider>
     </SidebarContext.Provider>
