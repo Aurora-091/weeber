@@ -165,7 +165,7 @@ export function EnterpriseDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="marketing sm:max-w-[560px] p-0 !bg-white dark:!bg-[#0A0A0A] text-[var(--m-text)] border border-[#E6E5E2] dark:border-[rgba(255,255,255,0.12)] shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_24px_80px_-12px_rgba(0,0,0,0.7)] overflow-hidden [&_button[data-slot=dialog-close]]:text-[var(--m-text-secondary)] [&_button[data-slot=dialog-close]]:hover:text-[var(--m-text)]">
+      <DialogContent className="marketing sm:max-w-[560px] p-0 bg-[var(--m-bg)] text-[var(--m-text)] border border-[var(--m-border)] shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)] overflow-hidden [&_button[data-slot=dialog-close]]:text-[var(--m-text-secondary)] [&_button[data-slot=dialog-close]]:hover:text-[var(--m-text)]">
         {submitted ? (
           <div className="px-8 pt-8 pb-8">
             <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[#22C55E]/10 border border-[#22C55E]/20 mb-6">
@@ -177,7 +177,7 @@ export function EnterpriseDialog({ open, onOpenChange }: Props) {
                 Our enterprise team reviews every inquiry personally.
               </DialogDescription>
             </DialogHeader>
-            <div className="mt-6 flex items-center gap-3 px-4 py-3.5 bg-[#F3F2EF] dark:bg-[#141414] border border-[#E6E5E2] dark:border-[rgba(255,255,255,0.08)] rounded-lg">
+            <div className="mt-6 flex items-center gap-3 px-4 py-3.5 bg-[var(--m-surface)] border border-[var(--m-border)] rounded-lg">
               <Mail className="w-4 h-4 text-[var(--m-text-secondary)] flex-shrink-0" />
               <span className="text-sm text-[var(--m-text)] truncate flex-1">{formData.email}</span>
               <span className="text-[11px] font-mono text-[#22C55E] bg-[#22C55E]/10 px-2 py-0.5 rounded font-medium">Submitted</span>

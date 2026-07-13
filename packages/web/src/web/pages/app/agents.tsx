@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,7 +11,6 @@ import { SkeletonCards } from "../../components/shell/skeletons";
 import { Switch } from "../../components/ui/switch";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
-import { cn } from "../../lib/utils";
 
 /**
  * User agent config — the same "frame" form as the admin panel's
@@ -613,7 +612,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
 
 export function UserAgentsPage() {
   const { vertical } = useUser();
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const configs = useQuery({
     queryKey: ["app-agent-configs"],
@@ -624,13 +623,45 @@ export function UserAgentsPage() {
     },
   });
   const rows = configs.data?.agentConfigs ?? [];
+  const activeRow = rows.find((r) => r.templateKey === selectedKey) ?? rows[0] ?? null;
+
+  const firstKey = rows[0]?.templateKey ?? null;
+  useEffect(() => {
+    if (!selectedKey && firstKey) {
+      setSelectedKey(firstKey);
+    }
+  }, [selectedKey, firstKey]);
 
   return (
     <div className="page-enter">
-      <PageHeader
-        title="Agents"
-        description="Tune how each agent sounds and what it says. Changes apply from the next call."
-      />
+      {/* Agent switcher pill — only when multiple agents exist */}
+      {rows.length > 1 && activeRow && (
+        <div className="mb-5 flex items-center gap-3 flex-wrap">
+          <select
+            value={activeRow.templateKey}
+            onChange={(e) => setSelectedKey(e.target.value)}
+            className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium shadow-xs transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
+          >
+            {rows.map((r) => (
+              <option key={r.templateKey} value={r.templateKey}>
+                {r.config?.name || r.templateName}
+              </option>
+            ))}
+          </select>
+          {activeRow.templateDescription && (
+            <span className="text-xs text-muted-foreground">
+              {activeRow.templateDescription}
+            </span>
+          )}
+        </div>
+      )}
+
+      {rows.length <= 1 && (
+        <PageHeader
+          title="Agents"
+          description="Tune how each agent sounds and what it says. Changes apply from the next call."
+        />
+      )}
 
       {configs.isLoading && <SkeletonCards count={3} lines={2} />}
 
@@ -641,49 +672,9 @@ export function UserAgentsPage() {
         />
       )}
 
-      {rows.length > 0 && (
-        <div className="content-fade-in divide-y divide-border rounded-lg border border-border">
-          {rows.map((row) => {
-            const isExpanded = expandedKey === row.templateKey;
-            const isOn = row.config?.enabled ?? false;
-            return (
-              <div key={row.templateKey} className={isOn ? "edge-success" : "edge-muted"}>
-                <button
-                  onClick={() => setExpandedKey(isExpanded ? null : row.templateKey)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-muted/60"
-                  aria-expanded={isExpanded}
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <span className={cn("inline-block size-2 rounded-full", isOn ? "bg-success pulse-dot" : "bg-muted-foreground/40")} />
-                      {row.config?.name || row.templateName}
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
-                          isOn ? "bg-success-soft text-success" : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {isOn ? "on" : "off"}
-                      </span>
-                    </div>
-                    {row.templateDescription && (
-                      <div className="mt-0.5 text-xs text-muted-foreground">{row.templateDescription}</div>
-                    )}
-                  </div>
-                  {isExpanded ? (
-                    <ChevronUp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                  ) : (
-                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                  )}
-                </button>
-                <div
-                  className="overflow-hidden transition-all duration-300 ease-out"
-                  style={{ maxHeight: isExpanded ? '2000px' : '0' }}
-                >
-                  <AgentEditForm row={row} />
-                </div>
-              </div>
-            );
-          })}
+      {activeRow && (
+        <div key={activeRow.templateKey} className="content-fade-in">
+          <AgentEditForm row={activeRow} />
         </div>
       )}
     </div>

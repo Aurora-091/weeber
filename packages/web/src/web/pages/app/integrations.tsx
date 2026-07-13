@@ -220,7 +220,7 @@ function TelephonyProviderTile({
 }
 
 export function UserIntegrationsPage() {
-  const { me } = useUser();
+  const { me, vertical } = useUser();
   const [storeDomain, setStoreDomain] = useState("");
   // True for the brief window between landing back from weebersh's redirect
   // and the forced status refetch resolving — fills the gap so the page
@@ -478,7 +478,7 @@ export function UserIntegrationsPage() {
       )}
 
       <PageHeader
-        title="Integrations"
+        title={vertical.integrationLabel}
         description="Connect commerce platforms so your agents can react to checkouts, orders, and fulfillments — and export your data whenever you need it."
       />
 

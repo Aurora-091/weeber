@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Redirect, Route, Switch } from "wouter";
-import { Loader2 } from "lucide-react";
+import { Loader as Loader2 } from "lucide-react";
 import { Provider } from "./components/provider";
 import { ChunkErrorBoundary } from "./components/chunk-error-boundary";
 import { AgentFeedback } from "@runablehq/website-runtime";
@@ -101,6 +101,9 @@ const UserBillingPage = lazy(() =>
 );
 const UserIntegrationsPage = lazy(() =>
   import("./pages/app/integrations").then((m) => ({ default: m.UserIntegrationsPage })),
+);
+const UserSettingsPage = lazy(() =>
+  import("./pages/app/settings").then((m) => ({ default: m.UserSettingsPage })),
 );
 const UserShell = lazy(() =>
   import("./components/app/user-shell").then((m) => ({ default: m.UserShell })),
@@ -277,6 +280,11 @@ function App() {
           {showUser && (
             <Route path={appPath("/integrations")}>
               <UserShell><UserIntegrationsPage /></UserShell>
+            </Route>
+          )}
+          {showUser && (
+            <Route path={appPath("/settings")}>
+              <UserShell><UserSettingsPage /></UserShell>
             </Route>
           )}
 

@@ -6,8 +6,6 @@ import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { appFetch } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
-import { useTheme } from "../../lib/theme";
-import { cn } from "../../lib/utils";
 import { appPath } from "../../lib/route-base";
 import { AppShell } from "../shell/app-shell";
 
@@ -36,13 +34,9 @@ export function useUser() {
 
 /** Full-screen themed notice used by every pre-shell state (loading/errors). */
 function Notice({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
-  const { theme } = useTheme();
   return (
     <div
-      className={cn(
-        "theme-weeber min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
-        theme === "dark" && "dark",
-      )}
+      className="min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans"
     >
       <div className="max-w-md text-center">
         <h1 className="text-xl font-medium">{title}</h1>
@@ -131,6 +125,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
     <UserContext.Provider value={{ me: me.data, vertical }}>
       <AppShell
         density="spacious"
+        collapsible
         nav={vertical.nav}
         brand={<span className="font-serif text-lg font-medium tracking-tight">Weeber</span>}
         footer={

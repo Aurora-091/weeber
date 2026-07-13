@@ -157,6 +157,42 @@ export const userApp = new Hono<UserEnv>()
   // Everything below requires a resolved org.
   .use("*", requireUserOrg)
 
+  .patch("/settings", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return c.json({ error: "Expected a JSON object" }, 400);
+    }
+    const allowed = ["name", "timezone", "countryCode", "contactEmail"] as const;
+    const updates: Record<string, string | null> = {};
+    for (const key of allowed) {
+      if (key in body) {
+        const val = body[key];
+        if (val !== null && typeof val !== "string") {
+          return c.json({ error: `${key} must be a string or null` }, 400);
+        }
+        updates[key] = val ?? null;
+      }
+    }
+    if (Object.keys(updates).length === 0) {
+      return c.json({ error: "No valid fields to update" }, 400);
+    }
+    await db.update(orgs).set(updates).where(eq(orgs.id, orgId));
+    const org = await getOrg(orgId);
+    return c.json({
+      org: {
+        id: org!.id,
+        name: org!.name,
+        vertical: org!.vertical,
+        planName: org!.planName,
+        currency: org!.currency,
+        countryCode: org!.countryCode,
+        timezone: org!.timezone,
+        contactEmail: org!.contactEmail,
+      },
+    }, 200);
+  })
+
   .get("/agent-configs", async (c) => {
     const merged = await getAgentConfigsForOrg(c.get("userOrgId")!);
     if (!merged) return c.json({ error: "org not found" }, 404);

@@ -4,14 +4,11 @@ import { KeyRound, LogOut } from "lucide-react";
 import { getAdminKey, setAdminKey, clearAdminKey, adminHeaders } from "../../lib/admin-key";
 import { apiFetch } from "../../lib/api";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
-import { useTheme } from "../../lib/theme";
-import { cn } from "../../lib/utils";
 import { AdminLoginForm } from "../../pages/dashboard/admin-login";
 
 type AuthMode = "checking" | "session" | "key-prompt" | "key-verified" | "unauthenticated";
 
 export function AdminKeyGate({ children }: { children: ReactNode }) {
-  const { theme } = useTheme();
   const [mode, setMode] = useState<AuthMode>("checking");
   const [keyInput, setKeyInput] = useState(getAdminKey());
   const [showKeyForm, setShowKeyForm] = useState(false);
@@ -56,7 +53,7 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
 
   if (mode === "checking") {
     return (
-      <div className={cn("theme-weeber min-h-screen flex items-center justify-center bg-background", theme === "dark" && "dark")}>
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -68,7 +65,7 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
 
   if (mode === "session" && sessionCheck.isError) {
     return (
-      <GateShell theme={theme}>
+      <GateShell>
         <p className="text-sm text-destructive mb-4">
           Your account is not a platform admin. Contact your administrator to get access.
         </p>
@@ -91,7 +88,7 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <GateShell theme={theme}>
+    <GateShell>
       {!showKeyForm ? (
         <>
           <AdminLoginForm
@@ -140,13 +137,10 @@ export function AdminKeyGate({ children }: { children: ReactNode }) {
   );
 }
 
-function GateShell({ children, theme }: { children: ReactNode; theme: string }) {
+function GateShell({ children }: { children: ReactNode }) {
   return (
     <div
-      className={cn(
-        "theme-weeber min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
-        theme === "dark" && "dark",
-      )}
+      className="min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans"
     >
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-2 text-primary mb-4">
