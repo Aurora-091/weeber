@@ -70,6 +70,10 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
     workflow.orgConfig.overrides ?? {},
   );
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  // Tracks whether `overrides` has changed since the last successful save —
+  // `save.isSuccess` alone stays true forever after the first save, which
+  // would keep showing "Saved" even after a later, still-unsaved edit.
+  const [dirty, setDirty] = useState(false);
 
   const editingNode = workflow.graph.nodes.find((n) => n.id === editingNodeId);
   const editingConfig = editingNode
@@ -77,6 +81,7 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
     : null;
 
   const setNodeOverride = useCallback((nodeId: string, key: string, value: unknown) => {
+    setDirty(true);
     setOverrides((prev) => ({
       ...prev,
       [nodeId]: Object.assign({}, prev[nodeId], { [key]: value }),
@@ -92,7 +97,10 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["user-workflows"] }),
+    onSuccess: () => {
+      setDirty(false);
+      qc.invalidateQueries({ queryKey: ["user-workflows"] });
+    },
   });
 
   return (
@@ -109,9 +117,9 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
           <span className="text-muted-foreground/40">/</span>
           <h1 className="font-medium text-sm truncate">{workflow.name}</h1>
         </div>
-        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
           {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
-          {save.isSuccess ? "Saved" : "Save changes"}
+          {!dirty && save.isSuccess ? "Saved" : "Save changes"}
         </Button>
       </div>
       {save.isError && (
@@ -267,7 +275,14 @@ export function UserWorkflowsListPage() {
 
       {workflows.isLoading && <SkeletonCards count={2} lines={2} />}
 
-      {!workflows.isLoading && rows.length === 0 && (
+      {workflows.isError && (
+        <EmptyState
+          title="Couldn't load your workflows"
+          description="Something went wrong reaching the server — try refreshing the page."
+        />
+      )}
+
+      {!workflows.isLoading && !workflows.isError && rows.length === 0 && (
         <EmptyState
           title="No workflows available"
           description="Workflow templates will appear here once your store is connected."
@@ -310,6 +325,14 @@ export function UserWorkflowDetailPage() {
   const workflow = workflows.data?.workflows.find((w) => w.id === id);
 
   if (workflows.isLoading) return <SkeletonCards count={1} lines={6} />;
+  if (workflows.isError) {
+    return (
+      <EmptyState
+        title="Couldn't load this workflow"
+        description="Something went wrong reaching the server — try refreshing the page."
+      />
+    );
+  }
   if (!workflow) return <EmptyState title="Workflow not found" description="This workflow doesn't exist." />;
 
   return (

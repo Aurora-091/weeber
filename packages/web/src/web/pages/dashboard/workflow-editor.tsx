@@ -79,12 +79,31 @@ let nodeCounter = 0;
 function EditorInner({ template }: { template: TemplateResponse }) {
   const qc = useQueryClient();
   const initial = useMemo(() => graphToFlow(template.graph), [template.graph]);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const [nodes, setNodes, onNodesChangeRaw] = useNodesState(initial.nodes);
+  const [edges, setEdges, onEdgesChangeRaw] = useEdgesState(initial.edges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+  // Tracks whether the graph has changed since the last successful save —
+  // `save.isSuccess` alone stays true forever after the first save, which
+  // would keep showing "Saved" even after a later, still-unsaved edit
+  // (node drag, new node, delete, config/branch edit).
+  const [dirty, setDirty] = useState(false);
+  const onNodesChange = useCallback<typeof onNodesChangeRaw>(
+    (changes) => {
+      setDirty(true);
+      onNodesChangeRaw(changes);
+    },
+    [onNodesChangeRaw],
+  );
+  const onEdgesChange = useCallback<typeof onEdgesChangeRaw>(
+    (changes) => {
+      setDirty(true);
+      onEdgesChangeRaw(changes);
+    },
+    [onEdgesChangeRaw],
+  );
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
@@ -99,6 +118,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         type: "branch",
         data: { branch: isSplit ? "default" : undefined },
       } as Edge;
+      setDirty(true);
       setEdges((eds) => addEdge(edge, eds));
     },
     [nodes, setEdges],
@@ -137,6 +157,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         position,
         data: { nodeType: type, config: defaultConfigs[type], label: type },
       };
+      setDirty(true);
       setNodes((nds) => [...nds, newNode]);
     },
     [reactFlowInstance, setNodes],
@@ -155,22 +176,28 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         throw new Error((err as { error?: string; details?: string[] }).details?.join(", ") || (err as { error?: string }).error || `${res.status}`);
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workflow-template", template.id] }),
+    onSuccess: () => {
+      setDirty(false);
+      qc.invalidateQueries({ queryKey: ["workflow-template", template.id] });
+    },
   });
 
   const loadExample = useCallback(() => {
     const { nodes: n, edges: e } = graphToFlow(CART_RECOVERY_GRAPH);
+    setDirty(true);
     setNodes(n);
     setEdges(e);
   }, [setNodes, setEdges]);
 
   const deleteSelected = useCallback(() => {
     if (selectedNodeId) {
+      setDirty(true);
       setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
       setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
       setSelectedNodeId(null);
     }
     if (selectedEdgeId) {
+      setDirty(true);
       setEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
       setSelectedEdgeId(null);
     }
@@ -178,6 +205,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
 
   const updateNodeConfig = useCallback(
     (nodeId: string, config: Record<string, unknown>) => {
+      setDirty(true);
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, config } } : n,
@@ -189,6 +217,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
 
   const updateEdgeBranch = useCallback(
     (edgeId: string, branch: string) => {
+      setDirty(true);
       setEdges((eds) =>
         eds.map((e) =>
           e.id === edgeId ? { ...e, data: { ...e.data, branch }, label: branch } : e,
@@ -223,9 +252,9 @@ function EditorInner({ template }: { template: TemplateResponse }) {
               Delete
             </Button>
           )}
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
             {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
-            {save.isSuccess ? "Saved" : "Save"}
+            {!dirty && save.isSuccess ? "Saved" : "Save"}
           </Button>
         </div>
       </div>

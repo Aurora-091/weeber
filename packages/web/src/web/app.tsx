@@ -129,10 +129,10 @@ function RouteFallback() {
   );
 }
 
-function Dashboard({ children }: { children: React.ReactNode }) {
+function Dashboard({ children, fullBleed }: { children: React.ReactNode; fullBleed?: boolean }) {
   return (
     <AdminKeyGate>
-      <DashboardShell>{children}</DashboardShell>
+      <DashboardShell fullBleed={fullBleed}>{children}</DashboardShell>
     </AdminKeyGate>
   );
 }
@@ -175,7 +175,7 @@ function App() {
           )}
           {showAdmin && (
             <Route path={adminPath("/agents")}>
-              <Dashboard><AgentsPage /></Dashboard>
+              <Dashboard fullBleed><AgentsPage /></Dashboard>
             </Route>
           )}
           {showAdmin && (
@@ -276,7 +276,7 @@ function App() {
           )}
           {showUser && (
             <Route path={appPath("/agents")}>
-              <UserShell><UserAgentsPage /></UserShell>
+              <UserShell fullBleed><UserAgentsPage /></UserShell>
             </Route>
           )}
           {showUser && (

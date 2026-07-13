@@ -609,21 +609,18 @@ export function AgentsPage() {
   const rows = configs.data && "agentConfigs" in configs.data ? (configs.data.agentConfigs as AgentConfigRow[]) : [];
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Bot className="size-5 text-primary" />
-          Agents
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-          Configure identity, voice, model, tools, and guardrails per agent — the fixed "frame" every agent is
-          built from, whether set here by hand or (later) by describing the agent you want.
-        </p>
-      </div>
-
-      <div className="mb-6 max-w-xs">
-        <label htmlFor="org-select" className={labelClass()}>Org</label>
-        <select id="org-select" value={orgId} onChange={(e) => setOrgId(e.target.value)} className={selectClass()}>
+    <div className="flex h-full flex-col">
+      {/* Slim top bar — org picker as a pill, consistent with the merchant
+       * agent console's full-window layout, instead of a large title block
+       * eating vertical space. */}
+      <div className="flex shrink-0 items-center gap-3 flex-wrap border-b border-border pb-4">
+        <Bot className="size-4 text-primary shrink-0" aria-hidden />
+        <select
+          aria-label="Select org"
+          value={orgId}
+          onChange={(e) => setOrgId(e.target.value)}
+          className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium shadow-xs transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
+        >
           <option value="">Select an org…</option>
           {orgRows.map((o) => (
             <option key={o.id} value={o.id}>
@@ -631,17 +628,27 @@ export function AgentsPage() {
             </option>
           ))}
         </select>
+        <span className="text-xs text-muted-foreground">
+          Configure identity, voice, model, tools, and guardrails per agent.
+        </span>
       </div>
 
-      {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Select an org to configure its agents.</div>}
+      <div className="flex-1 overflow-y-auto pt-5">
+        {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Select an org to configure its agents.</div>}
 
-      {orgId && configs.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {orgId && !configs.isLoading && rows.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-          No agent templates found for this org's vertical.
-        </div>
-      )}
+        {orgId && configs.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {orgId && configs.isError && (
+          <div className="rounded-lg border border-dashed border-destructive/40 p-10 text-center text-sm text-destructive">
+            Couldn't load agents for this org — try refreshing the page.
+          </div>
+        )}
+        {orgId && !configs.isLoading && !configs.isError && rows.length === 0 && (
+          <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+            No agent templates found for this org's vertical.
+          </div>
+        )}
 
+        {orgId && rows.length > 0 && (
       <div className="rounded-lg border border-border divide-y divide-border">
         {rows.map((row) => {
           const isExpanded = expandedKey === row.templateKey;
@@ -673,6 +680,8 @@ export function AgentsPage() {
             </div>
           );
         })}
+      </div>
+        )}
       </div>
     </div>
   );

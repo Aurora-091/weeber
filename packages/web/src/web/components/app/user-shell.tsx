@@ -64,7 +64,7 @@ function Notice({ title, body, action }: { title: string; body: string; action?:
  * only (impersonation removed — see DECISIONS.md). GET /api/app/me both
  * resolves the org and performs the first-login bootstrap server-side.
  */
-export function UserShell({ children }: { children: React.ReactNode }) {
+export function UserShell({ children, fullBleed }: { children: React.ReactNode; fullBleed?: boolean }) {
   const queryClient = useQueryClient();
   // undefined = still resolving, null = definitely signed out
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -138,6 +138,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
       <AppShell
         density="spacious"
         collapsible
+        fullBleed={fullBleed}
         nav={vertical.nav}
         brand={<span className="font-display text-base font-semibold tracking-tight">Weeber</span>}
         footer={

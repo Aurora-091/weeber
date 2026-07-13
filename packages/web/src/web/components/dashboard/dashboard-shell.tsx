@@ -38,10 +38,12 @@ function Brand() {
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({ children, fullBleed }: { children: React.ReactNode; fullBleed?: boolean }) {
   return (
     <AppShell
       density="dense"
+      collapsible
+      fullBleed={fullBleed}
       nav={NAV}
       brand={<Brand />}
       footer={

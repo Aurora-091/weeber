@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useUser } from "../../components/app/user-shell";
-import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Switch } from "../../components/ui/switch";
@@ -636,50 +635,61 @@ export function UserAgentsPage() {
   }, [selectedKey, firstKey]);
 
   return (
-    <div className="page-enter">
-      {/* Agent switcher pill — only when multiple agents exist */}
-      {rows.length > 1 && activeRow && (
-        <div className="mb-5 flex items-center gap-3 flex-wrap">
-          <select
-            value={activeRow.templateKey}
-            onChange={(e) => setSelectedKey(e.target.value)}
-            className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium shadow-xs transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
-          >
-            {rows.map((r) => (
-              <option key={r.templateKey} value={r.templateKey}>
-                {r.config?.name || r.templateName}
-              </option>
-            ))}
-          </select>
-          {activeRow.templateDescription && (
-            <span className="text-xs text-muted-foreground">
-              {activeRow.templateDescription}
-            </span>
-          )}
-        </div>
-      )}
+    <div className="page-enter flex h-full flex-col">
+      {/* Full-window agent console: a slim top bar with just the
+       * agent-switcher pill (always shown, even with a single agent, so the
+       * chrome stays consistent as more agents get added) — no separate
+       * PageHeader eating vertical space. The form below fills the rest of
+       * the window and scrolls independently. */}
+      <div className="flex shrink-0 items-center gap-3 flex-wrap border-b border-border pb-4">
+        {activeRow ? (
+          <>
+            <select
+              value={activeRow.templateKey}
+              onChange={(e) => setSelectedKey(e.target.value)}
+              aria-label="Select agent"
+              className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium shadow-xs transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
+            >
+              {rows.map((r) => (
+                <option key={r.templateKey} value={r.templateKey}>
+                  {r.config?.name || r.templateName}
+                </option>
+              ))}
+            </select>
+            {activeRow.templateDescription && (
+              <span className="text-xs text-muted-foreground truncate">
+                {activeRow.templateDescription}
+              </span>
+            )}
+          </>
+        ) : (
+          <h1 className="text-sm font-medium">Agents</h1>
+        )}
+      </div>
 
-      <PageHeader
-        title={rows.length === 1 && activeRow ? (activeRow.config?.name || activeRow.templateName) : "Agents"}
-        description={rows.length === 1 && activeRow
-          ? (activeRow.templateDescription || "Tune how this agent sounds and what it says.")
-          : "Tune how each agent sounds and what it says. Changes apply from the next call."}
-      />
+      <div className="flex-1 overflow-y-auto pt-5">
+        {configs.isLoading && <SkeletonCards count={3} lines={2} />}
 
-      {configs.isLoading && <SkeletonCards count={3} lines={2} />}
+        {configs.isError && (
+          <EmptyState
+            title="Couldn't load your agents"
+            description="Something went wrong reaching the server — try refreshing the page."
+          />
+        )}
 
-      {!configs.isLoading && rows.length === 0 && (
-        <EmptyState
-          title="No agents available yet"
-          description={`Agents appear here once your ${vertical.integrationLabel} store is connected.`}
-        />
-      )}
+        {!configs.isLoading && !configs.isError && rows.length === 0 && (
+          <EmptyState
+            title="No agents available yet"
+            description={`Agents appear here once your ${vertical.integrationLabel} store is connected.`}
+          />
+        )}
 
-      {activeRow && (
-        <div key={activeRow.templateKey} className="content-fade-in">
-          <AgentEditForm row={activeRow} />
-        </div>
-      )}
+        {activeRow && (
+          <div key={activeRow.templateKey} className="content-fade-in max-w-3xl">
+            <AgentEditForm row={activeRow} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

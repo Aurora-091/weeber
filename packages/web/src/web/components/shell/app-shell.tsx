@@ -25,6 +25,11 @@ type AppShellProps = {
   footer?: React.ReactNode;
   actions?: PaletteAction[];
   collapsible?: boolean;
+  /** Opts this page out of the standard max-width/padded page container —
+   * for pages that need the full remaining viewport (e.g. a canvas or a
+   * full-window agent console), not the default article-width reading
+   * layout every other page uses. */
+  fullBleed?: boolean;
   children: React.ReactNode;
 };
 
@@ -220,6 +225,7 @@ export function AppShell({
   footer,
   actions,
   collapsible = false,
+  fullBleed = false,
   children,
 }: AppShellProps) {
   const { theme } = useTheme();
@@ -327,16 +333,21 @@ export function AppShell({
               {banner}
 
               <main
-                className="mx-auto w-full"
-                style={{
-                  maxWidth: "var(--shell-page-max-w)",
-                  padding: "var(--shell-page-py) var(--shell-page-px)",
-                }}
+                className={cn("w-full", fullBleed ? "h-[calc(100vh-3rem)] md:h-screen" : "mx-auto")}
+                style={
+                  fullBleed
+                    ? undefined
+                    : {
+                        maxWidth: "var(--shell-page-max-w)",
+                        padding: "var(--shell-page-py) var(--shell-page-px)",
+                      }
+                }
               >
                 <div
                   key={pageKey}
                   className={cn(
                     "transition-opacity duration-75",
+                    fullBleed ? "h-full" : undefined,
                     isTransitioning ? "opacity-40" : "opacity-100 page-enter",
                   )}
                 >
