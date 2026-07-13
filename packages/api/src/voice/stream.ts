@@ -750,12 +750,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // e.g. POST /calls/outbound) takes precedence when both exist.
             const numberConfig = getNumberConfig(row?.toNumber);
             webhookUrl = resolveWebhookUrl(session?.webhookUrl ?? numberConfig.webhookUrl ?? row?.webhookUrl ?? undefined);
-            const agentConfig = await resolveAgentConfig({
-              explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
-              calledNumber: row?.toNumber,
-              orgId: session?.orgId ?? row?.orgId ?? undefined,
-              templateKey: session?.workflowName ?? undefined,
-            });
+            // Misc-1: a "call my phone" test call carries the merchant's
+            // exact in-progress form state — use it directly and skip the
+            // DB-backed resolution entirely, same as the WS test call does.
+            const agentConfig = session?.resolvedConfigOverride
+              ? session.resolvedConfigOverride
+              : await resolveAgentConfig({
+                  explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
+                  calledNumber: row?.toNumber,
+                  orgId: session?.orgId ?? row?.orgId ?? undefined,
+                  templateKey: session?.workflowName ?? undefined,
+                });
             persona = agentConfig.systemPrompt;
             enabledToolsOverride = agentConfig.enabledTools;
             llmModelOverride = agentConfig.llmModel;

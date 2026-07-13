@@ -239,6 +239,19 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     );
   };
 
+  /** Misc-1: real PSTN callback — admin-side mirror of the merchant
+   * test-call-phone route, same configOverride contract. */
+  const testCallPhoneFetch = async (phone: string) => {
+    return apiFetch(
+      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-phone`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
+      },
+    );
+  };
+
   return (
     <div className="border-t border-border bg-muted/40 p-5">
       <div className="flex justify-end mb-5">
@@ -250,6 +263,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         templateName={row.config?.name || row.templateName}
         chatFetchFn={testChatFetch}
         testCallTokenFetchFn={testCallTokenFetch}
+        testCallPhoneFetchFn={testCallPhoneFetch}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}

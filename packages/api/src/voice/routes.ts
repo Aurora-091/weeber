@@ -61,6 +61,15 @@ const ADMIN_TEST_CALL_WINDOW_MS = 60_000;
 const ADMIN_TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
 const adminTestCallRateLimited = makeFixedWindowLimiter(ADMIN_TEST_CALL_WINDOW_MS, ADMIN_TEST_CALL_MAX_PER_WINDOW);
 
+// Misc-1: real PSTN test call — tighter limiter than the free web test call
+// (adminTestCallRateLimited) since this one has real per-call COGS.
+const ADMIN_TEST_CALL_PHONE_WINDOW_MS = 60_000;
+const ADMIN_TEST_CALL_PHONE_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_PHONE_RATE_LIMIT ?? 3);
+const adminTestCallPhoneRateLimited = makeFixedWindowLimiter(
+  ADMIN_TEST_CALL_PHONE_WINDOW_MS,
+  ADMIN_TEST_CALL_PHONE_MAX_PER_WINDOW,
+);
+
 export const voice = new Hono()
   // Twilio webhook — set this as the phone number's "A call comes in" Voice URL.
   // Also reused as the TwiML endpoint for outbound calls we place ourselves.
@@ -658,6 +667,50 @@ export const voice = new Hono()
     }
     const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}` });
     return c.json({ token }, 201);
+  })
+
+  // Misc-1: admin-side mirror of the merchant test-call-phone route above —
+  // same real-PSTN-callback, in-progress-form-state behavior, gated by
+  // admin key instead of org session.
+  .post("/orgs/:orgId/agent-configs/:templateKey/test-call-phone", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    if (adminTestCallPhoneRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${ADMIN_TEST_CALL_PHONE_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const phone = typeof body?.phone === "string" ? body.phone : "";
+    if (!isValidE164(phone)) {
+      return c.json({ error: "`phone` must be a valid E.164 number, e.g. +15551234567" }, 400);
+    }
+    let configOverride = {};
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+
+    const { buildPreviewAgentConfig } = await import("./agent");
+    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
+    const placed = await placeOutboundCall({ orgId, to: phone });
+    if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
+
+    await sessionStore.set(placed.sessionKey, {
+      callSid: placed.sessionKey,
+      direction: "outbound",
+      orgId,
+      resolvedConfigOverride,
+    });
+
+    return c.json({ callSid: placed.sessionKey, status: placed.status }, 201);
   })
 
   // Dynamic per-provider voice list for the dashboard's voice picker — see

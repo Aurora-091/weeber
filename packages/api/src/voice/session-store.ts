@@ -13,6 +13,8 @@
  * so switching backends is a config change, not a code change anywhere that
  * calls this module.
  */
+import type { ResolvedAgentConfig } from "./agent";
+
 export type CallSession = {
   callSid: string;
   direction: "inbound" | "outbound";
@@ -54,6 +56,17 @@ export type CallSession = {
    * the DB column — see ADR-012.
    */
   capturedState?: Record<string, string>;
+  /**
+   * Misc-1: the Agent Preview's "call my phone" test call passes the
+   * merchant's *unsaved, in-progress* form edits (persona, voice, tools —
+   * everything `buildPreviewAgentConfig`/the WS test call already preview)
+   * straight through, bypassing `orgAgentConfigs` entirely for this one
+   * real PSTN call — see place-outbound-call.ts's test-call-phone route and
+   * stream.ts's use of this field, which short-circuits `resolveAgentConfig`
+   * when present so the call reflects the exact form state, not what's
+   * saved in the DB.
+   */
+  resolvedConfigOverride?: ResolvedAgentConfig;
 };
 
 export type SessionStore = {

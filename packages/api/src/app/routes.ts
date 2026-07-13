@@ -57,6 +57,9 @@ import {
 import { getPlivoStatus, setPlivoByoCredentials } from "../voice/plivo-provisioning";
 import { getExotelStatus, setExotelByoCredentials } from "../voice/exotel-provisioning";
 import { dispatchWebhook, resolveWebhookUrl } from "../voice/webhooks";
+import { isValidE164 } from "../voice/validation";
+import { placeOutboundCall } from "../voice/place-outbound-call";
+import { sessionStore } from "../voice/session-store";
 
 type UserEnv = { Variables: UserSessionVariables };
 
@@ -103,6 +106,13 @@ const previewRateLimited = makeFixedWindowLimiter(PREVIEW_WINDOW_MS, PREVIEW_MAX
 const WEBHOOK_TEST_WINDOW_MS = 60_000;
 const WEBHOOK_TEST_MAX_PER_WINDOW = Number(process.env.WEBHOOK_TEST_RATE_LIMIT ?? 10);
 const webhookTestRateLimited = makeFixedWindowLimiter(WEBHOOK_TEST_WINDOW_MS, WEBHOOK_TEST_MAX_PER_WINDOW);
+
+// Misc-1: real PSTN test call — separate, tighter limiter than the free web
+// test call (testCallRateLimited) since this one has real per-call COGS,
+// not just abuse-prevention concerns.
+const TEST_CALL_PHONE_WINDOW_MS = 60_000;
+const TEST_CALL_PHONE_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_PHONE_RATE_LIMIT ?? 3);
+const testCallPhoneRateLimited = makeFixedWindowLimiter(TEST_CALL_PHONE_WINDOW_MS, TEST_CALL_PHONE_MAX_PER_WINDOW);
 
 // Per-org fixed-window limiter for the agent test-chat sandbox — every
 // message is a real, billed LLM call (same model/provider a live call would
@@ -360,6 +370,52 @@ export const userApp = new Hono<UserEnv>()
     }
     const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: orgId });
     return c.json({ token }, 201);
+  })
+
+  // Misc-1: real PSTN callback from the Agent Preview — "enter your number,
+  // call me". Distinct from the web-based test call above (test-call-token,
+  // no telephony cost): this actually dials out via the org's real
+  // provider, so real STT/LLM/TTS/telephony COGS applies. Own rate limiter
+  // since that's a cost concern, not just abuse prevention. Compliance
+  // gates (DNC/calling-window) are deliberately skipped — this is the
+  // merchant testing their own number, by their own immediate request, not
+  // a cold outbound marketing call.
+  .post("/agent-configs/:templateKey/test-call-phone", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    if (testCallPhoneRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${TEST_CALL_PHONE_MAX_PER_WINDOW} test calls per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const phone = typeof body?.phone === "string" ? body.phone : "";
+    if (!isValidE164(phone)) {
+      return c.json({ error: "`phone` must be a valid E.164 number, e.g. +15551234567" }, 400);
+    }
+    let configOverride = {};
+    if (body && typeof body === "object" && "configOverride" in body && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      configOverride = parsedOverride.data;
+    }
+
+    const { buildPreviewAgentConfig } = await import("../voice/agent");
+    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
+    const placed = await placeOutboundCall({ orgId, to: phone });
+    if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
+
+    await sessionStore.set(placed.sessionKey, {
+      callSid: placed.sessionKey,
+      direction: "outbound",
+      orgId,
+      resolvedConfigOverride,
+    });
+
+    return c.json({ callSid: placed.sessionKey, status: placed.status }, 201);
   })
 
   .get("/voices", async (c) => {

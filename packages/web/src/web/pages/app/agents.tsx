@@ -245,6 +245,16 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
     });
   }
 
+  /** Misc-1: real PSTN callback — same configOverride contract, but hits
+   * test-call-phone instead of test-call-token (real telephony cost). */
+  async function testCallPhoneFetchFn(phone: string) {
+    return appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
+    });
+  }
+
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
@@ -263,6 +273,7 @@ function AgentEditForm({ row }: { row: AgentConfigRow }) {
         templateName={row.config?.name || row.templateName}
         chatFetchFn={chatFetchFn}
         testCallTokenFetchFn={testCallTokenFetchFn}
+        testCallPhoneFetchFn={testCallPhoneFetchFn}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}
