@@ -341,3 +341,42 @@ immediately so they can be picked up together in one pass instead of as scattere
     marketing call) — still validate E.164 format and keep it rate-limited.
   - UI: phone input + "Call me" button next to the existing Preview button in `AgentEditForm`
     (`pages/app/agents.tsx`, `pages/dashboard/agents.tsx`).
+
+- [ ] **Misc-2 — DTMF tool (keypad-tone navigation).** Not built — `voice/tools/*.ts` has no DTMF
+  send/detect capability. This is Vogent's specific telephony-depth differentiator (IVR-tree
+  navigation, "press 1 for billing") and the platform teardown lists DTMF alongside transfer/end-call/
+  send-SMS as a baseline "system tool" every competitor ships. Matters most for any future vertical
+  where the agent has to navigate *someone else's* phone tree (e.g. calling an insurer, a courier), not
+  for Weeber's current inbound/outbound-to-a-known-number flows — low priority until that need is real.
+
+- [ ] **Misc-3 — Revenue-attribution ("₹ recovered") isn't actually shown in the merchant dashboard.**
+  Backend is real and tested (`scheduled_calls.recoveredAmount`/`recoveredOrderId`, B3 above) — but
+  grepped `pages/app/analytics.tsx` and `pages/app/home.tsx` for it and found nothing. The data exists,
+  nothing displays it. This is the exact BiteSpeed-style "₹ recovered, not just call counts" framing the
+  platform teardown recommends leading with — currently the number literally isn't on screen anywhere a
+  merchant would see it. Cheap fix once picked up: one stat card on Home or Analytics reading
+  `SUM(recoveredAmount)` for the org.
+
+- [ ] **Misc-4 — Live in-call SMS tool doesn't exist; SMS is post-call-only today.** The cart-recovery
+  persona prompt has the agent say "I can send the checkout link again by SMS — should I?" as if it can
+  do this live, mid-call. It can't: the only SMS-sending code is `workflows/engine.ts`'s `sendSms`
+  *workflow action* (`case "sendSms":`), which fires after a call ends based on its outcome, not a tool
+  the LLM can invoke mid-conversation. Same shape of gap as the KB issue (A3b) — the prompt promises a
+  live capability the backend only has an async version of. **Bonus finding while checking this:**
+  `sendSms` is hardcoded to `getTwilioClientForOrg` — it doesn't go through the Plivo/Exotel abstraction,
+  so a BYO-Plivo/Exotel org's post-call SMS would silently fail today. Fix both in the same pass: a real
+  `sendSms` tool (mid-call) + route the existing workflow action through the telephony abstraction, not
+  Twilio directly.
+
+- [ ] **Misc-5 — Sentiment isn't captured as structured data.** `calls` table has `disposition` (the
+  outcome) but no `sentiment` column — the platform teardown's recommended post-call fields are
+  "outcome, sentiment, next action," and only the first exists today. Small: add a `sentiment` field,
+  populate it via `setDisposition`'s tool call or a lightweight end-of-call classification pass.
+
+- [ ] **Misc-6 (watch, not a build item) — LiveKit as a future transport-layer swap.**
+  `weeber-stack-decision.report`'s explicit recommendation: don't adopt LiveKit/Pipecat now (Pipecat's
+  Python switch isn't worth it; LiveKit's $0.01/min agent fee is pure margin compression with nothing
+  gained today) — but if/when a single Bun process handling Twilio Media Streams demonstrably can't
+  keep up with call concurrency, LiveKit's self-hosted media server is a reasonable *transport-layer-
+  only* swap underneath Vent's existing compliance/state/dashboard code. Revisit with real load data
+  when C1 (concurrency tiers) becomes a real constraint, not before.
