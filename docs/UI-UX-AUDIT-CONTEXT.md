@@ -1,5 +1,12 @@
 # UI/UX — Audit Context & Checklist
 
+> **STATUS (2026-07-13, later same day): superseded for items 1, 2, 4, 5, 7 — see the checklist in
+> §6 below and `audit/2026-07-13-audit-04-uiux.md` for what actually got fixed/built afterward
+> (theme portal fix = ADR-054, agent full-window layout = ADR-055, Settings page shipped, nav-label
+> fixed, Workflow Canvas shipped with its own new bugs found+fixed). The narrative sections below
+> (§1-§5) describe the *original* bug reports and are kept for historical context/root-cause detail
+> — read §6 first for current status before assuming anything below is still true.
+>
 > **Purpose of this doc**: single entry point for the UI/UX audit pass (to be run in a different
 > chat/agent, not this session). Everything below is *verified against the actual codebase* as of
 > 2026-07-13, not assumed from memory. Related docs are linked inline instead of duplicated.
@@ -147,13 +154,13 @@ in both the nav *and* the page header (i.e. page header should read "Shopify" to
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Theme bug: dialogs/drawers open in wrong theme + old orange color | **Root cause confirmed, not fixed** — see §1 |
-| 2 | Agent page: full-page layout, top pill/dropdown agent switcher, collapsible left sidebar | **Not built** — see §2, needs design decisions first |
-| 3 | Preview drawer (voice test call, orb, text chat) on agent pages | **Shipped** 2026-07-12 (Phase 1+2) — separate from #2, don't redo |
-| 4 | Merchant-side Settings/Profile page | **Missing entirely** — see §3, scope undefined |
-| 5 | Integration nav label says "Shopify" instead of matching page title "Integrations" | **Confirmed inconsistency** — see §4, needs a naming decision |
-| 6 | Old openvent orange/ember theme remnants in components | **Same root cause as #1** (falls back to `:root` defaults outside themed scope) — fixing #1 should resolve most/all of this; audit should re-check after #1's fix for anything still orange that ISN'T inside a portal (would indicate a second, separate source) |
-| 7 | Workflow canvas (drag-drop trigger/wait/call graph) | **Architecture spec'd only** (`docs/workflow-canvas-architecture.md`), no UI or backend built |
+| 1 | Theme bug: dialogs/drawers open in wrong theme + old orange color | **FIXED** (2026-07-13, ADR-054) — `PortalContainerContext` makes Dialog/Sheet/DropdownMenu/Tooltip/Select portal into the themed shell instead of `document.body`; also fixed the dead `[data-radix-dialog-content]` selector (wrong attribute name) found in audit #04 |
+| 2 | Agent page: full-page layout, top pill/dropdown agent switcher, collapsible left sidebar | **BUILT** (2026-07-13, ADR-055) — new `AppShell` `fullBleed` prop, always-visible pill switcher, both `/app/agents` and `/dashboard/agents` |
+| 3 | Preview drawer (voice test call, orb, text chat) on agent pages | **Shipped** 2026-07-12 (Phase 1+2) — separate from #2, don't redo. Re-verified working after #2's layout change (backend suites 19/19, wiring untouched) |
+| 4 | Merchant-side Settings/Profile page | **Shipped** — `pages/app/settings.tsx`, reviewed in audit #04, no action needed |
+| 5 | Integration nav label says "Shopify" instead of matching page title "Integrations" | **FIXED** — both nav and page header now read `vertical.integrationLabel`, verified consistent |
+| 6 | Old openvent orange/ember theme remnants in components | Root cause was the same as #1, now fixed alongside it — a future audit should spot-check for anything still orange that *isn't* portal-related (would indicate a second, separate source), but no such case is known as of this update |
+| 7 | Workflow canvas (drag-drop trigger/wait/call graph) | **BUILT** since this doc was written (`components/canvas/*`, `pages/app/workflows.tsx`, `pages/dashboard/workflow-editor.tsx`) — see `docs/workflow-canvas-architecture.md`'s status note. Audit #04 found and fixed 2 new P1 bugs in it (stale "Saved" state, fetch errors masked as empty/not-found) — never audited before that pass |
 
 ---
 

@@ -2187,5 +2187,78 @@ claim as historical (true as of 2026-07-10, false as of 2026-07-13) rather than 
 
 ---
 
-*Next entry number: ADR-054. Add new entries above this line, keeping numbering sequential and dates
+## ADR-054 — Dialogs/sheets/dropdowns/tooltips/selects render inside the themed shell via a portal-container context (2026-07-13)
+
+**Context:** Audit #04 (`audit/2026-07-13-audit-04-uiux.md`) reconfirmed a bug first documented in
+`docs/UI-UX-AUDIT-CONTEXT.md` §1: every Radix Portal-based overlay (Dialog, Sheet, DropdownMenu, Tooltip)
+defaulted to portaling into `document.body`, outside the shell `<div>` carrying the
+`.theme-weeber`/`.dark` classes (`app-shell.tsx`). Overlays silently fell back to `:root`'s default
+(old ember/light) theme regardless of the user's actual theme. The audit also found a second, stacked bug:
+the mobile nav Sheet's custom slide animation targeted `[data-radix-dialog-content]` — an attribute Radix
+never actually emits — so it was dead on arrival even before the portal issue.
+
+**Decision:** rather than promoting `.theme-weeber`/`.dark` to `<body>` (the audit doc's alternative
+option — simpler in principle, but risks touching the marketing/landing pages, which deliberately never
+read those classes today), added a small `PortalContainerContext`
+(`packages/web/src/web/lib/portal-container.ts`) that `AppShell` provides via a ref to its own themed
+root div. `Dialog`, `Sheet`, `DropdownMenu`, `Tooltip`, and `Select` (shadcn ui/ primitives) all read it
+and pass the DOM node as their Radix `Portal`'s `container`. An explicit `container` prop, if ever passed
+manually by a caller, still wins over the context default. Pages rendered outside any `AppShell`
+(marketing/landing) get `null` from the hook and keep Radix's default `document.body` behavior unchanged
+— `EnterpriseDialog.tsx`'s existing hardcoded `dark:` workaround for exactly this class of bug is
+untouched, by design, since it never sits inside a themed shell to begin with.
+
+Also fixed the dead CSS alongside this: `[data-radix-dialog-content]` → `[data-slot="sheet-content"]`
+(the sheet's real DOM attribute), plus added `data-side={side}` to `SheetContent` so the
+`[data-side="left"]` qualifier has something to match too — both the portal-escape bug and the wrong-
+attribute-name bug are now genuinely fixed, not just one of the two.
+
+`portal-container.ts` is deliberately a standalone module, not exported from `app-shell.tsx` — the ui/
+primitives it's imported into (`sheet.tsx`, `tooltip.tsx`) are themselves imported by `app-shell.tsx`,
+so putting the context there would create a circular import.
+
+**Consequence:** every overlay in the authenticated product (`/app/*`, `/dashboard/*`) now correctly
+inherits whatever theme the shell is in, including any future theme changes — no more per-component
+`dark:` hardcoding needed as a workaround (don't reintroduce that pattern; fix at the shell if a new
+one-off appears). No visual change for anyone already on the correct theme in a non-portaled context;
+this only changes where portaled overlays *render into*, not their content or styling.
+
+---
+
+## ADR-055 — Agent console: full-window layout via a new `AppShell` `fullBleed` opt-out (2026-07-13)
+
+**Context:** long-standing ask (predating this session, referenced in `docs/UI-UX-AUDIT-CONTEXT.md` §2):
+the agent config page should behave like a full-window console — a slim top bar with just an
+agent-switcher pill/dropdown, not the standard article-width `PageHeader` layout every other page uses,
+with the config form filling the remaining viewport.
+
+**Decision:** rather than a one-off layout special-cased into `/app/agents` and `/dashboard/agents`
+directly, added a `fullBleed?: boolean` prop to `AppShell` itself: when set, `<main>` skips the standard
+`max-width`/padding container (`--shell-page-max-w` etc.) in favor of the full remaining viewport height
+(`h-[calc(100vh-3rem)] md:h-screen`, accounting for the mobile topbar). Threaded through `UserShell` and
+`DashboardShell` (both already instantiated fresh per-route in `app.tsx`, e.g.
+`<UserShell><UserAgentsPage /></UserShell>`), so it's opt-in per route rather than a global shell change.
+Only `/app/agents` and `/dashboard/agents` use it today.
+
+`/app/agents` (merchant): the agent-switcher pill (already existed as a conditionally-shown `<select>`)
+is now always visible in a slim top bar, even with a single agent, so the chrome stays consistent as
+more agents get added — replaces the previous `PageHeader` entirely on this page. `/dashboard/agents`
+(admin): same top-bar treatment applied to the existing org picker (now a pill, consistent styling with
+the merchant page), keeping the accordion list of agents below it rather than rebuilding that mechanic —
+lower risk than a full rewrite, same visual language.
+
+Also added `collapsible` to `DashboardShell` (previously only `UserShell` had sidebar icon-collapse) for
+parity between the two shells, and added missing `isError` states to both agent-configs fetches (a
+fetch failure was previously indistinguishable from "no agents configured yet").
+
+**Consequence:** `fullBleed` is available to any future page needing this treatment (the Workflow
+Canvas editor pages are a natural next candidate, not done as part of this ADR). The agent-page
+full-window redesign requested layout decisions the original audit doc flagged as open (collapse-to-
+icons vs. full-hide; pill placement; admin org-picker parity) — resolved here as: icon-collapse (existing
+mechanism, not full-hide), pill replaces the page header entirely, and the admin org-picker gets the same
+pill treatment rather than being dropped.
+
+---
+
+*Next entry number: ADR-056. Add new entries above this line, keeping numbering sequential and dates
 accurate to when the decision was actually made.*

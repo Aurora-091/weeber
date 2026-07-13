@@ -1,5 +1,18 @@
 # Weeber Workflow Canvas — Architecture + Bolt Build Prompt
 
+> **STATUS (2026-07-13): BUILT.** This doc was the original architecture/build spec — the canvas
+> described below now exists in code: `packages/web/src/web/components/canvas/{WorkflowNode,
+> BranchEdge,NodeConfigPanel,NodePalette,types,node-styles,seed-graph}.tsx`,
+> `pages/app/workflows.tsx` (merchant, read-only graph + per-node override side panel),
+> `pages/dashboard/workflow-editor.tsx` + `workflows-list.tsx` (admin, full drag-drop editor),
+> backend routes in `app/routes.ts` (`/workflow-configs`) and `workflows/workflow-templates.ts`,
+> schema tables `workflow_templates`/`org_workflow_configs` (migration `0011_grey_scarlet_spider.sql`).
+> Audit #04 (`audit/2026-07-13-audit-04-uiux.md`) gave it its first UI/UX review since shipping and
+> found + fixed 2 P1 bugs (stale "Saved" state after the first save, fetch errors rendered as
+> empty/not-found instead of a real error) — both fixed 2026-07-13. Sections below are kept as the
+> original design record, not a current TODO — don't re-spec or rebuild from this doc without
+> checking the actual code first.
+
 ## 1. The mapping (why this works)
 
 | Email marketing (Klaviyo/Shopify Flow) | Weeber voice equivalent |

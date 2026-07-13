@@ -4,6 +4,41 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — UI/UX audit #04 fixes: theme portal-scoping, agent full-window console, Workflow Canvas P1 bugs, Dependabot cleared
+
+Full details in `audit/2026-07-13-audit-04-uiux.md` (the audit itself) and ADR-054/ADR-055
+(`DECISIONS.md`). Four separate pushes this session, all CI-green (typecheck, tests, lint, build,
+migration-drift, and GitHub's own CI/CodeQL checks on `origin/main`):
+
+- **`8ae86e8`** — fixed a CI break: `verticals.test.ts`'s hardcoded nav-array-length assertions
+  (7/6) weren't updated when the Workflows nav item shipped (now 8/7).
+- **`1c1240d`** — Workflow Canvas P1 fixes: save buttons (both `/app/workflows` and
+  `/dashboard/workflows/:id`) permanently showed "Saved" after the first save even with later
+  unsaved edits (`save.isSuccess` never reset — added real `dirty`-state tracking instead); a
+  failed `/api/app/workflow-configs` fetch rendered as "no workflows"/"workflow not found" instead
+  of a real error on both the merchant list and detail pages. Also: agent console full-window
+  redesign (ADR-055) — new `AppShell` `fullBleed` prop, always-visible agent-switcher pill,
+  `/app/agents` and `/dashboard/agents` both redesigned, `collapsible` added to `DashboardShell`
+  for parity with `UserShell`. Preview drawer (voice test call) re-verified working after the
+  layout change — wiring untouched, backend suites 19/19.
+- **`15ed444`** — theme portal-scoping fix (ADR-054): Dialog/Sheet/DropdownMenu/Tooltip/Select now
+  portal into the themed shell via a new `PortalContainerContext`
+  (`lib/portal-container.ts`) instead of defaulting to `document.body` and silently falling back
+  to the wrong theme. Also fixed a dead CSS selector (`[data-radix-dialog-content]`, an attribute
+  Radix never emits) found alongside it.
+- **`c17600b`** — cleared both open Dependabot alerts: `uuid` 8.3.2→11.1.1 (transitive via
+  `exceljs`, real vulnerable version was in `bun.lock` too, not just the stray lockfile) and
+  `esbuild` unified to 0.25.12 tree-wide via root `package.json` `overrides` (Bun 1.3.14 supports
+  npm-style overrides). Removed the stray root `package-lock.json` — unused by any script/CI
+  (repo runs on `bun@1.3.14`), already drifting out of sync with `bun.lock`, and real `npm install`
+  errored trying to reconcile it against Bun's `node_modules` layout even with
+  `--package-lock-only`, confirming it wasn't something this repo's toolchain could safely
+  maintain. Verified via GitHub API after push: 0 open Dependabot alerts.
+
+Also updated `docs/UI-UX-AUDIT-CONTEXT.md` (checklist section now reflects current status instead
+of the original bug-report snapshot) and `docs/workflow-canvas-architecture.md` (added a status
+note — the canvas it specs is now built, doc kept as historical design record).
+
 ## 2026-07-13 — Merchant→User infra rename completed; compat shim removed
 
 Closes out the "infra rename still pending" item from the entry below (the Vercel API could do
