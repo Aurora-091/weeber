@@ -16,9 +16,9 @@
  */
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgMembers, orgs } from "../database/schema";
+import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
@@ -611,6 +611,47 @@ export const userApp = new Hono<UserEnv>()
   .get("/flags", async (c) => {
     const flags = await getEffectiveFlags(c.get("userOrgId")!);
     return c.json({ flags }, 200);
+  })
+
+  .get("/workflow-configs", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templates = await db
+      .select()
+      .from(workflowTemplates)
+      .where(and(eq(workflowTemplates.active, true)));
+    const configs = await db
+      .select()
+      .from(orgWorkflowConfigs)
+      .where(eq(orgWorkflowConfigs.orgId, orgId));
+    const configMap = new Map(configs.map((cfg) => [cfg.templateKey, cfg]));
+    const merged = templates.map((t) => ({
+      ...t,
+      orgConfig: configMap.get(t.id) ?? { enabled: true, overrides: null },
+    }));
+    return c.json({ workflows: merged }, 200);
+  })
+
+  .put("/workflow-configs/:templateKey", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid body" }, 400);
+    const { enabled, overrides } = body as { enabled?: boolean; overrides?: Record<string, Record<string, unknown>> };
+    const values = {
+      orgId,
+      templateKey,
+      enabled: enabled ?? true,
+      overrides: overrides ?? null,
+    };
+    const [config] = await db
+      .insert(orgWorkflowConfigs)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [orgWorkflowConfigs.orgId, orgWorkflowConfigs.templateKey],
+        set: { enabled: values.enabled, overrides: values.overrides },
+      })
+      .returning();
+    return c.json({ config }, 200);
   })
 
   // User support submission — same underlying table as the public

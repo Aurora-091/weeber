@@ -1,4 +1,4 @@
-import { Rocket, Bot, PhoneCall, ChartBar as BarChart3, CreditCard, Plug, Settings } from "lucide-react";
+import { Rocket, Bot, PhoneCall, ChartBar as BarChart3, CreditCard, Plug, Settings, GitBranch } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
 import { appPath } from "./route-base";
 
@@ -60,6 +60,7 @@ const shopify: VerticalDefinition = {
   nav: [
     { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
+    { href: appPath("/workflows"), label: "Workflows", icon: GitBranch, match: navMatch("/workflows", "(/.*)?") },
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
     { href: appPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
@@ -98,6 +99,7 @@ const insurance: VerticalDefinition = {
   nav: [
     { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
+    { href: appPath("/workflows"), label: "Workflows", icon: GitBranch, match: navMatch("/workflows", "(/.*)?") },
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
     { href: appPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },

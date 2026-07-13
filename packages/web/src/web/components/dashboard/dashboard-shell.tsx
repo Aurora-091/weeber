@@ -22,7 +22,7 @@ const NAV: NavItem[] = [
   { href: adminPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
   { href: adminPath("/revenue-analytics"), label: "Revenue", icon: TrendingUp, match: navMatch("/revenue-analytics", "") },
   { href: adminPath("/marketing-analytics"), label: "Marketing", icon: Megaphone, match: navMatch("/marketing-analytics", "") },
-  { href: adminPath("/workflow-runs"), label: "Workflows", icon: Workflow, match: navMatch("/workflow-runs", "") },
+  { href: adminPath("/workflows"), label: "Workflows", icon: Workflow, match: navMatch("/workflows", "/workflow-runs") },
   { href: adminPath("/flags"), label: "Flags", icon: Shield, match: navMatch("/flags", "") },
   { href: adminPath("/support"), label: "Support", icon: LifeBuoy, match: navMatch("/support", "") },
   { href: adminPath("/logs"), label: "Logs", icon: History, match: navMatch("/logs", "") },

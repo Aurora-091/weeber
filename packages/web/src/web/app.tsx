@@ -76,6 +76,12 @@ const MarketingAnalyticsPage = lazy(() =>
 const WorkflowRunsPage = lazy(() =>
   import("./pages/dashboard/workflow-runs").then((m) => ({ default: m.WorkflowRunsPage })),
 );
+const WorkflowsListPage = lazy(() =>
+  import("./pages/dashboard/workflows-list").then((m) => ({ default: m.WorkflowsListPage })),
+);
+const WorkflowEditorPage = lazy(() =>
+  import("./pages/dashboard/workflow-editor").then((m) => ({ default: m.WorkflowEditorPage })),
+);
 
 // User/user app shell + pages
 const UserLoginPage = lazy(() => import("./pages/app/login").then((m) => ({ default: m.UserLoginPage })));
@@ -104,6 +110,12 @@ const UserIntegrationsPage = lazy(() =>
 );
 const UserSettingsPage = lazy(() =>
   import("./pages/app/settings").then((m) => ({ default: m.UserSettingsPage })),
+);
+const UserWorkflowsListPage = lazy(() =>
+  import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowsListPage })),
+);
+const UserWorkflowDetailPage = lazy(() =>
+  import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowDetailPage })),
 );
 const UserShell = lazy(() =>
   import("./components/app/user-shell").then((m) => ({ default: m.UserShell })),
@@ -236,6 +248,16 @@ function App() {
               <Dashboard><WorkflowRunsPage /></Dashboard>
             </Route>
           )}
+          {showAdmin && (
+            <Route path={adminPath("/workflows")}>
+              <Dashboard><WorkflowsListPage /></Dashboard>
+            </Route>
+          )}
+          {showAdmin && (
+            <Route path={adminPath("/workflows/:id")}>
+              <Dashboard><WorkflowEditorPage /></Dashboard>
+            </Route>
+          )}
 
           {/* User/User App */}
           {showUser && <Route path={appPath("/login")}><UserLoginPage /></Route>}
@@ -285,6 +307,16 @@ function App() {
           {showUser && (
             <Route path={appPath("/settings")}>
               <UserShell><UserSettingsPage /></UserShell>
+            </Route>
+          )}
+          {showUser && (
+            <Route path={appPath("/workflows")}>
+              <UserShell><UserWorkflowsListPage /></UserShell>
+            </Route>
+          )}
+          {showUser && (
+            <Route path={appPath("/workflows/:id")}>
+              <UserShell><UserWorkflowDetailPage /></UserShell>
             </Route>
           )}
 
