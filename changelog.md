@@ -4,6 +4,35 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-13 — New architecture/ folder, WEEBER-PLAN.md rewritten as the phase roadmap, doc cleanup
+
+Restructuring pass, no code behavior changes (one comment-only edit in `voice/routes.ts`, verified with
+full CI — typecheck/lint/test all green).
+
+- **New `architecture/` folder** (repo root, alongside `audit/`): `README.md` (moved + rewritten from
+  `docs/architecture.md`, which described a pre-Postgres/pre-package-split layout — corrected against
+  the current `packages/api`+`packages/web` split), `voice-orchestration.md` (mermaid sequence diagram
+  of the call pipeline + telephony abstraction + STT/TTS provider status), `api-flow.md` (mermaid:
+  Shopify webhook → scheduled call → compliance gate → outbound dial, plus the COD-confirmation
+  exhaustion flow), `user-flow.md` (mermaid: onboarding, both `/dashboard` and `/app` route trees, the
+  2026-07-13 agent-console full-window redesign), `data-model.md` (mermaid ER diagram of all 27 tables,
+  with a call-out section for notable absences — no KB table, no per-org DNC, no multi-seat).
+- **`WEEBER-PLAN.md` rewritten entirely** (same filename, per explicit direction) — was a Shopify-only
+  workstream list, is now the full Phase A/B/C/D roadmap from the competitive-teardown digest, checked
+  line-by-line against real code with file/function references and `[x]`/`[ ]` checkboxes. The old
+  workstreams (F, G, I, P, Q, R, S) are folded in under the phase they fit, nothing dropped. New finding
+  while writing it: the cart-recovery/insurance persona prompts (`docs/agent-prompts/01`, `04`)
+  instruct the agent to answer from a "knowledge base" that doesn't exist in the schema/backend —
+  flagged inline in `01-cart-recovery-agent.md` as aspirational, not live.
+- **`docs/archive/` created** — moved 4 stale docs there (not deleted): `CLAUDE-BUILD-BRIEF.md`,
+  `USER-APP-PAGE-MAP.md` (both pre-build specs for dashboards that are now live), `project_analysis.md`
+  (describes a pre-Postgres-migration state), `docs/component-documentation-template.md` (unused
+  generic boilerplate). `docs/insurance-vertical-meeting-prep.md` was reviewed and **kept** — it's a
+  real, current doc for an active upcoming client meeting, not stale.
+- **Cross-references updated**: `CLAUDE.md`'s doc map and repo-structure tree, `docs/dashboard.md`,
+  `docs/getting-started.md`, `UI-DESIGN-BRIEF.md`, and one code comment in `voice/routes.ts` that
+  pointed at the now-moved `docs/architecture.md`.
+
 ## 2026-07-13 — Doc sweep: WEEBER-PLAN/CLAUDE-BUILD-BRIEF/USER-APP-PAGE-MAP synced to actual code
 
 Full cross-check of pending-work docs against current code (backend/infra/integration scope, separate

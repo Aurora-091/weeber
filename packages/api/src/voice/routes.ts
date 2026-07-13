@@ -10,7 +10,7 @@
  *      used by the dashboard (packages/web/src/web/pages/dashboard/) and
  *      anything you build on top (curl, your own internal tools, etc).
  *
- * New to this file? Start with docs/architecture.md for how a call flows
+ * New to this file? Start with architecture/voice-orchestration.md for how a call flows
  * through these routes end to end, then docs/api-reference.md for the full
  * endpoint list with request/response shapes.
  */

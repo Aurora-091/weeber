@@ -91,7 +91,7 @@ dialing — a blocked call returns a `403` with the reason, and never reaches Tw
 
 ## Next steps
 
-- [`docs/architecture.md`](./architecture.md) — how a call flows through the system, repo layout
+- [`architecture/README.md`](../architecture/README.md) — how a call flows through the system, repo layout, plus diagrams (`architecture/voice-orchestration.md`, `api-flow.md`, `user-flow.md`, `data-model.md`)
 - [`docs/api-reference.md`](./api-reference.md) — every endpoint
 - [`docs/compliance.md`](./compliance.md) — TCPA/DNC/HIPAA/GDPR, what's enforced automatically
 - [`docs/security.md`](./security.md) — admin auth, webhook signature validation, rate limiting, tunneling

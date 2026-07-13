@@ -99,9 +99,14 @@ Interested/available → Section 3. Not interested → Section 5, Branch C. Busy
 
 ## SECTION 4: FAQs
 
-Answer only from the merchant's configured product/policy knowledge base (uploaded via the agent config KB
-field — see `CLAUDE-BUILD-BRIEF.md` §5). If a question falls outside it, say a team member will follow up —
-never invent an answer. Keep answers to 1-2 sentences, bilingual as needed.
+Answer only from the merchant's configured product/policy knowledge base. If a question falls outside
+it, say a team member will follow up — never invent an answer. Keep answers to 1-2 sentences, bilingual
+as needed.
+
+> **Known gap (flagged 2026-07-13, tracked in `WEEBER-PLAN.md` Phase A):** there is no knowledge-base
+> upload/storage in the schema or backend yet — this section describes intended behavior once one
+> exists, not a currently-live feature. Until it's built, this agent has nothing to answer product/policy
+> questions from beyond what's in its prompt/config; treat any live demo of this section as aspirational.
 
 ---
 

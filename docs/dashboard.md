@@ -31,4 +31,6 @@ labeled-key auth model.
 The org picker on the Agents/Analytics pages is a plain client-side dropdown, not an access-scoping
 mechanism — the one shared admin key sees every org's data, same as the rest of this dashboard. The
 user-facing, per-org-scoped frontend (Supabase Auth, `/app/*`) has been live since 2026-07-12 — see
-`CLAUDE-BUILD-BRIEF.md` §5/§9 for its scope and `USER-APP-PAGE-MAP.md` for the full page inventory.
+`architecture/user-flow.md` for its scope and page flow (the original pre-build specs,
+`CLAUDE-BUILD-BRIEF.md`/`USER-APP-PAGE-MAP.md`, are archived at `docs/archive/` — superseded by the real
+build).

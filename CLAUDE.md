@@ -15,8 +15,10 @@ side of it (`packages/web/src/api/integrations/shopify/`).
 **Read these documents in this order before making architectural decisions** — they are the actual spec,
 not background reading:
 
-1. `WEEBER-PLAN.md` — what's built, what's Phase 2/deferred, sized workstreams, assignable tasks.
-2. `CLAUDE-BUILD-BRIEF.md` — admin panel + user dashboard scope, codebase structure, API conventions.
+1. `WEEBER-PLAN.md` — the phase roadmap (A/B/C/D), what's actually built vs. still open, checked
+   against real code, not aspirational.
+2. `architecture/README.md` (+ the other `architecture/*.md` diagrams) — codebase structure, call
+   pipeline, API conventions, data model.
 3. `UI-DESIGN-BRIEF.md` — the confirmed design system (Arc-like warm paper theme, tokens already implemented
    in `styles.css`'s `.theme-weeber`).
 4. `DECISIONS.md` — every consequential decision, in order, with full reasoning (ADR-030 onward are
@@ -68,11 +70,12 @@ both.
 ```text
 openvent/  (this repo)
 ├── CLAUDE.md                    # this file — read first
-├── WEEBER-PLAN.md                # what's built, Phase 2 backlog, sized workstreams
-├── CLAUDE-BUILD-BRIEF.md         # dashboard scope + file tree for packages/web/src/web additions
+├── WEEBER-PLAN.md                # the phase roadmap — what's built, what's next, checked against real code
+├── architecture/                 # repo layout + call pipeline + mermaid diagrams (voice orchestration,
+│                                  # API flow, user flow, data model) — start here for "how does X work"
 ├── UI-DESIGN-BRIEF.md            # design system spec
 ├── DECISIONS.md                  # every ADR, in order (ADR-030+ are Weeber-specific)
-├── docs/                         # base OpenVent docs (architecture, state-engine, api-reference,
+├── docs/                         # base OpenVent docs (state-engine, api-reference,
 │                                  # configuration, testing, security, dashboard) — still accurate for the
 │                                  # underlying framework; Weeber-specific product docs are the 4 files above
 ├── .mcp.json                     # MCP servers for Claude Code (see below)
@@ -91,7 +94,7 @@ openvent/  (this repo)
 │   │   ├── src/voice/               # call handling, workflows/scheduler, tools, compliance adapters
 │   │   └── drizzle.config.ts        # db:* scripts live in this package
 │   ├── web/                       # @weeber/web — the frontend (React dashboard), deployed to Vercel
-│   │   ├── src/web/                 # see CLAUDE-BUILD-BRIEF.md §3 for the /dashboard + /app tree
+│   │   ├── src/web/                 # see architecture/README.md for the /dashboard + /app tree
 │   │   └── components.json          # shadcn config
 │   └── openvent-compliance/        # framework-agnostic compliance package — DNC/TCPA/HIPAA/GDPR, tested
 │                                    # independently, dependency-free by design; Weeber-private (see below)
@@ -102,8 +105,8 @@ openvent/  (this repo)
 ## The call pipeline (base OpenVent — read this before touching anything in `voice/`)
 
 This is the one piece of architecture the Weeber-specific docs above assume you already know. Full detail
-in `docs/architecture.md`, `docs/state-engine.md`, `docs/configuration.md`, `docs/api-reference.md`; the
-shape of it:
+in `architecture/voice-orchestration.md`, `docs/state-engine.md`, `docs/configuration.md`,
+`docs/api-reference.md`; the shape of it:
 
 ```text
 Inbound:  Caller -> Twilio number -> POST /api/voice/incoming (TwiML) -> wss connect
@@ -140,7 +143,7 @@ Shopify agents, compliance gates) is built on top of.
 
 ## Architecture summary
 
-Full detail is in `CLAUDE-BUILD-BRIEF.md`; the short version:
+Full detail is in `architecture/README.md` and `architecture/user-flow.md`; the short version:
 
 - **Two dashboards, one app.** `/dashboard/*` (existing) is the internal admin panel — org/shop list, agent
   template catalog, billing oversight, compliance/DNC oversight, feature flags. `/app/*` (new) is the

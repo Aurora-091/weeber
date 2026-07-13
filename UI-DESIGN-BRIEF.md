@@ -1,8 +1,10 @@
 # UI-DESIGN-BRIEF.md — Weeber Product Design System
 
 Confirmed design direction for everything under `/dashboard` (admin panel) and `/app` (user dashboard).
-Read alongside `CLAUDE-BUILD-BRIEF.md` — that doc covers page structure/scope, this one covers how it should
-look and feel. See ADR-032 in `DECISIONS.md` for the reasoning.
+Read alongside `architecture/README.md`/`architecture/user-flow.md` — those cover page structure/scope,
+this one covers how it should look and feel. See ADR-032 in `DECISIONS.md` for the reasoning. (The
+original pre-build page-structure spec, `CLAUDE-BUILD-BRIEF.md`, is archived at `docs/archive/` —
+superseded by the real build.)
 
 ## The reference point
 
@@ -127,7 +129,7 @@ start, not as a retrofit:
 - Exact spacing scale values (the specific Tailwind spacing tokens for "dense" vs "spacious" density) — size
   this when the first admin-panel and user-dashboard pages are actually being laid out, not in the
   abstract.
-- Logo/wordmark — still just a text wordmark placeholder per `CLAUDE-BUILD-BRIEF.md` §2, unchanged by this
-  round.
+- Logo/wordmark — still just a text wordmark placeholder (final brand assets still not decided, per
+  `CLAUDE.md`'s STOP-AND-ASK list item 2), unchanged by this round.
 - Command palette's exact action list — depends on which pages/actions exist first; don't over-build this
   before there's enough to search/act on.
