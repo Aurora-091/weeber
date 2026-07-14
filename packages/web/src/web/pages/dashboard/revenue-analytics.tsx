@@ -3,8 +3,8 @@ import { DollarSign, Building2, Clock } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { PageHeader } from "../../components/shell/page-header";
-import { StatTile } from "../../components/charts/stat-tile";
-import { BarMeterList } from "../../components/charts/bar-meter";
+import { StatCard } from "../../components/charts/stat-card";
+import { BreakdownList } from "../../components/charts/breakdown-list";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
 type RevenueOverview = {
@@ -42,16 +42,16 @@ export function RevenueAnalyticsPage() {
       {data && (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-3">
-            <StatTile label="Total orgs" value={String(data.totalOrgs)} icon={Building2} />
-            <StatTile label="Usage minutes (30d)" value={String(data.totalMinutesInRange)} hint="proxy, not billed $" icon={Clock} />
-            <StatTile
+            <StatCard label="Total orgs" value={String(data.totalOrgs)} icon={Building2} />
+            <StatCard label="Usage minutes (30d)" value={String(data.totalMinutesInRange)} hint="proxy, not billed $" icon={Clock} />
+            <StatCard
               label="Avg minutes / org"
               value={data.totalOrgs ? String(Math.round((data.totalMinutesInRange / data.totalOrgs) * 10) / 10) : "0"}
               icon={DollarSign}
             />
           </div>
-          <BarMeterList title="Orgs by plan" counts={data.orgsByPlan} />
-          <BarMeterList title="Usage minutes by day" counts={data.minutesByDay} />
+          <BreakdownList title="Orgs by plan" counts={data.orgsByPlan} />
+          <BreakdownList title="Usage minutes by day" counts={data.minutesByDay} />
         </div>
       )}
     </div>
