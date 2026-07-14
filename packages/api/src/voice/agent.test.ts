@@ -186,3 +186,74 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
     expect(config.systemPrompt).toContain("transferToHuman");
   });
 });
+
+import { withFillerTimer, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools } from "./agent";
+
+describe("withFillerTimer — §3a tool-call filler audio", () => {
+  it("does not fire onSlowToolCall for a tool that resolves well under the threshold", async () => {
+    const calls: string[] = [];
+    const wrapped = withFillerTimer(
+      { execute: async () => "fast result" },
+      "fastTool",
+      (name) => calls.push(name),
+    );
+    const result = await wrapped.execute();
+    // Give any (incorrectly still-pending) timer a moment to fire, to prove
+    // it was actually cleared rather than just not-yet-fired.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(result).toBe("fast result");
+    expect(calls).toEqual([]);
+  });
+
+  it("fires onSlowToolCall exactly once when execute is still running past the threshold", async () => {
+    const calls: string[] = [];
+    const wrapped = withFillerTimer(
+      {
+        execute: async () => {
+          await new Promise((r) => setTimeout(r, TOOL_CALL_FILLER_THRESHOLD_MS + 100));
+          return "slow result";
+        },
+      },
+      "slowTool",
+      (name) => calls.push(name),
+    );
+    const result = await wrapped.execute();
+    expect(result).toBe("slow result");
+    expect(calls).toEqual(["slowTool"]);
+  });
+
+  it("is a no-op passthrough when no onSlowToolCall is given (text test-chat/synthetic-test callers)", async () => {
+    const toolDef = { execute: async () => "result" };
+    const wrapped = withFillerTimer(toolDef, "anyTool", undefined);
+    expect(wrapped).toBe(toolDef);
+  });
+
+  it("passes real tool call arguments through unchanged", async () => {
+    let received: unknown;
+    const wrapped = withFillerTimer(
+      {
+        execute: async (input: unknown) => {
+          received = input;
+          return { ok: true };
+        },
+      },
+      "echoTool",
+      () => undefined,
+    );
+    await (wrapped.execute as (input: unknown) => Promise<unknown>)({ field: "email", value: "a@b.com" });
+    expect(received).toEqual({ field: "email", value: "a@b.com" });
+  });
+});
+
+describe("buildVoiceTools — §3a wiring", () => {
+  it("returns unwrapped tools when onSlowToolCall is omitted, unchanged from before §3a", () => {
+    const tools = buildVoiceTools(undefined, undefined);
+    expect(tools.captureField).toBeDefined();
+    expect(tools.hangUp).toBeDefined();
+  });
+
+  it("still includes hangUp and respects enabledTools narrowing with onSlowToolCall wired", () => {
+    const tools = buildVoiceTools(undefined, ["captureField"], () => undefined);
+    expect(Object.keys(tools).sort()).toEqual(["captureField", "hangUp"]);
+  });
+});

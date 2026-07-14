@@ -424,6 +424,55 @@ export const voiceTools = {
 };
 
 /**
+ * §3a: how long a tool call has to be running before it's considered "slow
+ * enough that the caller might notice dead air" and worth covering with a
+ * filler line (see stream.ts's onSlowToolCall wiring). Deliberately well
+ * above typical fast-tool latency (captureField/setDisposition/hangUp are
+ * all synchronous in-memory ops that resolve in low single-digit ms) so a
+ * normal fast tool call never triggers it — only a genuinely slow one
+ * (lookupInfo's knowledge-base search, bookAppointment/crmSync's outbound
+ * HTTP calls) does.
+ */
+export const TOOL_CALL_FILLER_THRESHOLD_MS = 400;
+
+/**
+ * §3a: wraps a single AI-SDK tool's `execute` with a threshold timer —
+ * fires `onSlowToolCall(name)` once if `execute` is still running after
+ * `TOOL_CALL_FILLER_THRESHOLD_MS`, then lets the real execution finish and
+ * return normally either way. Never changes what the tool returns or how
+ * long it takes — purely a side-channel timing signal, not a wrapper that
+ * could alter tool behavior. A no-op passthrough when the tool has no
+ * `execute` (shouldn't happen for any real tool here, but the AI SDK's
+ * `Tool` type allows it) or when no `onSlowToolCall` callback was given
+ * (the text-only test-chat/synthetic-test callers of buildVoiceTools have
+ * nowhere to play filler audio anyway).
+ */
+export function withFillerTimer<T extends { execute?: (...args: never[]) => unknown }>(
+  toolDef: T,
+  name: string,
+  onSlowToolCall?: (toolName: string) => void,
+): T {
+  if (!toolDef.execute || !onSlowToolCall) return toolDef;
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    execute: async (...args: never[]) => {
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        onSlowToolCall(name);
+      }, TOOL_CALL_FILLER_THRESHOLD_MS);
+      try {
+        return await originalExecute(...args);
+      } finally {
+        clearTimeout(timer);
+        void timedOut; // no behavior depends on this locally — just avoids an unused-var lint
+      }
+    },
+  };
+}
+
+/**
  * The one place tool sets get built for a call, everywhere they're needed
  * (a live call via stream.ts, the text test-chat sandbox in both app/routes.ts
  * and voice/routes.ts, and synthetic-test.ts's AI-to-AI runs) — replaces what
@@ -433,13 +482,28 @@ export const voiceTools = {
  * every tool, unchanged from before the frame existed. `hangUp` is always
  * included regardless of what's selected — ending a call gracefully is a
  * safety default, not an optional feature a misconfigured agent should lose.
+ *
+ * `onSlowToolCall` (§3a) is live-call-only — stream.ts passes it through so
+ * a slow tool call can be covered with cached filler audio; every other
+ * caller (text test-chat, synthetic-test) omits it and gets tools
+ * completely unwrapped, unchanged from before this existed.
  */
-export function buildVoiceTools(orgId: string | undefined, enabledTools?: AvailableToolName[]) {
+export function buildVoiceTools(
+  orgId: string | undefined,
+  enabledTools?: AvailableToolName[],
+  onSlowToolCall?: (toolName: string) => void,
+) {
   const allTools = { ...voiceTools, lookupInfo: createLookupInfoTool(orgId) };
-  if (!enabledTools) return allTools;
-  const allowed = new Set<AvailableToolName>([...enabledTools, "hangUp"]);
+  const narrowed = enabledTools
+    ? Object.fromEntries(
+        Object.entries(allTools).filter(([name]) =>
+          new Set<AvailableToolName>([...enabledTools, "hangUp"]).has(name as AvailableToolName),
+        ),
+      )
+    : allTools;
+  if (!onSlowToolCall) return narrowed;
   return Object.fromEntries(
-    Object.entries(allTools).filter(([name]) => allowed.has(name as AvailableToolName)),
+    Object.entries(narrowed).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
   );
 }
 
@@ -513,6 +577,7 @@ export async function runVoiceAgentTurn({
   capturedState,
   callerMemory,
   orgId,
+  onSlowToolCall,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -535,6 +600,11 @@ export async function runVoiceAgentTurn({
   callerMemory?: Record<string, string>;
   /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
   orgId?: string;
+  /** §3a: reports a tool call still running past TOOL_CALL_FILLER_THRESHOLD_MS
+   * — stream.ts uses this to play a cached filler line so a slow tool
+   * (lookupInfo, bookAppointment, crmSync) doesn't leave the caller in dead
+   * air. See buildVoiceTools/withFillerTimer above for the wrapping. */
+  onSlowToolCall?: (toolName: string) => void;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -553,7 +623,7 @@ export async function runVoiceAgentTurn({
         buildCallerMemoryBlock(callerMemory) +
         buildKnownFactsBlock(capturedState),
       messages: history,
-      tools: buildVoiceTools(orgId, enabledTools),
+      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {

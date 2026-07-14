@@ -520,6 +520,69 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     setCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text, chunks);
   }
 
+  /**
+   * §3a: tool-call filler audio — a short line ("One moment, let me check
+   * that." / "Let me look into that for you.") played the instant a tool
+   * call has been running past agent.ts's TOOL_CALL_FILLER_THRESHOLD_MS
+   * (lookupInfo's knowledge-base search, bookAppointment/crmSync's outbound
+   * HTTP calls), so the caller hears *something* instead of dead air while
+   * a slow tool finishes.
+   *
+   * Reuses tts-cache.ts exactly as it already exists for Misc-7's canned
+   * silence-timeout lines — same flag (HYBRID_AUDIO_CACHE_FLAG), same
+   * cache, same (provider, voice, language, text) key. Deliberately never
+   * synthesizes live here: if the line isn't cached yet, warming it now
+   * would itself take as long as the tool call it's meant to cover,
+   * defeating the entire point of a filler. Fire-and-forget warms it in
+   * the background instead, so the *next* slow tool call (this call or
+   * any other) gets an instant cache hit.
+   */
+  const TOOL_CALL_FILLER_LINES = ["One moment, let me check that.", "Let me look into that for you."];
+
+  async function warmFillerCache(text: string) {
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    if (getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text)) return;
+    const chunks: string[] = [];
+    await new Promise<void>((resolve) => {
+      const warmupTts = connectTts(
+        (base64Audio) => chunks.push(base64Audio),
+        () => resolve(),
+        (err) => {
+          console.error("[voice] failed to warm filler-audio cache", err);
+          resolve();
+        },
+        ttsProviderOverride,
+        ttsVoiceIdOverride,
+        languageOverride,
+      );
+      warmupTts.sendText(text);
+      warmupTts.endTurn();
+    });
+    setCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text, chunks);
+  }
+
+  async function maybePlayToolCallFiller(ws: Sendable) {
+    const flagOrgId = humanNumberOrgId ?? undefined;
+    const flags: Record<string, boolean> = flagOrgId
+      ? await getEffectiveFlags(flagOrgId).catch(() => ({}))
+      : {};
+    if (flags[HYBRID_AUDIO_CACHE_FLAG] !== true) return;
+    if (ended || !streamSid) return;
+
+    const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    if (!cached) {
+      void warmFillerCache(text);
+      return;
+    }
+    try {
+      ws.send(transport.buildOutboundMedia(streamSid, cached));
+    } catch (err) {
+      console.error(`[voice] failed to forward filler audio to ${provider}`, err);
+    }
+  }
+
   function armSilenceTimer(ws: Sendable) {
     if (ended) return;
     clearSilenceTimer();
@@ -717,6 +780,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   async function runTurn(ws: Sendable, turnStartedAt: number) {
     const turnLlmTtftRef: { value?: number } = {};
+    // §3a: at most one filler line per turn — a turn with several sequential
+    // slow tool calls should still only interject once, not once per call.
+    let fillerPlayedThisTurn = false;
     await speak(
       ws,
       (signal) =>
@@ -737,6 +803,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           capturedState,
           callerMemory: callerMemoryFacts,
           orgId: humanNumberOrgId,
+          onSlowToolCall: (toolName) => {
+            if (fillerPlayedThisTurn) return;
+            fillerPlayedThisTurn = true;
+            console.log(`[voice] tool call "${toolName}" still running past the filler threshold — playing filler audio`);
+            void maybePlayToolCallFiller(ws);
+          },
         }),
       { turnStartedAt, turnLlmTtftRef },
     );
