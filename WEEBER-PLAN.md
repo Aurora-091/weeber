@@ -322,7 +322,16 @@ DB-backed, read at call-time — not `process.env`. Nothing left to decide on th
 Small, scoped enhancements that came up in passing — each cheap on its own, deliberately not built
 immediately so they can be picked up together in one pass instead of as scattered one-offs.
 
-- [ ] **Misc-1 — Real phone-number callback on the Agent Preview ("enter your number, call me").**
+- [x] **Misc-1 — Real phone-number callback on the Agent Preview ("enter your number, call me").**
+  Shipped 2026-07-13 (`96353e6`/`61bf6ed`). New `CallSession.resolvedConfigOverride` field
+  (`voice/session-store.ts`) lets a real outbound call carry a full `ResolvedAgentConfig` — `stream.ts`'s
+  real-call resolution short-circuits `resolveAgentConfig`'s DB lookup when it's set, so the test call
+  reflects the exact in-progress form, not `orgAgentConfigs`. New `POST /api/app/agent-configs/
+  :templateKey/test-call-phone` (merchant) + `POST /api/voice/orgs/:orgId/agent-configs/:templateKey/
+  test-call-phone` (admin), both reusing `placeOutboundCall`, own 3/min rate limiter
+  (`AGENT_TEST_CALL_PHONE_RATE_LIMIT`), DNC/compliance gate deliberately skipped per the judgment call
+  below. UI: "call my phone" input + button in `PreviewDrawer.tsx`'s Voice tab, wired into both
+  `pages/app/agents.tsx` and `pages/dashboard/agents.tsx`.
   Distinct from the existing web-based Agent Preview (`voice/test-call-stream.ts`'s `/api/voice/
   test-call` WS path — confirmed real and working 2026-07-13: no Twilio, no phone number, no
   per-minute cost, rate-limited, 19/19 backend tests pass). This is a genuinely different feature: a
@@ -342,12 +351,12 @@ immediately so they can be picked up together in one pass instead of as scattere
   - UI: phone input + "Call me" button next to the existing Preview button in `AgentEditForm`
     (`pages/app/agents.tsx`, `pages/dashboard/agents.tsx`).
 
-- [ ] **Misc-2 — DTMF tool (keypad-tone navigation).** Not built — `voice/tools/*.ts` has no DTMF
-  send/detect capability. This is Vogent's specific telephony-depth differentiator (IVR-tree
-  navigation, "press 1 for billing") and the platform teardown lists DTMF alongside transfer/end-call/
-  send-SMS as a baseline "system tool" every competitor ships. Matters most for any future vertical
-  where the agent has to navigate *someone else's* phone tree (e.g. calling an insurer, a courier), not
-  for Weeber's current inbound/outbound-to-a-known-number flows — low priority until that need is real.
+- [x] **Misc-2 — DTMF tool (keypad-tone navigation).** Shipped 2026-07-13 (`96353e6`). New `voice/dtmf.ts`
+  generates real ITU-T Q.23 dual-tone mu-law 8kHz audio and plays it straight into the live media stream
+  via `telephony-transport.ts`'s `buildOutboundMedia` — works uniformly across Twilio/Plivo/Exotel with
+  no provider-specific DTMF API, since that seam already only speaks mu-law audio. New `sendDtmf` tool
+  (signal-only, `voice/tools/sendDtmf.ts`), wired in `stream.ts`'s `logToolCall`. 5 unit tests
+  (`dtmf.test.ts`).
 
 - [x] **Misc-3 — Revenue-attribution ("₹ recovered") now shown in the merchant dashboard.**
   Backend was already real and tested (`scheduled_calls.recoveredAmount`/`recoveredOrderId`, B3
@@ -359,21 +368,18 @@ immediately so they can be picked up together in one pass instead of as scattere
   matching the page's existing pattern. Zero backend changes, zero schema changes — the data was
   already there.
 
-- [ ] **Misc-4 — Live in-call SMS tool doesn't exist; SMS is post-call-only today.** The cart-recovery
-  persona prompt has the agent say "I can send the checkout link again by SMS — should I?" as if it can
-  do this live, mid-call. It can't: the only SMS-sending code is `workflows/engine.ts`'s `sendSms`
-  *workflow action* (`case "sendSms":`), which fires after a call ends based on its outcome, not a tool
-  the LLM can invoke mid-conversation. Same shape of gap as the KB issue (A3b) — the prompt promises a
-  live capability the backend only has an async version of. **Bonus finding while checking this:**
-  `sendSms` is hardcoded to `getTwilioClientForOrg` — it doesn't go through the Plivo/Exotel abstraction,
-  so a BYO-Plivo/Exotel org's post-call SMS would silently fail today. Fix both in the same pass: a real
-  `sendSms` tool (mid-call) + route the existing workflow action through the telephony abstraction, not
-  Twilio directly.
+- [x] **Misc-4 — Live in-call SMS tool doesn't exist; SMS is post-call-only today.** Shipped 2026-07-13
+  (`96353e6`). New provider-agnostic `voice/send-sms.ts` dispatcher (mirrors `place-outbound-call.ts`'s
+  `resolveOutboundRouting`) + new `sendPlivoSms`/`sendExotelSms` in their respective clients (previously
+  only call placement existed for either). New mid-call `sendSms` tool (signal-only,
+  `voice/tools/sendSms.ts`, executed in `stream.ts`'s `logToolCall`). `workflows/engine.ts`'s post-call
+  `sendSms` action now routes through the same dispatcher instead of being hardcoded to
+  `getTwilioClientForOrg` — fixes the bonus-finding silent-failure bug for BYO-Plivo/Exotel orgs.
 
-- [ ] **Misc-5 — Sentiment isn't captured as structured data.** `calls` table has `disposition` (the
-  outcome) but no `sentiment` column — the platform teardown's recommended post-call fields are
-  "outcome, sentiment, next action," and only the first exists today. Small: add a `sentiment` field,
-  populate it via `setDisposition`'s tool call or a lightweight end-of-call classification pass.
+- [x] **Misc-5 — Sentiment isn't captured as structured data.** Shipped 2026-07-13 (`96353e6`).
+  `calls.sentiment` column (`0021_add_call_sentiment.sql`), captured via `setDisposition`'s new optional
+  `sentiment` field (positive/neutral/negative), persisted in `stream.ts`'s `finalizeCall`, surfaced on
+  both admin and merchant call-detail pages next to disposition.
 
 - [ ] **Misc-6 (watch, not a build item) — LiveKit as a future transport-layer swap.**
   `weeber-stack-decision.report`'s explicit recommendation: don't adopt LiveKit/Pipecat now (Pipecat's
@@ -383,16 +389,18 @@ immediately so they can be picked up together in one pass instead of as scattere
   only* swap underneath Vent's existing compliance/state/dashboard code. Revisit with real load data
   when C1 (concurrency tiers) becomes a real constraint, not before.
 
-- [ ] **Misc-7 — Hybrid pre-recorded audio for static script lines.** Today every line the agent says —
-  including fixed, never-changing lines like the opening greeting, the TCPA/consent disclosure, and the
-  closing/goodbye — goes through fresh TTS synthesis on every single call. Verified absent: no
-  audio-cache or pre-render path in `voice/*` today. Competitor pattern (from `voice-ai-platforms.report`):
-  several platforms pre-render static script segments once (studio-quality voice, no latency, no
-  per-call TTS cost) and only hit live TTS for genuinely dynamic content (order numbers, dates, names).
-  Win is two-fold: lower per-call COGS (fewer TTS characters billed) and lower first-audio latency on
-  the greeting specifically, which is the most latency-sensitive moment of a call. Scope: identify the
-  fixed lines per persona preset (greeting, disclosure, closing), pre-render once per agent/voice
-  config (invalidate cache on voice or script change), fall back to live TTS for everything else.
+- [x] **Misc-7 — Hybrid pre-recorded audio for static script lines.** Shipped 2026-07-13 (`b37122c`),
+  scoped down from the original ask: the greeting/closing lines turned out to be deliberately
+  LLM-paraphrased from a template (`agent.ts`'s `buildIdentityBlock` — "adapt naturally, don't recite it
+  robotically"), not literal text, so they aren't cacheable without a separate product decision to make
+  them verbatim. Scoped instead to `stream.ts`'s `speakCannedLine` — the silence-timeout re-prompt +
+  goodbye — the one spot that's genuinely byte-identical every call. New `voice/tts-cache.ts`: in-memory
+  cache keyed by (resolved provider, voiceId, language, exact text) → concatenated mu-law audio; a hit
+  replays as one outbound frame, skipping `connectTts` entirely. Gated behind a new
+  `hybrid-audio-cache` org/global feature flag (`getEffectiveFlags`) — its first real server-side
+  consumer. **Bonus fix found while wiring this:** `speakCannedLine` never actually called
+  `tts.sendText` — the silence-timeout lines were logged to the transcript but never spoken out loud on
+  a live call; fixed in the same change. 5 unit tests (`tts-cache.test.ts`).
 
 - [ ] **Misc-8 — Entity-confirmation-by-repeat-back for phone/date/order numbers.** Persona prompts
   don't currently instruct the agent to read back captured entities (phone numbers, dates, order
