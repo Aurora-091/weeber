@@ -53,17 +53,21 @@ because the pipeline itself works.
   Vapi/Retell/Bland/Bolna run true native S2S in production for the same reason. Current LLM default
   (`groq/llama-3.3-70b-versatile`) is validated too — every competitor converges on "fast-tier, not
   reasoning-tier" for live turns, reserving reasoning models for async/post-call work.
-  - [ ] **A1b — VAD/endpointing audit against the orchestration-quality bar.** **Not yet done — this is
-    the real remaining gap, not "A1 is finished."** The same report is explicit that the actual
-    competitive line between "production-grade" and "demo" isn't vendor choice, it's orchestration
-    engineering: a 4-state VAD machine (STARTING/SPEAKING/STOPPING/SILENT, not a volume threshold), a
-    rolling-RMS adaptive noise filter, endpointing as rule-based + ML + regex-context combined (Vapi
-    reports this cut premature interruptions 73% vs. a fixed timeout), speculative/"greedy" LLM
-    inference (send the instant the system *thinks* the caller is done, cancel-and-restart silently if
-    they keep talking), and sub-100ms interruption handling reconciled against TTS word-level
-    timestamps. **Action: audit `voice/stream.ts`'s current VAD/endpointing implementation line-by-line
-    against this list before claiming A1 matches the competitive bar** — a bad turn-taking model costs
-    500ms+ of *perceived* latency even when every component benchmark looks fine.
+  - [x] **A1b — VAD/endpointing audit against the orchestration-quality bar.** Audited 2026-07-14
+    (`stream.ts`, `stt/deepgram.ts`) against this list. Found and fixed 2 real gaps, not just
+    documented: (1) `vad_events=true` was already set on the Deepgram connection but never consumed —
+    the message handler only handled `type=Results`, silently discarding `SpeechStarted`/`UtteranceEnd`;
+    added `utterance_end_ms=1000` + a `pendingFinalText` buffer so `UtteranceEnd` now replays as a
+    synthetic `speech_final` when Deepgram's own `speech_final` never fires (a known Deepgram edge
+    case — cross-talk, audio trailing off). (2) No rule-based/regex-context layer existed on top of the
+    single fixed-timeout vendor signal — added `endsMidThought()`, a cheap trailing-conjunction/filler
+    check (and/so/but/or/because/um/uh/like/well/then) that holds the turn one more beat instead of
+    answering a fragment. Barge-in itself audited as already correct — fires on any non-empty interim
+    transcript, not gated on `isFinal`/`speechFinal`, no fix needed. 10 new tests
+    (`deepgram.test.ts`, `stream.test.ts`). **Not done, correctly scoped out as bigger asks, not
+    silently dropped:** a rolling-RMS adaptive noise filter (no adaptive layer in our own code; Twilio-
+    side AEC covers the common case) and speculative/"greedy" LLM inference (send the instant the model
+    *thinks* the caller is done, cancel-and-restart if wrong) — both are real follow-ups, not bug fixes.
 - [x] **A2 — Per-tenant Twilio sub-accounts + Plivo/Exotel SIP for India.**
   `voice/twilio-provisioning.ts` (real sub-account creation, not a stub), `voice/telephony-transport.ts`
   (wire-format abstraction), `voice/{plivo,exotel}-{client,provisioning}.ts`. `orgs.twilioMode`
