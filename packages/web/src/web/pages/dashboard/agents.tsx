@@ -1,195 +1,49 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2 } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
-import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useSelectedOrgId } from "../../lib/org-id";
+import { Switch } from "../../components/ui/switch";
+import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
+import { VoicePicker } from "../../components/voice/VoicePicker";
+import { PageHeader } from "../../components/shell/page-header";
+import { EmptyState } from "../../components/shell/empty-state";
+import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
+import {
+  TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
+  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES,
+  type AgentConfigRow, type FormState,
+  toFormState, formToAgentFrame, fieldCls, labelCls,
+} from "../../lib/agent-config";
 
-const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
-const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
-const AVAILABLE_TOOL_NAMES = [
-  "lookupInfo",
-  "bookAppointment",
-  "setDisposition",
-  "crmSync",
-  "captureField",
-  "hangUp",
-  "transferToHuman",
-  "flagGuardrailEvent",
-  "sendSms",
-  "sendDtmf",
-] as const;
-const RECOMMENDED_LLM_MODELS = [
-  { provider: "gateway", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
-  { provider: "gateway", model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },
-  { provider: "gateway", model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
-  { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (fastest overall, Groq)" },
-] as const;
-const RECOMMENDED_LANGUAGES = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "mr", label: "Marathi" },
-  { code: "ta", label: "Tamil" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-  { code: "bn", label: "Bengali" },
-  { code: "gu", label: "Gujarati" },
-  { code: "pa", label: "Punjabi" },
-  { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
-] as const;
-
-type AgentConfigRow = {
-  templateKey: string;
-  templateName: string;
-  templateDescription: string | null;
-  defaultPersonaPrompt: string | null;
-  config: {
-    name: string | null;
-    greetingLine: string | null;
-    closingLine: string | null;
-    toneStyle: string | null;
-    personaPrompt: string | null;
-    voiceProvider: string | null;
-    voiceId: string | null;
-    language: string | null;
-    sttProvider: string | null;
-    llmProvider: string | null;
-    llmModel: string | null;
-    toolsEnabled: string[] | null;
-    guardrails: { topicBoundaryStrictness?: string; injectionSensitivity?: string; abuseHandlingEnabled?: boolean } | null;
-    enabled: boolean;
-    firstCallDelayMinutes: number | null;
-    retryDelayMinutes: number | null;
-    maxAttempts: number | null;
-  } | null;
-};
-
-type FormState = {
-  name: string;
-  greetingLine: string;
-  closingLine: string;
-  toneStyle: string;
-  personaPrompt: string;
-  voiceProvider: string;
-  voiceId: string;
-  language: string;
-  sttProvider: string;
-  llmProvider: string;
-  llmModel: string;
-  toolsEnabled: string[];
-  topicBoundaryStrictness: string;
-  injectionSensitivity: string;
-  abuseHandlingEnabled: boolean;
-  enabled: boolean;
-  /** Empty string = "use the platform default" — kept as strings since these
-   * are plain number inputs; parsed to number|undefined at submit time in
-   * formToAgentFrame. */
-  firstCallDelayMinutes: string;
-  retryDelayMinutes: string;
-  maxAttempts: string;
-};
-
-function toFormState(row: AgentConfigRow): FormState {
-  const c = row.config;
-  return {
-    name: c?.name ?? "",
-    greetingLine: c?.greetingLine ?? "",
-    closingLine: c?.closingLine ?? "",
-    toneStyle: c?.toneStyle ?? "",
-    personaPrompt: c?.personaPrompt ?? "",
-    voiceProvider: c?.voiceProvider ?? "cartesia",
-    voiceId: c?.voiceId ?? "",
-    language: c?.language ?? "",
-    sttProvider: c?.sttProvider ?? "deepgram",
-    llmProvider: c?.llmProvider ?? "gateway",
-    llmModel: c?.llmModel ?? "",
-    toolsEnabled: c?.toolsEnabled ?? [...AVAILABLE_TOOL_NAMES],
-    topicBoundaryStrictness: c?.guardrails?.topicBoundaryStrictness ?? "medium",
-    injectionSensitivity: c?.guardrails?.injectionSensitivity ?? "medium",
-    abuseHandlingEnabled: c?.guardrails?.abuseHandlingEnabled ?? true,
-    enabled: c?.enabled ?? true,
-    firstCallDelayMinutes: c?.firstCallDelayMinutes != null ? String(c.firstCallDelayMinutes) : "",
-    retryDelayMinutes: c?.retryDelayMinutes != null ? String(c.retryDelayMinutes) : "",
-    maxAttempts: c?.maxAttempts != null ? String(c.maxAttempts) : "",
-  };
-}
-
-function selectClass() {
-  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
-}
-function inputClass() {
-  return "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 w-full";
-}
-function labelClass() {
-  return "block text-xs font-medium text-muted-foreground mb-1";
-}
-
-/** Same shape the PUT save mutation sends — the Preview drawer's configOverride
- * uses this identical conversion so "what you're previewing" and "what Save
- * would write" never drift apart. */
-function formToAgentFrame(form: FormState) {
-  return {
-    name: form.name || undefined,
-    greetingLine: form.greetingLine || undefined,
-    closingLine: form.closingLine || undefined,
-    toneStyle: form.toneStyle || undefined,
-    personaPrompt: form.personaPrompt || undefined,
-    voiceProvider: form.voiceProvider,
-    voiceId: form.voiceId || undefined,
-    language: form.language || undefined,
-    sttProvider: form.sttProvider,
-    llmProvider: form.llmProvider,
-    llmModel: form.llmModel || undefined,
-    toolsEnabled: form.toolsEnabled,
-    guardrails: {
-      topicBoundaryStrictness: form.topicBoundaryStrictness,
-      injectionSensitivity: form.injectionSensitivity,
-      abuseHandlingEnabled: form.abuseHandlingEnabled,
-    },
-    enabled: form.enabled,
-    firstCallDelayMinutes: form.firstCallDelayMinutes.trim() ? Number(form.firstCallDelayMinutes) : undefined,
-    retryDelayMinutes: form.retryDelayMinutes.trim() ? Number(form.retryDelayMinutes) : undefined,
-    maxAttempts: form.maxAttempts.trim() ? Number(form.maxAttempts) : undefined,
-  };
-}
-
-type SyntheticAssertionResult = {
-  assertion: { type: string; description: string; tool?: string; text?: string };
-  passed: boolean;
-};
-type SyntheticTestResult = {
+type SyntheticResult = {
   scenarioKey: string;
   transcript: { role: "caller" | "agent"; text: string }[];
   toolCallsByAgent: string[];
   endedBy: "hangup" | "max-turns";
-  assertions: SyntheticAssertionResult[];
+  assertions: { assertion: { description: string }; passed: boolean }[];
   allPassed: boolean;
 };
 
-/**
- * Misc-9: AI-to-AI synthetic call testing — runs a built-in scripted-caller
- * scenario against this exact in-progress form (same configOverride
- * contract as the Preview drawer) and shows pass/fail per assertion + the
- * full transcript. Real LLM cost, so this is an explicit "Run" click, not
- * something that fires automatically on every edit.
- */
 function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templateKey: string; form: FormState }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [scenarioKey, setScenarioKey] = useState("");
+  const [result, setResult] = useState<SyntheticResult | null>(null);
+
   const scenarios = useQuery({
     queryKey: ["synthetic-scenarios"],
-    enabled: expanded,
+    enabled: open,
     queryFn: async () => {
       const res = await apiFetch("/api/voice/synthetic-scenarios", { headers: adminHeaders() });
-      if (!res.ok) throw new Error(`scenarios failed (${res.status})`);
+      if (!res.ok) throw new Error(`${res.status}`);
       return (await res.json()) as { scenarios: { key: string; label: string }[] };
     },
   });
-  const [scenarioKey, setScenarioKey] = useState("");
-  const [result, setResult] = useState<SyntheticTestResult | null>(null);
 
   const run = useMutation({
     mutationFn: async () => {
@@ -202,72 +56,48 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
         },
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Test run failed (${res.status})`);
-      return data as SyntheticTestResult;
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`);
+      return data as SyntheticResult;
     },
-    onSuccess: (data) => setResult(data),
+    onSuccess: setResult,
+    onError: (err: Error) => toast.error("Synthetic test failed", { description: err.message }),
   });
 
-  const scenarioOptions = scenarios.data?.scenarios ?? [];
-
   return (
-    <div className="mb-5 rounded-lg border border-border">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium"
-      >
-        <span>Synthetic call test (AI-to-AI)</span>
-        {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+    <div className="card-weeber overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+        Synthetic call test (AI-to-AI)
+        {open ? <ChevronUp className="size-4 text-muted-foreground" aria-hidden /> : <ChevronDown className="size-4 text-muted-foreground" aria-hidden />}
       </button>
-      {expanded && (
+      {open && (
         <div className="border-t border-border p-4 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            A scripted LLM plays a caller persona and calls this exact in-progress config end-to-end — real LLM
-            cost, but no telephony.
-          </p>
+          <p className="text-xs text-muted-foreground">A scripted LLM plays a caller and tests this exact in-progress config — real LLM cost, no telephony required.</p>
           <div className="flex gap-2">
-            <select
-              value={scenarioKey}
-              onChange={(e) => setScenarioKey(e.target.value)}
-              className="flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-            >
+            <select value={scenarioKey} onChange={(e) => setScenarioKey(e.target.value)} className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none">
               <option value="">Select a scenario…</option>
-              {scenarioOptions.map((s) => (
-                <option key={s.key} value={s.key}>{s.label}</option>
-              ))}
+              {(scenarios.data?.scenarios ?? []).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
-            <button
-              type="button"
-              onClick={() => run.mutate()}
-              disabled={!scenarioKey || run.isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50"
-            >
-              {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+            <Button size="sm" onClick={() => run.mutate()} disabled={!scenarioKey || run.isPending}>
+              {run.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
               Run
-            </button>
+            </Button>
           </div>
-          {run.isError && <p className="text-xs text-destructive">{(run.error as Error).message}</p>}
           {result && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className={result.allPassed ? "text-success font-medium" : "text-destructive font-medium"}>
-                  {result.allPassed ? "All assertions passed" : "Some assertions failed"}
-                </span>
-                <span className="text-xs text-muted-foreground">— ended by {result.endedBy === "hangup" ? "agent hangUp" : "max turns"}</span>
-              </div>
+            <div className="space-y-2">
+              <p className={`text-sm font-medium ${result.allPassed ? "text-emerald-600" : "text-destructive"}`}>
+                {result.allPassed ? "All assertions passed" : "Some assertions failed"}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">— ended by {result.endedBy === "hangup" ? "agent hangUp" : "max turns"}</span>
+              </p>
               <ul className="space-y-1">
                 {result.assertions.map((a, i) => (
-                  <li key={i} className={`text-xs ${a.passed ? "text-success" : "text-destructive"}`}>
+                  <li key={i} className={`text-xs ${a.passed ? "text-emerald-600" : "text-destructive"}`}>
                     {a.passed ? "✓" : "✗"} {a.assertion.description}
                   </li>
                 ))}
               </ul>
-              <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-background/60 p-2 text-xs space-y-1">
+              <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 space-y-1 text-xs">
                 {result.transcript.map((t, i) => (
-                  <p key={i}>
-                    <span className="font-medium">{t.role === "caller" ? "Caller" : "Agent"}:</span> {t.text}
-                  </p>
+                  <p key={i}><span className="font-medium">{t.role === "caller" ? "Caller" : "Agent"}:</span> {t.text}</p>
                 ))}
               </div>
             </div>
@@ -278,32 +108,48 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
   );
 }
 
+function SectionDivider({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-t border-border pt-5 mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+      {children}
+    </div>
+  );
+}
+
 function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    setForm(toFormState(row));
+    setAdvancedOpen(false);
+  }, [row]);
 
   const save = useMutation({
     mutationFn: async () => {
-      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify(formToAgentFrame(form)),
-      });
+      const res = await apiFetch(
+        `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...adminHeaders() },
+          body: JSON.stringify(formToAgentFrame(form)),
+        },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(body.error ?? `Failed (${res.status})`);
+        throw new Error((body as { error?: string }).error ?? `Failed (${res.status})`);
       }
       return res.json();
     },
     onSuccess: () => {
-      setSaveError(null);
       queryClient.invalidateQueries({ queryKey: ["agent-configs", orgId] });
+      toast.success("Agent saved");
     },
-    onError: (err: Error) => setSaveError(err.message),
+    onError: (err: Error) => toast.error("Failed to save", { description: err.message }),
   });
 
   async function playPreview() {
@@ -316,7 +162,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         headers: { "Content-Type": "application/json", "X-OpenVent-Admin-Key": getAdminKey() },
         body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined, language: form.language || undefined }),
       });
-      if (!res.ok) throw new Error(`Preview failed (${res.status})`);
+      if (!res.ok) throw new Error(`${res.status}`);
       const blob = await res.blob();
       setPreviewUrl(URL.createObjectURL(blob));
       setPreviewState("idle");
@@ -325,396 +171,217 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     }
   }
 
+  const chatFetchFn = (messages: { role: string; content: string }[]) =>
+    apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
+    });
+
+  const testCallTokenFetchFn = () =>
+    apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+    });
+
+  const testCallPhoneFetchFn = (phone: string) =>
+    apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
+    });
+
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
-      toolsEnabled: f.toolsEnabled.includes(name) ? f.toolsEnabled.filter((t) => t !== name) : [...f.toolsEnabled, name],
+      toolsEnabled: f.toolsEnabled.includes(name)
+        ? f.toolsEnabled.filter((t) => t !== name)
+        : [...f.toolsEnabled, name],
     }));
   }
 
-  /** Sends the current, in-progress form as configOverride — the backend
-   * (buildPreviewAgentConfig, voice/agent.ts) builds the system prompt/voice/
-   * LLM/tools straight from it instead of the saved DB row, so this really
-   * tests what's on screen right now, not just the last saved version. */
-  const testChatFetch = async (messages: { role: string; content: string }[]) => {
-    return apiFetch(
-      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
-      },
-    );
-  };
-
-  /** Issues a short-lived token for the Voice tab's live test call — same
-   * configOverride contract as testChatFetch, see test-call-tokens.ts. */
-  const testCallTokenFetch = async () => {
-    return apiFetch(
-      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
-      },
-    );
-  };
-
-  /** Misc-1: real PSTN callback — admin-side mirror of the merchant
-   * test-call-phone route, same configOverride contract. */
-  const testCallPhoneFetch = async (phone: string) => {
-    return apiFetch(
-      `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-phone`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
-      },
-    );
-  };
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
 
   return (
-    <div className="border-t border-border bg-muted/40 p-5">
-      <div className="flex justify-end mb-5">
-        <PreviewButton onClick={() => setPreviewDrawerOpen(true)} />
+    <div className="border-t border-border p-5 bg-muted/20 space-y-5">
+      {/* Synthetic test */}
+      <SyntheticTestPanel orgId={orgId} templateKey={row.templateKey} form={form} />
+
+      {/* Preview */}
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} aria-label="Agent enabled" />
+          {form.enabled ? "Enabled" : "Disabled"}
+        </label>
+        <PreviewButton onClick={() => setDrawerOpen(true)} />
       </div>
+
       <PreviewDrawer
-        open={previewDrawerOpen}
-        onOpenChange={setPreviewDrawerOpen}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
         templateName={row.config?.name || row.templateName}
-        chatFetchFn={testChatFetch}
-        testCallTokenFetchFn={testCallTokenFetch}
-        testCallPhoneFetchFn={testCallPhoneFetch}
+        chatFetchFn={chatFetchFn}
+        testCallTokenFetchFn={testCallTokenFetchFn}
+        testCallPhoneFetchFn={testCallPhoneFetchFn}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}
       />
 
-      <SyntheticTestPanel orgId={orgId} templateKey={row.templateKey} form={form} />
+      {/* Identity & Tone */}
+      <SectionDivider>Identity &amp; Tone</SectionDivider>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label htmlFor={`name-${row.templateKey}`} className={labelCls}>Agent name</label>
+          <input id={`name-${row.templateKey}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Aria" className={fieldCls} />
+        </div>
+        <div>
+          <label htmlFor={`tone-${row.templateKey}`} className={labelCls}>Tone</label>
+          <select id={`tone-${row.templateKey}`} value={form.toneStyle} onChange={(e) => set("toneStyle", e.target.value)} className={fieldCls}>
+            <option value="">Default</option>
+            {TONE_STYLES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={`greeting-${row.templateKey}`} className={labelCls}>Greeting line</label>
+          <input id={`greeting-${row.templateKey}`} value={form.greetingLine} onChange={(e) => set("greetingLine", e.target.value)} placeholder="Hi, how can I help?" className={fieldCls} />
+        </div>
+        <div>
+          <label htmlFor={`closing-${row.templateKey}`} className={labelCls}>Closing line</label>
+          <input id={`closing-${row.templateKey}`} value={form.closingLine} onChange={(e) => set("closingLine", e.target.value)} placeholder="Thanks, have a great day!" className={fieldCls} />
+        </div>
+      </div>
+      <div>
+        <label htmlFor={`persona-${row.templateKey}`} className={labelCls}>Persona prompt (leave blank to use the template default)</label>
+        <textarea id={`persona-${row.templateKey}`} value={form.personaPrompt} onChange={(e) => set("personaPrompt", e.target.value)} rows={4} placeholder={row.defaultPersonaPrompt ?? ""} className={`${fieldCls} font-mono text-xs`} />
+      </div>
 
-      {(
-        <div className="space-y-5">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor={`name-${row.templateKey}`} className={labelClass()}>Agent name</label>
-              <input
-                id={`name-${row.templateKey}`}
-                aria-label="Agent name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Aria"
-                className={inputClass()}
-              />
-            </div>
-            <div>
-              <label htmlFor={`tone-${row.templateKey}`} className={labelClass()}>Tone</label>
-              <select
-                id={`tone-${row.templateKey}`}
-                value={form.toneStyle}
-                onChange={(e) => setForm({ ...form, toneStyle: e.target.value })}
-                className={selectClass()}
-              >
-                <option value="">Default</option>
-                {TONE_STYLES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+      {/* Voice */}
+      <SectionDivider>Voice</SectionDivider>
+      <div className="grid sm:grid-cols-3 gap-4 items-end">
+        <div>
+          <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Provider</label>
+          <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
+            <option value="cartesia">Cartesia</option>
+            <option value="elevenlabs">ElevenLabs</option>
+            <option value="sarvam">Sarvam</option>
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Voice</label>
+          <VoicePicker provider={form.voiceProvider} value={form.voiceId} language={form.language} onChange={(v) => set("voiceId", v)} scope="admin" previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups." />
+        </div>
+        <div className="flex items-end gap-2">
+          <button type="button" onClick={playPreview} disabled={previewState === "loading"} className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50">
+            {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
+            Preview
+          </button>
+          {previewUrl && (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <audio controls src={previewUrl} className="h-9" aria-label="Voice preview playback" />
+          )}
+        </div>
+      </div>
+      {previewState === "error" && <p className="text-xs text-destructive">Preview failed — check the voice ID and provider key.</p>}
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor={`greeting-${row.templateKey}`} className={labelClass()}>Greeting line</label>
-              <input
-                id={`greeting-${row.templateKey}`}
-                aria-label="Greeting line"
-                value={form.greetingLine}
-                onChange={(e) => setForm({ ...form, greetingLine: e.target.value })}
-                placeholder="Hi, thanks for calling — how can I help?"
-                className={inputClass()}
-              />
-            </div>
-            <div>
-              <label htmlFor={`closing-${row.templateKey}`} className={labelClass()}>Closing line</label>
-              <input
-                id={`closing-${row.templateKey}`}
-                aria-label="Closing line"
-                value={form.closingLine}
-                onChange={(e) => setForm({ ...form, closingLine: e.target.value })}
-                placeholder="Thanks for calling, have a great day!"
-                className={inputClass()}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor={`persona-${row.templateKey}`} className={labelClass()}>
-              Job description / persona prompt (leave blank to use the template default)
-            </label>
-            <textarea
-              id={`persona-${row.templateKey}`}
-              aria-label="Job description / persona prompt"
-              value={form.personaPrompt}
-              onChange={(e) => setForm({ ...form, personaPrompt: e.target.value })}
-              rows={4}
-              placeholder={row.defaultPersonaPrompt ?? ""}
-              className={inputClass() + " font-mono text-xs"}
-            />
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-4 items-end">
-            <div>
-              <label htmlFor={`voice-provider-${row.templateKey}`} className={labelClass()}>Voice provider</label>
-              <select
-                id={`voice-provider-${row.templateKey}`}
-                value={form.voiceProvider}
-                onChange={(e) => setForm({ ...form, voiceProvider: e.target.value })}
-                className={selectClass()}
-              >
-                <option value="cartesia">Cartesia</option>
-                <option value="elevenlabs">ElevenLabs</option>
-                <option value="sarvam">Sarvam (Indian-language voices)</option>
-              </select>
-            </div>
-            <div>
-              <label className={labelClass()}>Voice</label>
-              <VoicePicker
-                provider={form.voiceProvider}
-                value={form.voiceId}
-                language={form.language}
-                onChange={(voiceId) => setForm({ ...form, voiceId })}
-                scope="admin"
-                previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups."
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={playPreview}
-                disabled={previewState === "loading"}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50"
-              >
-                {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-                Preview
-              </button>
-              {previewUrl && (
-                // eslint-disable-next-line jsx-a11y/media-has-caption -- synthesized TTS preview, no source track to caption
-                <audio controls src={previewUrl} className="h-9" aria-label="Voice preview playback" />
-              )}
-            </div>
-          </div>
-          {previewState === "error" && <p className="text-xs text-destructive">Preview failed — check the voice ID and provider key.</p>}
-
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label htmlFor={`language-${row.templateKey}`} className={labelClass()}>Language</label>
-              <input
-                id={`language-${row.templateKey}`}
-                aria-label="Language"
-                value={form.language}
-                onChange={(e) => setForm({ ...form, language: e.target.value })}
-                placeholder="en, hi, mr, ta…"
-                list={`languages-${row.templateKey}`}
-                className={inputClass()}
-              />
-              <datalist id={`languages-${row.templateKey}`}>
-                {RECOMMENDED_LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
-                ))}
-              </datalist>
-            </div>
-            <div>
-              <label htmlFor={`stt-provider-${row.templateKey}`} className={labelClass()}>Speech-to-text provider</label>
-              <select
-                id={`stt-provider-${row.templateKey}`}
-                value={form.sttProvider}
-                onChange={(e) => setForm({ ...form, sttProvider: e.target.value })}
-                className={selectClass()}
-              >
-                <option value="deepgram">Deepgram</option>
-                <option value="sarvam">Sarvam (Indian-language STT)</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor={`llm-provider-${row.templateKey}`} className={labelClass()}>LLM provider</label>
-              <select
-                id={`llm-provider-${row.templateKey}`}
-                value={form.llmProvider}
-                onChange={(e) => setForm({ ...form, llmProvider: e.target.value })}
-                className={selectClass()}
-              >
-                <option value="gateway">AI Gateway</option>
-                <option value="groq">Groq</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor={`llm-model-${row.templateKey}`} className={labelClass()}>Model</label>
-              <input
-                id={`llm-model-${row.templateKey}`}
-                aria-label="Model"
-                value={form.llmModel}
-                onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
-                placeholder="leave blank for the default"
-                list={`models-${row.templateKey}`}
-                className={inputClass()}
-              />
-              <datalist id={`models-${row.templateKey}`}>
-                {RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => (
-                  <option key={m.model} value={m.model}>
-                    {m.label}
-                  </option>
-                ))}
-              </datalist>
-            </div>
-          </div>
-
-          <div>
-            <span className={labelClass()}>Tools enabled (hangUp always stays available)</span>
-            <div className="flex flex-wrap gap-3">
+      {/* Advanced disclosure */}
+      <div className="border-t border-border/50 pt-4">
+        <button type="button" onClick={() => setAdvancedOpen((o) => !o)} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors" aria-expanded={advancedOpen}>
+          <Settings2 className="size-3.5" aria-hidden />
+          Advanced settings
+          {advancedOpen ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
+        </button>
+        {advancedOpen && (
+          <div className="mt-5 space-y-5">
+            <SectionDivider>Capabilities</SectionDivider>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
               {AVAILABLE_TOOL_NAMES.map((name) => (
                 <label key={name} className="flex items-center gap-1.5 text-sm">
-                  <input
-                    type="checkbox"
-                    aria-label={name}
-                    checked={name === "hangUp" || form.toolsEnabled.includes(name)}
-                    disabled={name === "hangUp"}
-                    onChange={() => toggleTool(name)}
-                    className="accent-primary"
-                  />
+                  <input type="checkbox" aria-label={name} checked={name === "hangUp" || form.toolsEnabled.includes(name)} disabled={name === "hangUp"} onChange={() => toggleTool(name)} className="accent-primary" />
                   <span className="font-mono text-xs">{name}</span>
                 </label>
               ))}
             </div>
-          </div>
 
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label htmlFor={`topic-strictness-${row.templateKey}`} className={labelClass()}>Topic boundary strictness</label>
-              <select
-                id={`topic-strictness-${row.templateKey}`}
-                value={form.topicBoundaryStrictness}
-                onChange={(e) => setForm({ ...form, topicBoundaryStrictness: e.target.value })}
-                className={selectClass()}
-              >
-                {STRICTNESS_LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
+            <SectionDivider>Guardrails</SectionDivider>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor={`ts-${row.templateKey}`} className={labelCls}>Topic boundary strictness</label>
+                <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={fieldCls}>
+                  {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`is-${row.templateKey}`} className={labelCls}>Injection sensitivity</label>
+                <select id={`is-${row.templateKey}`} value={form.injectionSensitivity} onChange={(e) => set("injectionSensitivity", e.target.value)} className={fieldCls}>
+                  {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={form.abuseHandlingEnabled} onCheckedChange={(v) => set("abuseHandlingEnabled", v)} aria-label="End call on sustained abuse" />
+                  End call on abuse
+                </label>
+              </div>
             </div>
-            <div>
-              <label htmlFor={`injection-sensitivity-${row.templateKey}`} className={labelClass()}>Injection sensitivity</label>
-              <select
-                id={`injection-sensitivity-${row.templateKey}`}
-                value={form.injectionSensitivity}
-                onChange={(e) => setForm({ ...form, injectionSensitivity: e.target.value })}
-                className={selectClass()}
-              >
-                {STRICTNESS_LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end pb-2">
-              <label className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="checkbox"
-                  aria-label="End call on sustained abuse"
-                  checked={form.abuseHandlingEnabled}
-                  onChange={(e) => setForm({ ...form, abuseHandlingEnabled: e.target.checked })}
-                  className="accent-primary"
-                />
-                End call on sustained abuse
-              </label>
-            </div>
-          </div>
 
-          {/* Retry cadence — per-org override, empty = platform default */}
-          <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70 pt-3 pb-1">
-            Retry cadence
-          </div>
-          <p className="text-xs text-muted-foreground -mt-1">
-            Leave any field blank to use the platform default. Max attempts is capped at 20 either way.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label htmlFor={`first-call-delay-${row.templateKey}`} className={labelClass()}>
-                Delay before first call (minutes)
-              </label>
-              <input
-                id={`first-call-delay-${row.templateKey}`}
-                type="number"
-                min={0}
-                max={43200}
-                value={form.firstCallDelayMinutes}
-                onChange={(e) => setForm({ ...form, firstCallDelayMinutes: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
+            <SectionDivider>Retry cadence</SectionDivider>
+            <p className="text-xs text-muted-foreground">Leave blank to use the platform default.</p>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor={`fd-${row.templateKey}`} className={labelCls}>Delay before first call (min)</label>
+                <input id={`fd-${row.templateKey}`} type="number" min={0} max={43200} value={form.firstCallDelayMinutes} onChange={(e) => set("firstCallDelayMinutes", e.target.value)} placeholder="Platform default" className={fieldCls} />
+              </div>
+              <div>
+                <label htmlFor={`rd-${row.templateKey}`} className={labelCls}>Delay between retries (min)</label>
+                <input id={`rd-${row.templateKey}`} type="number" min={0} max={43200} value={form.retryDelayMinutes} onChange={(e) => set("retryDelayMinutes", e.target.value)} placeholder="Platform default" className={fieldCls} />
+              </div>
+              <div>
+                <label htmlFor={`ma-${row.templateKey}`} className={labelCls}>Max attempts (1–20)</label>
+                <input id={`ma-${row.templateKey}`} type="number" min={1} max={20} value={form.maxAttempts} onChange={(e) => set("maxAttempts", e.target.value)} placeholder="Platform default" className={fieldCls} />
+              </div>
             </div>
-            <div>
-              <label htmlFor={`retry-delay-${row.templateKey}`} className={labelClass()}>
-                Delay between retries (minutes)
-              </label>
-              <input
-                id={`retry-delay-${row.templateKey}`}
-                type="number"
-                min={0}
-                max={43200}
-                value={form.retryDelayMinutes}
-                onChange={(e) => setForm({ ...form, retryDelayMinutes: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
-            </div>
-            <div>
-              <label htmlFor={`max-attempts-${row.templateKey}`} className={labelClass()}>
-                Max attempts (1–20)
-              </label>
-              <input
-                id={`max-attempts-${row.templateKey}`}
-                type="number"
-                min={1}
-                max={20}
-                value={form.maxAttempts}
-                onChange={(e) => setForm({ ...form, maxAttempts: e.target.value })}
-                placeholder="Platform default"
-                className={inputClass()}
-              />
-            </div>
-          </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <label className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                aria-label="Agent enabled"
-                checked={form.enabled}
-                onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-                className="accent-primary"
-              />
-              Agent enabled
-            </label>
-            <button
-              onClick={() => save.mutate()}
-              disabled={save.isPending}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              Save
-            </button>
+            <SectionDivider>Language &amp; Model</SectionDivider>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor={`lang-${row.templateKey}`} className={labelCls}>Language</label>
+                <input id={`lang-${row.templateKey}`} value={form.language} onChange={(e) => set("language", e.target.value)} placeholder="en, hi, mr…" list={`langs-${row.templateKey}`} className={fieldCls} />
+                <datalist id={`langs-${row.templateKey}`}>{RECOMMENDED_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</datalist>
+              </div>
+              <div>
+                <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>STT provider</label>
+                <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={fieldCls}>
+                  <option value="deepgram">Deepgram</option>
+                  <option value="sarvam">Sarvam</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>
+                <select id={`llmp-${row.templateKey}`} value={form.llmProvider} onChange={(e) => set("llmProvider", e.target.value)} className={fieldCls}>
+                  <option value="gateway">AI Gateway</option>
+                  <option value="groq">Groq</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`llmm-${row.templateKey}`} className={labelCls}>Model</label>
+                <input id={`llmm-${row.templateKey}`} value={form.llmModel} onChange={(e) => set("llmModel", e.target.value)} placeholder="leave blank for default" list={`models-${row.templateKey}`} className={fieldCls} />
+                <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
+              </div>
+            </div>
           </div>
-          {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-          {save.isSuccess && !saveError && <p className="text-xs text-muted-foreground">Saved.</p>}
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end pt-2 border-t border-border">
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+          {save.isSuccess ? "Saved" : "Save"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -730,7 +397,8 @@ export function AgentsPage() {
       return res.json();
     },
   });
-  const orgRows = orgsQuery.data && "orgs" in orgsQuery.data ? orgsQuery.data.orgs : [];
+  const orgRows =
+    orgsQuery.data && "orgs" in orgsQuery.data ? orgsQuery.data.orgs : [];
 
   useEffect(() => {
     if (!orgId && orgRows.length > 0) setOrgId(orgRows[0].id);
@@ -741,87 +409,99 @@ export function AgentsPage() {
     queryKey: ["agent-configs", orgId],
     enabled: Boolean(orgId),
     queryFn: async () => {
-      const res = await api.voice.orgs[":orgId"]["agent-configs"].$get({ param: { orgId } }, { headers: adminHeaders() });
+      const res = await api.voice.orgs[":orgId"]["agent-configs"].$get(
+        { param: { orgId } },
+        { headers: adminHeaders() },
+      );
       return res.json();
     },
   });
-  const rows = configs.data && "agentConfigs" in configs.data ? (configs.data.agentConfigs as AgentConfigRow[]) : [];
+  const rows =
+    configs.data && "agentConfigs" in configs.data
+      ? (configs.data.agentConfigs as AgentConfigRow[])
+      : [];
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Slim top bar — org picker as a pill, consistent with the merchant
-       * agent console's full-window layout, instead of a large title block
-       * eating vertical space. */}
-      <div className="flex shrink-0 items-center gap-3 flex-wrap border-b border-border pb-4">
-        <Bot className="size-4 text-primary shrink-0" aria-hidden />
-        <select
-          aria-label="Select org"
-          value={orgId}
-          onChange={(e) => setOrgId(e.target.value)}
-          className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium shadow-xs transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
-        >
-          <option value="">Select an org…</option>
-          {orgRows.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name ?? o.id} ({o.vertical})
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-muted-foreground">
-          Configure identity, voice, model, tools, and guardrails per agent.
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto pt-5">
-        {!orgId && <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Select an org to configure its agents.</div>}
-
-        {orgId && configs.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {orgId && configs.isError && (
-          <div className="rounded-lg border border-dashed border-destructive/40 p-10 text-center text-sm text-destructive">
-            Couldn't load agents for this org — try refreshing the page.
+    <div className="page-enter space-y-5">
+      <PageHeader
+        title="Agents"
+        description="Configure identity, voice, model, tools, and guardrails for each agent template."
+        actions={
+          <div className="flex items-center gap-2">
+            <Bot className="size-4 text-muted-foreground shrink-0" aria-hidden />
+            <select
+              aria-label="Select org"
+              value={orgId}
+              onChange={(e) => {
+                setOrgId(e.target.value);
+                setExpandedKey(null);
+              }}
+              className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
+            >
+              <option value="">Select an org…</option>
+              {orgRows.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name ?? o.id} ({o.vertical})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-        {orgId && !configs.isLoading && !configs.isError && rows.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-            No agent templates found for this org's vertical.
-          </div>
-        )}
+        }
+      />
 
-        {orgId && rows.length > 0 && (
-      <div className="rounded-lg border border-border divide-y divide-border">
-        {rows.map((row) => {
-          const isExpanded = expandedKey === row.templateKey;
-          const isConfigured = Boolean(row.config);
-          return (
-            <div key={row.templateKey}>
-              <button
-                onClick={() => setExpandedKey(isExpanded ? null : row.templateKey)}
-                className="w-full flex items-center justify-between gap-4 px-5 py-4 hover:bg-muted/60 transition-colors text-left"
-              >
-                <div>
-                  <div className="text-sm font-medium flex items-center gap-2">
-                    {row.config?.name || row.templateName}
-                    {isConfigured ? (
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-success bg-success-soft px-1.5 py-0.5 rounded">
-                        configured
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        default
-                      </span>
+      {!orgId && (
+        <EmptyState title="No org selected" description="Pick an org above to configure its agents." />
+      )}
+
+      {orgId && configs.isLoading && <SkeletonCards count={3} lines={2} />}
+
+      {orgId && configs.isError && (
+        <EmptyState title="Couldn't load agents" description="Something went wrong — try refreshing the page." />
+      )}
+
+      {orgId && !configs.isLoading && !configs.isError && rows.length === 0 && (
+        <EmptyState title="No agent templates" description="No agent templates found for this org's vertical." />
+      )}
+
+      {orgId && rows.length > 0 && (
+        <div className="card-weeber overflow-hidden divide-y divide-border">
+          {rows.map((row) => {
+            const isExpanded = expandedKey === row.templateKey;
+            const isConfigured = Boolean(row.config);
+            return (
+              <div key={row.templateKey}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedKey(isExpanded ? null : row.templateKey)}
+                  className="w-full flex items-center justify-between gap-4 px-5 py-4 hover:bg-muted/50 transition-colors text-left"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      {row.config?.name || row.templateName}
+                      {isConfigured ? (
+                        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-200 text-[10px]">configured</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">default</Badge>
+                      )}
+                      {row.config?.enabled === false && (
+                        <Badge variant="secondary" className="text-[10px]">disabled</Badge>
+                      )}
+                    </div>
+                    {row.templateDescription && (
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{row.templateDescription}</p>
                     )}
                   </div>
-                  {row.templateDescription && <div className="text-xs text-muted-foreground mt-0.5">{row.templateDescription}</div>}
-                </div>
-                {isExpanded ? <ChevronUp className="size-4 text-muted-foreground shrink-0" /> : <ChevronDown className="size-4 text-muted-foreground shrink-0" />}
-              </button>
-              {isExpanded && <AgentEditForm orgId={orgId} row={row} />}
-            </div>
-          );
-        })}
-      </div>
-        )}
-      </div>
+                  {isExpanded
+                    ? <ChevronUp className="size-4 text-muted-foreground shrink-0" aria-hidden />
+                    : <ChevronDown className="size-4 text-muted-foreground shrink-0" aria-hidden />
+                  }
+                </button>
+                {isExpanded && <AgentEditForm orgId={orgId} row={row} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
