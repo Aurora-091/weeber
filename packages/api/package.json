@@ -13,7 +13,8 @@
     "db:generate": "bun --env-file=../../.env drizzle-kit generate",
     "db:migrate": "bun --env-file=../../.env drizzle-kit migrate",
     "db:push": "bun --env-file=../../.env drizzle-kit push",
-    "db:studio": "bun --env-file=../../.env drizzle-kit studio"
+    "db:studio": "bun --env-file=../../.env drizzle-kit studio",
+    "bench:latency": "bun --env-file=../../.env run scripts/latency-benchmark.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.5",

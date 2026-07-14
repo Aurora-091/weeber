@@ -45,6 +45,10 @@ yarn-error.*
 
 # scripts (local-only provisioning)
 scripts/
+# ...except packages/api/scripts — that's the real, committed latency
+# benchmark tool (§2b), not a local-only provisioning script.
+!packages/api/scripts/
+!packages/api/scripts/**
 .git-push.env
 task.md
 
