@@ -437,3 +437,27 @@ immediately so they can be picked up together in one pass instead of as scattere
   **Rapida AI** (Go-based, OSS, on-prem-first contact-center platform) and **Dograh AI** (OSS Vapi/Retell
   alternative, notable for shipping AI-to-AI stress-testing as a first-class feature — see Misc-9 above).
   Neither changes the roadmap directly; logged here so they're on record for the next competitive pass.
+
+- **Competitor/stack landscape note (not a build item) — GPT-Live, Voximplant, Flyboard.ai (2026-07-14).**
+  Three-layer read: model layer (OpenAI GPT-Live, announced 2026-07-08 — full-duplex STT/LLM/TTS collapsed
+  into one model, delegates hard reasoning to GPT-5.5 in the background), infra layer (Voximplant — CPaaS
+  + serverless orchestration runtime, 315 speech/LLM connector combos, native WhatsApp Business Calling
+  API, sells End-of-Turn detection + VAD as line items), and application layer (**Flyboard.ai** — closest
+  competitor by thesis: Spanish, €1.9M-funded (b2venture/Kfund/Yellow + Glovo-founder angels), "recover
+  cancelled subscriptions, activate leads, recover abandoned carts" — but sales-led/done-for-you/
+  pay-per-outcome/EU-mid-market, no self-serve signup, no public pricing — the inverse of Weeber's
+  self-serve/transparent-pricing/India+global SMB play). None of the three force an architecture change:
+  - GPT-Live's API is "coming soon" (notify-form only, no pricing) — no action beyond signing up for API
+    access to benchmark later. It does validate that **turn-taking/endpointing is the real competitive
+    line, not vendor choice** — direct confirmation that A1b (shipped 2026-07-14, `b689d2b`) targeted the
+    right thing. The existing provider-abstracted STT/LLM/TTS is exactly the right insurance policy to
+    slot GPT-Live in later as a premium "conversation quality" tier without a re-architecture.
+  - Voximplant is a supplier, not a rival — worth a look for two specific things next time A2's telephony
+    vendor list is revisited: WhatsApp Business Calling API (Weeber already does WhatsApp fallback for
+    cart recovery) and their native End-of-Turn detection as a line-item alternative to more in-house
+    endpointing work. Not urgent.
+  - Flyboard validates the market thesis (funded, Glovo-founder-backed) — useful ammunition for grant/
+    investor conversations — but low near-term GTM/geo collision (EU mid-market sales-led vs. India/
+    global SMB self-serve). Watch, don't react.
+  Restates the standing moat thesis: neither the model layer nor the infra layer is defensible — the
+  durable value is compliance-in-infra, vertical Shopify depth, no-code self-serve, transparent pricing.
