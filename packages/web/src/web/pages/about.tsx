@@ -101,7 +101,7 @@ export function AboutPage() {
       </section>
 
       {/* CTA */}
-      <section className="px-6 py-24 text-center">
+      <section id="waitlist" className="px-6 py-24 text-center">
         <div className="max-w-[600px] mx-auto" data-reveal>
           <h2 className="font-display text-[clamp(28px,3.8vw,42px)] font-extrabold tracking-[-0.03em] leading-[1.05] text-[var(--m-text)]">
             Join the businesses building this with us.

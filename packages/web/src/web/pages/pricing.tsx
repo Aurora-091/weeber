@@ -63,7 +63,7 @@ export function PricingPage() {
                   ))}
                 </ul>
                 <a
-                  href="/#waitlist"
+                  href="#waitlist"
                   className={`mt-8 block text-center px-5 py-3 rounded-lg text-[14px] font-semibold transition-opacity hover:opacity-90 ${
                     "highlighted" in tier && tier.highlighted
                       ? "bg-[var(--m-text)] text-[var(--m-bg)]"
@@ -140,7 +140,7 @@ export function PricingPage() {
       </section>
 
       {/* CTA band */}
-      <section className="px-6 py-24 text-center">
+      <section id="waitlist" className="px-6 py-24 text-center">
         <div className="max-w-[600px] mx-auto" data-reveal>
           <h2 className="font-display text-[clamp(28px,3.8vw,42px)] font-extrabold tracking-[-0.03em] leading-[1.05] text-[var(--m-text)]">
             Lock in founder pricing before it's gone.

@@ -63,7 +63,7 @@ export function FaqPage() {
         </div>
       </section>
 
-      <section className="border-t border-[var(--m-border)] px-6 py-24 text-center">
+      <section id="waitlist" className="border-t border-[var(--m-border)] px-6 py-24 text-center">
         <div className="max-w-[600px] mx-auto" data-reveal>
           <h2 className="font-display text-[clamp(26px,3.4vw,36px)] font-extrabold tracking-[-0.03em] leading-[1.05] text-[var(--m-text)]">
             Still have a question?

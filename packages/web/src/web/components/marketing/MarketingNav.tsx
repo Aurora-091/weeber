@@ -52,12 +52,12 @@ export function MarketingNav() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2.5">
-          <a
-            href="#faq"
+          <Link
+            href="/faq"
             className="px-4 py-2 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] hover:border-[var(--m-text-muted)] transition-all"
           >
             Help
-          </a>
+          </Link>
           <a
             href={appUrl("/login")}
             className="px-4 py-2 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
@@ -88,12 +88,12 @@ export function MarketingNav() {
             ))}
           </nav>
           <div className="flex gap-3">
-            <a
-              href="#faq"
+            <Link
+              href="/faq"
               className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
             >
               Help
-            </a>
+            </Link>
             <a
               href={appUrl("/login")}
               className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
