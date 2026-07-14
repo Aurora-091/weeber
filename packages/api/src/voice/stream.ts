@@ -19,6 +19,8 @@ import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
 import { getEffectiveFlags } from "./org-queries";
+import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
+import type { NoiseFilter } from "./audio-noise-filter";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -118,6 +120,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
   let history: ModelMessage[] = [];
+  /**
+   * §3b: adaptive noise filter — created once per call, only when the
+   * ADAPTIVE_NOISE_FILTER_FLAG org/global flag is on (resolved in the
+   * "start" handler alongside every other org-scoped setting). Left null
+   * (no-op passthrough at the media handler) whenever the flag is off, so
+   * existing calls/deployments see byte-for-byte unchanged behavior.
+   */
+  let noiseFilter: NoiseFilter | null = null;
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -1045,6 +1055,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 }
               }, maxDurationSeconds * 1000);
             }
+
+            // §3b: resolved once per call, here, alongside every other
+            // org-scoped setting — the media handler below can't itself
+            // await a flag lookup on every single audio frame.
+            const noiseFilterFlags: Record<string, boolean> = humanNumberOrgId
+              ? await getEffectiveFlags(humanNumberOrgId).catch(() => ({}))
+              : {};
+            if (noiseFilterFlags[ADAPTIVE_NOISE_FILTER_FLAG] === true) {
+              noiseFilter = createRollingNoiseFilter();
+            }
           }
 
           connectSttForCall(ws);
@@ -1054,7 +1074,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
 
         if (event.type === "media") {
-          const audio = Buffer.from(event.mulawBase64, "base64");
+          let audio = Buffer.from(event.mulawBase64, "base64");
+          // §3b: only runs when ADAPTIVE_NOISE_FILTER_FLAG resolved true for
+          // this call — noiseFilter stays null otherwise, so this is a
+          // zero-cost no-op for every call that hasn't opted in.
+          if (noiseFilter) {
+            audio = Buffer.from(applyNoiseFilterToMulaw(audio, noiseFilter));
+          }
           if (stt) {
             stt.sendAudio(audio);
           } else if (pendingAudioChunks.length < MAX_PENDING_AUDIO_CHUNKS) {
