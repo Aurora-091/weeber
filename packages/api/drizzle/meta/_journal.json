@@ -169,6 +169,13 @@
       "when": 1784067741919,
       "tag": "0023_add_org_phone_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784068663093,
+      "tag": "0024_add_turn_latency",
+      "breakpoints": true
     }
   ]
 }

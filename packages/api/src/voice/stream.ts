@@ -22,7 +22,7 @@ import { getEffectiveFlags } from "./org-queries";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency, orgs } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
@@ -169,6 +169,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       llmTtftMs = ms;
       void persistLatency();
     }
+  }
+
+  /**
+   * Per-TURN latency (see database/schema.ts's turnLatency doc comment for
+   * why this exists alongside the call-level metrics above) — one row per
+   * turn, appended (not upserted), so the dashboard can compute a real P50/
+   * P90 distribution instead of only ever seeing each call's first turn.
+   * `turnIndex` increments per speak() invocation for this call (greeting
+   * counts as turn 0).
+   */
+  let turnCounter = -1;
+  async function persistTurnLatency(metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number }) {
+    if (!dbCallId) return;
+    turnCounter += 1;
+    await db
+      .insert(turnLatency)
+      .values({
+        callId: dbCallId,
+        turnIndex: turnCounter,
+        llmTtftMs: metrics.llmTtftMs,
+        ttsFirstByteMs: metrics.ttsFirstByteMs,
+        voiceToVoiceMs: metrics.voiceToVoiceMs,
+      })
+      .catch((err) => console.error("[voice] failed to persist per-turn latency", err));
   }
 
   /** Cross-call memory (ADR-023) — the human's number for this call, and their rolling facts, if any. */
@@ -528,12 +552,25 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
        * audio chunk as it streams, alongside the normal forward-to-caller
        * path, so the caller can accumulate + store it once the turn ends. */
       onAudioChunk?: (base64Audio: string) => void;
+      /** Latency benchmark (§2): timestamp the STT provider declared the
+       * caller done talking (speechFinal), if this turn was triggered by
+       * caller speech — undefined for the greeting, which has no such
+       * instant. Used to compute this turn's voiceToVoiceMs. */
+      turnStartedAt?: number;
+      /** Latency benchmark (§2): a mutable holder the caller (runTurn/
+       * runGreeting) writes this turn's LLM time-to-first-token into, from
+       * inside its own onLatency callback — a plain value can't be used
+       * here since the LLM ttft is only known partway through generate(),
+       * after speak() has already started, but this ref is read only after
+       * generate() resolves, by which point onLatency has already fired. */
+      turnLlmTtftRef?: { value?: number };
     },
   ) {
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
 
     const ttsRequestedAt = Date.now();
+    let turnTtsFirstByteMs: number | undefined;
     // Resolved once the TTS provider reports it's sent every audio chunk for
     // this turn — used below to avoid cutting a hangUp/transfer closing line
     // off. Not a guarantee Twilio has finished *playing* it (see
@@ -560,6 +597,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         ttsFirstByteMs = 0;
         void persistLatency();
       }
+      turnTtsFirstByteMs = 0;
       if (streamSid) {
         try {
           ws.send(transport.buildOutboundMedia(streamSid, options.cachedAudioBase64));
@@ -575,6 +613,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           if (ttsFirstByteMs === undefined) {
             ttsFirstByteMs = Date.now() - ttsRequestedAt;
             void persistLatency();
+          }
+          if (turnTtsFirstByteMs === undefined) {
+            turnTtsFirstByteMs = Date.now() - ttsRequestedAt;
           }
           options?.onAudioChunk?.(base64Audio);
           if (!streamSid) return;
@@ -613,6 +654,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     } finally {
       tts?.endTurn();
     }
+
+    // Latency benchmark (§2): one row per turn, regardless of whether the
+    // turn was interrupted/errored — a partial/aborted turn's latency up to
+    // the point it got cut off is still real data, not something to discard.
+    void persistTurnLatency({
+      llmTtftMs: options?.turnLlmTtftRef?.value,
+      ttsFirstByteMs: turnTtsFirstByteMs,
+      voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
+        ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
+        : undefined,
+    });
 
     // Barge-in happened and we have real word-timing data: record only what
     // the caller actually heard, not the full (possibly much longer) reply
@@ -656,45 +708,64 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
-  async function runTurn(ws: Sendable) {
-    await speak(ws, (signal) =>
-      runVoiceAgentTurn({
-        history,
-        persona,
-        signal,
-        onTextDelta: (delta) => tts?.sendText(delta),
-        onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
-        onLatency: (ms, model) => {
-          console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
-          recordLlmLatency(ms);
-        },
-        llmProvider: llmProviderOverride,
-        llmModel: llmModelOverride,
-        enabledTools: enabledToolsOverride,
-        capturedState,
-        callerMemory: callerMemoryFacts,
-        orgId: humanNumberOrgId,
-      }),
+  /**
+   * @param turnStartedAt Latency benchmark (§2) — Date.now() captured at
+   * the moment the STT provider declared speechFinal for the caller
+   * utterance this turn is responding to. Threaded through from the STT
+   * handler below so voiceToVoiceMs measures real caller-perceived wait,
+   * not just work done inside this function.
+   */
+  async function runTurn(ws: Sendable, turnStartedAt: number) {
+    const turnLlmTtftRef: { value?: number } = {};
+    await speak(
+      ws,
+      (signal) =>
+        runVoiceAgentTurn({
+          history,
+          persona,
+          signal,
+          onTextDelta: (delta) => tts?.sendText(delta),
+          onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
+          onLatency: (ms, model) => {
+            console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
+            recordLlmLatency(ms);
+            turnLlmTtftRef.value = ms;
+          },
+          llmProvider: llmProviderOverride,
+          llmModel: llmModelOverride,
+          enabledTools: enabledToolsOverride,
+          capturedState,
+          callerMemory: callerMemoryFacts,
+          orgId: humanNumberOrgId,
+        }),
+      { turnStartedAt, turnLlmTtftRef },
     );
   }
 
   async function runGreeting(ws: Sendable) {
-    await speak(ws, (signal) =>
-      runVoiceAgentGreeting({
-        persona,
-        signal,
-        onTextDelta: (delta) => tts?.sendText(delta),
-        capturedState,
-        callerMemory: callerMemoryFacts,
-        llmProvider: llmProviderOverride,
-        llmModel: llmModelOverride,
-        enabledTools: enabledToolsOverride,
-        orgId: humanNumberOrgId,
-        onLatency: (ms, model) => {
-          console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
-          recordLlmLatency(ms);
-        },
-      }),
+    const turnLlmTtftRef: { value?: number } = {};
+    await speak(
+      ws,
+      (signal) =>
+        runVoiceAgentGreeting({
+          persona,
+          signal,
+          onTextDelta: (delta) => tts?.sendText(delta),
+          capturedState,
+          callerMemory: callerMemoryFacts,
+          llmProvider: llmProviderOverride,
+          llmModel: llmModelOverride,
+          enabledTools: enabledToolsOverride,
+          orgId: humanNumberOrgId,
+          onLatency: (ms, model) => {
+            console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
+            recordLlmLatency(ms);
+            turnLlmTtftRef.value = ms;
+          },
+        }),
+      // No turnStartedAt for the greeting — it's agent-initiated, not a
+      // response to caller speech, so there's no voiceToVoiceMs to measure.
+      { turnLlmTtftRef },
     );
   }
 
@@ -725,6 +796,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           }
 
           if (!speechFinal || !isFinal || !text.trim()) return;
+
+          // Latency benchmark (§2): captured as close as possible to the
+          // STT provider's own speechFinal instant — this is the caller's
+          // "I'm done talking" moment voiceToVoiceMs measures from, so it
+          // has to be taken here, before any of the awaits below (History
+          // logging, guardrail checks) can add their own skew to it.
+          const turnStartedAt = Date.now();
 
           // Caller actually responded — reset silence handling (a fresh
           // warning stage next time they go quiet, not an immediate hangup)
@@ -757,7 +835,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
           history.push({ role: "user", content: text });
           await logTranscript("caller", text);
-          await runTurn(ws);
+          await runTurn(ws, turnStartedAt);
         } catch (err) {
           console.error("[voice] error handling transcript event", err);
         }

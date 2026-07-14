@@ -50,6 +50,7 @@ describe("computeOrgAnalytics KPIs", () => {
       orgs: [{ id: "org-1", currency: "INR", vertical: "shopify" }],
       calls: [],
       call_latency: [],
+      turn_latency: [],
       tool_calls: [],
       scheduled_calls: [],
     };
@@ -106,6 +107,44 @@ describe("computeOrgAnalytics KPIs", () => {
   it("carries the org currency for revenue display", async () => {
     const analytics = await computeOrgAnalytics("org-1", 30);
     expect(analytics.currency).toBe("INR");
+  });
+});
+
+describe("computeOrgAnalytics turn latency percentiles (§2)", () => {
+  beforeEach(() => {
+    rowsByTable = {
+      orgs: [{ id: "org-1", currency: "INR", vertical: "shopify" }],
+      calls: [call({ id: 1 })],
+      call_latency: [],
+      turn_latency: [],
+      tool_calls: [],
+      scheduled_calls: [],
+    };
+  });
+
+  it("returns null percentiles with a 0 sample count when there are no turns yet", async () => {
+    const { turnLatencyPercentiles } = await computeOrgAnalytics("org-1", 30);
+    expect(turnLatencyPercentiles.voiceToVoiceMs).toEqual({ p50: null, p90: null, sampleCount: 0 });
+  });
+
+  it("computes P50/P90 by nearest-rank over voiceToVoiceMs, ignoring null (greeting) rows", async () => {
+    // 10 samples, 100..1000ms in steps of 100 — nearest-rank P50 is the 5th
+    // value (500), P90 is the 9th value (900).
+    rowsByTable.turn_latency = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        callId: 1,
+        turnIndex: i + 1,
+        llmTtftMs: 50 + i * 10,
+        ttsFirstByteMs: 80 + i * 10,
+        voiceToVoiceMs: (i + 1) * 100,
+      })),
+      // Greeting row — no voiceToVoiceMs, must not skew the distribution or
+      // count toward its sample size.
+      { callId: 1, turnIndex: 0, llmTtftMs: 200, ttsFirstByteMs: 300, voiceToVoiceMs: null },
+    ];
+    const { turnLatencyPercentiles } = await computeOrgAnalytics("org-1", 30);
+    expect(turnLatencyPercentiles.voiceToVoiceMs).toEqual({ p50: 500, p90: 900, sampleCount: 10 });
+    expect(turnLatencyPercentiles.llmTtftMs.sampleCount).toBe(11);
   });
 });
 

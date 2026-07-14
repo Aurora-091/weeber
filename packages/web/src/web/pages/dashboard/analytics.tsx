@@ -233,6 +233,39 @@ export function AnalyticsPage() {
             )}
           </div>
 
+          {data.turnLatencyPercentiles && data.turnLatencyPercentiles.voiceToVoiceMs.sampleCount > 0 && (
+            <div className="card-weeber p-5">
+              <h3 className="text-sm font-medium mb-1">Response time (voice-to-voice)</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                Real per-turn distribution — from the caller going silent to the agent's first
+                word back, across {data.turnLatencyPercentiles.voiceToVoiceMs.sampleCount} turn
+                {data.turnLatencyPercentiles.voiceToVoiceMs.sampleCount === 1 ? "" : "s"} in range.
+              </p>
+              <div className="grid sm:grid-cols-4 gap-4">
+                <StatCard
+                  label="P50"
+                  value={fmtMs(data.turnLatencyPercentiles.voiceToVoiceMs.p50)}
+                  icon={Clock}
+                />
+                <StatCard
+                  label="P90"
+                  value={fmtMs(data.turnLatencyPercentiles.voiceToVoiceMs.p90)}
+                  icon={Clock}
+                />
+                <StatCard
+                  label="LLM TTFT (P50)"
+                  value={fmtMs(data.turnLatencyPercentiles.llmTtftMs.p50)}
+                  icon={Clock}
+                />
+                <StatCard
+                  label="TTS first byte (P50)"
+                  value={fmtMs(data.turnLatencyPercentiles.ttsFirstByteMs.p50)}
+                  icon={Clock}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <div className="flex items-center gap-1.5 text-sm font-medium mb-3">

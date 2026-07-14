@@ -131,6 +131,38 @@ export const callLatency = pgTable("call_latency", {
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
+/**
+ * Per-TURN latency (as opposed to callLatency above, which is per-CALL and
+ * only ever captures the first-ever value of each metric across the whole
+ * call). A call is many turns; the founder-facing question is "how fast
+ * does it respond, typically" — that needs a distribution across every
+ * turn of every call, not just each call's first turn, since later turns
+ * can be slower (longer history, a tool call, etc.) and a single
+ * first-turn number would hide that.
+ *
+ * `voiceToVoiceMs` is the metric that actually matters to a caller: from
+ * the moment the STT provider declares they've stopped talking
+ * (`speechFinal`, captured as `turnStartedAt` in stream.ts) to the first
+ * byte of TTS audio going back out. `llmTtftMs`/`ttsFirstByteMs` are the
+ * two components of that budget, kept separately so a regression can be
+ * attributed to the right stage. Greeting turns (not triggered by caller
+ * speech) still get a row for their llm/tts components, but
+ * `voiceToVoiceMs` is null for them — there's no caller-stopped-talking
+ * instant to measure from.
+ */
+export const turnLatency = pgTable("turn_latency", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
+  turnIndex: integer("turn_index").notNull(),
+  llmTtftMs: integer("llm_ttft_ms"),
+  ttsFirstByteMs: integer("tts_first_byte_ms"),
+  voiceToVoiceMs: integer("voice_to_voice_ms"),
+  capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("turn_latency_call_id_idx").on(table.callId),
+  index("turn_latency_captured_at_idx").on(table.capturedAt),
+]);
+
 export const callerMemory = pgTable("caller_memory", {
   orgId: text("org_id").notNull().default(""),
   phoneNumber: text("phone_number").notNull(),

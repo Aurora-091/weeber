@@ -21,7 +21,23 @@ import {
   shopLinks,
   toolCalls,
   transcripts,
+  turnLatency,
 } from "../database/schema";
+
+/**
+ * Nearest-rank percentile over a numeric sample (§2's latency benchmark) —
+ * simple and stable for the sample sizes analytics deals with (dozens to a
+ * few thousand turns), unlike a mean, which one slow outlier turn (a tool
+ * call, a cold provider connection) can drag around and misrepresent as
+ * "typical". Returns null on an empty sample rather than 0, matching the
+ * existing "no fabricated metrics" rule this file already follows for KPIs.
+ */
+function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
+  return sorted[Math.max(0, rank)] ?? null;
+}
 import type { AgentFrame } from "./agent-frame";
 
 export async function getOrg(orgId: string) {
@@ -395,6 +411,32 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     }
   }
 
+  // Per-turn latency distribution (§2) — real P50/P90 across every turn in
+  // range, not just each call's first turn (see turnLatency's schema doc
+  // comment for why callLatency/avgLatency above isn't enough on its own).
+  const turnLatencyRows =
+    callIds.length > 0 ? await db.select().from(turnLatency).where(inArray(turnLatency.callId, callIds)) : [];
+  const voiceToVoiceSamples = turnLatencyRows.map((r) => r.voiceToVoiceMs).filter((v): v is number => v != null);
+  const turnLlmTtftSamples = turnLatencyRows.map((r) => r.llmTtftMs).filter((v): v is number => v != null);
+  const turnTtsFirstByteSamples = turnLatencyRows.map((r) => r.ttsFirstByteMs).filter((v): v is number => v != null);
+  const turnLatencyPercentiles = {
+    voiceToVoiceMs: {
+      p50: percentile(voiceToVoiceSamples, 50),
+      p90: percentile(voiceToVoiceSamples, 90),
+      sampleCount: voiceToVoiceSamples.length,
+    },
+    llmTtftMs: {
+      p50: percentile(turnLlmTtftSamples, 50),
+      p90: percentile(turnLlmTtftSamples, 90),
+      sampleCount: turnLlmTtftSamples.length,
+    },
+    ttsFirstByteMs: {
+      p50: percentile(turnTtsFirstByteSamples, 50),
+      p90: percentile(turnTtsFirstByteSamples, 90),
+      sampleCount: turnTtsFirstByteSamples.length,
+    },
+  };
+
   const org = await getOrg(orgId);
   const kpis = await computeKpis(orgId, since, orgCalls, toolRows);
 
@@ -420,6 +462,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     dailyVolume,
     currency: org?.currency ?? null,
     kpis,
+    turnLatencyPercentiles,
   };
 }
 
