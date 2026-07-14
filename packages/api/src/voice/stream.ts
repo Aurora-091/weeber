@@ -673,6 +673,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         enabledTools: enabledToolsOverride,
         capturedState,
         callerMemory: callerMemoryFacts,
+        orgId: humanNumberOrgId,
       }),
     );
   }
@@ -688,6 +689,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         llmProvider: llmProviderOverride,
         llmModel: llmModelOverride,
         enabledTools: enabledToolsOverride,
+        orgId: humanNumberOrgId,
         onLatency: (ms, model) => {
           console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
           recordLlmLatency(ms);

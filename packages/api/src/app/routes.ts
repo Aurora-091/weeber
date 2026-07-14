@@ -60,6 +60,7 @@ import { dispatchWebhook, resolveWebhookUrl } from "../voice/webhooks";
 import { isValidE164 } from "../voice/validation";
 import { placeOutboundCall } from "../voice/place-outbound-call";
 import { sessionStore } from "../voice/session-store";
+import { listKnowledgeDocuments } from "../voice/knowledge-base";
 
 type UserEnv = { Variables: UserSessionVariables };
 
@@ -106,6 +107,14 @@ const previewRateLimited = makeFixedWindowLimiter(PREVIEW_WINDOW_MS, PREVIEW_MAX
 const WEBHOOK_TEST_WINDOW_MS = 60_000;
 const WEBHOOK_TEST_MAX_PER_WINDOW = Number(process.env.WEBHOOK_TEST_RATE_LIMIT ?? 10);
 const webhookTestRateLimited = makeFixedWindowLimiter(WEBHOOK_TEST_WINDOW_MS, WEBHOOK_TEST_MAX_PER_WINDOW);
+
+// A3b — Knowledge Base ingestion: real embedding-API cost + can take a few
+// seconds (PDF parse + embed), so a tighter limiter than most — uploads are
+// an infrequent, human-paced action, not something that needs headroom.
+const KB_INGEST_WINDOW_MS = 60_000;
+const KB_INGEST_MAX_PER_WINDOW = Number(process.env.KB_INGEST_RATE_LIMIT ?? 5);
+const knowledgeBaseIngestRateLimited = makeFixedWindowLimiter(KB_INGEST_WINDOW_MS, KB_INGEST_MAX_PER_WINDOW);
+const KB_MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB
 
 // Misc-1: real PSTN test call — separate, tighter limiter than the free web
 // test call (testCallRateLimited) since this one has real per-call COGS,
@@ -272,7 +281,7 @@ export const userApp = new Hono<UserEnv>()
       return c.json({ error: "body must include `messages` (array)" }, 400);
     }
 
-    const { resolveAgentConfig, buildPreviewAgentConfig, voiceTools, buildKnownFactsBlock } = await import("../voice/agent");
+    const { resolveAgentConfig, buildPreviewAgentConfig, buildVoiceTools, buildKnownFactsBlock } = await import("../voice/agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("../voice/llm");
     const { streamText, stepCountIs } = await import("ai");
 
@@ -292,14 +301,10 @@ export const userApp = new Hono<UserEnv>()
     const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
     const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
 
-    const enabledToolNames = agentConfig.enabledTools;
-    let tools = voiceTools;
-    if (enabledToolNames) {
-      const allowed = new Set([...enabledToolNames, "hangUp"]);
-      tools = Object.fromEntries(
-        Object.entries(voiceTools).filter(([name]) => allowed.has(name as never)),
-      ) as typeof voiceTools;
-    }
+    // A3b: buildVoiceTools binds lookupInfo's knowledge-base search to this
+    // org, same as a real call — the test-chat sandbox should search the
+    // same KB a live call would, not a stubbed/no-org version of it.
+    const tools = buildVoiceTools(orgId, agentConfig.enabledTools);
 
     const messages = body.messages.map((m: { role: string; content: string }) => ({
       role: m.role as "user" | "assistant",
@@ -706,6 +711,81 @@ export const userApp = new Hono<UserEnv>()
   .get("/flags", async (c) => {
     const flags = await getEffectiveFlags(c.get("userOrgId")!);
     return c.json({ flags }, 200);
+  })
+
+  // A3b — Knowledge Base. Scope: pasted text/FAQ, a single URL fetch, or a
+  // PDF (base64 in the JSON body — no multipart handling elsewhere in this
+  // codebase, and this keeps the upload path simple). Not "upload anything":
+  // no crawling, no scheduled re-sync, no OCR — see knowledge-base.ts's doc
+  // comment for the full scope note.
+  .get("/knowledge-base", async (c) => {
+    const documents = await listKnowledgeDocuments(c.get("userOrgId")!);
+    return c.json({ documents }, 200);
+  })
+
+  .post("/knowledge-base", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    if (knowledgeBaseIngestRateLimited(orgId)) {
+      return c.json(
+        { error: `Rate limit exceeded — max ${KB_INGEST_MAX_PER_WINDOW} uploads per minute. Try again shortly.` },
+        429,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return c.json({ error: "Expected a JSON object" }, 400);
+    }
+    const { title, sourceType, rawText, sourceUrl, pdfBase64 } = body as {
+      title?: string;
+      sourceType?: string;
+      rawText?: string;
+      sourceUrl?: string;
+      pdfBase64?: string;
+    };
+    if (!title?.trim()) return c.json({ error: "`title` is required" }, 400);
+    if (sourceType !== "text" && sourceType !== "url" && sourceType !== "pdf") {
+      return c.json({ error: '`sourceType` must be "text", "url", or "pdf"' }, 400);
+    }
+    if (sourceType === "text" && !rawText?.trim()) {
+      return c.json({ error: "`rawText` is required for a text document" }, 400);
+    }
+    if (sourceType === "url" && !sourceUrl?.trim()) {
+      return c.json({ error: "`sourceUrl` is required for a URL document" }, 400);
+    }
+    if (sourceType === "pdf" && !pdfBase64) {
+      return c.json({ error: "`pdfBase64` is required for a PDF document" }, 400);
+    }
+
+    let pdfBuffer: Uint8Array | undefined;
+    if (sourceType === "pdf" && pdfBase64) {
+      const decoded = Buffer.from(pdfBase64, "base64");
+      if (decoded.byteLength > KB_MAX_PDF_BYTES) {
+        return c.json({ error: `PDF exceeds the ${KB_MAX_PDF_BYTES / (1024 * 1024)}MB limit` }, 400);
+      }
+      pdfBuffer = decoded;
+    }
+
+    const { ingestKnowledgeDocument } = await import("../voice/knowledge-base");
+    const result = await ingestKnowledgeDocument({
+      orgId,
+      title: title.trim(),
+      sourceType,
+      sourceUrl: sourceUrl?.trim(),
+      rawText,
+      pdfBuffer,
+    });
+    if (!result.ok) return c.json({ error: result.error }, 422);
+    return c.json(result, 201);
+  })
+
+  .delete("/knowledge-base/:id", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const { deleteKnowledgeDocument } = await import("../voice/knowledge-base");
+    const deleted = await deleteKnowledgeDocument(orgId, id);
+    if (!deleted) return c.json({ error: "document not found" }, 404);
+    return c.json({ ok: true }, 200);
   })
 
   .get("/workflow-configs", async (c) => {

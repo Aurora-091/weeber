@@ -155,6 +155,13 @@
       "when": 1783970385746,
       "tag": "0021_add_call_sentiment",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784026562322,
+      "tag": "0022_add_knowledge_base",
+      "breakpoints": true
     }
   ]
 }

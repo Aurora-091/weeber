@@ -1,6 +1,6 @@
 import { streamText, stepCountIs, type ModelMessage } from "ai";
 import dedent from "dedent";
-import { lookupInfo } from "./tools/lookupInfo";
+import { createLookupInfoTool } from "./tools/lookupInfo";
 import { bookAppointment } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
 import { crmSync } from "./tools/crmSync";
@@ -407,8 +407,11 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
   };
 }
 
+// `lookupInfo` deliberately excluded — it's org-dependent (A3b's knowledge-
+// base search) and only ever constructed dynamically by `buildVoiceTools`,
+// never as a shared static instance. Every other tool here has no
+// per-call/per-org state, so a single shared object is safe.
 export const voiceTools = {
-  lookupInfo,
   bookAppointment,
   setDisposition,
   crmSync,
@@ -421,18 +424,23 @@ export const voiceTools = {
 };
 
 /**
- * Narrows `voiceTools` to an agent's configured subset (see agent-frame.ts's
- * `toolsEnabled`) — `undefined` (no frame configured) means every tool,
- * unchanged from before the frame existed. `hangUp` is always included
- * regardless of what's selected — ending a call gracefully is a safety
- * default, not an optional feature a misconfigured agent should lose.
+ * The one place tool sets get built for a call, everywhere they're needed
+ * (a live call via stream.ts, the text test-chat sandbox in both app/routes.ts
+ * and voice/routes.ts, and synthetic-test.ts's AI-to-AI runs) — replaces what
+ * used to be 4 separate copies of the same filter-by-enabledTools logic.
+ * Binds `lookupInfo` to this call's `orgId` (A3b) and narrows to the agent's
+ * configured subset (agent-frame.ts's `toolsEnabled`) — `undefined` means
+ * every tool, unchanged from before the frame existed. `hangUp` is always
+ * included regardless of what's selected — ending a call gracefully is a
+ * safety default, not an optional feature a misconfigured agent should lose.
  */
-function filterVoiceTools(enabledTools?: AvailableToolName[]): typeof voiceTools {
-  if (!enabledTools) return voiceTools;
+export function buildVoiceTools(orgId: string | undefined, enabledTools?: AvailableToolName[]) {
+  const allTools = { ...voiceTools, lookupInfo: createLookupInfoTool(orgId) };
+  if (!enabledTools) return allTools;
   const allowed = new Set<AvailableToolName>([...enabledTools, "hangUp"]);
   return Object.fromEntries(
-    Object.entries(voiceTools).filter(([name]) => allowed.has(name as AvailableToolName)),
-  ) as typeof voiceTools;
+    Object.entries(allTools).filter(([name]) => allowed.has(name as AvailableToolName)),
+  );
 }
 
 /**
@@ -504,6 +512,7 @@ export async function runVoiceAgentTurn({
   enabledTools,
   capturedState,
   callerMemory,
+  orgId,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -524,6 +533,8 @@ export async function runVoiceAgentTurn({
   capturedState?: Record<string, string>;
   /** Rolling facts from previous calls with this same number (ADR-023) — see buildCallerMemoryBlock. */
   callerMemory?: Record<string, string>;
+  /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
+  orgId?: string;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -542,7 +553,7 @@ export async function runVoiceAgentTurn({
         buildCallerMemoryBlock(callerMemory) +
         buildKnownFactsBlock(capturedState),
       messages: history,
-      tools: filterVoiceTools(enabledTools),
+      tools: buildVoiceTools(orgId, enabledTools),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {
@@ -632,6 +643,7 @@ export function runVoiceAgentGreeting({
   llmProvider,
   llmModel,
   enabledTools,
+  orgId,
 }: {
   persona?: string;
   onTextDelta: (delta: string) => void;
@@ -649,6 +661,8 @@ export function runVoiceAgentGreeting({
   llmModel?: string;
   /** Per-agent tool subset (agent-frame.ts's toolsEnabled) — undefined = every tool. */
   enabledTools?: AvailableToolName[];
+  /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
+  orgId?: string;
 }) {
   return runVoiceAgentTurn({
     history: [
@@ -666,5 +680,6 @@ export function runVoiceAgentGreeting({
     llmProvider,
     llmModel,
     enabledTools,
+    orgId,
   });
 }

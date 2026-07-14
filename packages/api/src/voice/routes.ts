@@ -567,7 +567,7 @@ export const voice = new Hono()
 
     const { resolveAgentConfig, buildPreviewAgentConfig } = await import("./agent");
     const { resolveVoiceModel, getActiveModelLabel, estimateLlmCost, resolveLlmProvider } = await import("./llm");
-    const { voiceTools, buildKnownFactsBlock } = await import("./agent");
+    const { buildVoiceTools, buildKnownFactsBlock } = await import("./agent");
     const { streamText, stepCountIs } = await import("ai");
 
     // configOverride (optional): preview the admin's in-progress edits, not
@@ -589,14 +589,9 @@ export const voice = new Hono()
     );
     const modelLabel = getActiveModelLabel(agentConfig.llmProvider, agentConfig.llmModel);
 
-    const enabledToolNames = agentConfig.enabledTools;
-    let tools = voiceTools;
-    if (enabledToolNames) {
-      const allowed = new Set([...enabledToolNames, "hangUp"]);
-      tools = Object.fromEntries(
-        Object.entries(voiceTools).filter(([name]) => allowed.has(name as never)),
-      ) as typeof voiceTools;
-    }
+    // A3b: buildVoiceTools binds lookupInfo's knowledge-base search to this
+    // org, same as a real call.
+    const tools = buildVoiceTools(orgId, agentConfig.enabledTools);
 
     const messages = body.messages.map((m: { role: string; content: string }) => ({
       role: m.role as "user" | "assistant",
@@ -773,7 +768,7 @@ export const voice = new Hono()
     const agentConfig = await buildPreviewAgentConfig(templateKey, configOverride);
 
     try {
-      const result = await runSyntheticTest(agentConfig, scenario);
+      const result = await runSyntheticTest(agentConfig, scenario, orgId);
       return c.json(result, 200);
     } catch (err) {
       return c.json({ error: "Synthetic test run failed", detail: String(err) }, 502);

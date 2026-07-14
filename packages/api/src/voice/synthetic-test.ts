@@ -17,7 +17,7 @@
  */
 import { streamText, stepCountIs, type ModelMessage } from "ai";
 import { resolveVoiceModel } from "./llm";
-import { voiceTools, buildKnownFactsBlock, type ResolvedAgentConfig } from "./agent";
+import { buildVoiceTools, buildKnownFactsBlock, type ResolvedAgentConfig } from "./agent";
 import type { SyntheticScenario, SyntheticAssertion } from "./synthetic-scenarios";
 
 export type SyntheticTurn = { role: "caller" | "agent"; text: string };
@@ -58,16 +58,12 @@ async function runCallerTurn(callerPersonaPrompt: string, transcriptSoFar: Synth
 async function runAgentTurn(
   agentConfig: ResolvedAgentConfig,
   transcriptSoFar: SyntheticTurn[],
+  orgId: string | undefined,
 ): Promise<{ text: string; toolCalls: string[] }> {
   const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
-  const enabledToolNames = agentConfig.enabledTools;
-  let tools = voiceTools;
-  if (enabledToolNames) {
-    const allowed = new Set([...enabledToolNames, "hangUp"]);
-    tools = Object.fromEntries(
-      Object.entries(voiceTools).filter(([name]) => allowed.has(name as never)),
-    ) as typeof voiceTools;
-  }
+  // A3b: same knowledge-base binding a live call gets — a scenario that
+  // exercises lookupInfo tests against this org's real KB, not a stub.
+  const tools = buildVoiceTools(orgId, agentConfig.enabledTools);
   const messages: ModelMessage[] = transcriptSoFar.map((t) => ({
     role: t.role === "agent" ? "assistant" : "user",
     content: t.text,
@@ -117,6 +113,7 @@ export function checkAssertion(assertion: SyntheticAssertion, transcript: Synthe
 export async function runSyntheticTest(
   agentConfig: ResolvedAgentConfig,
   scenario: SyntheticScenario,
+  orgId?: string,
 ): Promise<SyntheticTestResult> {
   const transcript: SyntheticTurn[] = [];
   const toolCallsByAgent: string[] = [];
@@ -127,7 +124,7 @@ export async function runSyntheticTest(
     if (!callerText) break;
     transcript.push({ role: "caller", text: callerText });
 
-    const agentTurn = await runAgentTurn(agentConfig, transcript);
+    const agentTurn = await runAgentTurn(agentConfig, transcript, orgId);
     toolCallsByAgent.push(...agentTurn.toolCalls);
     if (agentTurn.text) transcript.push({ role: "agent", text: agentTurn.text });
 

@@ -411,3 +411,46 @@ export const workflowRuns = pgTable("workflow_runs", {
   index("workflow_runs_status_next_run_at_idx").on(table.status, table.nextRunAt),
   index("workflow_runs_template_key_idx").on(table.templateKey),
 ]);
+
+/**
+ * A3b — Knowledge Base source documents (PDF/URL/pasted text) a merchant
+ * uploads per org. Ingestion (voice/knowledge-base.ts) chunks + embeds the
+ * extracted text into `knowledgeChunks`; this row just tracks the source
+ * and ingestion status.
+ */
+export const knowledgeDocuments = pgTable("knowledge_documents", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  sourceType: text("source_type", { enum: ["text", "url", "pdf"] }).notNull(),
+  sourceUrl: text("source_url"),
+  status: text("status", { enum: ["processing", "ready", "failed"] }).notNull().default("processing"),
+  errorMessage: text("error_message"),
+  chunkCount: integer("chunk_count").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("knowledge_documents_org_id_idx").on(table.orgId),
+]);
+
+/**
+ * One embedded chunk of a knowledge document. `embedding` is stored as a
+ * plain jsonb number array rather than a pgvector column deliberately —
+ * avoids a hard dependency on the pgvector extension being enabled (not
+ * guaranteed on every Postgres/Supabase project, and irrelevant at the
+ * per-org chunk counts this feature will see for a long time). Retrieval
+ * does an in-memory cosine-similarity scan per org (see
+ * voice/knowledge-base.ts's searchKnowledgeBase) — brute-force is fine at
+ * hundreds-to-low-thousands of chunks; revisit with a real vector index
+ * only if that stops being true.
+ */
+export const knowledgeChunks = pgTable("knowledge_chunks", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  documentId: integer("document_id").notNull().references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+  orgId: text("org_id").notNull(),
+  chunkText: text("chunk_text").notNull(),
+  embedding: jsonb("embedding").$type<number[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("knowledge_chunks_org_id_idx").on(table.orgId),
+  index("knowledge_chunks_document_id_idx").on(table.documentId),
+]);

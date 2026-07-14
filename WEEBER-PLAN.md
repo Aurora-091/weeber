@@ -76,17 +76,22 @@ because the pipeline itself works.
   `voice/tools/*.ts` — 8 real tools: `offerCartRecoveryDiscount`, `confirmCodOrder`, `captureField`,
   `hangUp`, `transferToHuman`, `flagGuardrailEvent`, `crmSync`, `bookAppointment`, `setDisposition`,
   `lookupInfo`. Bound per persona preset (8+8 for Shopify+Clinic).
-- [ ] **A3b — Knowledge Base (PDF upload → RAG) per vertical.**
-  **Not built.** No `knowledge_base`/`documents`/embedding table anywhere in `schema.ts`, no
-  embed/retrieve code in `packages/api/src`. But `docs/agent-prompts/01-cart-recovery-agent.md` and
-  `04-insurance-policy-renewal-agent.md` explicitly instruct the agent to "answer only from the
-  merchant's configured knowledge base" — **the prompts promise a feature the backend doesn't have.**
-  Flagged inline in `01-cart-recovery-agent.md` as of this update. Do not demo this section as live.
-  *(Separate from this: `caller_memory`/`buildKnownFactsBlock` — structured, deterministic per-call
-  memory — is real and built, see `architecture/voice-orchestration.md`'s note. Don't conflate the two;
-  different problem, different solution shape.)*
+- [x] **A3b — Knowledge Base (PDF upload → RAG) per vertical.**
+  Shipped 2026-07-14. New `knowledge_documents`/`knowledge_chunks` tables (`0022_add_knowledge_base.sql`)
+  and `voice/knowledge-base.ts`: chunking (paragraph-aware, 800 chars/150 overlap, capped at 500 chunks/doc),
+  extraction for text/URL (simple HTML-strip, no readability pass)/PDF (`pdf-parse`, text-layer only — no
+  OCR), embedding via the same AI Gateway every LLM call already uses (`AI_GATEWAY_EMBEDDING_MODEL`,
+  default `openai/text-embedding-3-small`), and brute-force in-memory cosine-similarity retrieval per org
+  (no pgvector dependency — see the schema doc comment for why that's fine at this scale). `lookupInfo`
+  (previously an explicit stub) is now a factory bound to the calling org via the new `buildVoiceTools`
+  (`agent.ts`) — the one place tool sets get built everywhere (stream.ts live calls, both admin/merchant
+  test-chat sandboxes, synthetic-test.ts), replacing 4 copies of the same enabledTools-filter logic.
+  New merchant CRUD: `GET/POST/DELETE /api/app/knowledge-base` (own rate limiter, 10MB PDF cap) + a new
+  `/app/knowledge-base` page (paste text / URL / PDF upload, per-doc status + delete) in both verticals'
+  nav. Scope, deliberately: PDF/pasted-text/single-URL only — no crawling, no scheduled re-sync, no OCR,
+  no admin-side management UI (org's own team manages it; deferred). 9 new tests (`knowledge-base.test.ts`).
 
-**Phase A: closed except A3b (KB).**
+**Phase A: closed.**
 
 ---
 

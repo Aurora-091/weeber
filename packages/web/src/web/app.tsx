@@ -105,6 +105,9 @@ const UserBillingPage = lazy(() =>
 const UserIntegrationsPage = lazy(() =>
   import("./pages/app/integrations").then((m) => ({ default: m.UserIntegrationsPage })),
 );
+const UserKnowledgeBasePage = lazy(() =>
+  import("./pages/app/knowledge-base").then((m) => ({ default: m.UserKnowledgeBasePage })),
+);
 const UserSettingsPage = lazy(() =>
   import("./pages/app/settings").then((m) => ({ default: m.UserSettingsPage })),
 );
@@ -294,6 +297,11 @@ function App() {
           {showUser && (
             <Route path={appPath("/integrations")}>
               <UserShell><UserIntegrationsPage /></UserShell>
+            </Route>
+          )}
+          {showUser && (
+            <Route path={appPath("/knowledge-base")}>
+              <UserShell><UserKnowledgeBasePage /></UserShell>
             </Route>
           )}
           {showUser && (

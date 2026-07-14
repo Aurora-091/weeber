@@ -59,6 +59,7 @@ mock.module("../voice/agent", () => ({
     return { systemPrompt: "preview-override-prompt" };
   },
   voiceTools: {},
+  buildVoiceTools: () => ({}),
   buildKnownFactsBlock: () => "",
 }));
 

@@ -28,6 +28,7 @@ TWILIO_PHONE_NUMBER=         # e.g. +15551234567 — caller ID for outbound call
 PUBLIC_APP_URL=              # Public https URL Twilio can reach (wss derived automatically)
 AI_GATEWAY_BASE_URL=
 AI_GATEWAY_API_KEY=
+AI_GATEWAY_EMBEDDING_MODEL=  # optional — defaults to openai/text-embedding-3-small (A3b Knowledge Base)
 DATABASE_URL=                # Turso/libSQL connection string
 ```
 
