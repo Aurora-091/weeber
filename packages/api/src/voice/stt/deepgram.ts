@@ -38,6 +38,12 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
   const stats = { reconnectCount: 0, totalGapMs: 0 };
   const audioBuffer: Uint8Array[] = [];
   let bufferedBytes = 0;
+  // A1b: accumulates `is_final:true` text that hasn't been confirmed done
+  // (`speech_final:true`) yet — cleared the moment speech_final fires
+  // downstream, or replayed as a synthetic speech_final if `UtteranceEnd`
+  // arrives first (Deepgram's VAD-driven fallback for when speech_final
+  // itself never fires on a genuinely finished utterance).
+  let pendingFinalText = "";
 
   function bufferAudio(chunk: Uint8Array) {
     audioBuffer.push(chunk);
@@ -67,6 +73,15 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
     interim_results: "true",
     endpointing: "300",
     vad_events: "true",
+    // A1b (VAD/endpointing audit, 2026-07-14): `endpointing` alone is a
+    // single fixed-timeout signal — Deepgram's own docs note `speech_final`
+    // can occasionally never fire on a genuinely finished utterance (cross-
+    // talk, background noise, or audio that trails off below its threshold
+    // without a clean stop). `utterance_end_ms` turns on a second, VAD-
+    // driven "the caller has definitely stopped" signal (`UtteranceEnd`,
+    // handled below) that fires independently of `speech_final` — a safety
+    // net, not a replacement. 1000ms is Deepgram's own documented default.
+    utterance_end_ms: "1000",
   });
   // Omit entirely for English default — only set when a non-English/"multi"
   // language is actually configured on the agent frame.
@@ -100,15 +115,32 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
     ws.addEventListener("message", (event) => {
       try {
         const msg = JSON.parse(event.data as string);
+
+        // A1b: VAD-driven fallback for when `speech_final` never fires on a
+        // genuinely finished utterance — replay whatever final text has
+        // accumulated since the last confirmed speech_final as a synthetic
+        // one. No-op if speech_final already handled it (buffer is empty).
+        if (msg.type === "UtteranceEnd") {
+          if (pendingFinalText.trim()) {
+            const text = pendingFinalText.trim();
+            pendingFinalText = "";
+            onTranscript({ text, isFinal: true, speechFinal: true });
+          }
+          return;
+        }
+
         if (msg.type !== "Results") return;
         const alt = msg.channel?.alternatives?.[0];
         const text: string = alt?.transcript ?? "";
         if (!text) return;
-        onTranscript({
-          text,
-          isFinal: Boolean(msg.is_final),
-          speechFinal: Boolean(msg.speech_final),
-        });
+
+        const isFinal = Boolean(msg.is_final);
+        const speechFinal = Boolean(msg.speech_final);
+        if (isFinal) {
+          pendingFinalText = speechFinal ? "" : `${pendingFinalText} ${text}`.trim();
+        }
+
+        onTranscript({ text, isFinal, speechFinal });
       } catch (err) {
         console.error("[deepgram] failed to parse message", err);
       }

@@ -1,0 +1,172 @@
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
+import { connectDeepgram } from "./deepgram";
+
+/**
+ * A1b (VAD/endpointing audit): tests the UtteranceEnd fallback added
+ * alongside speech_final — Deepgram's own docs note speech_final can
+ * occasionally never fire on a genuinely finished utterance; UtteranceEnd
+ * is a second, VAD-driven signal that should replay whatever final text
+ * accumulated as a synthetic speech_final in that case, and be a pure no-op
+ * when speech_final already handled it normally.
+ */
+
+type Listener = (event: { data?: string }) => void;
+
+type FakeSocket = {
+  url: string;
+  readyState: number;
+  listeners: Record<string, Listener[]>;
+  sent: unknown[];
+  closed: boolean;
+  addEventListener(type: string, listener: Listener): void;
+  send(data: unknown): void;
+  close(): void;
+  emit(type: string, event?: { data?: string }): void;
+};
+
+/** Factory, not a class — avoids storing `this` (oxlint flags that pattern
+ * regardless of context) while still giving the test a handle on the
+ * instance `connectDeepgram`'s `new WebSocket(...)` call constructs. */
+function makeFakeSocket(url: string): FakeSocket {
+  const listeners: Record<string, Listener[]> = {};
+  const socket: FakeSocket = {
+    url,
+    readyState: 1, // OPEN
+    listeners,
+    sent: [],
+    closed: false,
+    addEventListener(type, listener) {
+      (listeners[type] ??= []).push(listener);
+    },
+    send(data) {
+      socket.sent.push(data);
+    },
+    close() {
+      socket.closed = true;
+    },
+    emit(type, event = {}) {
+      for (const l of listeners[type] ?? []) l(event);
+    },
+  };
+  return socket;
+}
+
+let lastSocket: FakeSocket | undefined;
+const originalWebSocket = globalThis.WebSocket;
+
+beforeEach(() => {
+  lastSocket = undefined;
+  const fakeCtor = function (url: string) {
+    lastSocket = makeFakeSocket(url);
+    return lastSocket;
+  };
+  fakeCtor.OPEN = 1;
+  // @ts-expect-error test stub, not a full WebSocket implementation
+  globalThis.WebSocket = fakeCtor;
+});
+
+afterEach(() => {
+  globalThis.WebSocket = originalWebSocket;
+});
+
+function open() {
+  lastSocket!.emit("open");
+}
+
+describe("connectDeepgram — A1b VAD/endpointing audit", () => {
+  test("sets utterance_end_ms so Deepgram actually sends UtteranceEnd events", () => {
+    connectDeepgram(() => {});
+    open();
+    expect(lastSocket!.url).toContain("utterance_end_ms=1000");
+    expect(lastSocket!.url).toContain("vad_events=true");
+  });
+
+  test("normal speech_final path is unaffected — passes the chunk straight through", () => {
+    const onTranscript = mock(() => {});
+    connectDeepgram(onTranscript);
+    open();
+
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: true,
+        channel: { alternatives: [{ transcript: "book me an appointment" }] },
+      }),
+    });
+
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+    expect(onTranscript).toHaveBeenCalledWith({ text: "book me an appointment", isFinal: true, speechFinal: true });
+  });
+
+  test("UtteranceEnd replays accumulated final text as a synthetic speech_final when speech_final never fired", () => {
+    const onTranscript = mock(() => {});
+    connectDeepgram(onTranscript);
+    open();
+
+    // Two `is_final:true` chunks arrive, but speech_final never fires for
+    // either — the exact gap this fix targets.
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: false,
+        channel: { alternatives: [{ transcript: "book me" }] },
+      }),
+    });
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: false,
+        channel: { alternatives: [{ transcript: "an appointment" }] },
+      }),
+    });
+    expect(onTranscript).toHaveBeenCalledTimes(2);
+
+    lastSocket!.emit("message", { data: JSON.stringify({ type: "UtteranceEnd" }) });
+
+    expect(onTranscript).toHaveBeenCalledTimes(3);
+    expect(onTranscript).toHaveBeenLastCalledWith({ text: "book me an appointment", isFinal: true, speechFinal: true });
+  });
+
+  test("UtteranceEnd is a no-op when speech_final already fired normally", () => {
+    const onTranscript = mock(() => {});
+    connectDeepgram(onTranscript);
+    open();
+
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: true,
+        channel: { alternatives: [{ transcript: "goodbye" }] },
+      }),
+    });
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+
+    lastSocket!.emit("message", { data: JSON.stringify({ type: "UtteranceEnd" }) });
+    // Buffer was cleared by the real speech_final — nothing further fires.
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  test("interim (non-final) results are passed through but never populate the fallback buffer", () => {
+    const onTranscript = mock(() => {});
+    connectDeepgram(onTranscript);
+    open();
+
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: false,
+        speech_final: false,
+        channel: { alternatives: [{ transcript: "book" }] },
+      }),
+    });
+    expect(onTranscript).toHaveBeenCalledWith({ text: "book", isFinal: false, speechFinal: false });
+
+    lastSocket!.emit("message", { data: JSON.stringify({ type: "UtteranceEnd" }) });
+    // Only interim text ever arrived — nothing to replay.
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+  });
+});

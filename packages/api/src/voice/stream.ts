@@ -67,6 +67,24 @@ export function looksLikePromptInjection(text: string): boolean {
   return INJECTION_PHRASE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * A1b (VAD/endpointing audit, 2026-07-14): Deepgram's `endpointing`/
+ * `speech_final` is a single fixed-silence-timeout signal — it has no idea
+ * whether the caller's sentence is actually grammatically complete. A
+ * caller who pauses mid-thought right after a conjunction/filler ("and...",
+ * "so...", "um...") can get cut off and answered on a fragment. This is a
+ * cheap, rule-based regex-context check (not a model call) layered on top
+ * of the vendor signal, matching the report's "endpointing as rule-based +
+ * regex-context, not vendor-signal-alone" recommendation — the caller
+ * simply gets treated as still-mid-turn for one more beat; the existing
+ * silence-timeout re-prompt is still the backstop if they really did stop.
+ */
+const TRAILING_FILLER_PATTERN = /\b(and|so|but|or|because|um+|uh+|like|well|then)[.,]?$/i;
+
+export function endsMidThought(text: string): boolean {
+  return TRAILING_FILLER_PATTERN.test(text.trim());
+}
+
 const SILENCE_WARNING_MS = 8000;
 const SILENCE_HANGUP_MS = 7000;
 
@@ -707,9 +725,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           if (!speechFinal || !isFinal || !text.trim()) return;
 
           // Caller actually responded — reset silence handling (a fresh
-          // warning stage next time they go quiet, not an immediate hangup).
+          // warning stage next time they go quiet, not an immediate hangup)
+          // regardless of the mid-thought check below — real speech arrived
+          // either way.
           silenceWarningIssued = false;
           clearSilenceTimer();
+
+          // A1b: the vendor endpointing signal fired, but the sentence
+          // itself reads as mid-thought — wait for one more beat instead of
+          // answering a fragment. Re-arm the silence timer manually since
+          // no turn (and therefore no armSilenceTimer call further down)
+          // runs on this path — the re-prompt is still the backstop if the
+          // caller genuinely stopped here rather than actually continuing.
+          if (endsMidThought(text)) {
+            armSilenceTimer(ws);
+            return;
+          }
 
           // Heuristic, defense-in-depth guardrail detector — independent of
           // whether the model itself calls flagGuardrailEvent (see agent.ts).
