@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -267,12 +267,19 @@ export function AppShell({
   const activeCollapsed = collapsible && collapsed;
 
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  // useCallback ref fires synchronously when the node mounts, so the state is
+  // set before any child portals (Dialog/Sheet/Dropdown/Tooltip) attempt to
+  // resolve their container. A plain useState(null) ref leaves portals falling
+  // back to document.body on the first render.
+  const shellRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) setPortalContainer(node);
+  }, []);
 
   return (
     <SidebarContext.Provider value={{ collapsed: activeCollapsed, toggle: toggleCollapsed }}>
       <TooltipProvider>
         <div
-          ref={setPortalContainer}
+          ref={shellRef}
           className={cn(
             "theme-weeber min-h-screen bg-background text-foreground font-sans",
             theme === "dark" && "dark",
