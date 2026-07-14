@@ -393,6 +393,22 @@
   z-index: 1;
 }
 
+/* Radix portals (Dialog/Sheet/Popover/Tooltip content) mount as direct
+ * children of <body> too — see body-theme-sync.ts's doc comment on why
+ * .theme-weeber lives on <body>. The broad ">* { position: relative }"
+ * rule above was clobbering their own position:fixed (same specificity,
+ * source-order win), which silently rendered dialogs off-screen — e.g.
+ * EnterpriseDialog on the marketing pages. Higher-specificity override so
+ * portalled overlay/content keeps its real position scheme. */
+.theme-weeber > [role="dialog"],
+.theme-weeber > [role="alertdialog"],
+.theme-weeber > [data-radix-popper-content-wrapper],
+.theme-weeber > [data-slot="dialog-overlay"],
+.theme-weeber > [data-slot="sheet-overlay"],
+.theme-weeber > [data-slot="sheet-content"] {
+  position: fixed;
+}
+
 /* ─── Card elevation system ─────────────────────────────────────────────── */
 
 /* Standard elevated card — white/dark surface with shadow lifting above bg */

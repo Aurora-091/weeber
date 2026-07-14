@@ -12,12 +12,28 @@ export const SITE = {
     "Weeber answers inbound calls, recovers abandoned carts, books appointments, and routes to humans — without breaking consent regulations.",
 };
 
-export const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [];
+export const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/shopify", label: "Shopify" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/about", label: "About" },
+  { href: "/faq", label: "FAQ" },
+];
 
 export const FOOTER_COLUMNS = [
   {
+    title: "Product",
+    links: [
+      { label: "Shopify solution", href: "/shopify" },
+      { label: "Pricing", href: "/pricing" },
+      { label: "FAQ", href: "/faq" },
+    ],
+  },
+  {
     title: "Company",
-    links: [{ label: "About", href: "/about" }],
+    links: [
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
+    ],
   },
   {
     title: "Legal",
@@ -182,6 +198,56 @@ export const FAQ = [
   },
 ] as const;
 
+/** Expanded, grouped FAQ for the dedicated /faq page — Home keeps the
+ * condensed 6-question version above. Same tone/directness, more coverage. */
+export const FAQ_GROUPS = [
+  {
+    title: "Product",
+    items: [
+      { q: "Will it actually sound human?", a: "Yes — natural AI voices with real back-and-forth, not a phone-tree robot. Most callers don't realize it's AI." },
+      { q: "Do I need a developer?", a: "No. You configure your agent with simple rules and prompts. Most setups take under an hour." },
+      { q: "What can it actually do?", a: "Answer inbound calls, recover abandoned carts, confirm COD orders, book appointments, send order/shipping updates, and route to a human when it should." },
+      { q: "What languages does it support?", a: "English today, with Hindi/English code-mixed calls already in production for Indian merchants. More languages follow based on demand." },
+      { q: "Can it do inbound and outbound calls?", a: "Both — inbound support/booking calls and outbound flows like cart recovery, COD confirmation, and reminders." },
+    ],
+  },
+  {
+    title: "Setup",
+    items: [
+      { q: "How long does it take to go live?", a: "Most merchants are live same day — connect Shopify, pick a flow template, and you're taking calls." },
+      { q: "Do I need to change my phone number?", a: "No — Weeber can work alongside your existing number, or you can use a dedicated number we provision for you." },
+      { q: "How does it connect to Shopify?", a: "A one-click OAuth install syncs your orders, carts, and customers automatically — no manual data entry." },
+    ],
+  },
+  {
+    title: "Compliance & data",
+    items: [
+      { q: "Is this legal?", a: "Yes, when consent and calling-window rules are followed — which is exactly what Weeber enforces automatically, not something you have to remember." },
+      { q: "How does consent work?", a: "Every number is checked against your consent records before a call goes out. If consent isn't on file, the call simply doesn't happen." },
+      { q: "Is my customers' data safe?", a: "Encrypted end to end, used only to run the flows you build — never sold, never shared, never used to train anyone else's models." },
+      { q: "Do you train models on my calls?", a: "No." },
+    ],
+  },
+  {
+    title: "Pricing & access",
+    items: [
+      { q: "What will it cost?", a: "The first 100 waitlist customers lock in founder pricing for life. Full public pricing is set at launch — see /pricing for the tier structure." },
+      { q: "What's founder pricing?", a: "A locked-in rate for early waitlist customers that doesn't change even after we raise prices for everyone else." },
+      { q: "When does beta open?", a: "We're onboarding in small batches soon. Join the list and we'll reach out by industry." },
+      { q: "Which payment methods do you support?", a: "Cards and UPI for Indian merchants, cards for everyone else — full details land at launch." },
+    ],
+  },
+  {
+    title: "Platforms",
+    items: [
+      { q: "Which integrations exist at launch?", a: "Shopify and WhatsApp." },
+      { q: "What's on the roadmap?", a: "WooCommerce, WordPress, and clinic/hospital booking systems — sequenced by waitlist demand." },
+      { q: "Can I request a connector?", a: "Yes — tell us on the waitlist form or email hello@weeber.ai and it goes straight into the roadmap conversation." },
+    ],
+  },
+] as const;
+
+
 export const DEMOS = [
   {
     id: "cod-confirmation",
@@ -244,3 +310,83 @@ export const DEMOS = [
     ],
   },
 ] as const;
+
+/** Directional pricing structure (see /pricing plan §3.3) — deliberately no
+ * hard rupee/dollar numbers pre-launch: shows the shape, not a commitment
+ * that boxes in real launch pricing. */
+export const PRICING_TIERS = [
+  {
+    name: "Starter",
+    audience: "Single-store owners",
+    description: "Everything you need to stop missing calls and start recovering carts.",
+    features: ["Capped calls/minutes", "Core flows (cart recovery, order updates)", "Shopify + WhatsApp sync", "Transcripts & recordings"],
+    cta: "Join the waitlist",
+  },
+  {
+    name: "Growth",
+    audience: "Scaling stores",
+    description: "More volume, every flow, and the analytics to prove what's working.",
+    features: ["Higher minutes/call volume", "All flows (COD confirmation, feedback, booking)", "Outbound campaigns", "Full analytics dashboard"],
+    cta: "Join the waitlist",
+    highlighted: true,
+  },
+  {
+    name: "Scale",
+    audience: "High-volume & regulated teams",
+    description: "Custom integrations, SLAs, and audit logs for teams that need them.",
+    features: ["Custom integrations", "SLAs & dedicated support", "Full audit logs", "Compliance review support"],
+    cta: "Talk to sales",
+  },
+] as const;
+
+export const PRICING_INCLUDED = [
+  "Consent/compliance gate — enforced automatically, on every plan",
+  "Full transcripts + call recordings",
+  "One dashboard for every call and outcome",
+  "Natural-sounding AI voices",
+] as const;
+
+/** On-site comparison — named by category, not by competitor brand, per
+ * the plan's "stay classy" rule (named head-to-head lives on the blog). */
+export const COMPARISON_TABLE = {
+  columns: ["Weeber", "Developer platforms", "Enterprise platforms"] as const,
+  rows: [
+    { label: "Built for", values: ["SMBs & Shopify stores", "Developers", "Large regulated teams"] },
+    { label: "Setup", values: ["Click, live in an afternoon", "Weeks, engineers", "Weeks, onboarding"] },
+    { label: "Pricing", values: ["Simple plans, no rev-share", "Per-min + model pass-through", "Platform fee + per-min"] },
+    { label: "Compliance", values: ["Enforced in infra, included", "Your responsibility", "Add-on / enterprise tier"] },
+    { label: "Vertical flows", values: ["Pre-built (cart recovery, COD, booking)", "Build your own", "Custom projects"] },
+    { label: "No code", values: ["Yes", "No", "Partial"] },
+  ],
+} as const;
+
+export const THESIS_PRINCIPLES = [
+  {
+    title: "SMBs deserve enterprise-grade voice AI",
+    body: "Not a scaled-down version of a developer tool — built for someone running a store or a clinic, not a platform team.",
+  },
+  {
+    title: "Compliance is a feature, not a disclaimer",
+    body: "Consent and calling-window rules are enforced at the infrastructure level. You can't accidentally break the law with Weeber — it just won't dial.",
+  },
+  {
+    title: "Outcomes over tooling",
+    body: "We sell recovered carts and booked appointments, not a builder you have to configure into a working product yourself.",
+  },
+  {
+    title: "Vertical-first beats horizontal",
+    body: "Deep, done-for-you flows for one vertical at a time — Shopify first — instead of a generic tool that's shallow everywhere.",
+  },
+] as const;
+
+export const TEAM = [
+  {
+    name: "Ashutosh Tiwari",
+    role: "Founder",
+  },
+  {
+    name: "Rushikesh Pawar",
+    role: "Co-founder",
+  },
+] as const;
+

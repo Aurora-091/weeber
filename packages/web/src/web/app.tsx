@@ -32,6 +32,11 @@ function SubdomainRedirect({ target }: { target: string }) {
 // Public marketing pages
 const LandingPage = lazy(() => import("./pages/landing"));
 const DocsPage = lazy(() => import("./pages/docs"));
+const ShopifySolutionPage = lazy(() => import("./pages/shopify").then((m) => ({ default: m.ShopifySolutionPage })));
+const PricingPage = lazy(() => import("./pages/pricing").then((m) => ({ default: m.PricingPage })));
+const AboutPage = lazy(() => import("./pages/about").then((m) => ({ default: m.AboutPage })));
+const FaqPage = lazy(() => import("./pages/faq").then((m) => ({ default: m.FaqPage })));
+const ContactPage = lazy(() => import("./pages/contact").then((m) => ({ default: m.ContactPage })));
 
 // Admin dashboard shell + pages
 const AdminKeyGate = lazy(() =>
@@ -146,6 +151,11 @@ function App() {
           {/* Public pages */}
           {showPublic && <Route path="/" component={LandingPage} />}
           {showPublic && <Route path="/docs" component={DocsPage} />}
+          {showPublic && <Route path="/shopify" component={ShopifySolutionPage} />}
+          {showPublic && <Route path="/pricing" component={PricingPage} />}
+          {showPublic && <Route path="/about" component={AboutPage} />}
+          {showPublic && <Route path="/faq" component={FaqPage} />}
+          {showPublic && <Route path="/contact" component={ContactPage} />}
 
           {/* Admin Dashboard */}
           {showAdmin && (

@@ -3,11 +3,13 @@ import { Lock, Shield, SlidersHorizontal } from "lucide-react";
 import { Toaster } from "../components/ui/sonner";
 import { usePageTitle } from "../lib/usePageTitle";
 import { useWaitlistCount } from "../lib/useWaitlistCount";
+import { useReveal } from "../lib/useReveal";
 import { MarketingNav } from "../components/marketing/MarketingNav";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 import { AgentDemoWidget } from "../components/marketing/AgentDemoWidget";
 import { EnterpriseDialog } from "../components/marketing/EnterpriseDialog";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
+import { GrainOverlay } from "../components/marketing/GrainOverlay";
 import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, READY_FLOWS, UPCOMING_VERTICALS, SECURITY_FEATURES, FAQ, VERTICALS } from "../lib/marketing-config";
 
 /**
@@ -29,29 +31,6 @@ import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, READY_FLOWS, UPCOMING_VERTICALS
  */
 
 const BASE_COUNT = 43;
-
-function useReveal() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("revealed");
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.12 },
-    );
-    const targets = el.querySelectorAll("[data-reveal]");
-    targets.forEach((t) => observer.observe(t));
-    return () => observer.disconnect();
-  }, []);
-  return ref;
-}
 
 function AnimatedStat({ value, label, delay }: { value: string; label: string; delay: number }) {
   const [displayed, setDisplayed] = useState(value);
@@ -100,20 +79,6 @@ function AnimatedStat({ value, label, delay }: { value: string; label: string; d
     <div ref={ref}>
       <span className="block font-display font-extrabold text-[clamp(36px,4.5vw,52px)] leading-none tracking-[-0.04em] text-[var(--m-text)]">{displayed}</span>
       <p className="mt-2 text-[13.5px] text-[var(--m-text-secondary)] leading-snug">{label}</p>
-    </div>
-  );
-}
-
-function GrainOverlay() {
-  return (
-    <div className="grain-overlay" aria-hidden="true">
-      <svg width="100%" height="100%">
-        <filter id="grain-filter">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={3} stitchTiles="stitch" />
-          <feColorMatrix type="saturate" values="0" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#grain-filter)" />
-      </svg>
     </div>
   );
 }
