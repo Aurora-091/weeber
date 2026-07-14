@@ -99,9 +99,6 @@ const UserCallsPage = lazy(() => import("./pages/app/calls").then((m) => ({ defa
 const UserCallDetailPage = lazy(() =>
   import("./pages/app/call-detail").then((m) => ({ default: m.UserCallDetailPage })),
 );
-const UserAnalyticsPage = lazy(() =>
-  import("./pages/app/analytics").then((m) => ({ default: m.UserAnalyticsPage })),
-);
 const UserBillingPage = lazy(() =>
   import("./pages/app/billing").then((m) => ({ default: m.UserBillingPage })),
 );
@@ -287,11 +284,6 @@ function App() {
           {showUser && (
             <Route path={appPath("/calls/:id")}>
               <UserShell><UserCallDetailPage /></UserShell>
-            </Route>
-          )}
-          {showUser && (
-            <Route path={appPath("/analytics")}>
-              <UserShell><UserAnalyticsPage /></UserShell>
             </Route>
           )}
           {showUser && (

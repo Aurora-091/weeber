@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Users, TrendingUp, CheckCircle2 } from "lucide-react";
+import { Users, TrendingUp, CircleCheck as CheckCircle2 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { PageHeader } from "../../components/shell/page-header";
-import { StatTile } from "../../components/charts/stat-tile";
-import { BarMeterList } from "../../components/charts/bar-meter";
+import { StatCard } from "../../components/charts/stat-card";
+import { BreakdownList } from "../../components/charts/breakdown-list";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
 type MarketingSummary = {
@@ -44,12 +44,12 @@ export function MarketingAnalyticsPage() {
       {data && (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-3">
-            <StatTile label="Total signups" value={String(data.totalSignups)} icon={Users} />
-            <StatTile label={`Signups (${data.rangeDays}d)`} value={String(data.signupsInRange)} icon={TrendingUp} />
-            <StatTile label="Converted to org" value={String(data.converted)} icon={CheckCircle2} />
+            <StatCard label="Total signups" value={String(data.totalSignups)} icon={Users} />
+            <StatCard label={`Signups (${data.rangeDays}d)`} value={String(data.signupsInRange)} icon={TrendingUp} />
+            <StatCard label="Converted to org" value={String(data.converted)} icon={CheckCircle2} />
           </div>
-          <BarMeterList title="Signups by day" counts={data.signupsByDay} />
-          <BarMeterList title="Signups by source" counts={data.signupsBySource} />
+          <BreakdownList title="Signups by day" counts={data.signupsByDay} />
+          <BreakdownList title="Signups by source" counts={data.signupsBySource} />
         </div>
       )}
     </div>

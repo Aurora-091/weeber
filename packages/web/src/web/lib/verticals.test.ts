@@ -18,9 +18,9 @@ describe("verticals helper", () => {
     expect(v.key).toBe("shopify");
     expect(v.glossary.customer).toBe("Customer");
     expect(v.glossary.customers).toBe("Customers");
-    // Home, Agents, Workflows, Conversations, Analytics, Billing, Shopify
-    // (integrationLabel), Settings.
-    expect(v.nav).toHaveLength(8);
+    // Home, Agents, Workflows, Conversations, Billing, Shopify (integrationLabel), Settings.
+    // Analytics was folded into Home (dashboard consolidation pass).
+    expect(v.nav).toHaveLength(7);
   });
 
   it("falls back to shopify vertical for unrecognized keys", () => {
@@ -31,17 +31,13 @@ describe("verticals helper", () => {
   it("contains all required nav items for shopify", () => {
     const v = getVertical("shopify");
     const labels = v.nav.map((n) => n.label);
-    // "Home" replaces the old "Setup" nav entry — onboarding is a modal
-    // opened from the dashboard now, not its own page/nav item (see
-    // DECISIONS.md ADR-047, "Setup modal, not a setup page").
     expect(labels).toContain("Home");
     expect(labels).toContain("Agents");
     expect(labels).toContain("Conversations");
-    expect(labels).toContain("Analytics");
     expect(labels).toContain("Billing");
-    // The platform-connection nav item is labeled per-vertical via
-    // integrationLabel, not a hardcoded "Integrations" — "Shopify" here.
     expect(labels).toContain("Shopify");
+    // Analytics is no longer a separate nav item — it lives on the Home page.
+    expect(labels).not.toContain("Analytics");
   });
 
   it("resolves insurance vertical with Policyholder glossary and no Integrations nav item", () => {
@@ -49,12 +45,12 @@ describe("verticals helper", () => {
     expect(v.key).toBe("insurance");
     expect(v.glossary.customer).toBe("Policyholder");
     expect(v.glossary.customers).toBe("Policyholders");
-    // Home, Agents, Workflows, Conversations, Analytics, Billing, Settings —
-    // deliberately no 8th "Integrations"-equivalent item, since no live
-    // policy-system integration exists yet (see verticals.ts's own comment
-    // right above the insurance definition).
-    expect(v.nav).toHaveLength(7);
+    // Home, Agents, Workflows, Conversations, Billing, Settings —
+    // no Integrations item (no live policy-system integration yet),
+    // no Analytics item (folded into Home).
+    expect(v.nav).toHaveLength(6);
     const labels = v.nav.map((n) => n.label);
     expect(labels).not.toContain("Policy System");
+    expect(labels).not.toContain("Analytics");
   });
 });
