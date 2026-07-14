@@ -22,6 +22,7 @@ import {
   shopLinks,
   toolCalls,
   orgAgentConfigs,
+  orgPhoneNumbers,
 } from "../database/schema";
 import { requireAdminKey, type AdminAuthVariables } from "./middleware/admin-auth";
 import { adminSessionAuth } from "./middleware/admin-session";
@@ -34,6 +35,7 @@ import {
   getTwilioStatus,
   createSubaccountForOrg,
   buyNumberForOrg,
+  listAvailableNumbers,
   setByoCredentials,
   resetToPlatformDefault,
 } from "./twilio-provisioning";
@@ -175,7 +177,9 @@ export const admin = new Hono<AdminEnv>()
     const { countryCode, areaCode } = (body ?? {}) as { countryCode?: string; areaCode?: string };
     if (!countryCode?.trim()) return c.json({ error: "`countryCode` is required, e.g. \"US\" or \"IN\"" }, 400);
 
-    const result = await buyNumberForOrg(orgId, countryCode.trim(), areaCode?.trim());
+    const available = await listAvailableNumbers(orgId, countryCode.trim(), areaCode?.trim());
+    if (!available.ok) return c.json({ error: available.error }, 400);
+    const result = await buyNumberForOrg(orgId, available.numbers[0]!.phoneNumber);
     if (!result.ok) return c.json({ error: result.error }, 400);
     await logAdminAction(c.get("adminActor"), "twilio.number.purchased", { orgId, phoneNumber: result.phoneNumber });
     return c.json({ phoneNumber: result.phoneNumber }, 201);
@@ -210,6 +214,15 @@ export const admin = new Hono<AdminEnv>()
     await resetToPlatformDefault(orgId);
     await logAdminAction(c.get("adminActor"), "twilio.reset", { orgId });
     return c.json({ ok: true }, 200);
+  })
+
+  // C2b — read-only mirror of GET /api/app/numbers for admin oversight.
+  // Buying/releasing numbers stays a merchant-side action in the app
+  // panel; admins can see what's assigned but don't manage it here.
+  .get("/orgs/:orgId/numbers", async (c) => {
+    const orgId = c.req.param("orgId");
+    const rows = await db.select().from(orgPhoneNumbers).where(eq(orgPhoneNumbers.orgId, orgId));
+    return c.json({ numbers: rows }, 200);
   })
 
   // Agent template catalog (ADR-031's vertical-agnostic seam). Templates are

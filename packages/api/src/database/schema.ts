@@ -191,10 +191,34 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   firstCallDelayMinutes: integer("first_call_delay_minutes"),
   retryDelayMinutes: integer("retry_delay_minutes"),
   maxAttempts: integer("max_attempts"),
+  // C2b: which of the org's owned numbers this agent calls from — nullable,
+  // falls back to the org's primary active org_phone_numbers row (or the
+  // legacy orgs.outboundNumber, for orgs that predate this table) when
+  // unset, so nothing breaks for single-number orgs. See
+  // resolveOutboundNumberForAgent in voice/org-queries.ts.
+  phoneNumberId: integer("phone_number_id").references(() => orgPhoneNumbers.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   uniqueIndex("org_agent_configs_org_key_idx").on(table.orgId, table.templateKey),
+]);
+
+/**
+ * C2b — Number provisioning. Replaces the single orgs.outboundNumber column
+ * (kept, untouched, as the legacy fallback for orgs that never adopt this)
+ * with a real one-org-owns-N-numbers model, from any provider. Every
+ * assign/deassign/decommission flow reads and writes this table, never
+ * orgs.outboundNumber directly, going forward.
+ */
+export const orgPhoneNumbers = pgTable("org_phone_numbers", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["twilio", "plivo", "exotel"] }).notNull(),
+  phoneNumber: text("phone_number").notNull(),
+  status: text("status", { enum: ["active", "released"] }).notNull().default("active"),
+  purchasedAt: timestamp("purchased_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("org_phone_numbers_org_id_idx").on(table.orgId),
 ]);
 
 // One row per org, drives the dashboard "finish setup" checklist + the

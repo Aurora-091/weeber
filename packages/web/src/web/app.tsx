@@ -113,6 +113,9 @@ const UserIntegrationsPage = lazy(() =>
 const UserKnowledgeBasePage = lazy(() =>
   import("./pages/app/knowledge-base").then((m) => ({ default: m.UserKnowledgeBasePage })),
 );
+const UserNumbersPage = lazy(() =>
+  import("./pages/app/numbers").then((m) => ({ default: m.UserNumbersPage })),
+);
 const UserSettingsPage = lazy(() =>
   import("./pages/app/settings").then((m) => ({ default: m.UserSettingsPage })),
 );
@@ -312,6 +315,11 @@ function App() {
           {showUser && (
             <Route path={appPath("/knowledge-base")}>
               <UserShell><UserKnowledgeBasePage /></UserShell>
+            </Route>
+          )}
+          {showUser && (
+            <Route path={appPath("/numbers")}>
+              <UserShell><UserNumbersPage /></UserShell>
             </Route>
           )}
           {showUser && (

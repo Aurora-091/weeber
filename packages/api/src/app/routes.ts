@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs } from "../database/schema";
+import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
@@ -34,6 +34,7 @@ import {
   getOrg,
   getAgentConfigsForOrg,
   upsertAgentConfig,
+  assignPhoneNumberToAgent,
   computeOrgAnalytics,
   listOrgCalls,
   getOrgCall,
@@ -51,6 +52,8 @@ import {
   getTwilioStatus,
   createSubaccountForOrg,
   buyNumberForOrg,
+  listAvailableNumbers,
+  releaseNumberForOrg,
   setByoCredentials,
   resetToPlatformDefault,
 } from "../voice/twilio-provisioning";
@@ -267,6 +270,21 @@ export const userApp = new Hono<UserEnv>()
     return c.json({ agentConfig: row }, 200);
   })
 
+  // C2b — assign/unassign which org number this agent dials out from.
+  // Separate from the PUT above since phoneNumberId is a plain FK column,
+  // not part of AgentFrameSchema's jsonb config.
+  .put("/agent-configs/:templateKey/number", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { phoneNumberId } = (body ?? {}) as { phoneNumberId?: number | null };
+    if (phoneNumberId !== null && !Number.isInteger(phoneNumberId)) {
+      return c.json({ error: "`phoneNumberId` must be an integer or null (to unassign)" }, 400);
+    }
+    const result = await assignPhoneNumberToAgent(orgId, c.req.param("templateKey"), phoneNumberId ?? null);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ ok: true }, 200);
+  })
+
   .post("/agent-configs/:templateKey/test-chat", async (c) => {
     const orgId = c.get("userOrgId")!;
     const templateKey = c.req.param("templateKey");
@@ -410,7 +428,7 @@ export const userApp = new Hono<UserEnv>()
 
     const { buildPreviewAgentConfig } = await import("../voice/agent");
     const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
-    const placed = await placeOutboundCall({ orgId, to: phone });
+    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
     await sessionStore.set(placed.sessionKey, {
@@ -630,7 +648,12 @@ export const userApp = new Hono<UserEnv>()
     const { countryCode, areaCode } = (body ?? {}) as { countryCode?: string; areaCode?: string };
     if (!countryCode?.trim()) return c.json({ error: "`countryCode` is required, e.g. \"US\" or \"IN\"" }, 400);
 
-    const result = await buyNumberForOrg(orgId, countryCode.trim(), areaCode?.trim());
+    // Legacy single-number flow: search then buy the first candidate. The
+    // full picker UX (list candidates, let the user choose, buy/release
+    // per-agent numbers) lives at /api/app/numbers below.
+    const available = await listAvailableNumbers(orgId, countryCode.trim(), areaCode?.trim());
+    if (!available.ok) return c.json({ error: available.error }, 400);
+    const result = await buyNumberForOrg(orgId, available.numbers[0]!.phoneNumber);
     if (!result.ok) return c.json({ error: result.error }, 400);
     return c.json({ phoneNumber: result.phoneNumber }, 201);
   })
@@ -705,6 +728,49 @@ export const userApp = new Hono<UserEnv>()
   // resetToPlatformDefault's docstring for why it's not Twilio-only.
   .post("/telephony/reset", async (c) => {
     await resetToPlatformDefault(c.get("userOrgId")!);
+    return c.json({ ok: true }, 200);
+  })
+
+  // C2b — Number provisioning UX. An org can now hold several Twilio
+  // numbers (one per agent) instead of a single shared outboundNumber.
+  // Every route below is org-scoped via userOrgId from the session, never
+  // a path param, so one org can never list/buy/release another org's
+  // numbers.
+  .get("/numbers", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const rows = await db.select().from(orgPhoneNumbers).where(eq(orgPhoneNumbers.orgId, orgId));
+    return c.json({ numbers: rows }, 200);
+  })
+
+  .get("/numbers/available", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const countryCode = c.req.query("countryCode");
+    const areaCode = c.req.query("areaCode");
+    if (!countryCode?.trim()) return c.json({ error: "`countryCode` query param is required, e.g. \"US\" or \"IN\"" }, 400);
+
+    const result = await listAvailableNumbers(orgId, countryCode.trim(), areaCode?.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ numbers: result.numbers }, 200);
+  })
+
+  .post("/numbers", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { phoneNumber } = (body ?? {}) as { phoneNumber?: string };
+    if (!phoneNumber?.trim()) return c.json({ error: "`phoneNumber` is required — pick one from GET /numbers/available" }, 400);
+
+    const result = await buyNumberForOrg(orgId, phoneNumber.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  .post("/numbers/:id/release", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const phoneNumberId = Number(c.req.param("id"));
+    if (!Number.isInteger(phoneNumberId)) return c.json({ error: "`id` must be an integer" }, 400);
+
+    const result = await releaseNumberForOrg(orgId, phoneNumberId);
+    if (!result.ok) return c.json({ error: result.error }, 400);
     return c.json({ ok: true }, 200);
   })
 

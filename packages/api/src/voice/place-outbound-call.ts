@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgs } from "../database/schema";
+import { orgs, orgAgentConfigs, orgPhoneNumbers } from "../database/schema";
 import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
 import { createPlivoOutboundCall } from "./plivo-client";
 import { createExotelOutboundCall } from "./exotel-client";
@@ -19,11 +19,23 @@ export type PlaceOutboundResult =
 
 /**
  * Resolves which telephony provider an org dials through and the number it
- * dials from. Falls back to the platform Twilio number for orgs with no
- * configured `outboundNumber`/provider — today's single-tenant default.
+ * dials from. Fallback chain, most to least specific:
+ *   1. the calling agent's own assigned number (org_agent_configs.phone_number_id),
+ *      if `agentKey` is passed and that agent has one — lets different agents
+ *      in the same org caller-ID as different numbers.
+ *   2. the org's own first still-active org_phone_numbers row (C2b) — covers
+ *      orgs that bought numbers through the new picker but haven't assigned
+ *      one to this particular agent yet.
+ *   3. legacy orgs.outboundNumber — untouched, still written by
+ *      buyNumberForOrg/setByoCredentials for orgs that never touch the new
+ *      per-number picker.
+ *   4. the platform default env var, so a totally unconfigured org (or a
+ *      call site that doesn't have an orgId at all) still dials through
+ *      something.
  */
 export async function resolveOutboundRouting(
   orgId?: string | null,
+  agentKey?: string | null,
 ): Promise<{ provider: TelephonyProvider; from: string | undefined }> {
   let from = process.env.TWILIO_PHONE_NUMBER;
   let provider: TelephonyProvider = "twilio";
@@ -33,6 +45,32 @@ export async function resolveOutboundRouting(
     if (org?.telephonyProvider === "plivo" || org?.telephonyProvider === "exotel") {
       provider = org.telephonyProvider;
     }
+
+    let assignedNumber: string | undefined;
+    if (agentKey) {
+      const [agentConfig] = await db
+        .select({ phoneNumberId: orgAgentConfigs.phoneNumberId })
+        .from(orgAgentConfigs)
+        .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.templateKey, agentKey)))
+        .limit(1);
+      if (agentConfig?.phoneNumberId != null) {
+        const [numberRow] = await db
+          .select({ phoneNumber: orgPhoneNumbers.phoneNumber })
+          .from(orgPhoneNumbers)
+          .where(and(eq(orgPhoneNumbers.id, agentConfig.phoneNumberId), eq(orgPhoneNumbers.status, "active")))
+          .limit(1);
+        assignedNumber = numberRow?.phoneNumber;
+      }
+    }
+    if (!assignedNumber) {
+      const [orgNumberRow] = await db
+        .select({ phoneNumber: orgPhoneNumbers.phoneNumber })
+        .from(orgPhoneNumbers)
+        .where(and(eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")))
+        .limit(1);
+      assignedNumber = orgNumberRow?.phoneNumber;
+    }
+    if (assignedNumber) from = assignedNumber;
   }
   return { provider, from };
 }
@@ -50,12 +88,17 @@ export async function resolveOutboundRouting(
 export async function placeOutboundCall(input: {
   orgId?: string | null;
   to: string;
+  /** Which agent template is placing this call — used to prefer that
+   * agent's own assigned number (C2b) over the org's shared default, if
+   * one is set. Optional: callers that don't know/have an agent (e.g. the
+   * scheduler sweep) just fall back to the org-level number. */
+  agentKey?: string | null;
   /** Enable Twilio async answering-machine detection. No-op for Plivo/Exotel,
    * which don't expose AMD on our current integration. */
   amd?: boolean;
 }): Promise<PlaceOutboundResult> {
-  const { orgId, to, amd = true } = input;
-  const { provider, from } = await resolveOutboundRouting(orgId);
+  const { orgId, to, agentKey, amd = true } = input;
+  const { provider, from } = await resolveOutboundRouting(orgId, agentKey);
 
   if (!from) {
     return { ok: false, error: "No outbound phone number configured", statusCode: 500 };

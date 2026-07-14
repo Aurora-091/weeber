@@ -62,6 +62,7 @@ export type AgentConfigRow = {
     firstCallDelayMinutes: number | null;
     retryDelayMinutes: number | null;
     maxAttempts: number | null;
+    phoneNumberId: number | null;
   } | null;
 };
 

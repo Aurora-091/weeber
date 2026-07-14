@@ -701,7 +701,7 @@ export const voice = new Hono()
 
     const { buildPreviewAgentConfig } = await import("./agent");
     const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
-    const placed = await placeOutboundCall({ orgId, to: phone });
+    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
     await sessionStore.set(placed.sessionKey, {

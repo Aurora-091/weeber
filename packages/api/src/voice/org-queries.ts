@@ -15,6 +15,7 @@ import {
   featureFlags,
   onboardingState,
   orgAgentConfigs,
+  orgPhoneNumbers,
   orgs,
   scheduledCalls,
   shopLinks,
@@ -140,6 +141,43 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     })
     .returning();
   return row!;
+}
+
+export type AssignNumberResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Assigns (or, with phoneNumberId=null, unassigns) which of an org's own
+ * numbers a given agent dials out from — see place-outbound-call.ts's
+ * resolveOutboundRouting fallback chain for how this gets read back at
+ * call time. Kept separate from upsertAgentConfig/AgentFrameSchema since
+ * phoneNumberId is a plain FK column, not part of the frame's jsonb
+ * config, and doing the ownership check here (not just trusting the
+ * caller) is what keeps this org-scoped: a phoneNumberId belonging to a
+ * different org is rejected, never silently assigned.
+ */
+export async function assignPhoneNumberToAgent(
+  orgId: string,
+  templateKey: string,
+  phoneNumberId: number | null,
+): Promise<AssignNumberResult> {
+  if (phoneNumberId != null) {
+    const [numberRow] = await db
+      .select({ id: orgPhoneNumbers.id })
+      .from(orgPhoneNumbers)
+      .where(and(eq(orgPhoneNumbers.id, phoneNumberId), eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")))
+      .limit(1);
+    if (!numberRow) return { ok: false, error: "That number does not belong to this org, or is not active" };
+  }
+
+  await db
+    .insert(orgAgentConfigs)
+    .values({ orgId, templateKey, phoneNumberId })
+    .onConflictDoUpdate({
+      target: [orgAgentConfigs.orgId, orgAgentConfigs.templateKey],
+      set: { phoneNumberId, updatedAt: new Date() },
+    });
+
+  return { ok: true };
 }
 
 export async function listOrgCalls(orgId: string, limit = 200) {

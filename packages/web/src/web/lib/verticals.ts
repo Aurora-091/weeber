@@ -1,4 +1,4 @@
-import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen } from "lucide-react";
+import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen, Phone } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
 import { appPath } from "./route-base";
 
@@ -65,6 +65,7 @@ const shopify: VerticalDefinition = {
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
     { href: appPath("/integrations"), label: SHOPIFY_INTEGRATION_LABEL, icon: Plug, match: navMatch("/integrations", "") },
     { href: appPath("/knowledge-base"), label: "Knowledge Base", icon: BookOpen, match: navMatch("/knowledge-base", "") },
+    { href: appPath("/numbers"), label: "Phone Numbers", icon: Phone, match: navMatch("/numbers", "") },
     { href: appPath("/settings"), label: "Settings", icon: Settings, match: navMatch("/settings", "") },
   ],
   copy: {
@@ -103,6 +104,7 @@ const insurance: VerticalDefinition = {
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
     { href: appPath("/knowledge-base"), label: "Knowledge Base", icon: BookOpen, match: navMatch("/knowledge-base", "") },
+    { href: appPath("/numbers"), label: "Phone Numbers", icon: Phone, match: navMatch("/numbers", "") },
     { href: appPath("/settings"), label: "Settings", icon: Settings, match: navMatch("/settings", "") },
   ],
   copy: {

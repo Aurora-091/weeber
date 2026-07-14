@@ -19,6 +19,83 @@ import {
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
 
+type OrgPhoneNumber = { id: number; phoneNumber: string; status: "active" | "released" };
+
+// C2b — which of the org's numbers (bought on the Phone Numbers page) this
+// agent dials out from. Separate PUT from the main agent-save mutation
+// since phoneNumberId is a plain FK column on org_agent_configs, not part
+// of AgentFrameSchema's jsonb config — see org-queries.ts's
+// assignPhoneNumberToAgent for why.
+function NumberAssignment({ row }: { row: AgentConfigRow }) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string>(row.config?.phoneNumberId != null ? String(row.config.phoneNumberId) : "");
+
+  useEffect(() => {
+    setSelected(row.config?.phoneNumberId != null ? String(row.config.phoneNumberId) : "");
+  }, [row.config?.phoneNumberId]);
+
+  const numbers = useQuery({
+    queryKey: ["app-numbers"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/numbers");
+      if (!res.ok) throw new Error(`numbers failed (${res.status})`);
+      return (await res.json()) as { numbers: OrgPhoneNumber[] };
+    },
+  });
+
+  const assign = useMutation({
+    mutationFn: async (phoneNumberId: number | null) => {
+      const res = await appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/number`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumberId }),
+      });
+      const data = await res.json().catch(() => ({ error: "Failed" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Number assignment saved");
+      queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
+    },
+    onError: (err: Error) => toast.error("Failed to assign number", { description: err.message }),
+  });
+
+  const activeNumbers = (numbers.data?.numbers ?? []).filter((n) => n.status === "active");
+
+  return (
+    <div>
+      <label htmlFor={`number-${row.templateKey}`} className={labelCls}>Caller ID number</label>
+      <div className="flex gap-2">
+        <select
+          id={`number-${row.templateKey}`}
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className={fieldCls}
+        >
+          <option value="">Org default (shared number)</option>
+          {activeNumbers.map((n) => (
+            <option key={n.id} value={n.id}>{n.phoneNumber}</option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={assign.isPending}
+          onClick={() => assign.mutate(selected ? Number(selected) : null)}
+        >
+          Save
+        </Button>
+      </div>
+      {activeNumbers.length === 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          No numbers bought yet — buy one on the Phone Numbers page to assign it here.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SectionDivider({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-t border-border pt-5 mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -174,6 +251,7 @@ function AgentForm({ row }: { row: AgentConfigRow }) {
         </label>
         <textarea id={`persona-${row.templateKey}`} value={form.personaPrompt} onChange={(e) => set("personaPrompt", e.target.value)} rows={4} placeholder={row.defaultPersonaPrompt ?? ""} className={`${fieldCls} font-mono text-xs`} />
       </div>
+      <NumberAssignment row={row} />
 
       {/* Voice */}
       <SectionDivider>Voice &amp; Sound</SectionDivider>

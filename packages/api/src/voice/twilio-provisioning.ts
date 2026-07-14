@@ -5,9 +5,9 @@
  * DECISIONS.md ADR-042 for why this exists (ADR-030 explicitly deferred it).
  */
 import Twilio from "twilio";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgs } from "../database/schema";
+import { orgs, orgPhoneNumbers } from "../database/schema";
 import { twilioClient } from "./twilio-client";
 
 export type TwilioStatus = {
@@ -71,14 +71,11 @@ export async function createSubaccountForOrg(orgId: string, friendlyName: string
 }
 
 export type BuyNumberResult = { ok: true; phoneNumber: string } | { ok: false; error: string };
+export type AvailableNumbersResult =
+  | { ok: true; numbers: { phoneNumber: string; locality: string | null; region: string | null }[] }
+  | { ok: false; error: string };
 
-/**
- * Searches for and purchases a local number, scoped to the org's own
- * sub-account (not the parent) — a sub-account's numbers must be bought
- * with its own credentials, Twilio doesn't let the parent buy on its
- * behalf. Only usable once createSubaccountForOrg has run for this org.
- */
-export async function buyNumberForOrg(orgId: string, countryCode: string, areaCode?: string): Promise<BuyNumberResult> {
+async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.Twilio } | { ok: false; error: string }> {
   const [org] = await db
     .select({ accountSid: orgs.twilioAccountSid, authToken: orgs.twilioAuthToken })
     .from(orgs)
@@ -87,15 +84,25 @@ export async function buyNumberForOrg(orgId: string, countryCode: string, areaCo
   if (!org?.accountSid || !org?.authToken) {
     return { ok: false, error: "No Twilio sub-account provisioned for this org yet — call createSubaccountForOrg first" };
   }
+  return { ok: true, client: Twilio(org.accountSid, org.authToken) };
+}
 
-  const subClient = Twilio(org.accountSid, org.authToken);
+/**
+ * Searches for local numbers available to buy, scoped to the org's own
+ * sub-account — does NOT purchase anything. Returns a candidate list so
+ * the caller (the numbers picker UI) can let the user choose, rather than
+ * this module silently auto-picking one for them.
+ */
+export async function listAvailableNumbers(orgId: string, countryCode: string, areaCode?: string): Promise<AvailableNumbersResult> {
+  const sub = await getSubClient(orgId);
+  if (!sub.ok) return sub;
 
-  let candidates: { phoneNumber: string }[];
+  let candidates: { phoneNumber: string; locality: string | null; region: string | null }[];
   try {
-    candidates = await subClient.availablePhoneNumbers(countryCode).local.list({
+    candidates = await sub.client.availablePhoneNumbers(countryCode).local.list({
       areaCode: areaCode ? Number(areaCode) : undefined,
       voiceEnabled: true,
-      limit: 1,
+      limit: 20,
     });
   } catch (err) {
     return { ok: false, error: `Failed to search available numbers: ${(err as Error).message}` };
@@ -104,15 +111,68 @@ export async function buyNumberForOrg(orgId: string, countryCode: string, areaCo
     return { ok: false, error: `No available numbers found for country ${countryCode}${areaCode ? ` / area code ${areaCode}` : ""}` };
   }
 
-  const chosen = candidates[0]!.phoneNumber;
+  return { ok: true, numbers: candidates.map((c) => ({ phoneNumber: c.phoneNumber, locality: c.locality ?? null, region: c.region ?? null })) };
+}
+
+/**
+ * Purchases a specific number the caller already chose from
+ * listAvailableNumbers — this function no longer searches or auto-picks.
+ * Inserts a row into org_phone_numbers rather than overwriting
+ * orgs.outboundNumber directly, since an org can now hold several numbers
+ * (one per agent) instead of a single shared one.
+ */
+export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promise<BuyNumberResult> {
+  const sub = await getSubClient(orgId);
+  if (!sub.ok) return sub;
+
   try {
-    await subClient.incomingPhoneNumbers.create({ phoneNumber: chosen });
+    await sub.client.incomingPhoneNumbers.create({ phoneNumber });
   } catch (err) {
-    return { ok: false, error: `Found ${chosen} but failed to purchase it: ${(err as Error).message}` };
+    return { ok: false, error: `Failed to purchase ${phoneNumber}: ${(err as Error).message}` };
   }
 
-  await db.update(orgs).set({ outboundNumber: chosen }).where(eq(orgs.id, orgId));
-  return { ok: true, phoneNumber: chosen };
+  await db.insert(orgPhoneNumbers).values({ orgId, provider: "twilio", phoneNumber, status: "active" });
+
+  // Keep legacy orgs.outboundNumber populated as a fallback for orgs that
+  // don't yet assign per-agent numbers (resolveOutboundNumberForAgent falls
+  // back to it when nothing else applies).
+  await db.update(orgs).set({ outboundNumber: phoneNumber }).where(eq(orgs.id, orgId));
+
+  return { ok: true, phoneNumber };
+}
+
+export type ReleaseNumberResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Releases (deletes) a number from Twilio and marks its org_phone_numbers
+ * row "released". Org-scoped: the row lookup requires both the number's id
+ * AND its orgId to match, so one org can never release another org's
+ * number even if it guesses an id.
+ */
+export async function releaseNumberForOrg(orgId: string, phoneNumberId: number): Promise<ReleaseNumberResult> {
+  const [row] = await db
+    .select()
+    .from(orgPhoneNumbers)
+    .where(and(eq(orgPhoneNumbers.id, phoneNumberId), eq(orgPhoneNumbers.orgId, orgId)))
+    .limit(1);
+  if (!row) return { ok: false, error: "Number not found for this org" };
+  if (row.status === "released") return { ok: false, error: "Number already released" };
+
+  const sub = await getSubClient(orgId);
+  if (!sub.ok) return sub;
+
+  try {
+    const incoming = await sub.client.incomingPhoneNumbers.list({ phoneNumber: row.phoneNumber, limit: 1 });
+    if (incoming[0]) {
+      await sub.client.incomingPhoneNumbers(incoming[0].sid).remove();
+    }
+  } catch (err) {
+    return { ok: false, error: `Failed to release ${row.phoneNumber} on Twilio: ${(err as Error).message}` };
+  }
+
+  await db.update(orgPhoneNumbers).set({ status: "released" }).where(eq(orgPhoneNumbers.id, phoneNumberId));
+
+  return { ok: true };
 }
 
 export type ByoResult = { ok: true } | { ok: false; error: string };
