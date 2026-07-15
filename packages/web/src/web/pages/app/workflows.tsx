@@ -25,6 +25,10 @@ import { SkeletonCards } from "../../components/shell/skeletons";
 import { WorkflowNode } from "../../components/canvas/WorkflowNode";
 import { BranchEdge } from "../../components/canvas/BranchEdge";
 import { MERGE_TAGS } from "../../components/canvas/types";
+
+function getMergeTagsForVertical(vertical?: string): readonly string[] {
+  return MERGE_TAGS[vertical || "shopify"] || MERGE_TAGS.default;
+}
 import type { WorkflowGraph, WorkflowNodeType } from "../../components/canvas/types";
 
 type WorkflowResponse = {
@@ -240,7 +244,7 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
                 <div>
                   <p className="text-[10px] font-medium text-muted-foreground mb-1">Merge tags:</p>
                   <div className="flex flex-wrap gap-1">
-                    {MERGE_TAGS.map((tag) => (
+                    {getMergeTagsForVertical(workflow.vertical).map((tag) => (
                       <span key={tag} className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">
                         {`{{${tag}}}`}
                       </span>

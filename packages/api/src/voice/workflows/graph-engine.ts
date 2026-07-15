@@ -103,7 +103,8 @@ export async function advanceWorkflow(
 
       case "wait": {
         const config = node.config as WaitConfig;
-        const delayMs = config.delayMinutes * 60 * 1000;
+        const clampedMinutes = Math.max(1, Math.min(10080, config.delayMinutes || 1));
+        const delayMs = clampedMinutes * 60 * 1000;
         const nextRunAt = new Date(Date.now() + delayMs);
         if (outgoing.length === 0) {
           await markRunCompleted(runId, currentNodeId, context);

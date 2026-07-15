@@ -84,15 +84,34 @@ export const WORKFLOW_OUTCOMES = [
   "default",
 ] as const;
 
-export const MERGE_TAGS = [
-  "customer_name",
-  "cart_value",
-  "currency",
-  "checkout_url",
-  "shop_name",
-  "attempt_number",
-  "discount_percent",
-  "discount_code",
-  "abandoned_checkout_url",
-  "cart_recovery_url",
-] as const;
+export const MERGE_TAGS: Record<string, readonly string[]> = {
+  shopify: [
+    "customer_name",
+    "cart_value",
+    "currency",
+    "checkout_url",
+    "shop_name",
+    "attempt_number",
+    "discount_percent",
+    "discount_code",
+    "abandoned_checkout_url",
+    "cart_recovery_url",
+  ],
+  insurance: [
+    "customer_name",
+    "policy_number",
+    "renewal_date",
+    "premium_amount",
+    "currency",
+    "agent_name",
+    "attempt_number",
+    "to_number",
+  ],
+  default: [
+    "customer_name",
+    "attempt_number",
+    "to_number",
+    "discount_percent",
+    "discount_code",
+  ],
+} as const;

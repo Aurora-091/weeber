@@ -1,15 +1,5 @@
 import { resilientCall } from "./resilient-fetch";
 
-/**
- * GoHighLevel (a.k.a. "GHL", "LeadConnector") CRM integration — came up
- * repeatedly in community feedback as a tool this audience already runs
- * day to day, so it's one of the first pre-built integrations shipped
- * (see ROADMAP.md). Upserts a contact by phone number and logs a call note.
- *
- * GHL's v2 API is namespaced under a "location" (sub-account) — both
- * GOHIGHLEVEL_API_KEY and GOHIGHLEVEL_LOCATION_ID are required. Wrapped in
- * resilientCall like every other integration — see ./resilient-fetch.ts.
- */
 export type GoHighLevelSyncResult =
   | { synced: true; contactId: string | null }
   | { synced: false; message: string };
@@ -18,13 +8,14 @@ export async function syncToGoHighLevel(
   phoneNumber: string,
   callerName: string | undefined,
   notes: string,
+  apiKeyOverride?: string,
 ): Promise<GoHighLevelSyncResult> {
-  const apiKey = process.env.GOHIGHLEVEL_API_KEY;
+  const apiKey = apiKeyOverride || process.env.GOHIGHLEVEL_API_KEY;
   const locationId = process.env.GOHIGHLEVEL_LOCATION_ID;
-  if (!apiKey || !locationId) {
+  if (!apiKey) {
     return {
       synced: false,
-      message: "(not configured) GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID not set — no real CRM connected.",
+      message: "(not configured) No GoHighLevel API key provided.",
     };
   }
 
@@ -38,7 +29,7 @@ export async function syncToGoHighLevel(
           Version: "2021-07-28",
         },
         body: JSON.stringify({
-          locationId,
+          locationId: locationId ?? undefined,
           phone: phoneNumber,
           firstName: callerName ?? "Unknown caller",
         }),

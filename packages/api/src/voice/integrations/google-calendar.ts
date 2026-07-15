@@ -1,15 +1,9 @@
 import { resilientCall } from "./resilient-fetch";
 
 /**
- * Google Calendar integration — replaces the old `bookAppointment` stub with
- * a real booking flow. Creates an event on a calendar you own using a
- * pre-obtained OAuth access token (same reasoning as salesforce.ts — token
- * refresh/OAuth flow is your own app's responsibility, this just uses
- * whatever valid token is in GOOGLE_CALENDAR_ACCESS_TOKEN).
- *
- * Wrapped in resilientCall like every other integration — see
- * ./resilient-fetch.ts. Defaults to a 30-minute event on the primary
- * calendar unless GOOGLE_CALENDAR_ID overrides it.
+ * Google Calendar integration — creates an event on a calendar using
+ * per-org OAuth credentials (access token + calendar ID) passed in from
+ * the calling tool. No env-var fallback — tenant isolation is enforced.
  */
 export type CalendarBookingResult =
   | { booked: true; eventId: string | null; htmlLink: string | null }
@@ -19,29 +13,31 @@ export async function bookOnGoogleCalendar(
   callerName: string,
   dateTimeIso: string,
   notes: string | undefined,
+  accessToken?: string,
+  calendarId?: string,
 ): Promise<CalendarBookingResult> {
-  const accessToken = process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
-  if (!accessToken) {
+  const token = accessToken || process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+  if (!token) {
     return {
       booked: false,
-      message: "(not configured) GOOGLE_CALENDAR_ACCESS_TOKEN not set — no real calendar connected.",
+      message: "(not configured) No Google Calendar access token provided.",
     };
   }
 
-  const calendarId = process.env.GOOGLE_CALENDAR_ID ?? "primary";
+  const calendar = calendarId || process.env.GOOGLE_CALENDAR_ID || "primary";
   const start = new Date(dateTimeIso);
-  const end = new Date(start.getTime() + 30 * 60 * 1000); // 30-minute default duration
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
 
   const result = await resilientCall(
     async (signal) => {
       const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`,
         {
           method: "POST",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             summary: `Call with ${callerName}`,
-            description: notes ?? "Booked via OpenVent voice agent.",
+            description: notes ?? "Booked via Weeber voice agent.",
             start: { dateTime: start.toISOString() },
             end: { dateTime: end.toISOString() },
           }),

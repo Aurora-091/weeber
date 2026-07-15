@@ -411,8 +411,8 @@ export function UserAgentsPage() {
 
   return (
     <div className="page-enter space-y-5">
-      {/* Agent tab switcher */}
-      {rows.length > 1 && (
+      {/* Agent tab switcher — always visible for consistent chrome */}
+      {rows.length >= 1 && (
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Select agent">
           {rows.map((r) => {
             const isActive = r.templateKey === activeKey;
@@ -453,14 +453,6 @@ export function UserAgentsPage() {
 
       {activeRow && (
         <div key={activeRow.templateKey} className="content-fade-in">
-          {rows.length === 1 && (
-            <div className="mb-3">
-              <h2 className="text-sm font-medium">{activeRow.config?.name || activeRow.templateName}</h2>
-              {activeRow.templateDescription && (
-                <p className="text-xs text-muted-foreground mt-0.5">{activeRow.templateDescription}</p>
-              )}
-            </div>
-          )}
           <AgentForm row={activeRow} />
         </div>
       )}

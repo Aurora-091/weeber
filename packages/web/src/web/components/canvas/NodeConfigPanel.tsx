@@ -4,6 +4,10 @@ import { Label } from "../ui/label";
 import { Checkbox } from "../ui/checkbox";
 import { NODE_STYLES } from "./node-styles";
 import { WORKFLOW_OUTCOMES, MERGE_TAGS } from "./types";
+
+function getMergeTags(vertical?: string): readonly string[] {
+  return MERGE_TAGS[vertical || "shopify"] || MERGE_TAGS.default;
+}
 import type { WorkflowNodeType } from "./types";
 
 type Props = {
@@ -66,7 +70,11 @@ function WaitFields({ config, set }: { config: Record<string, unknown>; set: (k:
         type="number"
         min={1}
         value={Number(config.delayMinutes) || 60}
-        onChange={(e) => set("delayMinutes", Number(e.target.value))}
+        max={10080}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          set("delayMinutes", Math.max(1, Math.min(10080, Number.isFinite(v) ? v : 1)));
+        }}
       />
       <p className="text-[10px] text-muted-foreground">
         = {((Number(config.delayMinutes) || 60) / 60).toFixed(1)} hours
@@ -147,7 +155,8 @@ function EscalatingMap({ config, set }: { config: Record<string, unknown>; set: 
   }
 
   function addEntry() {
-    const next = String(Math.max(...Object.keys(map).map(Number)) + 1);
+    const keys = Object.keys(map).map(Number).filter((n) => Number.isFinite(n));
+    const next = String(keys.length === 0 ? 1 : Math.max(...keys) + 1);
     set("discountPercent", { ...map, [next]: 0 });
   }
 
@@ -174,7 +183,8 @@ function EscalatingMap({ config, set }: { config: Record<string, unknown>; set: 
           <button
             type="button"
             onClick={() => removeEntry(attempt)}
-            className="text-xs text-muted-foreground hover:text-destructive"
+            disabled={Object.keys(map).length <= 1}
+            className="text-xs text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:pointer-events-none"
           >
             x
           </button>
@@ -232,7 +242,7 @@ function SmsFields({ config, set }: { config: Record<string, unknown>; set: (k: 
       <div>
         <p className="text-[10px] font-medium text-muted-foreground mb-1">Available merge tags:</p>
         <div className="flex flex-wrap gap-1">
-          {MERGE_TAGS.map((tag) => (
+          {getMergeTags().map((tag) => (
             <span key={tag} className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">
               {`{{${tag}}}`}
             </span>
@@ -257,15 +267,23 @@ function DncFields({ config, set }: { config: Record<string, unknown>; set: (k: 
 }
 
 function WebhookFields({ config, set }: { config: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+  const url = (config.url as string) || "";
+  const isInvalid = url.length > 0 && !url.startsWith("https://") && !url.startsWith("http://");
+
   return (
     <div className="space-y-3">
       <div className="grid gap-1.5">
         <Label>URL</Label>
         <Input
-          value={(config.url as string) || ""}
+          type="url"
+          value={url}
           onChange={(e) => set("url", e.target.value)}
           placeholder="https://hooks.example.com/..."
+          className={isInvalid ? "border-destructive" : ""}
         />
+        {isInvalid && (
+          <p className="text-[10px] text-destructive">URL must start with https:// or http://</p>
+        )}
       </div>
     </div>
   );

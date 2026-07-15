@@ -16,7 +16,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowLeft, Save, Loader as Loader2, Download, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Loader as Loader2, LayoutTemplate, Trash2 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { Button } from "../../components/ui/button";
@@ -131,6 +131,33 @@ function EditorInner({ template }: { template: TemplateResponse }) {
     e.dataTransfer.dropEffect = "move";
   }, []);
 
+  const addNodeFromPalette = useCallback(
+    (type: WorkflowNodeType) => {
+      const defaultConfigs: Record<WorkflowNodeType, unknown> = {
+        trigger: { event: "checkout_abandoned" },
+        wait: { delayMinutes: 60 },
+        call: { persona: "", discountPercent: 0 },
+        conditionalSplit: { outcomes: ["no-answer", "interested", "not-interested"] },
+        sms: { template: "" },
+        addToDnc: { reason: "" },
+        webhook: { url: "" },
+      };
+      const viewport = reactFlowInstance?.getViewport();
+      const centerX = viewport ? (-viewport.x + 400) / (viewport.zoom || 1) : 250;
+      const centerY = viewport ? (-viewport.y + 300) / (viewport.zoom || 1) : 200;
+      nodeCounter++;
+      const newNode: Node = {
+        id: `${type}-${Date.now()}-${nodeCounter}`,
+        type: "workflow",
+        position: { x: centerX, y: centerY },
+        data: { nodeType: type, config: defaultConfigs[type], label: type },
+      };
+      setDirty(true);
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [reactFlowInstance, setNodes],
+  );
+
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -185,11 +212,12 @@ function EditorInner({ template }: { template: TemplateResponse }) {
   });
 
   const loadExample = useCallback(() => {
+    if (dirty && !window.confirm("This will replace your current workflow. Unsaved changes will be lost. Continue?")) return;
     const { nodes: n, edges: e } = graphToFlow(CART_RECOVERY_GRAPH);
     setDirty(true);
     setNodes(n);
     setEdges(e);
-  }, [setNodes, setEdges]);
+  }, [dirty, setNodes, setEdges]);
 
   const deleteSelected = useCallback(() => {
     if (selectedNodeId) {
@@ -245,8 +273,8 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={loadExample}>
-            <Download className="size-3.5" aria-hidden />
-            Load example
+            <LayoutTemplate className="size-3.5" aria-hidden />
+            Load template
           </Button>
           {(selectedNodeId || selectedEdgeId) && (
             <Button variant="outline" size="sm" onClick={deleteSelected}>
@@ -265,7 +293,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <NodePalette />
+        <NodePalette onAddNode={addNodeFromPalette} />
         <div className="flex-1 relative" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodes}

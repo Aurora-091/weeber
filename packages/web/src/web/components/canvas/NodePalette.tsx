@@ -30,10 +30,25 @@ const NODE_TYPES: WorkflowNodeType[] = [
   "webhook",
 ];
 
-export function NodePalette() {
+type NodePaletteProps = {
+  onAddNode?: (nodeType: WorkflowNodeType) => void;
+};
+
+export function NodePalette({ onAddNode }: NodePaletteProps) {
   function onDragStart(event: React.DragEvent, nodeType: WorkflowNodeType) {
     event.dataTransfer.setData("application/workflow-node-type", nodeType);
     event.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleClick(nodeType: WorkflowNodeType) {
+    onAddNode?.(nodeType);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent, nodeType: WorkflowNodeType) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onAddNode?.(nodeType);
+    }
   }
 
   return (
@@ -47,11 +62,16 @@ export function NodePalette() {
         return (
           <div
             key={nodeType}
+            role="button"
+            tabIndex={0}
+            aria-label={`Add ${style.label} node to canvas`}
             draggable
             onDragStart={(e) => onDragStart(e, nodeType)}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab hover:bg-muted transition-colors"
+            onClick={() => handleClick(nodeType)}
+            onKeyDown={(e) => handleKeyDown(e, nodeType)}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors"
           >
-            <Icon className="h-4 w-4 text-muted-foreground" />
+            <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />
             <span className="text-xs font-medium">{style.label}</span>
           </div>
         );

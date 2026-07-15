@@ -1,11 +1,5 @@
 import { resilientCall } from "./resilient-fetch";
 
-/**
- * HubSpot CRM integration — upsert a contact by phone number and log a call
- * engagement. Wrapped in `resilientCall` (timeout + retry + circuit breaker)
- * so a slow or down HubSpot never stalls a live call turn — see
- * ./resilient-fetch.ts for why that matters.
- */
 export type HubspotSyncResult =
   | { synced: true; contactId: string | null }
   | { synced: false; message: string };
@@ -14,34 +8,71 @@ export async function syncToHubspot(
   phoneNumber: string,
   callerName: string | undefined,
   notes: string,
+  apiKeyOverride?: string,
 ): Promise<HubspotSyncResult> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
+  const apiKey = apiKeyOverride || process.env.HUBSPOT_API_KEY;
   if (!apiKey) {
-    return { synced: false, message: "(not configured) HUBSPOT_API_KEY not set — no real CRM connected." };
+    return {
+      synced: false,
+      message: "(not configured) No HubSpot API key provided.",
+    };
   }
 
   const result = await resilientCall(
     async (signal) => {
-      const contactRes = await fetch("https://api.hubapi.com/crm/v3/objects/contacts", {
+      const searchRes = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          properties: { phone: phoneNumber, firstname: callerName ?? "Unknown caller" },
+          filterGroups: [
+            { filters: [{ propertyName: "phone", operator: "EQ", value: phoneNumber }] },
+          ],
         }),
         signal,
       });
-      const contact = (await contactRes.json().catch(() => null)) as any;
+      const searchData = (await searchRes.json().catch(() => null)) as any;
+      let contactId = (searchData?.results?.[0]?.id as string) ?? null;
 
-      await fetch("https://api.hubapi.com/crm/v3/objects/calls", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          properties: { hs_call_body: notes, hs_call_direction: "INBOUND", hs_timestamp: Date.now() },
-        }),
-        signal,
-      });
+      if (!contactId) {
+        const createRes = await fetch("https://api.hubapi.com/crm/v3/objects/contacts", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            properties: {
+              phone: phoneNumber,
+              firstname: callerName ?? "Unknown caller",
+            },
+          }),
+          signal,
+        });
+        const created = (await createRes.json().catch(() => null)) as any;
+        contactId = (created?.id as string) ?? null;
+      }
 
-      return (contact?.id as string | undefined) ?? null;
+      if (contactId && notes) {
+        await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            properties: { hs_note_body: notes, hs_timestamp: new Date().toISOString() },
+            associations: [
+              { to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }] },
+            ],
+          }),
+          signal,
+        });
+      }
+
+      return contactId;
     },
     { integration: "hubspot" },
   );

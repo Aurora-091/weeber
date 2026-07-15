@@ -3,22 +3,32 @@ import { tool } from "ai";
 import { syncToGoHighLevel } from "../integrations/gohighlevel";
 import { syncToSalesforce } from "../integrations/salesforce";
 import { syncToHubspot } from "../integrations/hubspot";
+import { db } from "../../database";
+import { orgIntegrations } from "../../database/schema";
+import { eq, and } from "drizzle-orm";
+
+async function getOrgCrmCredentials(orgId: string): Promise<{
+  provider: "gohighlevel" | "salesforce" | "hubspot";
+  credentials: Record<string, string>;
+} | null> {
+  const providers = ["gohighlevel", "salesforce", "hubspot"] as const;
+  for (const provider of providers) {
+    const [row] = await db
+      .select()
+      .from(orgIntegrations)
+      .where(and(eq(orgIntegrations.orgId, orgId), eq(orgIntegrations.provider, provider), eq(orgIntegrations.enabled, true)))
+      .limit(1);
+    if (row && row.credentials) {
+      return { provider, credentials: row.credentials as Record<string, string> };
+    }
+  }
+  return null;
+}
 
 /**
  * CRM integration — upserts a contact and logs a call engagement mid-
- * conversation, for when the agent needs to act on CRM data live during the
- * call (complementing, not replacing, the generic outbound webhook system
- * used for after-the-fact sync via n8n/Zapier).
- *
- * Tries whichever CRM is actually configured, in this priority order:
- * GoHighLevel -> Salesforce -> HubSpot. This order follows what came up most
- * in community feedback (GoHighLevel specifically was named repeatedly as a
- * tool this audience already runs). Each integration lives in
- * ../integrations/ and is wrapped in the shared resilience layer
- * (../integrations/resilient-fetch.ts) — a slow/down CRM degrades to a clear
- * "not synced" result instead of stalling or crashing the call.
- *
- * None configured -> a plain "no CRM connected" result, same as before.
+ * conversation. Uses per-org credentials from the org_integrations table
+ * to ensure tenant isolation.
  */
 export const crmSync = tool({
   description:
@@ -28,25 +38,40 @@ export const crmSync = tool({
     callerName: z.string().optional(),
     phoneNumber: z.string(),
     notes: z.string().describe("Brief summary of what this call was about"),
+    orgId: z.string().optional().describe("The org ID for credential lookup"),
   }),
-  async execute({ callerName, phoneNumber, notes }) {
-    if (process.env.GOHIGHLEVEL_API_KEY) {
-      const result = await syncToGoHighLevel(phoneNumber, callerName, notes);
-      return { crm: "gohighlevel", ...result };
+  async execute({ callerName, phoneNumber, notes, orgId }) {
+    if (!orgId) {
+      return {
+        crm: null,
+        synced: false,
+        message: "(not configured) No org context — cannot look up CRM credentials.",
+      };
     }
-    if (process.env.SALESFORCE_ACCESS_TOKEN) {
-      const result = await syncToSalesforce(phoneNumber, callerName, notes);
-      return { crm: "salesforce", ...result };
+
+    const crmConfig = await getOrgCrmCredentials(orgId);
+    if (!crmConfig) {
+      return {
+        crm: null,
+        synced: false,
+        message: "(not configured) No CRM connected for this organization. Connect one in Settings > Integrations.",
+      };
     }
-    if (process.env.HUBSPOT_API_KEY) {
-      const result = await syncToHubspot(phoneNumber, callerName, notes);
-      return { crm: "hubspot", ...result };
+
+    const { provider, credentials } = crmConfig;
+    switch (provider) {
+      case "gohighlevel": {
+        const result = await syncToGoHighLevel(phoneNumber, callerName, notes, credentials.api_key);
+        return { crm: "gohighlevel", ...result };
+      }
+      case "salesforce": {
+        const result = await syncToSalesforce(phoneNumber, callerName, notes, credentials.access_token);
+        return { crm: "salesforce", ...result };
+      }
+      case "hubspot": {
+        const result = await syncToHubspot(phoneNumber, callerName, notes, credentials.api_key);
+        return { crm: "hubspot", ...result };
+      }
     }
-    return {
-      crm: null,
-      synced: false,
-      message:
-        "(not configured) No CRM connected — set GOHIGHLEVEL_API_KEY, SALESFORCE_ACCESS_TOKEN, or HUBSPOT_API_KEY.",
-    };
   },
 });

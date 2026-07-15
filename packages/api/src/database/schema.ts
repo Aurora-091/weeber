@@ -510,3 +510,22 @@ export const knowledgeChunks = pgTable("knowledge_chunks", {
   index("knowledge_chunks_org_id_idx").on(table.orgId),
   index("knowledge_chunks_document_id_idx").on(table.documentId),
 ]);
+
+/**
+ * Per-org external integration credentials (CRM, Calendar, etc.).
+ * Each row stores one provider's credentials for one org. The provider column
+ * identifies which integration (gohighlevel, salesforce, hubspot, google_calendar),
+ * and `credentials` is a JSON blob with provider-specific fields (API keys, access tokens).
+ * Only one row per org+provider pair — unique constraint enforces this.
+ */
+export const orgIntegrations = pgTable("org_integrations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull(),
+  provider: text("provider").notNull(),
+  credentials: jsonb("credentials").$type<Record<string, string>>().notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("org_integrations_org_provider_idx").on(table.orgId, table.provider),
+]);
