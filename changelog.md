@@ -4,6 +4,64 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-15 — Production outage: DB migrations were never applied on deploy (agents/calls pages 500ing)
+
+**Symptom**: `/api/app/analytics` and `/api/app/agent-configs` both 500ing in production — reported
+as "agents not loading." Server logs showed `Failed query` on plain selects against `calls` and
+`org_agent_configs`.
+
+**Root cause**: `railway.json`'s `startCommand` (`bun run start:railway` -> `cd packages/api && bun run
+src/server.ts`) never ran `drizzle-kit migrate` — deploying new code with `schema.ts` changes does
+**not** apply the matching SQL migrations to the live Postgres. Confirmed the production DB's
+`drizzle."__drizzle_migrations"` table was stuck at migration `0020_tearful_union_jack` — four
+real migrations behind `schema.ts` (`0021_add_call_sentiment`, `0022_add_knowledge_base`,
+`0023_add_org_phone_numbers`, `0024_add_turn_latency`), meaning every one of those features had been
+silently broken in production since the day it was deployed, not just today.
+
+**Fix**:
+- Ran `bun run db:migrate` against production — applied all four pending migrations, verified
+  `calls.sentiment`, `org_agent_configs.phone_number_id`, `turn_latency`, `org_phone_numbers`, and
+  `knowledge_documents` all now exist, and re-ran the exact failing queries from the log directly —
+  both succeed.
+- `package.json`'s `start:railway` now runs `cd packages/api && bunx drizzle-kit migrate && bun run
+  src/server.ts` — every deploy self-heals any pending migration before the server starts. Confirmed
+  idempotent (re-running against an already-migrated DB is a no-op, safe to run on every boot).
+
+**Second, related finding while fixing this**: discovered a **second, separate migration system**
+(`supabase/migrations/*.sql`, run via Supabase's own CLI/tooling against the same physical Postgres
+instance) that the API's actual code doesn't know about — `drizzle-kit` and Supabase's migration
+history are two independent, unaware-of-each-other tracking mechanisms against the same database. A
+new `org_integrations` table (per-org CRM/Calendar credentials — see next entry) was created through
+the Supabase path with a hand-written SQL file, while `schema.ts` was updated to match — but no
+corresponding file existed under `packages/api/drizzle/`, so `drizzle-kit generate` treated it as a
+brand-new, ungenerated table and would have tried to `CREATE TABLE` it again (no `IF NOT EXISTS`) the
+next time `db:migrate` ran — which, after the `start:railway` fix above, is now *every deploy*. Would
+have caused a second, self-inflicted outage on the very next push.
+- Reconciled: generated the missing drizzle migration (`0025_add_org_integrations.sql`), added
+  `IF NOT EXISTS`/`CREATE UNIQUE INDEX IF NOT EXISTS` guards (matching how the Supabase-side version
+  was already written), and ran it against production — confirmed idempotent no-op (table/index
+  already existed), and drizzle's own migration tracking is now caught up too. `drizzle-kit generate`
+  reports zero drift after this.
+- **Not resolved, flagging for a real decision**: the two parallel migration systems still exist and
+  can drift again the same way. Recommend picking one canonical path (this codebase's actual runtime
+  reads `schema.ts`/`packages/api/drizzle/` via `drizzle-orm/postgres-js` — `supabase/migrations/`
+  appears to be a legacy/parallel path from earlier Supabase-CLI-based work) before the next schema
+  change that touches both.
+
+**Also restored** `packages/api/scripts/latency-benchmark.ts` (accidentally deleted twice this week,
+breaking typecheck both times via `src/latency-benchmark.test.ts`'s dangling import) — see §2b in
+`plan.md`/this session's earlier commits for what the tool does.
+
+**Also fixed**: `hubspot.test.ts`'s `syncToHubspot` test was asserting a stale call-count (2) from
+before `syncToHubspot` gained real per-org credential support (`apiKeyOverride` param, feeding the new
+`org_integrations` table) and a search-before-create flow (3 calls: search miss -> create -> log note,
+or 2 calls when an existing contact is found by phone search — added a second test case covering
+that path, which didn't exist before).
+
+Verified after all of the above: typecheck (api+web) green, full suite 289+9+34 = 332 pass / 0 fail
+across all three packages, oxlint 0 warnings/errors, vite build green, `drizzle-kit generate` reports
+no schema drift.
+
 ## 2026-07-13 — Misc-3: revenue-attribution stat cards on the merchant Analytics page
 
 Picked as the lowest-risk, highest-reward item on the Misc list (`WEEBER-PLAN.md`) — turned out to be
