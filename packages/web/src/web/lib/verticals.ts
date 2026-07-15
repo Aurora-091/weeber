@@ -1,4 +1,5 @@
-import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen, Phone } from "lucide-react";
+import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen, Phone, ShoppingBag, ShieldCheck } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
 import { appPath } from "./route-base";
 
@@ -23,6 +24,13 @@ export type VerticalDefinition = {
   };
   /** Display name of the connected platform (nav label, connection page title). */
   integrationLabel: string;
+  /** Whether this vertical has a real, live OAuth/API integration to connect
+   * (Shopify does; a future clinic/insurance-system connector doesn't exist
+   * yet — see integrations.tsx's own vertical-gating comment). Drives
+   * whether the onboarding modal's "Connect store" step renders at all —
+   * added 2026-07-16, previously that step was unconditionally Shopify-
+   * shaped regardless of which vertical was picked. */
+  hasLiveIntegration: boolean;
   nav: NavItem[];
   copy: {
     callsEmptyTitle: string;
@@ -59,6 +67,7 @@ const shopify: VerticalDefinition = {
   key: "shopify",
   glossary: { customer: "Customer", customers: "Customers" },
   integrationLabel: SHOPIFY_INTEGRATION_LABEL,
+  hasLiveIntegration: true,
   nav: [
     { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
@@ -107,6 +116,7 @@ const insurance: VerticalDefinition = {
   key: "insurance",
   glossary: { customer: "Policyholder", customers: "Policyholders" },
   integrationLabel: "Policy System",
+  hasLiveIntegration: false,
   nav: [
     { href: appPath(), label: "Home", icon: Rocket, match: navMatch("", "") },
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
@@ -143,3 +153,22 @@ const VERTICALS: Record<string, VerticalDefinition> = { shopify, insurance };
 export function getVertical(key: string | null | undefined): VerticalDefinition {
   return VERTICALS[key ?? "shopify"] ?? shopify;
 }
+
+/** Picker options for "what kind of business is this" — the onboarding
+ * modal's first step and Settings' Business type selector (2026-07-16).
+ * Short, plain-English labels/descriptions, not the internal vertical key. */
+export const VERTICAL_OPTIONS: { key: string; label: string; description: string; icon: LucideIcon }[] = [
+  {
+    key: "shopify",
+    label: "Ecommerce (Shopify)",
+    description: "Recover abandoned carts, confirm COD orders, and handle order-status calls automatically.",
+    icon: ShoppingBag,
+  },
+  {
+    key: "insurance",
+    label: "Insurance",
+    description: "Remind policyholders about renewals and follow up on leads for a licensed advisor.",
+    icon: ShieldCheck,
+  },
+];
+

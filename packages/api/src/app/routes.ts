@@ -196,7 +196,7 @@ export const userApp = new Hono<UserEnv>()
     if (!body || typeof body !== "object") {
       return c.json({ error: "Expected a JSON object" }, 400);
     }
-    const allowed = ["name", "timezone", "countryCode", "contactEmail", "webhookUrl"] as const;
+    const allowed = ["name", "timezone", "countryCode", "contactEmail", "webhookUrl", "vertical"] as const;
     const updates: Record<string, string | null> = {};
     for (const key of allowed) {
       if (key in body) {
@@ -208,6 +208,13 @@ export const userApp = new Hono<UserEnv>()
           if (!/^https?:\/\//i.test(val)) {
             return c.json({ error: "webhookUrl must start with http:// or https://" }, 400);
           }
+        }
+        // Keep in sync with lib/verticals.ts's VERTICALS registry on the
+        // frontend (no shared package between packages/api and packages/web
+        // today, so this is a small deliberate duplication rather than a
+        // cross-package import) — see the 2026-07-16 onboarding rework.
+        if (key === "vertical" && val !== null && !["shopify", "insurance"].includes(val)) {
+          return c.json({ error: `vertical must be one of: shopify, insurance` }, 400);
         }
         updates[key] = val ?? null;
       }

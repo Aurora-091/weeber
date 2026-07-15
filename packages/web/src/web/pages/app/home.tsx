@@ -71,6 +71,7 @@ const STEP_LABELS: Record<string, string> = {
   pick_vertical: "Pick your business type",
   connect_tools: "Connect your store",
   create_agent: "Turn on an agent",
+  setup_number: "Connect a phone number",
   test_and_golive: "Review and go live",
 };
 

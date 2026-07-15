@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight } from "lucide-react";
+import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight, Phone, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
+import { useUser } from "./user-shell";
+import { VERTICAL_OPTIONS, getVertical } from "../../lib/verticals";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -12,14 +14,33 @@ import { cn } from "../../lib/utils";
 
 /**
  * Setup wizard as a modal over the dashboard, not a dedicated page — see
- * docs/DECISIONS.md "Setup modal, not a setup page". Ported from the old
- * full-page pages/app/onboarding.tsx (now removed); same 3 steps, same
- * copy, same mutations — only the shell changed (Dialog instead of a route).
+ * docs/DECISIONS.md "Setup modal, not a setup page". Reworked 2026-07-16
+ * (explicit user decision) to actually cover what the old 3-step version
+ * never did:
+ *   1. Pick your business type — was hardcoded `pick_vertical: true` even
+ *      though orgs.vertical always silently defaults to "shopify" on
+ *      signup and nothing ever asked the user to confirm/correct it. Now a
+ *      real first step (STEP_LABELS in home.tsx already said "Pick your
+ *      business type" — this was scaffolded but never wired to anything).
+ *   2. Connect store — unchanged for verticals with a real integration
+ *      (Shopify), but now genuinely SKIPPED for verticals that don't have
+ *      one yet (insurance) instead of always being Shopify-shaped
+ *      regardless of what was picked.
+ *   3. Pick your agents — unchanged.
+ *   4. Phone number (NEW) — BYO Twilio is the emphasized/primary path,
+ *      platform auto-provisioning is the fallback if they skip BYO. Agents
+ *      could previously be turned on with nowhere to actually call from.
+ *   5. Review & activate — now vertical/phone-aware.
  *
- * Step completion is also mirrored into onboarding_state via PATCH
- * /api/app/onboarding so the dashboard's checklist card (setup-checklist.tsx)
- * and the "reopen where I left off" behavior both work without re-deriving
- * status from scratch every time.
+ * Step completion is mirrored into onboarding_state via PATCH
+ * /api/app/onboarding so the dashboard's checklist card (home.tsx) and the
+ * "reopen where I left off" behavior both work without re-deriving status
+ * from scratch every time. `pick_vertical` and `setup_number` can't be
+ * derived from live data the way `hasShop`/`enabledRows.length` can (a
+ * vertical/number either exists or doesn't, there's no "confirmed" bit on
+ * its own) — so those two are read back from the persisted onboarding
+ * state instead, and only flip true once the user actually passes that
+ * step in this session.
  */
 
 type ShopifyStatus = {
@@ -36,14 +57,20 @@ type AgentConfigRow = {
   config: { enabled: boolean } | null;
 };
 
-const STEPS = ["Connect store", "Pick your agents", "Review & activate"] as const;
+type TelephonyStatus = {
+  provider: "twilio" | "plivo" | "exotel";
+  outboundNumber: string | null;
+  twilio: { mode: "platform" | "byo"; accountSid: string | null; outboundNumber: string | null; usingGlobalDefault: boolean };
+};
 
-function StepIndicator({ current, done }: { current: number; done: boolean[] }) {
+type OnboardingState = { steps: Record<string, boolean>; dismissed: boolean; completedAt: string | null };
+
+function StepIndicator({ labels, current, done }: { labels: string[]; current: number; done: boolean[] }) {
   const completionPercent = (done.filter(Boolean).length / done.length) * 100;
   return (
     <div className="mb-6 flex items-center gap-2">
       <ol className="flex flex-1 items-center gap-2" aria-label="Setup progress">
-        {STEPS.map((label, i) => {
+        {labels.map((label, i) => {
           const isDone = done[i];
           const isCurrent = i === current;
           return (
@@ -61,8 +88,8 @@ function StepIndicator({ current, done }: { current: number; done: boolean[] }) 
               >
                 {isDone ? <Check className="size-3.5" /> : i + 1}
               </span>
-              <span className={cn("text-sm", isCurrent ? "font-medium" : "text-muted-foreground")}>{label}</span>
-              {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
+              <span className={cn("text-sm hidden sm:inline", isCurrent ? "font-medium" : "text-muted-foreground")}>{label}</span>
+              {i < labels.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
             </li>
           );
         })}
@@ -142,6 +169,156 @@ function ShopifyInstallForm() {
   );
 }
 
+/** Phone number step — BYO Twilio is the emphasized primary path (larger
+ * card, first), platform auto-provisioning is the smaller fallback below
+ * it. Only Twilio BYO here (not Plivo/Exotel) — this is the fast common
+ * path for onboarding; the full multi-provider picker lives on the
+ * Integrations page for anyone who needs it. Skippable — a number isn't
+ * strictly required to finish setup, but skipping leaves it visibly
+ * incomplete on the dashboard checklist rather than silently missing. */
+function PhoneNumberStep({ onDone }: { onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [byoForm, setByoForm] = useState({ accountSid: "", authToken: "", phoneNumber: "" });
+  const [countryCode, setCountryCode] = useState("US");
+
+  const status = useQuery<{ telephony: TelephonyStatus }>({
+    queryKey: ["app-telephony-status"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/telephony/status");
+      if (!res.ok) throw new Error(`status failed (${res.status})`);
+      return res.json();
+    },
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["app-telephony-status"] });
+
+  const byoMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/byo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(byoForm),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to connect Twilio");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Twilio connected");
+      void invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const autoProvisionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/telephony/number", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ countryCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to get a number");
+      return data as { phoneNumber: string };
+    },
+    onSuccess: (data) => {
+      toast.success(`Got you ${data.phoneNumber}`);
+      void invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const connected = Boolean(status.data?.telephony?.outboundNumber);
+
+  if (status.isLoading) {
+    return <Skeleton className="h-40 w-full" />;
+  }
+
+  if (connected) {
+    return (
+      <div className="mt-4 space-y-4">
+        <p className="flex items-center gap-1.5 text-sm text-success">
+          <Check className="size-4" aria-hidden />
+          {status.data!.telephony.outboundNumber} is connected
+          {status.data!.telephony.twilio.mode === "byo" ? " (your own Twilio account)" : " (assigned automatically)"}.
+        </p>
+        <Button onClick={onDone}>Continue</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-5">
+      <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+        <h3 className="text-sm font-medium">Bring your own Twilio account</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Recommended if you already have one — you keep full control of billing and the number.
+        </p>
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+          <Input
+            placeholder="Account SID"
+            value={byoForm.accountSid}
+            onChange={(e) => setByoForm((f) => ({ ...f, accountSid: e.target.value }))}
+          />
+          <Input
+            placeholder="Auth token"
+            type="password"
+            value={byoForm.authToken}
+            onChange={(e) => setByoForm((f) => ({ ...f, authToken: e.target.value }))}
+          />
+          <Input
+            placeholder="+15551234567"
+            value={byoForm.phoneNumber}
+            onChange={(e) => setByoForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+          />
+        </div>
+        <Button
+          size="sm"
+          className="mt-3"
+          disabled={!byoForm.accountSid.trim() || !byoForm.authToken.trim() || !byoForm.phoneNumber.trim() || byoMutation.isPending}
+          onClick={() => byoMutation.mutate()}
+        >
+          {byoMutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
+          Connect Twilio
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-sm font-medium">Get a number automatically</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          No Twilio account? We'll provision one for you — a real recurring telephony charge applies.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-2.5">
+          <select
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+          >
+            <option value="US">United States</option>
+            <option value="IN">India</option>
+            <option value="GB">United Kingdom</option>
+            <option value="CA">Canada</option>
+          </select>
+          <Button size="sm" variant="outline" disabled={autoProvisionMutation.isPending} onClick={() => autoProvisionMutation.mutate()}>
+            {autoProvisionMutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
+            Get me a number
+          </Button>
+        </div>
+      </div>
+
+      <Button variant="ghost" size="sm" onClick={onDone} className="text-muted-foreground">
+        Skip for now — I'll do this later on the Phone Numbers page
+      </Button>
+    </div>
+  );
+}
+
 export function SetupModal({
   open,
   onOpenChange,
@@ -153,7 +330,25 @@ export function SetupModal({
   onFinished?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { me } = useUser();
   const [manualStep, setManualStep] = useState<number | null>(null);
+  const [pickedVertical, setPickedVertical] = useState(me.org.vertical);
+
+  useEffect(() => {
+    setPickedVertical(me.org.vertical);
+  }, [me.org.vertical]);
+
+  const vertical = getVertical(pickedVertical);
+
+  const onboarding = useQuery<OnboardingState>({
+    queryKey: ["app-onboarding"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/onboarding");
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+    enabled: open,
+  });
 
   const status = useQuery({
     queryKey: ["app-shopify-status"],
@@ -162,8 +357,8 @@ export function SetupModal({
       if (!res.ok) throw new Error(`status failed (${res.status})`);
       return (await res.json()) as ShopifyStatus;
     },
-    enabled: open,
-    refetchInterval: (query) => (open && !query.state.data?.hasShop ? 5000 : false),
+    enabled: open && vertical.hasLiveIntegration,
+    refetchInterval: (query) => (open && vertical.hasLiveIntegration && !query.state.data?.hasShop ? 5000 : false),
   });
 
   const configs = useQuery({
@@ -172,6 +367,16 @@ export function SetupModal({
       const res = await appFetch("/api/app/agent-configs");
       if (!res.ok) throw new Error(`configs failed (${res.status})`);
       return (await res.json()) as { agentConfigs: AgentConfigRow[] };
+    },
+    enabled: open,
+  });
+
+  const telephonyStatus = useQuery<{ telephony: TelephonyStatus }>({
+    queryKey: ["app-telephony-status"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/telephony/status");
+      if (!res.ok) throw new Error(`status failed (${res.status})`);
+      return res.json();
     },
     enabled: open,
   });
@@ -187,6 +392,24 @@ export function SetupModal({
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["app-onboarding"] }),
+  });
+
+  const saveVertical = useMutation({
+    mutationFn: async (next: string) => {
+      const res = await appFetch("/api/app/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vertical: next }),
+      });
+      if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["app-me"] });
+      queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
+      patchOnboarding.mutate({ pick_vertical: true });
+    },
+    onError: (err: Error) => toast.error("Couldn't save business type", { description: err.message }),
   });
 
   const toggleAgent = useMutation({
@@ -212,26 +435,67 @@ export function SetupModal({
   const rows = configs.data?.agentConfigs ?? [];
   const enabledRows = rows.filter((r) => r.config?.enabled);
   const hasShop = status.data?.hasShop ?? false;
+  const hasNumber = Boolean(telephonyStatus.data?.telephony?.outboundNumber);
 
-  const stepDone = [hasShop, enabledRows.length > 0, hasShop && enabledRows.length > 0];
-  const firstIncomplete = stepDone[0] ? (stepDone[1] ? 2 : 1) : 0;
-  const current = manualStep ?? firstIncomplete;
+  // Persisted flags for steps that can't be derived from live data alone.
+  const verticalConfirmed = onboarding.data?.steps?.pick_vertical === true;
+  const numberStepDone = onboarding.data?.steps?.setup_number === true || hasNumber;
+
+  // Dynamic step list — "Connect store" only exists for verticals with a
+  // real integration (see VerticalDefinition.hasLiveIntegration's doc comment).
+  const stepKeys = useMemo(
+    () => (["vertical", vertical.hasLiveIntegration ? "connect" : null, "agents", "number", "review"].filter(Boolean) as string[]),
+    [vertical.hasLiveIntegration],
+  );
+  const stepLabels = stepKeys.map((k) =>
+    k === "vertical"
+      ? "Business type"
+      : k === "connect"
+        ? "Connect store"
+        : k === "agents"
+          ? "Pick agents"
+          : k === "number"
+            ? "Phone number"
+            : "Review & activate",
+  );
+  const stepDone = stepKeys.map((k) =>
+    k === "vertical"
+      ? verticalConfirmed
+      : k === "connect"
+        ? hasShop
+        : k === "agents"
+          ? enabledRows.length > 0
+          : k === "number"
+            ? numberStepDone
+            : verticalConfirmed && (vertical.hasLiveIntegration ? hasShop : true) && enabledRows.length > 0,
+  );
+  const firstIncomplete = stepDone.findIndex((d) => !d);
+  const current = manualStep ?? (firstIncomplete === -1 ? stepKeys.length - 1 : firstIncomplete);
+  const currentKey = stepKeys[current];
+
+  function goNext() {
+    setManualStep(Math.min(current + 1, stepKeys.length - 1));
+  }
+  function goBack() {
+    setManualStep(Math.max(current - 1, 0));
+  }
 
   // Mirror step completion server-side as it happens, so the dashboard
   // checklist card and "resume setup" state stay accurate even if the
-  // user closes the modal mid-way.
+  // user closes the modal mid-way. pick_vertical/setup_number are patched
+  // explicitly elsewhere (saveVertical's onSuccess, PhoneNumberStep's
+  // onDone) since they can't be derived from live data the way these two can.
   useEffect(() => {
     if (!open) return;
     patchOnboarding.mutate({
-      pick_vertical: true, // only one vertical exists today — nothing to pick yet, always satisfied
-      connect_tools: hasShop,
+      connect_tools: vertical.hasLiveIntegration ? hasShop : true,
       create_agent: enabledRows.length > 0,
-      test_and_golive: hasShop && enabledRows.length > 0,
+      test_and_golive: verticalConfirmed && (vertical.hasLiveIntegration ? hasShop : true) && enabledRows.length > 0 && numberStepDone,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hasShop, enabledRows.length]);
+  }, [open, hasShop, enabledRows.length, vertical.hasLiveIntegration, verticalConfirmed, numberStepDone]);
 
-  const isLoading = status.isLoading || configs.isLoading;
+  const isLoading = onboarding.isLoading || configs.isLoading || (vertical.hasLiveIntegration && status.isLoading);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -247,18 +511,68 @@ export function SetupModal({
           </div>
         ) : (
           <>
-            <StepIndicator current={current} done={stepDone} />
+            <StepIndicator labels={stepLabels} current={current} done={stepDone} />
 
-            {current === 0 && (
-              <div key="step-0" className="slide-in-right">
+            {currentKey === "vertical" && (
+              <div key="step-vertical" className="slide-in-right">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-medium">What kind of business is this?</h2>
+                    <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                      This decides which agents, dashboard metrics, and terminology you see everywhere else in
+                      Weeber — you can change it later in Settings.
+                    </p>
+                    <div className="mt-5 space-y-2.5">
+                      {VERTICAL_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setPickedVertical(opt.key)}
+                          className={cn(
+                            "flex w-full items-start gap-3 rounded-lg border p-4 text-left transition-colors",
+                            pickedVertical === opt.key
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:bg-muted/50",
+                          )}
+                        >
+                          <opt.icon className={cn("mt-0.5 size-4 shrink-0", pickedVertical === opt.key ? "text-primary" : "text-muted-foreground")} aria-hidden />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">{opt.label}</span>
+                            <span className="block text-xs text-muted-foreground">{opt.description}</span>
+                          </span>
+                          {pickedVertical === opt.key && <Check className="ml-auto size-4 shrink-0 text-primary" aria-hidden />}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      className="mt-5"
+                      disabled={saveVertical.isPending}
+                      onClick={() => {
+                        if (pickedVertical === me.org.vertical) {
+                          // Unchanged — still confirm the step without a wasted PATCH.
+                          patchOnboarding.mutate({ pick_vertical: true });
+                        } else {
+                          saveVertical.mutate(pickedVertical);
+                        }
+                        goNext();
+                      }}
+                    >
+                      {saveVertical.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                      Continue
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentKey === "connect" && (
+              <div key="step-connect" className="slide-in-right">
                 <div className="flex items-start gap-3">
                   <Store className="mt-0.5 size-5 text-primary" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-lg font-medium">Connect your Shopify store</h2>
-                    <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                      Install the Weeber app on your store so your agents can react to checkouts, orders, and
-                      fulfillments.
-                    </p>
+                    <h2 className="text-lg font-medium">{vertical.copy.onboardingConnectTitle}</h2>
+                    <p className="mt-1 max-w-xl text-sm text-muted-foreground">{vertical.copy.onboardingConnectBody}</p>
                     {hasShop ? (
                       <p className="mt-4 flex items-center gap-1.5 text-sm text-success">
                         <Check className="size-4" aria-hidden />
@@ -273,7 +587,7 @@ export function SetupModal({
                       </p>
                     )}
                     {hasShop && (
-                      <Button className="mt-5" onClick={() => setManualStep(1)}>
+                      <Button className="mt-5" onClick={goNext}>
                         Continue
                       </Button>
                     )}
@@ -282,8 +596,8 @@ export function SetupModal({
               </div>
             )}
 
-            {current === 1 && (
-              <div key="step-1" className="slide-in-right">
+            {currentKey === "agents" && (
+              <div key="step-agents" className="slide-in-right">
                 <div className="flex items-start gap-3">
                   <Bot className="mt-0.5 size-5 text-primary" aria-hidden />
                   <div className="min-w-0 flex-1">
@@ -294,7 +608,7 @@ export function SetupModal({
                     </p>
                     <div className="mt-5 space-y-3">
                       {rows.length === 0 && (
-                        <p className="text-sm text-muted-foreground">No agent templates available for your store type yet.</p>
+                        <p className="text-sm text-muted-foreground">No agent templates available for your business type yet.</p>
                       )}
                       {rows.map((row) => (
                         <div
@@ -317,10 +631,10 @@ export function SetupModal({
                       ))}
                     </div>
                     <div className="mt-5 flex gap-3">
-                      <Button variant="outline" onClick={() => setManualStep(0)}>
+                      <Button variant="outline" onClick={goBack}>
                         Back
                       </Button>
-                      <Button onClick={() => setManualStep(2)} disabled={enabledRows.length === 0}>
+                      <Button onClick={goNext} disabled={enabledRows.length === 0}>
                         Continue
                       </Button>
                     </div>
@@ -329,34 +643,68 @@ export function SetupModal({
               </div>
             )}
 
-            {current === 2 && (
-              <div key="step-2" className="slide-in-right relative">
+            {currentKey === "number" && (
+              <div key="step-number" className="slide-in-right">
+                <div className="flex items-start gap-3">
+                  <Phone className="mt-0.5 size-5 text-primary" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-medium">Give your agents a phone number</h2>
+                    <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                      Without one, an enabled agent has nothing to call from or receive calls on.
+                    </p>
+                    <PhoneNumberStep
+                      onDone={() => {
+                        patchOnboarding.mutate({ setup_number: true });
+                        goNext();
+                      }}
+                    />
+                    <Button variant="outline" className="mt-3" onClick={goBack}>
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentKey === "review" && (
+              <div key="step-review" className="slide-in-right relative">
                 <div className="flex items-start gap-3">
                   <Rocket className="mt-0.5 size-5 text-primary" aria-hidden />
                   <div className="min-w-0 flex-1">
                     <h2 className="text-lg font-medium">You're all set</h2>
                     <dl className="mt-4 space-y-2 text-sm">
                       <div className="flex gap-2">
-                        <dt className="text-muted-foreground">Store:</dt>
-                        <dd className="font-mono">
-                          {status.data?.shops.find((s) => !s.disconnectedAt)?.shop ?? "not connected"}
-                        </dd>
+                        <dt className="text-muted-foreground">Business type:</dt>
+                        <dd>{VERTICAL_OPTIONS.find((o) => o.key === vertical.key)?.label ?? vertical.key}</dd>
                       </div>
+                      {vertical.hasLiveIntegration && (
+                        <div className="flex gap-2">
+                          <dt className="text-muted-foreground">Store:</dt>
+                          <dd className="font-mono">
+                            {status.data?.shops.find((s) => !s.disconnectedAt)?.shop ?? "not connected"}
+                          </dd>
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <dt className="text-muted-foreground">Active agents:</dt>
                         <dd>{enabledRows.map((r) => r.templateName).join(", ") || "none"}</dd>
                       </div>
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground">Phone number:</dt>
+                        <dd className="font-mono">{telephonyStatus.data?.telephony?.outboundNumber ?? "not connected yet"}</dd>
+                      </div>
                     </dl>
                     <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-                      Your agents now react to store events automatically — there's nothing to deploy or schedule.
-                      Conversations and results will appear as they happen.
+                      Your agents now react to events automatically — there's nothing to deploy or schedule.
+                      Conversations and results will appear on your dashboard as they happen.
                     </p>
                     <div className="mt-5 flex gap-3">
-                      <Button variant="outline" onClick={() => setManualStep(1)}>
+                      <Button variant="outline" onClick={goBack}>
                         Back
                       </Button>
                       <Button
                         onClick={() => {
+                          patchOnboarding.mutate({ test_and_golive: true });
                           onOpenChange(false);
                           onFinished?.();
                         }}

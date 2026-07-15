@@ -5,6 +5,7 @@ import { Settings, User, Building2, Bell, Webhook } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
+import { VERTICAL_OPTIONS } from "../../lib/verticals";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -55,6 +56,7 @@ export function UserSettingsPage() {
   const queryClient = useQueryClient();
 
   const [orgName, setOrgName] = useState(me.org.name ?? "");
+  const [vertical, setVertical] = useState(me.org.vertical ?? "shopify");
   const [timezone, setTimezone] = useState(me.org.timezone ?? "Asia/Kolkata");
   const [countryCode, setCountryCode] = useState(me.org.countryCode ?? "IN");
   const [contactEmail, setContactEmail] = useState(me.org.contactEmail ?? "");
@@ -65,6 +67,7 @@ export function UserSettingsPage() {
 
   useEffect(() => {
     setOrgName(me.org.name ?? "");
+    setVertical(me.org.vertical ?? "shopify");
     setTimezone(me.org.timezone ?? "Asia/Kolkata");
     setCountryCode(me.org.countryCode ?? "IN");
     setContactEmail(me.org.contactEmail ?? "");
@@ -78,6 +81,7 @@ export function UserSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: orgName,
+          vertical,
           timezone,
           countryCode,
           contactEmail: contactEmail || null,
@@ -92,6 +96,10 @@ export function UserSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["app-me"] });
+      // Vertical drives which agent templates/dashboard metrics show —
+      // both need a refetch, not just the org record itself.
+      queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["app-analytics"] });
       toast.success("Organization settings saved");
     },
     onError: (err) => {
@@ -193,6 +201,32 @@ export function UserSettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Organization name</Label>
               <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="My Store" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Business type</Label>
+              <select
+                value={vertical}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (
+                    next !== vertical &&
+                    !confirm(
+                      "Changing your business type switches which agents, dashboard metrics, and terminology you see. Your existing agent configs aren't deleted — they just won't show until you switch back. Continue?",
+                    )
+                  ) {
+                    return;
+                  }
+                  setVertical(next);
+                }}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {VERTICAL_OPTIONS.map((v) => (
+                  <option key={v.key} value={v.key}>{v.label}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Picked once during setup — change it here if you skipped setup or picked wrong.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Contact email</Label>

@@ -54,6 +54,7 @@ export const ONBOARDING_STEP_KEYS = [
   "pick_vertical",
   "connect_tools",
   "create_agent",
+  "setup_number",
   "test_and_golive",
 ] as const;
 
