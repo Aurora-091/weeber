@@ -39,7 +39,12 @@ mock.module("../../database", () => {
             returning: () => [{ id: 1 }]
           })
         })
-      })
+      }),
+      // credential-vault.ts's readCredential() (used by getTwilioClientForOrg,
+      // called from this scheduler's own outbound-call path) calls
+      // db.execute() — no row means it falls through to the plaintext-column
+      // path this mock's `select` above already covers via the "orgs" table.
+      execute: async () => []
     }
   };
 });

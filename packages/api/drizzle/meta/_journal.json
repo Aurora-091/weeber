@@ -183,6 +183,13 @@
       "when": 1784119017618,
       "tag": "0025_add_org_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784123710852,
+      "tag": "0026_add_outbox_and_run_versioning",
+      "breakpoints": true
     }
   ]
 }

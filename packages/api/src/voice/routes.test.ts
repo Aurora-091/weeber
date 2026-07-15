@@ -23,7 +23,14 @@ mock.module("../database", () => {
             limit: () => mockSelectedOrgs
           })
         })
-      })
+      }),
+      // credential-vault.ts's readCredential() calls db.execute() to read
+      // an org's vault-stored Twilio creds — return no row so the caller
+      // falls through to the plaintext-column path this test already
+      // mocks via `select` above (matches production's documented
+      // vault-first-then-plaintext-fallback behavior during the
+      // migration transition).
+      execute: async () => []
     }
   };
 });
