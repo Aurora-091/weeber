@@ -63,20 +63,27 @@ const indexPath = `${distDir}/index.html`;
 const server = Bun.serve({
   port,
   // Bun.serve takes exactly one `websocket` handler object for the whole
-  // server — every upgraded socket (Twilio Media Stream, waitlist live
-  // count) shares this one, dispatched by `ws.data.kind` (see
-  // voice/ws-route.ts and app/waitlist-ws.ts for how each tags its data).
+  // server — every upgraded socket (Twilio Media Stream, the Preview
+  // drawer's live test call, waitlist live count) shares this one,
+  // dispatched by `ws.data.kind` (see voice/ws-route.ts and
+  // app/waitlist-ws.ts for how each tags its data). `voiceWebsocketHandlers`
+  // itself further discriminates "voice" vs "test-call" internally — this
+  // outer gate must forward both kinds to it, or the test-call kind is
+  // silently never dispatched at all (2026-07-15 bug: it wasn't, so every
+  // test-call socket upgraded fine but open/message/close never ran —
+  // dead air with no server-side log, no client-side error, until the
+  // connection eventually got timed out from underneath it).
   websocket: {
     open(ws: { data: { kind: string } }) {
-      if (ws.data.kind === "voice") voiceWebsocketHandlers.open(ws as never);
+      if (ws.data.kind === "voice" || ws.data.kind === "test-call") voiceWebsocketHandlers.open(ws as never);
       else if (ws.data.kind === "waitlist") void waitlistWebsocketHandlers.open(ws as never);
     },
     message(ws: { data: { kind: string } }, message: string | Buffer) {
-      if (ws.data.kind === "voice") voiceWebsocketHandlers.message(ws as never, message);
+      if (ws.data.kind === "voice" || ws.data.kind === "test-call") voiceWebsocketHandlers.message(ws as never, message);
       else if (ws.data.kind === "waitlist") waitlistWebsocketHandlers.message();
     },
     close(ws: { data: { kind: string } }) {
-      if (ws.data.kind === "voice") voiceWebsocketHandlers.close(ws as never);
+      if (ws.data.kind === "voice" || ws.data.kind === "test-call") voiceWebsocketHandlers.close(ws as never);
       else if (ws.data.kind === "waitlist") waitlistWebsocketHandlers.close(ws as never);
     },
   },
