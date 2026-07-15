@@ -24,12 +24,17 @@ export type RetryConfig = {
 
 const PLATFORM_DEFAULTS: Record<string, RetryConfig> = {
   "shopify-cart-recovery": {
-    firstCallDelayMinutes: Number(process.env.SHOPIFY_CART_RECOVERY_DELAY_MINUTES ?? 45),
+    // Fires the instant the trigger fires by default (2026-07-16, explicit
+    // user decision) — was 45min. Still fully overridable per-org on the
+    // agent's Calling & Model tab if a merchant wants a delay instead.
+    firstCallDelayMinutes: Number(process.env.SHOPIFY_CART_RECOVERY_DELAY_MINUTES ?? 0),
     retryDelayMinutes: Number(process.env.SHOPIFY_CART_RECOVERY_RETRY_DELAY_MINUTES ?? 60),
     maxAttempts: Number(process.env.SHOPIFY_CART_RECOVERY_MAX_ATTEMPTS ?? 2),
   },
   "shopify-cod-confirmation": {
-    firstCallDelayMinutes: Number(process.env.SHOPIFY_COD_DELAY_MINUTES ?? 30),
+    // Same instant-by-default change — confirming a COD order while intent
+    // is still fresh directly reduces RTO, the whole point of this agent.
+    firstCallDelayMinutes: Number(process.env.SHOPIFY_COD_DELAY_MINUTES ?? 0),
     retryDelayMinutes: Number(process.env.SHOPIFY_COD_RETRY_DELAY_MINUTES ?? 30),
     maxAttempts: Number(process.env.SHOPIFY_COD_MAX_ATTEMPTS ?? 3),
   },

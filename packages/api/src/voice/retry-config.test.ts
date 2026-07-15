@@ -20,14 +20,14 @@ mock.module("../database", () => ({
 import { getRetryDefaults, resolveRetryConfig, isShopifyWorkflow } from "./retry-config";
 
 describe("getRetryDefaults", () => {
-  it("returns the known Shopify template defaults matching the old env-var defaults", () => {
+  it("returns the known Shopify template defaults — first call fires instantly by default (2026-07-16), retry/max-attempts unchanged", () => {
     expect(getRetryDefaults("shopify-cart-recovery")).toEqual({
-      firstCallDelayMinutes: 45,
+      firstCallDelayMinutes: 0,
       retryDelayMinutes: 60,
       maxAttempts: 2,
     });
     expect(getRetryDefaults("shopify-cod-confirmation")).toEqual({
-      firstCallDelayMinutes: 30,
+      firstCallDelayMinutes: 0,
       retryDelayMinutes: 30,
       maxAttempts: 3,
     });
@@ -69,13 +69,13 @@ describe("resolveRetryConfig", () => {
 
   it("returns platform defaults when orgId is missing", async () => {
     const config = await resolveRetryConfig(undefined, "shopify-cod-confirmation");
-    expect(config).toEqual({ firstCallDelayMinutes: 30, retryDelayMinutes: 30, maxAttempts: 3 });
+    expect(config).toEqual({ firstCallDelayMinutes: 0, retryDelayMinutes: 30, maxAttempts: 3 });
   });
 
   it("returns platform defaults when the org has no override row", async () => {
     rowsByTable.org_agent_configs = [];
     const config = await resolveRetryConfig("org-1", "shopify-cod-confirmation");
-    expect(config).toEqual({ firstCallDelayMinutes: 30, retryDelayMinutes: 30, maxAttempts: 3 });
+    expect(config).toEqual({ firstCallDelayMinutes: 0, retryDelayMinutes: 30, maxAttempts: 3 });
   });
 
   it("uses the org's override fields where set, falling back to defaults per-field otherwise", async () => {
