@@ -26,7 +26,6 @@ type AppShellProps = {
   footer?: React.ReactNode;
   actions?: PaletteAction[];
   collapsible?: boolean;
-  fullBleed?: boolean;
   children: React.ReactNode;
 };
 
@@ -221,7 +220,6 @@ export function AppShell({
   footer,
   actions,
   collapsible = false,
-  fullBleed = false,
   children,
 }: AppShellProps) {
   const { theme } = useTheme();
@@ -325,19 +323,13 @@ export function AppShell({
               {banner}
 
               <main
-                className={cn("w-full", fullBleed ? "h-[calc(100vh-3rem)] md:h-screen" : "mx-auto")}
-                style={
-                  fullBleed
-                    ? undefined
-                    : {
-                        maxWidth: "var(--shell-page-max-w)",
-                        padding: "var(--shell-page-py) var(--shell-page-px)",
-                      }
-                }
+                className="mx-auto w-full"
+                style={{
+                  maxWidth: "var(--shell-page-max-w)",
+                  padding: "var(--shell-page-py) var(--shell-page-px)",
+                }}
               >
-                <div className={cn(fullBleed && "h-full")}>
-                  {children}
-                </div>
+                {children}
               </main>
             </div>
           </div>
