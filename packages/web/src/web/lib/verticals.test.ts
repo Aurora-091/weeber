@@ -37,7 +37,10 @@ describe("verticals helper", () => {
     expect(labels).toContain("Agents");
     expect(labels).toContain("Conversations");
     expect(labels).toContain("Billing");
-    expect(labels).toContain("Shopify");
+    // 2026-07-16: nav label changed from the vertical's platform name
+    // ("Shopify") to generic "Integrations" (explicit user decision) —
+    // integrationLabel itself is unchanged, just no longer what the nav uses.
+    expect(labels).toContain("Integrations");
     // Analytics is no longer a separate nav item — it lives on the Home page.
     expect(labels).not.toContain("Analytics");
   });

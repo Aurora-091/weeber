@@ -19,6 +19,7 @@ import {
   Phone,
 } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
+import { INTEGRATIONS_NAV_LABEL } from "../../lib/verticals";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
@@ -224,7 +225,7 @@ function TelephonyProviderTile({
 }
 
 export function UserIntegrationsPage() {
-  const { me, vertical } = useUser();
+  const { me } = useUser();
   const [storeDomain, setStoreDomain] = useState("");
   // True for the brief window between landing back from weebersh's redirect
   // and the forced status refetch resolving — fills the gap so the page
@@ -482,7 +483,7 @@ export function UserIntegrationsPage() {
       )}
 
       <PageHeader
-        title={vertical.integrationLabel}
+        title={INTEGRATIONS_NAV_LABEL}
         description="Connect commerce platforms so your agents can react to checkouts, orders, and fulfillments — and export your data whenever you need it."
       />
 

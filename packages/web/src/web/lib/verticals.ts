@@ -39,13 +39,15 @@ export type VerticalDefinition = {
   };
 };
 
-// Nav label for the platform-connection page is the vertical's own
-// integrationLabel ("Shopify" here, "EHR"/"PMS" for a future clinic
-// vertical, etc.) — not a hardcoded "Integrations" — so the nav stays
-// vertical-driven per USER-APP-PAGE-MAP §4 instead of a generic label
-// that means something different per vertical. See verticals.test.ts's
-// "contains all required nav items for shopify" test, which checks for
-// this exact label.
+// Nav label for the platform-connection page used to be the vertical's own
+// integrationLabel ("Shopify"), so the nav and page title matched exactly
+// what platform was connected. Changed 2026-07-16 (explicit user decision):
+// generic "Integrations" everywhere in the nav/page-title chrome instead —
+// `integrationLabel` itself is unchanged and still used for *prose* that
+// needs the actual platform name ("your Shopify store", agents.tsx's empty
+// state) where "your Integrations store" wouldn't read as a real sentence.
+export const INTEGRATIONS_NAV_LABEL = "Integrations";
+
 const SHOPIFY_INTEGRATION_LABEL = "Shopify";
 
 function navMatch(subpath: string, tail: string): RegExp {
@@ -63,7 +65,7 @@ const shopify: VerticalDefinition = {
     { href: appPath("/workflows"), label: "Workflows", icon: GitBranch, match: navMatch("/workflows", "(/.*)?") },
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
-    { href: appPath("/integrations"), label: SHOPIFY_INTEGRATION_LABEL, icon: Plug, match: navMatch("/integrations", "") },
+    { href: appPath("/integrations"), label: INTEGRATIONS_NAV_LABEL, icon: Plug, match: navMatch("/integrations", "") },
     { href: appPath("/knowledge-base"), label: "Knowledge Base", icon: BookOpen, match: navMatch("/knowledge-base", "") },
     { href: appPath("/numbers"), label: "Phone Numbers", icon: Phone, match: navMatch("/numbers", "") },
     { href: appPath("/settings"), label: "Settings", icon: Settings, match: navMatch("/settings", "") },
@@ -78,9 +80,17 @@ const shopify: VerticalDefinition = {
       "Install the Weeber app on your store so your agents can react to checkouts, orders, and fulfillments.",
   },
   dashboard: {
+    // Funnel order: abandoned -> recovered -> rate -> revenue -> avg order
+    // value. Backend already computes all five (org-queries.ts's
+    // computeKpis) — cartsAbandoned/recoveryRate/avgOrderValue were sitting
+    // unused on the wire until 2026-07-16, this page just never read them.
     metrics: [
+      { key: "carts_abandoned", label: "Carts abandoned", hint: "Abandoned checkouts detected" },
       { key: "carts_recovered", label: "Carts recovered", hint: "Checkouts an agent brought back" },
+      { key: "recovery_rate", label: "Recovery rate", hint: "Recovered / attempted calls" },
       { key: "revenue_recovered", label: "Revenue recovered" },
+      { key: "avg_order_value", label: "Avg order value", hint: "Per recovered order" },
+      { key: "calls_per_day", label: "Calls per day", hint: "Average over the selected range" },
     ],
     emptyState: {
       title: "Set up your first agent",

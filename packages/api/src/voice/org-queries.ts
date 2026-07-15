@@ -19,6 +19,7 @@ import {
   orgs,
   scheduledCalls,
   shopLinks,
+  shopifyWebhookEvents,
   toolCalls,
   transcripts,
   turnLatency,
@@ -480,6 +481,27 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
     .from(scheduledCalls)
     .where(and(eq(scheduledCalls.orgId, orgId), gte(scheduledCalls.createdAt, since)));
 
+  // "Carts abandoned" — the true raw count, not just the ones that resulted
+  // in an attempted call. scheduledCalls only ever gets a row when a call
+  // was actually schedulable (has a callable phone, not DNC'd, etc.), so it
+  // undercounts abandoned checkouts. shopifyWebhookEvents is the existing
+  // idempotency/dedupe log every "checkouts" webhook already writes to
+  // regardless of downstream outcome — reusing it here instead of adding a
+  // new table (no migration needed, and it back-fills history for free).
+  // Scoped to this org via shopLinks (shop -> orgId); an org with no linked
+  // shop yet just gets 0, not an error.
+  const orgShops = await db.select({ shop: shopLinks.shop }).from(shopLinks).where(eq(shopLinks.orgId, orgId));
+  const shopNames = orgShops.map((s) => s.shop);
+  const cartsAbandoned =
+    shopNames.length === 0
+      ? 0
+      : (
+          await db
+            .select({ shop: shopifyWebhookEvents.shop, topic: shopifyWebhookEvents.topic, processedAt: shopifyWebhookEvents.processedAt })
+            .from(shopifyWebhookEvents)
+            .where(inArray(shopifyWebhookEvents.shop, shopNames))
+        ).filter((e) => e.topic === "checkouts" && e.processedAt >= since).length;
+
   // Cart recovery — attribution written by the orders/create webhook.
   const recoveryRows = scheduled.filter((s) => s.workflowName === "shopify-cart-recovery");
   const recoveryExecuted = recoveryRows.filter((s) => s.status === "executed").length;
@@ -490,13 +512,15 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
     if (Number.isFinite(amount)) recoveredRevenue += amount;
   }
   const recovery =
-    recoveryExecuted === 0 && recoveredRows.length === 0
+    recoveryExecuted === 0 && recoveredRows.length === 0 && cartsAbandoned === 0
       ? null
       : {
+          cartsAbandoned,
           attemptedCalls: recoveryExecuted,
           recoveredOrders: recoveredRows.length,
           recoveredRevenue: Math.round(recoveredRevenue * 100) / 100,
           recoveryRate: recoveryExecuted > 0 ? recoveredRows.length / recoveryExecuted : null,
+          avgOrderValue: recoveredRows.length > 0 ? Math.round((recoveredRevenue / recoveredRows.length) * 100) / 100 : null,
         };
 
   // COD confirmation — "confirmed / attempted" (no FK between the tables).

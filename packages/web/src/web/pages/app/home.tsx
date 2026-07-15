@@ -48,10 +48,12 @@ type AnalyticsData = {
   currency?: string | null;
   kpis?: {
     recovery?: {
+      cartsAbandoned: number;
       recoveredOrders: number;
       recoveredRevenue: number;
       attemptedCalls: number;
       recoveryRate: number | null;
+      avgOrderValue: number | null;
     } | null;
     codConfirmation?: {
       confirmedOrders: number;
@@ -72,9 +74,6 @@ const STEP_LABELS: Record<string, string> = {
   test_and_golive: "Review and go live",
 };
 
-function fmtMs(ms: number | null): string {
-  return ms == null ? "—" : `${Math.round(ms)}ms`;
-}
 
 function fmtCurrency(amount: number, currency: string | null | undefined): string {
   try {
@@ -103,10 +102,28 @@ function resolveMetric(
       return data.kpis?.recovery
         ? { value: String(data.kpis.recovery.recoveredOrders) }
         : null;
+    case "carts_abandoned":
+      return data.kpis?.recovery
+        ? { value: String(data.kpis.recovery.cartsAbandoned) }
+        : null;
     case "revenue_recovered":
       return data.kpis?.recovery
         ? { value: fmtCurrency(data.kpis.recovery.recoveredRevenue, data.currency) }
         : null;
+    case "avg_order_value":
+      return data.kpis?.recovery?.avgOrderValue != null
+        ? { value: fmtCurrency(data.kpis.recovery.avgOrderValue, data.currency) }
+        : null;
+    case "recovery_rate":
+      return data.kpis?.recovery?.recoveryRate != null
+        ? { value: fmtPercent(data.kpis.recovery.recoveryRate), hint: "Recovered vs. calls attempted" }
+        : null;
+    case "calls_per_day": {
+      const days = data.dailyVolume;
+      if (!days || days.length === 0) return null;
+      const avg = days.reduce((sum, d) => sum + d.count, 0) / days.length;
+      return { value: avg.toFixed(1) };
+    }
     case "cod_confirm_rate":
       return data.kpis?.codConfirmation
         ? { value: fmtPercent(data.kpis.codConfirmation.confirmRate) }
@@ -275,7 +292,7 @@ export function UserHomePage() {
         )
       )}
 
-      {/* ── Universal KPIs ── */}
+      {/* ── KPIs ── */}
       {analytics.isLoading && (
         <div className="grid gap-4 sm:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
@@ -286,32 +303,12 @@ export function UserHomePage() {
 
       {data && (
         <>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <StatCard
-              label="Total calls"
-              value={String(data.totalCalls)}
-              icon={Phone}
-              sparkData={data.callsPerDay}
-            />
-            <StatCard
-              label="Total minutes"
-              value={String(data.totalMinutes)}
-              icon={Clock}
-              sparkData={data.minutesPerDay}
-            />
-            <StatCard
-              label="Avg LLM TTFT"
-              value={fmtMs(data.avgLatency.llmTtftMs)}
-              icon={Clock}
-            />
-            <StatCard
-              label="Avg TTS first byte"
-              value={fmtMs(data.avgLatency.ttsFirstByteMs)}
-              icon={Clock}
-            />
-          </div>
-
-          {/* ── Vertical KPIs ── */}
+          {/* Business/revenue metrics first — this is what a merchant
+           * actually opens the dashboard to check (cart recovery, revenue,
+           * abandonment), not raw call-volume/latency numbers. Those moved
+           * below as secondary "usage" stats (2026-07-16, explicit user
+           * decision — was previously "Universal KPIs" shown first, mixing
+           * ops-facing AI-pipeline latency numbers in with them). */}
           {(() => {
             const resolved = vertical.dashboard.metrics
               .map((m) => ({ ...m, resolved: resolveMetric(m.key, data) }))
@@ -339,6 +336,26 @@ export function UserHomePage() {
               </div>
             );
           })()}
+
+          {/* Usage stats, secondary. Avg LLM TTFT / Avg TTS first byte
+           * removed entirely from here (2026-07-16) — those are raw
+           * AI-pipeline latency numbers, an ops/engineering concern, not a
+           * merchant-facing metric. They still exist on the admin
+           * dashboard (pages/dashboard/analytics.tsx), unchanged. */}
+          <div className="grid gap-4 sm:grid-cols-4">
+            <StatCard
+              label="Total calls"
+              value={String(data.totalCalls)}
+              icon={Phone}
+              sparkData={data.callsPerDay}
+            />
+            <StatCard
+              label="Total minutes"
+              value={String(data.totalMinutes)}
+              icon={Clock}
+              sparkData={data.minutesPerDay}
+            />
+          </div>
         </>
       )}
 
@@ -392,65 +409,46 @@ export function UserHomePage() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            {outcomePieData.length > 0 && (
-              <div className="card-weeber p-5">
-                <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={outcomePieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      label={({ name, percent }: { name?: string; percent?: number }) =>
-                        `${name ?? ""} (${((percent ?? 0) * 100).toFixed(0)}%)`
-                      }
-                      labelLine={false}
-                    >
-                      {outcomePieData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--color-card)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            <div className="card-weeber p-4 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-sm font-medium mb-3">
-                <Clock className="size-3.5" aria-hidden />
-                Latency breakdown (avg)
-              </div>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">STT connect</span>
-                  <span className="font-mono">{fmtMs(data.avgLatency.sttConnectMs)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">LLM time-to-first-token</span>
-                  <span className="font-mono">{fmtMs(data.avgLatency.llmTtftMs)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">TTS first byte</span>
-                  <span className="font-mono">{fmtMs(data.avgLatency.ttsFirstByteMs)}</span>
-                </div>
-              </div>
+          {/* "Latency breakdown (avg)" card (STT connect/LLM TTFT/TTS first
+           * byte) removed from here 2026-07-16 — same ops/engineering
+           * latency metrics as the StatCards removed above, just further
+           * down the page. Still on the admin dashboard, unchanged. */}
+          {outcomePieData.length > 0 && (
+            <div className="card-weeber p-5">
+              <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={outcomePieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    label={({ name, percent }: { name?: string; percent?: number }) =>
+                      `${name ?? ""} (${((percent ?? 0) * 100).toFixed(0)}%)`
+                    }
+                    labelLine={false}
+                  >
+                    {outcomePieData.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-          </div>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4">
             <div>

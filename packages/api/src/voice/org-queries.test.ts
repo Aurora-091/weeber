@@ -53,6 +53,8 @@ describe("computeOrgAnalytics KPIs", () => {
       turn_latency: [],
       tool_calls: [],
       scheduled_calls: [],
+      shop_links: [],
+      shopify_webhook_events: [],
     };
   });
 
@@ -71,11 +73,49 @@ describe("computeOrgAnalytics KPIs", () => {
     ];
     const { kpis } = await computeOrgAnalytics("org-1", 30);
     expect(kpis.recovery).toEqual({
+      cartsAbandoned: 0,
       attemptedCalls: 3,
       recoveredOrders: 2,
       recoveredRevenue: 150.5,
       recoveryRate: 2 / 3,
+      avgOrderValue: 75.25,
     });
+  });
+
+  // Regression coverage for the 2026-07-16 "Carts abandoned" metric: the
+  // true raw count reuses the existing shopify_webhook_events idempotency
+  // log (topic="checkouts"), scoped to the org via shop_links — NOT just
+  // scheduledCalls rows, which only exist for checkouts that were actually
+  // schedulable (undercounts real abandonment).
+  it("counts cartsAbandoned from shopify_webhook_events via shop_links, independent of scheduledCalls", async () => {
+    rowsByTable.shop_links = [{ shop: "my-store.myshopify.com" }];
+    rowsByTable.shopify_webhook_events = [
+      { id: 1, shop: "my-store.myshopify.com", topic: "checkouts", processedAt: new Date(now) },
+      { id: 2, shop: "my-store.myshopify.com", topic: "checkouts", processedAt: new Date(now) },
+      { id: 3, shop: "my-store.myshopify.com", topic: "checkouts", processedAt: new Date(now) },
+      // Different topic on the same shop — must not be counted as abandoned carts.
+      { id: 4, shop: "my-store.myshopify.com", topic: "orders", processedAt: new Date(now) },
+      // Outside the 30-day analytics window — must not be counted either.
+      { id: 5, shop: "my-store.myshopify.com", topic: "checkouts", processedAt: new Date(now - 60 * 24 * 60 * 60 * 1000) },
+    ];
+    // No scheduledCalls rows at all — e.g. every one of these checkouts had
+    // no callable phone, so scheduledCalls alone would report 0 abandonment.
+    const { kpis } = await computeOrgAnalytics("org-1", 30);
+    expect(kpis.recovery).toEqual({
+      cartsAbandoned: 3,
+      attemptedCalls: 0,
+      recoveredOrders: 0,
+      recoveredRevenue: 0,
+      recoveryRate: null,
+      avgOrderValue: null,
+    });
+  });
+
+  it("reports cartsAbandoned as 0 (not an error) for an org with no linked shop yet", async () => {
+    rowsByTable.shop_links = [];
+    rowsByTable.shopify_webhook_events = [{ id: 1, shop: "someone-elses-store.myshopify.com", topic: "checkouts" }];
+    const analytics = await computeOrgAnalytics("org-1", 30);
+    expect(analytics.kpis.recovery).toBeNull();
   });
 
   it("counts COD confirmations against executed attempts", async () => {
