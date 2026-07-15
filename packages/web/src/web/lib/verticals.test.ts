@@ -18,11 +18,11 @@ describe("verticals helper", () => {
     expect(v.key).toBe("shopify");
     expect(v.glossary.customer).toBe("Customer");
     expect(v.glossary.customers).toBe("Customers");
-    // Home, Agents, Workflows, Conversations, Billing, Shopify (integrationLabel),
+    // Home, Agents, Workflows, Conversations, Orders, Billing, Integrations,
     // Knowledge Base, Phone Numbers, Settings.
     // Analytics was folded into Home (dashboard consolidation pass); Knowledge Base
-    // added (A3b); Phone Numbers added (C2b).
-    expect(v.nav).toHaveLength(9);
+    // added (A3b); Phone Numbers added (C2b); Orders added 2026-07-16.
+    expect(v.nav).toHaveLength(10);
   });
 
   it("falls back to shopify vertical for unrecognized keys", () => {
@@ -37,6 +37,7 @@ describe("verticals helper", () => {
     expect(labels).toContain("Agents");
     expect(labels).toContain("Conversations");
     expect(labels).toContain("Billing");
+    expect(labels).toContain("Orders");
     // 2026-07-16: nav label changed from the vertical's platform name
     // ("Shopify") to generic "Integrations" (explicit user decision) —
     // integrationLabel itself is unchanged, just no longer what the nav uses.
@@ -58,5 +59,8 @@ describe("verticals helper", () => {
     const labels = v.nav.map((n) => n.label);
     expect(labels).not.toContain("Policy System");
     expect(labels).not.toContain("Analytics");
+    // Orders (2026-07-16) lists Shopify-prefixed workflow triggers only —
+    // no equivalent for insurance yet, same gating as Integrations above.
+    expect(labels).not.toContain("Orders");
   });
 });

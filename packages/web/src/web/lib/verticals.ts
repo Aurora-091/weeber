@@ -73,6 +73,11 @@ const shopify: VerticalDefinition = {
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
     { href: appPath("/workflows"), label: "Workflows", icon: GitBranch, match: navMatch("/workflows", "(/.*)?") },
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
+    // Orders is Shopify-only (the 3 workflows it lists — cart-recovery/
+    // cod-confirmation/feedback — are Shopify-prefixed concepts), same
+    // gating pattern as Integrations above (only vertical.hasLiveIntegration
+    // verticals get it). See pages/app/orders.tsx.
+    { href: appPath("/orders"), label: "Orders", icon: ShoppingBag, match: navMatch("/orders", "") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
     { href: appPath("/integrations"), label: INTEGRATIONS_NAV_LABEL, icon: Plug, match: navMatch("/integrations", "") },
     { href: appPath("/knowledge-base"), label: "Knowledge Base", icon: BookOpen, match: navMatch("/knowledge-base", "") },

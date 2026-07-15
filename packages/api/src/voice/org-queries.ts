@@ -6,7 +6,7 @@
  * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { db } from "../database";
 import {
   agentTemplates,
@@ -204,6 +204,30 @@ export async function listOrgCalls(orgId: string, limit = 200) {
     .from(calls)
     .where(eq(calls.orgId, orgId))
     .orderBy(desc(calls.startedAt))
+    .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+/** Shopify-vertical trigger rows (cart recovery, COD confirmation, feedback)
+ * for the new Orders page (2026-07-16) — same filter buildOrdersWorkbook's
+ * "Download as Excel" export already used, just returned as JSON instead of
+ * an .xlsx. Newest first. Only ever what our own webhooks already captured
+ * (checkouts with a callable phone, orders that scheduled a workflow) — not
+ * a live Shopify Orders API pull, per the explicit scope decision. */
+export async function listOrgOrderCalls(orgId: string, limit = 200) {
+  return db
+    .select()
+    .from(scheduledCalls)
+    .where(
+      and(
+        eq(scheduledCalls.orgId, orgId),
+        or(
+          eq(scheduledCalls.workflowName, "shopify-cart-recovery"),
+          eq(scheduledCalls.workflowName, "shopify-cod-confirmation"),
+          eq(scheduledCalls.workflowName, "shopify-feedback"),
+        ),
+      ),
+    )
+    .orderBy(desc(scheduledCalls.runAt))
     .limit(Math.min(Math.max(limit, 1), 500));
 }
 

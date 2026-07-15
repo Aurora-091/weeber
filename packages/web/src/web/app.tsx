@@ -69,6 +69,7 @@ const UserBillingPage = lazy(() => import("./pages/app/billing").then((m) => ({ 
 const UserIntegrationsPage = lazy(() => import("./pages/app/integrations").then((m) => ({ default: m.UserIntegrationsPage })));
 const UserKnowledgeBasePage = lazy(() => import("./pages/app/knowledge-base").then((m) => ({ default: m.UserKnowledgeBasePage })));
 const UserNumbersPage = lazy(() => import("./pages/app/numbers").then((m) => ({ default: m.UserNumbersPage })));
+const UserOrdersPage = lazy(() => import("./pages/app/orders").then((m) => ({ default: m.UserOrdersPage })));
 const UserSettingsPage = lazy(() => import("./pages/app/settings").then((m) => ({ default: m.UserSettingsPage })));
 const UserWorkflowsListPage = lazy(() => import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowsListPage })));
 const UserWorkflowDetailPage = lazy(() => import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowDetailPage })));
@@ -108,6 +109,7 @@ function UserAppRoutes() {
           <Route path={appPath("/integrations")} component={UserIntegrationsPage} />
           <Route path={appPath("/knowledge-base")} component={UserKnowledgeBasePage} />
           <Route path={appPath("/numbers")} component={UserNumbersPage} />
+          <Route path={appPath("/orders")} component={UserOrdersPage} />
           <Route path={appPath("/settings")} component={UserSettingsPage} />
           <Route path={appPath("/workflows")} component={UserWorkflowsListPage} />
           <Route path={appPath("/workflows/:id")} component={UserWorkflowDetailPage} />

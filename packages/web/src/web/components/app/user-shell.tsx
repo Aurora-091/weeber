@@ -24,6 +24,10 @@ export type UserMe = {
     timezone: string | null;
     contactEmail: string | null;
     webhookUrl: string | null;
+    /** Non-null and in the future = calling-window compliance test mode is
+     * active for this org (2026-07-16) — see Settings' toggle and Home's
+     * pill. Self-expiring, always set to now()+24h by the backend. */
+    callingWindowTestModeUntil: string | null;
   };
 };
 

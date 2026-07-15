@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell, Webhook } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook, ShieldAlert } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
@@ -10,6 +10,7 @@ import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Switch } from "../../components/ui/switch";
 
 const TIMEZONES = [
   "Asia/Kolkata",
@@ -141,6 +142,27 @@ export function UserSettingsPage() {
     onError: (err) => {
       toast.error(err.message);
     },
+  });
+
+  const testModeUntil = me.org.callingWindowTestModeUntil ? new Date(me.org.callingWindowTestModeUntil) : null;
+  const testModeActive = Boolean(testModeUntil && testModeUntil.getTime() > Date.now());
+
+  const testMode = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await appFetch("/api/app/compliance/test-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json().catch(() => ({ error: "Unknown error" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to update test mode");
+      return data as { callingWindowTestModeUntil: string | null };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["app-me"] });
+      toast.success(data.callingWindowTestModeUntil ? "Test mode on for 24 hours" : "Test mode off");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   return (
@@ -299,6 +321,31 @@ export function UserSettingsPage() {
               {testWebhook.isPending ? "Sending…" : "Send test event"}
             </Button>
           </div>
+        </Section>
+
+        <Section icon={ShieldAlert} title="Compliance">
+          <p className="mb-4 text-sm text-muted-foreground">
+            For testing only — bypasses the TCPA/TRAI calling-window check (e.g. calling outside 9am-9pm)
+            so you can place test calls any time of day. The Do Not Call list is <strong>always</strong>{" "}
+            enforced regardless — there's no way to bypass that. Auto-turns off after 24 hours so it can't
+            be accidentally left on in production.
+          </p>
+          <label className="flex items-center gap-3 text-sm">
+            <Switch
+              checked={testModeActive}
+              disabled={testMode.isPending}
+              onCheckedChange={(checked) => testMode.mutate(checked)}
+              aria-label="Calling-window compliance test mode"
+            />
+            <span className="font-medium">
+              {testModeActive ? "Test mode is ON" : "Test mode is off"}
+            </span>
+          </label>
+          {testModeActive && testModeUntil && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Turns back on automatically at {testModeUntil.toLocaleString()}.
+            </p>
+          )}
         </Section>
 
         <Section icon={Bell} title="Notifications">

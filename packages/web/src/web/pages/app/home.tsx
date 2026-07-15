@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Phone, Clock, Wrench, ShieldAlert, Wallet, TrendingUp, Sparkles,
-  Check, X,
+  Check, X, TriangleAlert,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -164,7 +164,7 @@ function useDays(defaultDays = 30): [number, (d: number) => void] {
 }
 
 export function UserHomePage() {
-  const { vertical } = useUser();
+  const { vertical, me } = useUser();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const [setupOpen, setSetupOpen] = useState(false);
@@ -226,6 +226,9 @@ export function UserHomePage() {
     ? Object.entries(data.dispositionBreakdown).map(([name, value]) => ({ name, value }))
     : [];
 
+  const testModeUntil = me.org.callingWindowTestModeUntil ? new Date(me.org.callingWindowTestModeUntil) : null;
+  const testModeActive = Boolean(testModeUntil && testModeUntil.getTime() > Date.now());
+
   return (
     <div className="page-enter space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -233,7 +236,18 @@ export function UserHomePage() {
           title="Dashboard"
           description={`Last ${days} days across your voice agents.`}
         />
-        <DateRangeSelector value={days} onChange={setDays} options={[7, 14, 30]} />
+        <div className="flex items-center gap-2">
+          {testModeActive && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-xs font-medium text-warning"
+              title={`Calling-window compliance is bypassed until ${testModeUntil!.toLocaleString()}. Turn off on the Settings page.`}
+            >
+              <TriangleAlert className="size-3 shrink-0" aria-hidden />
+              Compliance test mode — calling window OFF
+            </span>
+          )}
+          <DateRangeSelector value={days} onChange={setDays} options={[7, 14, 30]} />
+        </div>
       </div>
 
       {/* Onboarding checklist */}

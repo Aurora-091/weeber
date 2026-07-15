@@ -46,8 +46,10 @@ import {
   getEffectiveFlags,
   getOnboardingState,
   updateOnboardingState,
+  listOrgOrderCalls,
 } from "../voice/org-queries";
 import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
+import { callScheduledRowNow } from "../voice/workflows/scheduler";
 import {
   getTwilioStatus,
   createSubaccountForOrg,
@@ -181,6 +183,7 @@ export const userApp = new Hono<UserEnv>()
           timezone: org.timezone,
           contactEmail: org.contactEmail,
           webhookUrl: org.webhookUrl,
+          callingWindowTestModeUntil: org.callingWindowTestModeUntil,
         },
       },
       200,
@@ -554,6 +557,41 @@ export const userApp = new Hono<UserEnv>()
       { steps: state.steps, dismissed: state.dismissed, completedAt: state.completedAt },
       200,
     );
+  })
+
+  // "Turn off compliance for testing" (2026-07-16) — self-expiring, org-
+  // scoped, bypasses ONLY the calling-window/TCPA-TRAI check (never DNC,
+  // no exceptions — see scheduler.ts's checkCallingWindowForRow). Always
+  // sets to now()+24h on enable rather than accepting an arbitrary duration
+  // from the client, specifically so it can't be left on indefinitely.
+  .post("/compliance/test-mode", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { enabled } = (body ?? {}) as { enabled?: boolean };
+    if (typeof enabled !== "boolean") {
+      return c.json({ error: "`enabled` (boolean) is required" }, 400);
+    }
+    const callingWindowTestModeUntil = enabled ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
+    await db.update(orgs).set({ callingWindowTestModeUntil }).where(eq(orgs.id, orgId));
+    return c.json({ callingWindowTestModeUntil }, 200);
+  })
+
+  // Orders page (2026-07-16) — every Shopify-vertical trigger our own
+  // webhooks already captured (cart recovery / COD confirmation /
+  // feedback), tagged by workflow, with a manual "call now" action per
+  // row. Deliberately not a live Shopify Orders API pull — see
+  // listOrgOrderCalls's doc comment.
+  .get("/orders", async (c) => {
+    const rows = await listOrgOrderCalls(c.get("userOrgId")!);
+    return c.json({ orders: rows }, 200);
+  })
+
+  .post("/orders/:id/call-now", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const result = await callScheduledRowNow(c.get("userOrgId")!, id);
+    if (!result.ok) return c.json({ error: result.error }, result.statusCode);
+    return c.json({ ok: true }, 200);
   })
 
   .get("/shopify/status", async (c) => {
