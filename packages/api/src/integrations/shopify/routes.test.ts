@@ -6,6 +6,7 @@ let mockSelectedCalls: any[] = [];
 let mockUpdatedCalls: any[] = [];
 let mockReturningRows: any[] = [];
 let mockDeletedRows: any[] = [];
+let mockMarkedProcessed: { shop: string; topic: string; idempotencyKey: string }[] = [];
 
 function getTableName(table: any): string | undefined {
   if (!table) return undefined;
@@ -72,7 +73,10 @@ mock.module("../../database", () => {
 mock.module("./idempotency", () => {
   return {
     alreadyProcessed: () => Promise.resolve(false),
-    markProcessed: () => Promise.resolve()
+    markProcessed: (shop: string, topic: string, idempotencyKey: string) => {
+      mockMarkedProcessed.push({ shop, topic, idempotencyKey });
+      return Promise.resolve();
+    }
   };
 });
 
@@ -88,6 +92,7 @@ describe("Shopify routes - Checkout Token cancellation and Attribution", () => {
     mockUpdatedCalls = [];
     mockReturningRows = [];
     mockDeletedRows = [];
+    mockMarkedProcessed = [];
   });
 
   it("persists checkoutToken on checkout webhook", async () => {
@@ -136,6 +141,55 @@ describe("Shopify routes - Checkout Token cancellation and Attribution", () => {
     // Should have updated status to canceled
     expect(mockUpdatedCalls.length).toBe(1);
     expect(mockUpdatedCalls[0].status).toBe("canceled");
+  });
+
+  // Regression coverage for the 2026-07-16 merchant-reported bug: a real
+  // order they placed got counted as an abandoned cart on the dashboard.
+  // Root cause: Shopify fires a "checkouts" webhook for every checkout,
+  // including ones that complete into a real order — org-queries.ts's
+  // cartsAbandoned had no way to exclude those. Fix: /orders/create marks
+  // the checkout "converted" (separate topic, same idempotency log, keyed
+  // by checkout_token) so the KPI query can exclude it.
+  it("marks the checkout as converted (topic checkout_converted, keyed by checkout_token) when an order carries one", async () => {
+    mockSelectedShopLinks = [{ orgId: "org-123", shop: "test.myshopify.com" }];
+    mockReturningRows = [];
+
+    const res = await shopify.request("/integrations/shopify/orders/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Weeber-Secret": "test-secret"
+      },
+      body: JSON.stringify({
+        shop: "test.myshopify.com",
+        order_id: 12345,
+        checkout_token: "chk_token_abc123",
+        phone: "+15555555555"
+      })
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockMarkedProcessed).toContainEqual({ shop: "test.myshopify.com", topic: "checkout_converted", idempotencyKey: "chk_token_abc123" });
+  });
+
+  it("does not attempt to mark a conversion when the order has no checkout_token at all (e.g. a POS sale)", async () => {
+    mockSelectedShopLinks = [{ orgId: "org-123", shop: "test.myshopify.com" }];
+    mockReturningRows = [];
+
+    const res = await shopify.request("/integrations/shopify/orders/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Weeber-Secret": "test-secret"
+      },
+      body: JSON.stringify({
+        shop: "test.myshopify.com",
+        order_id: 99999
+      })
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockMarkedProcessed.some((m) => m.topic === "checkout_converted")).toBe(false);
   });
 
   it("falls back to canceling by phone if no call was found by checkoutToken", async () => {

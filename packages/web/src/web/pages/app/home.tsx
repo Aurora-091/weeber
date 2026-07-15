@@ -57,7 +57,7 @@ type AnalyticsData = {
     } | null;
     codConfirmation?: {
       confirmedOrders: number;
-      codAttempted: number;
+      attemptedCalls: number;
       confirmRate: number;
     } | null;
     feedback?: {
@@ -127,7 +127,11 @@ function resolveMetric(
     }
     case "cod_confirm_rate":
       return data.kpis?.codConfirmation
-        ? { value: fmtPercent(data.kpis.codConfirmation.confirmRate) }
+        ? { value: fmtPercent(data.kpis.codConfirmation.confirmRate), hint: "Confirmed vs. calls attempted" }
+        : null;
+    case "cod_confirmed":
+      return data.kpis?.codConfirmation
+        ? { value: String(data.kpis.codConfirmation.confirmedOrders) }
         : null;
     case "renewals_confirmed":
       return data.kpis?.recovery

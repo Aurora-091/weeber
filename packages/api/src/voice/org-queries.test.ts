@@ -118,6 +118,28 @@ describe("computeOrgAnalytics KPIs", () => {
     expect(analytics.kpis.recovery).toBeNull();
   });
 
+  // Regression coverage for the 2026-07-16 merchant-reported bug: placing a
+  // real order got counted as an abandoned cart. Root cause — Shopify fires
+  // a "checkouts" webhook for EVERY checkout, including ones that go on to
+  // complete as a real order; cartsAbandoned had no way to exclude those.
+  // Fix: shopify/routes.ts's /orders/create handler now marks the checkout
+  // "converted" (topic "checkout_converted", keyed by checkout_token) on
+  // the same idempotency log — this test proves that exclusion actually
+  // takes effect in the KPI math, not just that the write happens.
+  it("excludes checkouts that converted into a real order from cartsAbandoned, even though Shopify still fired a 'checkouts' webhook for them", async () => {
+    rowsByTable.shop_links = [{ shop: "my-store.myshopify.com" }];
+    rowsByTable.shopify_webhook_events = [
+      // Genuinely abandoned — checkout fired, no matching conversion.
+      { id: 1, shop: "my-store.myshopify.com", topic: "checkouts", idempotencyKey: "token-abandoned", processedAt: new Date(now) },
+      // Converted into a real order — checkout fired AND a matching
+      // checkout_converted event exists for the same token. Must NOT count.
+      { id: 2, shop: "my-store.myshopify.com", topic: "checkouts", idempotencyKey: "token-converted", processedAt: new Date(now) },
+      { id: 3, shop: "my-store.myshopify.com", topic: "checkout_converted", idempotencyKey: "token-converted", processedAt: new Date(now) },
+    ];
+    const { kpis } = await computeOrgAnalytics("org-1", 30);
+    expect(kpis.recovery?.cartsAbandoned).toBe(1);
+  });
+
   it("counts COD confirmations against executed attempts", async () => {
     rowsByTable.calls = [call({ id: 1 }), call({ id: 2 })];
     rowsByTable.scheduled_calls = [

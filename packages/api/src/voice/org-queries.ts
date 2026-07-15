@@ -491,17 +491,28 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
   // new table (no migration needed, and it back-fills history for free).
   // Scoped to this org via shopLinks (shop -> orgId); an org with no linked
   // shop yet just gets 0, not an error.
+  //
+  // Excludes checkouts that converted into a real order (topic
+  // "checkout_converted", written by shopify/routes.ts's /orders/create
+  // handler, keyed by checkout_token) — Shopify fires a "checkouts" webhook
+  // for EVERY checkout including ones that go on to complete successfully,
+  // so without this exclusion, placing any order at all (the checkout
+  // that led to it always logs a "checkouts" event first) inflated "carts
+  // abandoned" by one. Fixed 2026-07-16 — a real merchant complaint: a
+  // test order they placed showed up counted as an abandoned cart.
   const orgShops = await db.select({ shop: shopLinks.shop }).from(shopLinks).where(eq(shopLinks.orgId, orgId));
   const shopNames = orgShops.map((s) => s.shop);
-  const cartsAbandoned =
-    shopNames.length === 0
-      ? 0
-      : (
-          await db
-            .select({ shop: shopifyWebhookEvents.shop, topic: shopifyWebhookEvents.topic, processedAt: shopifyWebhookEvents.processedAt })
-            .from(shopifyWebhookEvents)
-            .where(inArray(shopifyWebhookEvents.shop, shopNames))
-        ).filter((e) => e.topic === "checkouts" && e.processedAt >= since).length;
+  let cartsAbandoned = 0;
+  if (shopNames.length > 0) {
+    const events = await db
+      .select({ topic: shopifyWebhookEvents.topic, idempotencyKey: shopifyWebhookEvents.idempotencyKey, processedAt: shopifyWebhookEvents.processedAt })
+      .from(shopifyWebhookEvents)
+      .where(inArray(shopifyWebhookEvents.shop, shopNames));
+    const convertedTokens = new Set(events.filter((e) => e.topic === "checkout_converted").map((e) => e.idempotencyKey));
+    cartsAbandoned = events.filter(
+      (e) => e.topic === "checkouts" && e.processedAt >= since && !convertedTokens.has(e.idempotencyKey),
+    ).length;
+  }
 
   // Cart recovery — attribution written by the orders/create webhook.
   const recoveryRows = scheduled.filter((s) => s.workflowName === "shopify-cart-recovery");

@@ -99,6 +99,11 @@ const shopify: VerticalDefinition = {
       { key: "recovery_rate", label: "Recovery rate", hint: "Recovered / attempted calls" },
       { key: "revenue_recovered", label: "Revenue recovered" },
       { key: "avg_order_value", label: "Avg order value", hint: "Per recovered order" },
+      // COD confirmation KPIs (org-queries.ts's computeKpis already computed
+      // these — added 2026-07-16, they just weren't in this list yet, so
+      // the COD confirmation agent had no dashboard visibility at all.
+      { key: "cod_confirmed", label: "COD orders confirmed" },
+      { key: "cod_confirm_rate", label: "COD confirm rate", hint: "Confirmed / calls attempted" },
       { key: "calls_per_day", label: "Calls per day", hint: "Average over the selected range" },
     ],
     emptyState: {

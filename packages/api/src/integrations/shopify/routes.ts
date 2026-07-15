@@ -343,6 +343,19 @@ shopify
       });
     }
 
+    // (d) Mark the checkout that led to this order as "converted" —
+    // separate topic on the same idempotency log (no new table), keyed by
+    // checkout_token instead of order_id. This is the only way the "carts
+    // abandoned" metric (org-queries.ts's computeKpis) can tell a checkout
+    // that turned into a real order apart from a genuinely abandoned one:
+    // Shopify fires a "checkouts" webhook for EVERY checkout, including
+    // ones that go on to complete successfully — cartsAbandoned used to
+    // count all of them with no exclusion, so placing any order (COD or
+    // not) inflated "carts abandoned" by one. Fixed 2026-07-16.
+    if (checkoutToken) {
+      await markProcessed(shop, "checkout_converted", checkoutToken);
+    }
+
     await markProcessed(shop, "orders_create", idempotencyKey);
     return c.json({ status: "processed", cod_scheduled: isCod }, 200);
   })
