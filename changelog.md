@@ -4,6 +4,81 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-15 — Made every existing migration idempotent (safe fresh-bootstrap + disaster-recovery replay)
+
+Follow-up to the outage above — asked to make the whole migration set robust the same way, not just
+patch the one thing that broke. Verified first (reading drizzle-orm's actual `PgDialect.migrate`
+source, `pg-core/dialect.js`) that this is completely safe to do retroactively: it only compares each
+migration's own folder timestamp against the single most-recently-applied migration's timestamp —
+it never re-hashes or re-diffs an already-applied migration's file content. Editing old, already-
+applied migration files has zero effect on whether they get re-run against an already-migrated
+database (confirmed this is genuinely true before touching anything, not assumed).
+
+**Found two more real, pre-existing bugs while validating**, both independent of anything from this
+session's earlier work, by installing a throwaway local Postgres and running the full `0000`→`0024`
+chain from a genuinely empty database (something nobody had apparently done in a long time — every
+real deploy had migrations trickle in against an already-partially-migrated DB, so these never
+surfaced):
+- `0010_performance_indexes.sql` and `0011_grey_scarlet_spider.sql` both create the exact same two
+  indexes (`calls_org_id_idx`, `scheduled_calls_org_id_idx`) — a truly fresh `bun run db:migrate` has
+  been unable to complete since `0011` was added.
+- `0014_jittery_menace.sql`'s `recovered_amount` column type change (`text` -> `numeric(12,2)`) has
+  no `USING` clause — Postgres has no implicit text-to-numeric cast, so this could never have
+  succeeded against a fresh DB with any real (even empty-string) data in the column. It only ever
+  "worked" in production because that column had already drifted to numeric via an earlier
+  `drizzle-kit push` before this file's ALTER ran, making it a harmless numeric-to-numeric precision
+  change instead of the real cast it was written as.
+
+**Fix, swept mechanically across all 24 existing migration files** (`0000` through `0024`):
+`CREATE TABLE`/`CREATE INDEX`/`CREATE UNIQUE INDEX` -> `IF NOT EXISTS`; `DROP TABLE`/`DROP INDEX`/
+`ALTER TABLE ... DROP CONSTRAINT` -> `IF EXISTS`; `ALTER TABLE ... ADD COLUMN` -> `IF NOT EXISTS`
+(Postgres has supported this directly since 9.6). `ALTER TABLE ... ADD CONSTRAINT` has no `IF NOT
+EXISTS` syntax in Postgres at all, so those are wrapped in `DO $$ BEGIN ... EXCEPTION WHEN ... THEN
+null; END $$;` blocks instead — which took three iterations to get the exception-class list right,
+each found by actually reproducing the failure locally rather than guessing: `duplicate_object`
+(42710, the common named-constraint case), `invalid_table_definition` (42P16, re-adding a PRIMARY KEY
+specifically raises "multiple primary keys... not allowed" under this different class even with a
+different constraint name), and `duplicate_table` (42P07, UNIQUE constraints create a backing index
+under the hood and hit "relation already exists" on that index's name). `0014`'s `recovered_amount`
+conversion got a bespoke fix instead of the generic sweep — an explicit `USING (NULLIF(...,
+'')::numeric(12,2))` for the real text->numeric case, wrapped in a `DO $$ ... IF (SELECT data_type
+FROM information_schema.columns ...) = 'text' THEN ... END IF; END $$;` guard so re-running it once
+the column's already numeric doesn't itself fail differently (NULLIF's `''` comparand can't cast to
+numeric once the column stops being text).
+
+**Validated for real, not assumed** — a disposable local Postgres 17, three full scenarios:
+1. Fresh empty database, full `0000`→`0025` chain: now succeeds end-to-end (previously failed at
+   `0010`/`0011`'s duplicate index, and would have failed again at `0014` if that had been reached).
+2. Disaster-recovery replay — wiped `drizzle."__drizzle_migrations"` entirely and re-ran the full
+   chain against the already-fully-migrated database from scenario 1 (simulates exactly the kind of
+   state today's `org_integrations` drift put us in): succeeds end-to-end, only informational
+   `NOTICE`s, zero errors.
+3. Normal re-deploy (tracking table intact): still a fast no-op skip via the timestamp check, as
+   before — confirmed this change doesn't add overhead to the common case.
+- `drizzle-kit generate` against the fully-migrated local DB reports zero schema drift against
+  `schema.ts` afterward.
+
+Also spot-checked and confirmed a real, separate tooling gotcha hit twice while writing this: this
+session's file-editing tool silently collapses a literal `$` (Postgres's dollar-quote delimiter) down
+to a single `# Developer Changelog (Internal Changelog)
+
+This document tracks system changes, database schemas, API parameters, and architectural details implemented during the backend workstream updates.
+
+---
+
+ when written directly — worked around by generating it via string concatenation in the
+sweep script, and via `sed` for the one hand-edited file (`0014`). Flagging here in case it bites a
+future migration edit the same way.
+
+Not touched (already covered by other verification): the production database itself doesn't need any
+of this replayed — every one of these 24 migrations is already applied there and will keep being
+skipped by the timestamp check regardless of file content. This work is entirely about making the
+*next* fresh-bootstrap or disaster-recovery scenario (a new environment, a restored backup, a wiped
+tracking table) actually work, since today's incident showed that path was silently broken.
+
+Verified after all of the above: typecheck (api) green, full suite 289/289 pass, oxlint 0 warnings/
+errors, `drizzle-kit generate` reports no schema drift.
+
 ## 2026-07-15 — Production outage: DB migrations were never applied on deploy (agents/calls pages 500ing)
 
 **Symptom**: `/api/app/analytics` and `/api/app/agent-configs` both 500ing in production — reported

@@ -1,1 +1,1 @@
-ALTER TABLE "orgs" ADD COLUMN "human_transfer_number" text;
+ALTER TABLE "orgs" ADD COLUMN IF NOT EXISTS "human_transfer_number" text;

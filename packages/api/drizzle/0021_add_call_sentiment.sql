@@ -1,1 +1,1 @@
-ALTER TABLE "calls" ADD COLUMN "sentiment" text;
+ALTER TABLE "calls" ADD COLUMN IF NOT EXISTS "sentiment" text;

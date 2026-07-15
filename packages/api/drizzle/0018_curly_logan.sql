@@ -1,1 +1,1 @@
-DROP TABLE "impersonation_sessions" CASCADE;
+DROP TABLE IF EXISTS "impersonation_sessions" CASCADE;

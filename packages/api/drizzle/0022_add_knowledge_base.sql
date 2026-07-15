@@ -1,4 +1,4 @@
-CREATE TABLE "knowledge_chunks" (
+CREATE TABLE IF NOT EXISTS "knowledge_chunks" (
 	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "knowledge_chunks_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
 	"document_id" integer NOT NULL,
 	"org_id" text NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE "knowledge_chunks" (
 	"created_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "knowledge_documents" (
+CREATE TABLE IF NOT EXISTS "knowledge_documents" (
 	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "knowledge_documents_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
 	"org_id" text NOT NULL,
 	"title" text NOT NULL,
@@ -19,8 +19,16 @@ CREATE TABLE "knowledge_documents" (
 	"created_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "knowledge_chunks" ADD CONSTRAINT "knowledge_chunks_document_id_knowledge_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."knowledge_documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "knowledge_documents" ADD CONSTRAINT "knowledge_documents_org_id_orgs_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."orgs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "knowledge_chunks_org_id_idx" ON "knowledge_chunks" USING btree ("org_id");--> statement-breakpoint
-CREATE INDEX "knowledge_chunks_document_id_idx" ON "knowledge_chunks" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX "knowledge_documents_org_id_idx" ON "knowledge_documents" USING btree ("org_id");
+DO $$ BEGIN
+ ALTER TABLE "knowledge_chunks" ADD CONSTRAINT "knowledge_chunks_document_id_knowledge_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."knowledge_documents"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object OR invalid_table_definition OR duplicate_table THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "knowledge_documents" ADD CONSTRAINT "knowledge_documents_org_id_orgs_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."orgs"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object OR invalid_table_definition OR duplicate_table THEN null;
+END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "knowledge_chunks_org_id_idx" ON "knowledge_chunks" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "knowledge_chunks_document_id_idx" ON "knowledge_chunks" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "knowledge_documents_org_id_idx" ON "knowledge_documents" USING btree ("org_id");

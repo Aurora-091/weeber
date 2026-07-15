@@ -1,1 +1,1 @@
-ALTER TABLE "org_agent_configs" ADD COLUMN "stt_provider" text;
+ALTER TABLE "org_agent_configs" ADD COLUMN IF NOT EXISTS "stt_provider" text;
