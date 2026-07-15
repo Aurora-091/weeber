@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import {
   ReactFlow,
   Background,
@@ -90,6 +91,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
   // would keep showing "Saved" even after a later, still-unsaved edit
   // (node drag, new node, delete, config/branch edit).
   const [dirty, setDirty] = useState(false);
+  useUnsavedChanges(dirty);
   const onNodesChange = useCallback<typeof onNodesChangeRaw>(
     (changes) => {
       setDirty(true);

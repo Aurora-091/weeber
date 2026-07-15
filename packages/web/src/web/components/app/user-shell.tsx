@@ -52,6 +52,8 @@ function Notice({ title, body, action }: { title: string; body: string; action?:
         "bg-background text-foreground font-sans",
         theme === "dark" && "dark",
       )}
+      role="status"
+      aria-live="polite"
     >
       <div className="mb-8">
         <div className="flex size-10 items-center justify-center rounded-xl bg-primary shadow-sm">

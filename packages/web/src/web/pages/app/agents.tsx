@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Play, Loader as Loader2, Settings2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import { Switch } from "../../components/ui/switch";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -107,7 +108,9 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
 function AgentForm({ row }: { row: AgentConfigRow }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
+  const [dirty, setDirty] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  useUnsavedChanges(dirty);
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -115,6 +118,7 @@ function AgentForm({ row }: { row: AgentConfigRow }) {
   // Reset form when switching agents
   useEffect(() => {
     setForm(toFormState(row));
+    setDirty(false);
     setAdvancedOpen(false);
   }, [row]);
 
@@ -132,6 +136,7 @@ function AgentForm({ row }: { row: AgentConfigRow }) {
       return res.json();
     },
     onSuccess: () => {
+      setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
       toast.success("Agent saved");
     },
@@ -188,8 +193,10 @@ function AgentForm({ row }: { row: AgentConfigRow }) {
     }));
   }
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setDirty(true);
     setForm((f) => ({ ...f, [key]: value }));
+  };
 
   return (
     <div className="card-weeber p-6 space-y-5">
@@ -376,9 +383,9 @@ function AgentForm({ row }: { row: AgentConfigRow }) {
 
       {/* Footer save */}
       <div className="flex items-center justify-end pt-2 border-t border-border">
-        <Button onClick={() => save.mutate()} disabled={save.isPending} size="sm">
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm">
           {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-          {save.isSuccess ? "Saved" : "Save changes"}
+          {!dirty && save.isSuccess ? "Saved" : "Save changes"}
         </Button>
       </div>
     </div>

@@ -13,7 +13,7 @@ type Props = {
 function MiniSpark({ data }: { data: number[] }) {
   const max = Math.max(1, ...data);
   return (
-    <div className="flex items-end gap-[2px] h-5 mt-2">
+    <div className="flex items-end gap-[2px] h-5 mt-2" aria-hidden="true">
       {data.map((v, i) => (
         <div
           key={i}

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import {
   ReactFlow,
   Background,
@@ -74,6 +75,7 @@ function UserWorkflowEditorInner({ workflow }: { workflow: WorkflowResponse }) {
   // `save.isSuccess` alone stays true forever after the first save, which
   // would keep showing "Saved" even after a later, still-unsaved edit.
   const [dirty, setDirty] = useState(false);
+  useUnsavedChanges(dirty);
 
   const editingNode = workflow.graph.nodes.find((n) => n.id === editingNodeId);
   const editingConfig = editingNode

@@ -3,6 +3,8 @@ import { CreditCard, Phone, Clock, ShieldCheck, Check, Mail } from "lucide-react
 import { appFetch } from "../../lib/user-session";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
+import { EmptyState } from "../../components/shell/empty-state";
+import { SkeletonCards } from "../../components/shell/skeletons";
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 
@@ -104,12 +106,13 @@ export function UserBillingPage() {
         description="Monitor your call volumes, usage limits, and active subscription."
       />
 
-      {usageQuery.isLoading && (
-        <div className="grid gap-5 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="card-weeber h-36 animate-pulse bg-muted/40" />
-          ))}
-        </div>
+      {usageQuery.isLoading && <SkeletonCards count={3} lines={3} />}
+
+      {usageQuery.isError && (
+        <EmptyState
+          title="Couldn't load billing data"
+          description="Try refreshing the page. If this keeps happening, contact support."
+        />
       )}
 
       {usage && (

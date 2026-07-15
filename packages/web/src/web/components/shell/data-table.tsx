@@ -155,11 +155,7 @@ export function DataTable<T>({
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className={cn("px-3", col.className)}
-                  style={{
-                    paddingTop: "var(--shell-row-py)",
-                    paddingBottom: "var(--shell-row-py)",
-                  }}
+                  className={cn("px-3 py-shell-row", col.className)}
                 >
                   {col.render(row)}
                 </td>

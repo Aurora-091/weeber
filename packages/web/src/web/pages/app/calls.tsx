@@ -73,11 +73,13 @@ function PillToggle<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5" role="radiogroup">
       {options.map((opt) => (
         <button
           key={opt.value}
           type="button"
+          role="radio"
+          aria-checked={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
             value === opt.value
@@ -204,8 +206,7 @@ export function UserCallsPage() {
                 <Link
                   key={call.id}
                   href={appPath(`/calls/${call.id}`)}
-                  className={`flex items-center gap-4 px-5 transition-colors duration-150 hover:bg-muted/40 ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
-                  style={{ paddingTop: "var(--shell-row-py)", paddingBottom: "var(--shell-row-py)" }}
+                  className={`flex items-center gap-4 px-5 py-shell-row transition-colors duration-150 hover:bg-muted/40 ${STATUS_EDGE[call.status] ?? "edge-muted"}`}
                 >
                   <div className="shrink-0">
                     {call.direction === "inbound" ? (
