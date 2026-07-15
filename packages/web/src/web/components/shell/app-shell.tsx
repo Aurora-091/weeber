@@ -26,10 +26,6 @@ type AppShellProps = {
   footer?: React.ReactNode;
   actions?: PaletteAction[];
   collapsible?: boolean;
-  /** Opts this page out of the standard max-width/padded page container —
-   * for pages that need the full remaining viewport (e.g. a canvas or a
-   * full-window agent console), not the default article-width reading
-   * layout every other page uses. */
   fullBleed?: boolean;
   children: React.ReactNode;
 };
@@ -79,7 +75,6 @@ function NavLink({
         aria-hidden
       />
       <Icon className="size-[15px] shrink-0" aria-hidden />
-      {/* Label fades out when collapsing */}
       <span
         className={cn(
           "truncate transition-[opacity,transform] duration-200",
@@ -115,7 +110,7 @@ function NavLinks({
 }) {
   return (
     <nav
-      className={cn("flex flex-col gap-0.5 py-1", collapsed ? "px-1.5" : "px-2")}
+      className={cn("flex flex-col gap-1 py-2", collapsed ? "px-1.5" : "px-2.5")}
       aria-label="Primary"
     >
       {nav.map((item) => (
@@ -197,15 +192,15 @@ function SidebarBody({
       </div>
 
       {/* Nav items */}
-      <div className="flex-1 overflow-y-auto py-2">
+      <div className="flex-1 overflow-y-auto py-3">
         <NavLinks nav={nav} collapsed={collapsed} onNavigate={onNavigate} />
       </div>
 
       {/* Footer row */}
       <div
         className={cn(
-          "flex shrink-0 items-center border-t border-sidebar-border py-2",
-          collapsed ? "flex-col gap-1.5 px-1.5" : "gap-2 px-3",
+          "flex shrink-0 items-center border-t border-sidebar-border py-3",
+          collapsed ? "flex-col gap-2 px-1.5" : "gap-2 px-3",
         )}
       >
         <ThemeToggle />
@@ -251,15 +246,9 @@ export function AppShell({
     });
   }
 
-
-
   const activeCollapsed = collapsible && collapsed;
 
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
-  // useCallback ref fires synchronously when the node mounts, so the state is
-  // set before any child portals (Dialog/Sheet/Dropdown/Tooltip) attempt to
-  // resolve their container. A plain useState(null) ref leaves portals falling
-  // back to document.body on the first render.
   const shellRef = useCallback((node: HTMLDivElement | null) => {
     if (node) setPortalContainer(node);
   }, []);
@@ -315,7 +304,7 @@ export function AppShell({
                   </SheetTrigger>
                   <SheetContent
                     side="left"
-                    className="flex w-60 flex-col bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden shadow-weeber-elevated"
+                    className="flex w-64 flex-col bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden shadow-weeber-elevated"
                   >
                     <SheetTitle className="sr-only">Navigation</SheetTitle>
                     <SidebarBody
@@ -342,9 +331,7 @@ export function AppShell({
                       }
                 }
               >
-                <div
-                  className={cn(fullBleed && "h-full")}
-                >
+                <div className={cn(fullBleed && "h-full")}>
                   {children}
                 </div>
               </main>
