@@ -231,7 +231,7 @@ export function UserLoginPage() {
   if (signupState === "needs-confirmation") {
     return (
       <div className={shellClass}>
-        <div className="card-weeber w-full max-w-sm p-8 text-center" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
+        <div className="card-weeber w-full max-w-sm p-8 text-center shadow-weeber-elevated">
           <Mail className="mx-auto size-6 text-primary" aria-hidden />
           <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -290,7 +290,7 @@ export function UserLoginPage() {
   if (forgotOpen) {
     return (
       <div className={shellClass}>
-        <div className="card-weeber w-full max-w-sm p-8" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
+        <div className="card-weeber w-full max-w-sm p-8 shadow-weeber-elevated">
           {resetDone ? (
             <div className="text-center">
               <h1 className="text-xl font-medium">Password updated</h1>
@@ -409,7 +409,7 @@ export function UserLoginPage() {
 
   return (
     <div className={shellClass}>
-      <div className="card-weeber w-full max-w-sm p-8 scale-in" style={{boxShadow:"var(--weeber-shadow-elevated)"}}>
+      <div className="card-weeber w-full max-w-sm p-8 scale-in shadow-weeber-elevated">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary shadow-sm">
             <span className="font-display text-lg font-bold text-primary-foreground select-none">W</span>

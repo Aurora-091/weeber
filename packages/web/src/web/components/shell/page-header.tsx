@@ -9,8 +9,7 @@ export function PageHeader({
 }) {
   return (
     <div
-      className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5"
-      style={{ marginBottom: "var(--shell-section-gap)" }}
+      className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5 mb-shell-section"
     >
       <div className="min-w-0">
         <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>

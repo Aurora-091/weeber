@@ -47,7 +47,7 @@ function StatusBadge({ status }: { status: string }) {
   else if (status === "failed" || status === "busy" || status === "no-answer") dotClass = "bg-weeber-error";
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground" style={{boxShadow:"var(--weeber-shadow-card)"}}>
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground shadow-weeber-card">
       <span className={`size-2 rounded-full ${dotClass}`} />
       {status}
     </span>

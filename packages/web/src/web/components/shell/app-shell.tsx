@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, createContext, useContext } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -231,9 +231,7 @@ export function AppShell({
 }: AppShellProps) {
   const { theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [location] = useLocation();
-  const [pageKey, setPageKey] = useState(location);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+
   const [collapsed, setCollapsed] = useState(() => {
     if (!collapsible) return false;
     try {
@@ -253,16 +251,7 @@ export function AppShell({
     });
   }
 
-  useEffect(() => {
-    if (location !== pageKey) {
-      setIsTransitioning(true);
-      const timer = setTimeout(() => {
-        setPageKey(location);
-        setIsTransitioning(false);
-      }, 80);
-      return () => clearTimeout(timer);
-    }
-  }, [location, pageKey]);
+
 
   const activeCollapsed = collapsible && collapsed;
 
@@ -296,10 +285,9 @@ export function AppShell({
                 "sticky top-0 hidden h-screen shrink-0 flex-col md:flex",
                 "bg-sidebar text-sidebar-foreground",
                 "border-r border-sidebar-border",
-                "transition-[width] duration-200 ease-out",
+                "transition-[width] duration-200 ease-out shadow-weeber-sidebar",
                 activeCollapsed ? "w-[3.25rem]" : "w-56",
               )}
-              style={{ boxShadow: "var(--weeber-shadow-sidebar)" }}
             >
               <SidebarBody
                 nav={nav}
@@ -327,8 +315,7 @@ export function AppShell({
                   </SheetTrigger>
                   <SheetContent
                     side="left"
-                    className="flex w-60 flex-col bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-                    style={{ boxShadow: "var(--weeber-shadow-elevated)" }}
+                    className="flex w-60 flex-col bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden shadow-weeber-elevated"
                   >
                     <SheetTitle className="sr-only">Navigation</SheetTitle>
                     <SidebarBody
@@ -356,12 +343,7 @@ export function AppShell({
                 }
               >
                 <div
-                  key={pageKey}
-                  className={cn(
-                    "transition-opacity duration-75",
-                    fullBleed ? "h-full" : undefined,
-                    isTransitioning ? "opacity-40" : "opacity-100 page-enter",
-                  )}
+                  className={cn(fullBleed && "h-full")}
                 >
                   {children}
                 </div>
