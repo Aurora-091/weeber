@@ -136,7 +136,7 @@ export function UserSettingsPage() {
   });
 
   return (
-    <>
+    <div className="page-enter">
       <PageHeader title="Settings" description="Manage your account and organization preferences." />
 
       <div className="space-y-6 mt-6">
@@ -273,6 +273,6 @@ export function UserSettingsPage() {
           </p>
         </Section>
       </div>
-    </>
+    </div>
   );
 }

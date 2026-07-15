@@ -57,11 +57,11 @@ function NavLink({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex items-center gap-2.5 rounded-md text-sm font-medium outline-none",
-        "transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-        collapsed ? "h-9 w-9 justify-center px-0" : "px-3 py-2",
+        "group relative flex items-center gap-3 rounded-md text-sm font-medium outline-none",
+        "transition-[background-color,color] duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        collapsed ? "h-9 w-9 justify-center px-0" : "px-3 py-2.5",
         active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
           : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
       )}
     >
@@ -74,7 +74,7 @@ function NavLink({
         )}
         aria-hidden
       />
-      <Icon className="size-[15px] shrink-0" aria-hidden />
+      <Icon className="size-4 shrink-0" aria-hidden />
       <span
         className={cn(
           "truncate transition-[opacity,transform] duration-200",
@@ -110,7 +110,7 @@ function NavLinks({
 }) {
   return (
     <nav
-      className={cn("flex flex-col gap-1 py-2", collapsed ? "px-1.5" : "px-2.5")}
+      className={cn("flex flex-col gap-1.5 py-2", collapsed ? "px-1.5" : "px-2.5")}
       aria-label="Primary"
     >
       {nav.map((item) => (
@@ -274,7 +274,11 @@ export function AppShell({
                 "sticky top-0 hidden h-screen shrink-0 flex-col md:flex",
                 "bg-sidebar text-sidebar-foreground",
                 "border-r border-sidebar-border",
-                "transition-[width] duration-200 ease-out shadow-weeber-sidebar",
+                // Same spring-like easing as .page-enter/.content-fade-in
+                // (cubic-bezier(0.16,1,0.3,1)) — the collapse/expand used a
+                // plain ease-out before, a subtly different motion feel from
+                // every other animated surface in the app.
+                "transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] shadow-weeber-sidebar",
                 activeCollapsed ? "w-[3.25rem]" : "w-56",
               )}
             >

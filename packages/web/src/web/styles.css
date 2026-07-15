@@ -298,7 +298,7 @@
   /* Shadow tokens — components lift off the background */
   --weeber-shadow-card: 0 1px 2px oklch(0 0 0 / 0.05), 0 4px 16px oklch(0 0 0 / 0.04);
   --weeber-shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.07), 0 8px 24px oklch(0 0 0 / 0.06);
-  --weeber-shadow-sidebar: 2px 0 16px oklch(0 0 0 / 0.06);
+  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.05), 3px 0 24px oklch(0 0 0 / 0.07);
   --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.1), 0 1px 4px oklch(0 0 0 / 0.06);
 
   /* Status */
@@ -399,13 +399,23 @@
  * rule above was clobbering their own position:fixed (same specificity,
  * source-order win), which silently rendered dialogs off-screen — e.g.
  * EnterpriseDialog on the marketing pages. Higher-specificity override so
- * portalled overlay/content keeps its real position scheme. */
+ * portalled overlay/content keeps its real position scheme.
+ *
+ * [data-sonner-toaster] added 2026-07-16: the same bug, just not caught
+ * yet — <Toaster> (sonner) is NOT a real DOM portal (it renders wherever
+ * it's placed in the React tree, e.g. as a direct child of AppShell's
+ * `.theme-weeber` div), so its own `position: fixed` was losing this exact
+ * specificity tie and getting flattened to `position: relative`. Instead
+ * of floating fixed at the viewport corner, every toast laid out in normal
+ * document flow — pushed down below the sidebar/content, appearing well
+ * below the fold ("toasts load below the cards and frame"). */
 .theme-weeber > [role="dialog"],
 .theme-weeber > [role="alertdialog"],
 .theme-weeber > [data-radix-popper-content-wrapper],
 .theme-weeber > [data-slot="dialog-overlay"],
 .theme-weeber > [data-slot="sheet-overlay"],
-.theme-weeber > [data-slot="sheet-content"] {
+.theme-weeber > [data-slot="sheet-content"],
+.theme-weeber > [data-sonner-toaster] {
   position: fixed;
 }
 
@@ -434,11 +444,6 @@
 .theme-weeber.dark .card-weeber[data-interactive]:hover,
 .theme-weeber.dark a.card-weeber:hover {
   border-color: oklch(0.38 0.002 240);
-}
-
-/* Legacy elevated card */
-.theme-weeber .card-elevated {
-  box-shadow: var(--weeber-shadow-elevated);
 }
 
 /* ─── Toast redesign ─────────────────────────────────────────────────────── */
@@ -534,7 +539,7 @@
   /* Shadow tokens for dark mode */
   --weeber-shadow-card: 0 1px 3px oklch(0 0 0 / 0.4), 0 4px 16px oklch(0 0 0 / 0.3);
   --weeber-shadow-card-hover: 0 2px 6px oklch(0 0 0 / 0.5), 0 8px 24px oklch(0 0 0 / 0.35);
-  --weeber-shadow-sidebar: 2px 0 16px oklch(0 0 0 / 0.4);
+  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.5), 3px 0 28px oklch(0 0 0 / 0.45);
   --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.5), 0 1px 4px oklch(0 0 0 / 0.3);
 
   --weeber-success: oklch(0.6 0.14 150);

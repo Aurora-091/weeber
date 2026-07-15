@@ -170,3 +170,88 @@ in both the nav *and* the page header (i.e. page header should read "Shopify" to
   ask.
 - Don't start building the workflow canvas as part of this UI/UX pass unless the audit explicitly
   decides to pull it in — it's a bigger, separately-scoped initiative.
+
+---
+
+## 8. Audit pass — 2026-07-16 (merchant app: toasts, sidebar, "some pages refresh", duplication)
+
+**Symptom reported**: toasts render "below the cards and frame" instead of floating over everything;
+sidebar feels visually "weightless" with no real animation; some `/app` pages transition smoothly on
+navigation while others feel like "the whole site refreshes"; icon spacing inconsistent in the
+sidebar; general UI duplication.
+
+### 8.1 Toast positioning — confirmed root cause, FIXED
+
+Same bug class as §1's theme-portal issue, just never caught for this specific element.
+`<Toaster>` (sonner) is **not a real DOM portal** — it renders exactly where it's placed in the
+React tree, which in `app-shell.tsx` is a direct child of the `.theme-weeber` div. The blanket
+`.theme-weeber > * { position: relative; z-index: 1; }` rule (added for the grain-texture
+z-index scheme) was winning a same-specificity, later-source-order tie against sonner's own
+`[data-sonner-toaster] { position: fixed }` rule — so every toast laid out in normal document flow
+(pushed below the sidebar/page content) instead of floating fixed at the viewport corner.
+
+**Fix**: added `.theme-weeber > [data-sonner-toaster]` to the existing higher-specificity
+`position: fixed` exception list (the same list that already carries Dialog/Sheet/Popover/Tooltip
+overlays for exactly this reason) — `styles.css`. Verified against the real compiled CSS output in
+a real browser (not just reasoning about specificity): `getComputedStyle(toaster).position ===
+"fixed"` after the fix, confirmed source-order after the generic rule.
+
+### 8.2 "Some pages refresh, others load smoothly" — investigated, real cause found (not a routing bug)
+
+Checked for actual hard-navigation bugs first (the literal complaint): every internal link in
+`/app` uses wouter's `<Link>` correctly (`grep` for raw `<a href>`/`window.location.href` pointing
+at internal routes found none — the only hits are legitimate `mailto:`, an external recording URL,
+and OAuth `installUrl`/sign-out redirects, all correctly hard-navigations by design). `UserShell` is
+rendered once at the top of the route tree wrapping a `<Switch>` — confirmed the sidebar does NOT
+remount between pages architecturally. Nav item hrefs in `verticals.ts` all match a registered
+`<Route>`.
+
+**Actual cause**: `pages/app/settings.tsx`'s root element was a bare `<>...</>` fragment — the only
+page under `/app` missing the `page-enter` (or `content-fade-in`) animation class every other page
+has. Every other page fades/slides in (`page-enter`, 0.35s cubic-bezier); Settings just snapped into
+view with zero transition, which reads as "the page refreshed" by contrast when navigating from an
+animated page. **Fixed** — wrapped in `<div className="page-enter">`, matching the exact convention
+used by `numbers.tsx`/`knowledge-base.tsx`/etc.
+
+### 8.3 Sidebar weight + animation — improved
+
+- Collapse/expand width transition used a plain `ease-out` — a different motion feel from every
+  other animated surface in the app (`page-enter`/`content-fade-in` both use
+  `cubic-bezier(0.16,1,0.3,1)`). Now uses the same curve for consistency.
+- `--weeber-shadow-sidebar` (light + dark) was a single soft, low-opacity blur — bumped to a crisp
+  1px edge + a deeper ambient shadow for more visual "weight" without becoming heavy-handed.
+- Nav items: icon size `15px` → `16px`, icon-to-label gap `2.5` → `3`, vertical padding `py-2` →
+  `py-2.5`, item-to-item gap `1` → `1.5`, active item now also gets `font-semibold` (previously only
+  a background color change) — slightly more visual presence for the active state and a bit more
+  breathing room throughout, addressing the "icon spacing" note directly.
+
+### 8.4 UI duplication found
+
+- **Fixed**: `.theme-weeber .card-elevated` — a second, "legacy" card-elevation CSS class alongside
+  the actual live one (`.card-weeber`) — had **zero usages** anywhere in the codebase (confirmed via
+  `grep -rl card-elevated **/*.tsx` → no results). Dead duplicate system, removed.
+- **Noted, not fixed (low-impact, deliberately deferred)**: `pages/app/numbers.tsx` hand-copies the
+  input styling string (`"rounded-md border border-border bg-background px-3 py-2 text-sm outline-
+  none focus:ring-2 focus:ring-ring/40 h-9"`) instead of importing the shared `fieldCls` constant
+  already exported from `lib/agent-config.ts` for this exact purpose. One line, cosmetic, left as a
+  quick-fix note rather than churning a working page for a single class string.
+- **Found, needs a decision (not fixed)**: ADR-055's `fullBleed` full-window agent-console layout
+  is now **dead code**. `AppShell`/`UserShell`/`DashboardShell` all still carry the `fullBleed?:
+  boolean` prop plumbing, but `UserAppRoutes()` in `app.tsx` renders a single persistent `<UserShell>`
+  wrapping the whole `<Switch>` (the "shell stays mounted across navigations" refactor) and never
+  passes `fullBleed` — so the prop is permanently `false` for every merchant page today, unreachable.
+  This session's separate agent-page rebuild (dedicated `/app/agents/:agentKey` route, tabs, commit
+  `308c22d`) supersedes ADR-055's pill-switcher approach anyway per the user's explicit direction in
+  this session, but the dead `fullBleed` plumbing itself is still sitting in three files unused. Left
+  as-is rather than guessing whether to delete it or wire it back up — that's a real product decision
+  (does anything still want a full-window/no-padding page mode?), not a pure bug fix.
+
+### 8.5 Verified
+
+Typecheck (api+web), oxlint, and `bun run build` all green after every change in this section.
+Toast fix additionally verified empirically in a real browser against the actual compiled CSS
+output (not just specificity reasoning). Full backend test suite unaffected (260 pass, same
+pre-existing baseline — this pass touched no backend code). Could not click through the live
+merchant app with real auth in this sandbox (no production session available here) — the sidebar/
+icon-spacing changes are CSS/class-level only and low-risk, but worth a quick visual look after
+deploy.
