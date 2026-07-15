@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { buildKnownFactsBlock } from "./agent";
+import { buildKnownFactsBlock, resolveAgentConfig } from "./agent";
 
 describe("buildKnownFactsBlock", () => {
   it("returns an empty string when there is no captured state", () => {
@@ -184,6 +184,43 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
     });
     expect(config.systemPrompt).toContain("hangUp");
     expect(config.systemPrompt).toContain("transferToHuman");
+  });
+
+  // Regression test for the 2026-07-15 production bug: a real phone test
+  // call kept getting "tool call validation failed ... captureField ...
+  // not in request.tools" from Groq, because the call-control prompt
+  // unconditionally told the model to call captureField/transferToHuman/
+  // flagGuardrailEvent even when an agent's toolsEnabled list excluded
+  // them — a strict-tool-calling provider rejects the whole turn outright
+  // when the model attempts a tool name that isn't in `tools`.
+  it("never instructs the model to call a tool that isn't in toolsEnabled (strict-tool-calling providers reject the whole turn otherwise)", async () => {
+    const narrowed = await buildPreviewAgentConfig("shopify-cart-recovery", {
+      personaPrompt: "test persona",
+      toolsEnabled: ["hangUp", "setDisposition"],
+    });
+    expect(narrowed.systemPrompt).not.toContain("captureField");
+    expect(narrowed.systemPrompt).not.toContain("transferToHuman");
+    expect(narrowed.systemPrompt).not.toContain("flagGuardrailEvent");
+    // hangUp is always force-included by buildVoiceTools regardless of
+    // toolsEnabled, so it's always safe to keep referencing it.
+    expect(narrowed.systemPrompt).toContain("hangUp");
+  });
+
+  it("still instructs the model to use captureField/transferToHuman/flagGuardrailEvent when toolsEnabled is undefined (every tool available, unchanged default)", async () => {
+    const allTools = await buildPreviewAgentConfig("shopify-cart-recovery", {
+      personaPrompt: "test persona",
+    });
+    expect(allTools.systemPrompt).toContain("captureField");
+    expect(allTools.systemPrompt).toContain("transferToHuman");
+    expect(allTools.systemPrompt).toContain("flagGuardrailEvent");
+  });
+
+  it("respects toolsEnabled narrowing for org-saved configs too (resolvePersona/resolveAgentConfig path), not just the preview override path", async () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt", toolsEnabled: ["hangUp"] };
+    const resolved = await resolveAgentConfig({ orgId: "org-123", templateKey: "shopify-cart-recovery" });
+    expect(resolved.systemPrompt).not.toContain("captureField");
+    expect(resolved.systemPrompt).not.toContain("transferToHuman");
+    expect(resolved.systemPrompt).not.toContain("flagGuardrailEvent");
   });
 });
 
