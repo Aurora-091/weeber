@@ -180,18 +180,18 @@ function App() {
           {showUser && <Route path={appPath("/auth/reset-password")} component={ResetPasswordPage} />}
 
           {/* User app — persistent shell wraps all authenticated pages */}
-          {showUser && <Route path={appPath("/:rest*")}>{() => <UserAppRoutes />}</Route>}
+          {showUser && <Route path={appPath("/*")}>{() => <UserAppRoutes />}</Route>}
           {showUser && <Route path={appPath()}>{() => <UserAppRoutes />}</Route>}
 
           {/* Admin dashboard — persistent shell wraps all admin pages */}
-          {showAdmin && <Route path={adminPath("/:rest*")}>{() => <AdminAppRoutes />}</Route>}
+          {showAdmin && <Route path={adminPath("/*")}>{() => <AdminAppRoutes />}</Route>}
           {showAdmin && <Route path={adminPath()}>{() => <AdminAppRoutes />}</Route>}
 
           {/* Legacy redirects */}
-          <Route path="/dashboard/:rest*">
+          <Route path="/dashboard/*">
             <SubdomainRedirect target={adminUrl(window.location.pathname.replace(/^\/dashboard/, ""))} />
           </Route>
-          <Route path="/app/:rest*">
+          <Route path="/app/*">
             <SubdomainRedirect target={appUrl(window.location.pathname.replace(/^\/app/, ""))} />
           </Route>
 
