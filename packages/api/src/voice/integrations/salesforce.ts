@@ -8,10 +8,9 @@ export async function syncToSalesforce(
   phoneNumber: string,
   callerName: string | undefined,
   notes: string,
-  accessTokenOverride?: string,
+  accessToken?: string,
+  instanceUrl?: string,
 ): Promise<SalesforceSyncResult> {
-  const accessToken = accessTokenOverride || process.env.SALESFORCE_ACCESS_TOKEN;
-  const instanceUrl = process.env.SALESFORCE_INSTANCE_URL || "https://login.salesforce.com";
   if (!accessToken) {
     return {
       synced: false,
@@ -19,17 +18,19 @@ export async function syncToSalesforce(
     };
   }
 
+  const baseUrl = instanceUrl || "https://login.salesforce.com";
+
   const result = await resilientCall(
     async (signal) => {
       const searchRes = await fetch(
-        `${instanceUrl}/services/data/v59.0/query?q=${encodeURIComponent(`SELECT Id FROM Contact WHERE Phone = '${phoneNumber}' LIMIT 1`)}`,
+        `${baseUrl}/services/data/v59.0/query?q=${encodeURIComponent(`SELECT Id FROM Contact WHERE Phone = '${phoneNumber}' LIMIT 1`)}`,
         { headers: { Authorization: `Bearer ${accessToken}` }, signal },
       );
       const searchData = (await searchRes.json().catch(() => null)) as any;
       let contactId = (searchData?.records?.[0]?.Id as string) ?? null;
 
       if (!contactId) {
-        const createRes = await fetch(`${instanceUrl}/services/data/v59.0/sobjects/Contact`, {
+        const createRes = await fetch(`${baseUrl}/services/data/v59.0/sobjects/Contact`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -47,7 +48,7 @@ export async function syncToSalesforce(
       }
 
       if (contactId && notes) {
-        await fetch(`${instanceUrl}/services/data/v59.0/sobjects/Task`, {
+        await fetch(`${baseUrl}/services/data/v59.0/sobjects/Task`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,

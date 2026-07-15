@@ -58,3 +58,6 @@ export const EXOTEL_FIELDS = {
   apiKey: "exotel_api_key",
   apiToken: "exotel_api_token",
 } as const;
+
+export const CRM_PROVIDERS = ["gohighlevel", "salesforce", "hubspot"] as const;
+export const CALENDAR_PROVIDERS = ["google_calendar"] as const;

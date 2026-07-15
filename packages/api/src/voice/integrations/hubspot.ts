@@ -8,9 +8,8 @@ export async function syncToHubspot(
   phoneNumber: string,
   callerName: string | undefined,
   notes: string,
-  apiKeyOverride?: string,
+  apiKey?: string,
 ): Promise<HubspotSyncResult> {
-  const apiKey = apiKeyOverride || process.env.HUBSPOT_API_KEY;
   if (!apiKey) {
     return {
       synced: false,

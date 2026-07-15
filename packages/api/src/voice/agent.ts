@@ -1,9 +1,9 @@
 import { streamText, stepCountIs, type ModelMessage } from "ai";
 import dedent from "dedent";
 import { createLookupInfoTool } from "./tools/lookupInfo";
-import { bookAppointment } from "./tools/bookAppointment";
+import { createBookAppointmentTool } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
-import { crmSync } from "./tools/crmSync";
+import { createCrmSyncTool } from "./tools/crmSync";
 import { captureField } from "./tools/captureField";
 import { sendSms } from "./tools/sendSms";
 import { sendDtmf } from "./tools/sendDtmf";
@@ -412,9 +412,9 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
 // never as a shared static instance. Every other tool here has no
 // per-call/per-org state, so a single shared object is safe.
 export const voiceTools = {
-  bookAppointment,
+  bookAppointment: createBookAppointmentTool(undefined),
   setDisposition,
-  crmSync,
+  crmSync: createCrmSyncTool(undefined),
   captureField,
   hangUp,
   transferToHuman,
@@ -493,7 +493,12 @@ export function buildVoiceTools(
   enabledTools?: AvailableToolName[],
   onSlowToolCall?: (toolName: string) => void,
 ) {
-  const allTools = { ...voiceTools, lookupInfo: createLookupInfoTool(orgId) };
+  const allTools = {
+    ...voiceTools,
+    lookupInfo: createLookupInfoTool(orgId),
+    bookAppointment: createBookAppointmentTool(orgId),
+    crmSync: createCrmSyncTool(orgId),
+  };
   const narrowed = enabledTools
     ? Object.fromEntries(
         Object.entries(allTools).filter(([name]) =>

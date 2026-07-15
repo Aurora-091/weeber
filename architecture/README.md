@@ -114,6 +114,23 @@ Every consequential architecture decision — and the reasoning behind it, inclu
 — is recorded in [`DECISIONS.md`](../DECISIONS.md). Worth reading before making a large change; it'll
 usually tell you why something is the way it is, or that a given approach was already tried and rejected.
 
+## Operational constraints
+
+**Single-instance requirement.** The backend currently runs as a single Railway instance (`replicas: 1`).
+Several in-process components rely on this:
+
+| Component | File | What breaks with >1 instance |
+|---|---|---|
+| Session store | `voice/session-store.ts` | Live call sessions are in-memory; a second instance can't find sessions from the first |
+| TTS audio cache | `voice/tts-cache.ts` | Cache misses double, no correctness issue but increased provider costs/latency |
+| Rate limiter | `voice/fixed-window-limiter.ts` | Limits apply per-process, so actual rates are multiplied by instance count |
+| Test-call tokens | `voice/test-call-tokens.ts` | Token issued on one instance can't be validated on another |
+
+**If you need horizontal scaling:** set `REDIS_URL` (any Redis-compatible service) — the session store
+automatically switches to a Redis-backed implementation (same interface, shared across instances). The
+scheduler's CAS claim pattern (`scheduler.ts`) is already safe across multiple instances. See
+[`../docs/configuration.md`](../docs/configuration.md) for details.
+
 ## Where to go next
 
 - [`voice-orchestration.md`](./voice-orchestration.md) — the call pipeline in detail (mermaid)

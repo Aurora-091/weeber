@@ -8,10 +8,9 @@ export async function syncToGoHighLevel(
   phoneNumber: string,
   callerName: string | undefined,
   notes: string,
-  apiKeyOverride?: string,
+  apiKey?: string,
+  locationId?: string,
 ): Promise<GoHighLevelSyncResult> {
-  const apiKey = apiKeyOverride || process.env.GOHIGHLEVEL_API_KEY;
-  const locationId = process.env.GOHIGHLEVEL_LOCATION_ID;
   if (!apiKey) {
     return {
       synced: false,

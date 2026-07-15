@@ -16,15 +16,14 @@ export async function bookOnGoogleCalendar(
   accessToken?: string,
   calendarId?: string,
 ): Promise<CalendarBookingResult> {
-  const token = accessToken || process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
-  if (!token) {
+  if (!accessToken) {
     return {
       booked: false,
       message: "(not configured) No Google Calendar access token provided.",
     };
   }
 
-  const calendar = calendarId || process.env.GOOGLE_CALENDAR_ID || "primary";
+  const calendar = calendarId || "primary";
   const start = new Date(dateTimeIso);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
 
@@ -34,7 +33,7 @@ export async function bookOnGoogleCalendar(
         `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`,
         {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             summary: `Call with ${callerName}`,
             description: notes ?? "Booked via Weeber voice agent.",
