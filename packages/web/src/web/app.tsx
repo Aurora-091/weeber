@@ -62,6 +62,7 @@ const UserAuthCallbackPage = lazy(() => import("./pages/app/auth-callback").then
 const ResetPasswordPage = lazy(() => import("./pages/app/reset-password").then((m) => ({ default: m.ResetPasswordPage })));
 const UserHomePage = lazy(() => import("./pages/app/home").then((m) => ({ default: m.UserHomePage })));
 const UserAgentsPage = lazy(() => import("./pages/app/agents").then((m) => ({ default: m.UserAgentsPage })));
+const UserAgentDetailPage = lazy(() => import("./pages/app/agents").then((m) => ({ default: m.UserAgentDetailPage })));
 const UserCallsPage = lazy(() => import("./pages/app/calls").then((m) => ({ default: m.UserCallsPage })));
 const UserCallDetailPage = lazy(() => import("./pages/app/call-detail").then((m) => ({ default: m.UserCallDetailPage })));
 const UserBillingPage = lazy(() => import("./pages/app/billing").then((m) => ({ default: m.UserBillingPage })));
@@ -100,6 +101,7 @@ function UserAppRoutes() {
         <Switch>
           <Route path={appPath()} component={UserHomePage} />
           <Route path={appPath("/agents")} component={UserAgentsPage} />
+          <Route path={appPath("/agents/:agentKey")} component={UserAgentDetailPage} />
           <Route path={appPath("/calls")} component={UserCallsPage} />
           <Route path={appPath("/calls/:id")} component={UserCallDetailPage} />
           <Route path={appPath("/billing")} component={UserBillingPage} />

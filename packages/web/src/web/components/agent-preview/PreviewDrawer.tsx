@@ -19,10 +19,15 @@ type PreviewDrawerProps = {
   /** Reuses each page's existing playPreview()/previewState/previewUrl (the
    * one-shot TTS "Hear it" logic) rather than duplicating fetch/auth here —
    * the drawer just presents it inside the Voice tab as a quick line-level
-   * check, alongside the real full-duplex test call. */
-  previewState: "idle" | "loading" | "error";
-  previewUrl: string | null;
-  onPlayPreview: () => void;
+   * check, alongside the real full-duplex test call. Optional: the 2026-07-15
+   * agent-page rebuild consolidated the merchant page down to a single voice
+   * preview mechanism (VoicePicker's own inline play) and dropped this
+   * duplicate "Hear it" affordance from the drawer there — omit all three to
+   * hide the section entirely. Admin's dashboard/agents.tsx still passes
+   * them and keeps the quick-check section, unchanged. */
+  previewState?: "idle" | "loading" | "error";
+  previewUrl?: string | null;
+  onPlayPreview?: () => void;
   /** Misc-1: POSTs { phone, configOverride } to the test-call-phone route —
    * a real PSTN callback to the merchant's own number, testing this exact
    * in-progress form state. Optional: omit to hide the "call my phone"
@@ -150,39 +155,41 @@ export function PreviewDrawer({
               </div>
             )}
 
-            <div className="w-full border-t border-border pt-4 flex flex-col items-center gap-3">
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Mic className="size-3" aria-hidden />
-                Or just hear one line in this voice, no mic needed
-              </p>
-              <button
-                type="button"
-                onClick={onPlayPreview}
-                disabled={previewState === "loading"}
-                className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
-              >
-                {previewState === "loading" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
-                  <Play className="size-4" aria-hidden />
-                )}
-                Hear this agent
-              </button>
-              {previewState === "error" && (
-                <p className="text-xs text-destructive text-center">Preview failed — try a different voice, or try again in a minute.</p>
-              )}
-              {previewUrl && (
-                <audio
-                  controls
-                  autoPlay
-                  src={previewUrl}
-                  className="h-9 w-full"
-                  aria-label="Voice preview playback"
+            {onPlayPreview && (
+              <div className="w-full border-t border-border pt-4 flex flex-col items-center gap-3">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Mic className="size-3" aria-hidden />
+                  Or just hear one line in this voice, no mic needed
+                </p>
+                <button
+                  type="button"
+                  onClick={onPlayPreview}
+                  disabled={previewState === "loading"}
+                  className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
                 >
-                  <track kind="captions" />
-                </audio>
-              )}
-            </div>
+                  {previewState === "loading" ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Play className="size-4" aria-hidden />
+                  )}
+                  Hear this agent
+                </button>
+                {previewState === "error" && (
+                  <p className="text-xs text-destructive text-center">Preview failed — try a different voice, or try again in a minute.</p>
+                )}
+                {previewUrl && (
+                  <audio
+                    controls
+                    autoPlay
+                    src={previewUrl}
+                    className="h-9 w-full"
+                    aria-label="Voice preview playback"
+                  >
+                    <track kind="captions" />
+                  </audio>
+                )}
+              </div>
+            )}
 
             {testCallPhoneFetchFn && (
               <div className="w-full border-t border-border pt-4 flex flex-col items-center gap-3">

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronDown, Loader2, Play, Search, Volume2, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pause, Play, Search, Volume2, X } from "lucide-react";
+import { toast } from "sonner";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { appFetch } from "../../lib/user-session";
@@ -29,9 +30,13 @@ type VoicePickerProps = {
 /**
  * Competitive voice-picker UX (Retell/Vapi pattern): browse a provider's
  * voices in a searchable dropdown, pick one by name, and play a sample
- * inline. This replaces the old "paste a voice ID and click a global
- * Preview button" flow, which required the user to already know provider
- * voice IDs and generated a fresh paid sample for every listen.
+ * inline. This is the SINGLE preview mechanism for the agent config page —
+ * there used to be a second, separate "Hear it" button + bare <audio>
+ * element next to this component doing a slightly different one-shot
+ * preview; that redundancy is gone (2026-07-15 agent-page rebuild). The
+ * always-visible play control on the closed trigger below is what replaces
+ * it: you can preview the *currently selected* voice without opening the
+ * browse popover at all.
  */
 export function VoicePicker({ provider, value, language, onChange, scope, className, previewText }: VoicePickerProps) {
   const [open, setOpen] = useState(false);
@@ -71,13 +76,16 @@ export function VoicePicker({ provider, value, language, onChange, scope, classN
           // Cartesia preview URLs must be proxied through our backend and
           // therefore need auth headers; <audio src> cannot attach those.
           const res = scope === "admin" ? await apiFetch(voice.previewUrl, { headers: adminHeaders() }) : await appFetch(voice.previewUrl);
-          if (!res.ok) throw new Error("Preview failed");
+          if (!res.ok) throw new Error(`Preview failed (${res.status})`);
           src = URL.createObjectURL(await res.blob());
         }
         const audio = new Audio(src);
         audioRef.current = audio;
         audio.onended = () => setPlayingId(null);
-        audio.onerror = () => setPlayingId(null);
+        audio.onerror = () => {
+          setPlayingId(null);
+          toast.error("Couldn't play that voice sample", { description: "Try again in a moment." });
+        };
         await audio.play();
         return;
       }
@@ -99,7 +107,7 @@ export function VoicePicker({ provider, value, language, onChange, scope, classN
         }),
       };
       const res = scope === "admin" ? await apiFetch(path, init) : await appFetch(path, init);
-      if (!res.ok) throw new Error("Preview failed");
+      if (!res.ok) throw new Error(`Preview failed (${res.status})`);
       const blob = await res.blob();
       const audio = new Audio(URL.createObjectURL(blob));
       audioRef.current = audio;
@@ -110,11 +118,13 @@ export function VoicePicker({ provider, value, language, onChange, scope, classN
       audio.onerror = () => {
         setPlayingId(null);
         setGeneratingId(null);
+        toast.error("Couldn't play that voice sample", { description: "Try again in a moment." });
       };
       await audio.play();
-    } catch {
+    } catch (err) {
       setPlayingId(null);
       setGeneratingId(null);
+      toast.error("Voice preview failed", { description: err instanceof Error ? err.message : "Try again in a moment." });
     }
   }
 
@@ -126,11 +136,11 @@ export function VoicePicker({ provider, value, language, onChange, scope, classN
   }
 
   return (
-    <div className={`relative ${className ?? ""}`}>
+    <div className={`relative flex items-stretch gap-2 ${className ?? ""}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-left text-sm outline-none focus:ring-2 focus:ring-ring/40"
+        className="flex min-w-0 flex-1 items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-left text-sm outline-none focus:ring-2 focus:ring-ring/40"
       >
         <span className="min-w-0">
           <span className="block truncate font-medium">{selected?.name ?? (value ? value : "Select a voice")}</span>
@@ -141,8 +151,30 @@ export function VoicePicker({ provider, value, language, onChange, scope, classN
         <ChevronDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
       </button>
 
+      {/* Always-visible preview control for whatever's currently selected —
+       * this is what replaced the separate "Hear it" button. No need to
+       * open the browse popover just to re-hear the current pick. */}
+      {selected && (
+        <button
+          type="button"
+          onClick={() => (playingId === selected.id ? stopPreview() : playVoice(selected))}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-muted transition-colors"
+          aria-label={playingId === selected.id ? `Stop preview of ${selected.name}` : `Preview ${selected.name}`}
+          title="Preview the currently selected voice"
+        >
+          {generatingId === selected.id ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : playingId === selected.id ? (
+            <Pause className="size-3.5" aria-hidden />
+          ) : (
+            <Play className="size-3.5" aria-hidden />
+          )}
+          <span className="hidden sm:inline">{playingId === selected.id ? "Playing…" : "Preview"}</span>
+        </button>
+      )}
+
       {open && (
-        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
             <Search className="size-4 text-muted-foreground" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search voices..." className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />

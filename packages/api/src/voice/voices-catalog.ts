@@ -69,8 +69,8 @@ function extractLabel(voice: Record<string, unknown>, key: string): string | und
   return labels?.[key];
 }
 
-export async function listCartesiaVoices(): Promise<CatalogVoice[]> {
-  return withCache("cartesia", async () => {
+export async function listCartesiaVoices(scope: "admin" | "user" = "admin"): Promise<CatalogVoice[]> {
+  return withCache(`cartesia:${scope}`, async () => {
     const apiKey = process.env.CARTESIA_API_KEY;
     if (!apiKey) return [];
     const res = await fetch("https://api.cartesia.ai/voices?limit=100&expand[]=preview_file_url", {
@@ -81,6 +81,13 @@ export async function listCartesiaVoices(): Promise<CatalogVoice[]> {
       return [];
     }
     const data = (await res.json()) as { data?: Array<Record<string, unknown>> };
+    // Preview proxy is mounted under both /api/voice (admin, requireAdminKey)
+    // and /api/app (merchant, session-scoped) — see routes.ts in each. This
+    // must match whichever scope actually called listVoicesForProvider, or
+    // the merchant surface silently 401s hitting the admin-only path (fixed
+    // 2026-07-15: previously always hardcoded to the admin path, so every
+    // merchant's inline voice preview button did nothing, no error surfaced).
+    const previewBase = scope === "admin" ? "/api/voice/voices/cartesia-preview" : "/api/app/voices/cartesia-preview";
     return (data.data ?? []).map((v) => ({
       id: String(v.id ?? ""),
       name: String(v.name ?? "Unnamed voice"),
@@ -89,7 +96,7 @@ export async function listCartesiaVoices(): Promise<CatalogVoice[]> {
       gender: typeof v.gender === "string" ? v.gender : undefined,
       // Never the raw preview_file_url — it requires our API key to fetch,
       // so the frontend goes through our own proxy route instead.
-      previewUrl: v.preview_file_url ? `/api/voice/voices/cartesia-preview/${encodeURIComponent(String(v.id))}` : null,
+      previewUrl: v.preview_file_url ? `${previewBase}/${encodeURIComponent(String(v.id))}` : null,
     }));
   });
 }
@@ -125,9 +132,9 @@ export async function listSarvamVoices(): Promise<CatalogVoice[]> {
   return [...SARVAM_V2_VOICES.map((v) => ({ ...v, description: "bulbul:v2" })), ...v3];
 }
 
-export async function listVoicesForProvider(provider: string): Promise<CatalogVoice[]> {
+export async function listVoicesForProvider(provider: string, scope: "admin" | "user" = "admin"): Promise<CatalogVoice[]> {
   if (provider === "elevenlabs") return listElevenLabsVoices();
-  if (provider === "cartesia") return listCartesiaVoices();
+  if (provider === "cartesia") return listCartesiaVoices(scope);
   if (provider === "sarvam") return listSarvamVoices();
   return [];
 }

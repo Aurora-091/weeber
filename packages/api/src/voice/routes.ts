@@ -793,7 +793,7 @@ export const voice = new Hono()
     if (!["elevenlabs", "cartesia", "sarvam"].includes(provider)) {
       return c.json({ error: "`provider` must be \"elevenlabs\", \"cartesia\", or \"sarvam\"" }, 400);
     }
-    const voices = await listVoicesForProvider(provider);
+    const voices = await listVoicesForProvider(provider, "admin");
     return c.json({ voices }, 200);
   })
 
