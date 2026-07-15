@@ -18,9 +18,11 @@ describe("verticals helper", () => {
     expect(v.key).toBe("shopify");
     expect(v.glossary.customer).toBe("Customer");
     expect(v.glossary.customers).toBe("Customers");
-    // Home, Agents, Workflows, Conversations, Billing, Shopify (integrationLabel), Settings.
-    // Analytics was folded into Home (dashboard consolidation pass); Knowledge Base added (A3b).
-    expect(v.nav).toHaveLength(8);
+    // Home, Agents, Workflows, Conversations, Billing, Shopify (integrationLabel),
+    // Knowledge Base, Phone Numbers, Settings.
+    // Analytics was folded into Home (dashboard consolidation pass); Knowledge Base
+    // added (A3b); Phone Numbers added (C2b).
+    expect(v.nav).toHaveLength(9);
   });
 
   it("falls back to shopify vertical for unrecognized keys", () => {
@@ -45,10 +47,11 @@ describe("verticals helper", () => {
     expect(v.key).toBe("insurance");
     expect(v.glossary.customer).toBe("Policyholder");
     expect(v.glossary.customers).toBe("Policyholders");
-    // Home, Agents, Workflows, Conversations, Billing, Knowledge Base, Settings —
+    // Home, Agents, Workflows, Conversations, Billing, Knowledge Base,
+    // Phone Numbers, Settings —
     // no Integrations item (no live policy-system integration yet),
     // no Analytics item (folded into Home).
-    expect(v.nav).toHaveLength(7);
+    expect(v.nav).toHaveLength(8);
     const labels = v.nav.map((n) => n.label);
     expect(labels).not.toContain("Policy System");
     expect(labels).not.toContain("Analytics");
