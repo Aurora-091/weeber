@@ -44,7 +44,14 @@ export async function executeDueScheduledCalls() {
       if (!windowCheck.allowed) {
         // Push it out another 30 minutes rather than dropping it — the
         // window will open eventually. Release the claim back to "pending"
-        // so a future sweep can pick it up again.
+        // so a future sweep can pick it up again. Logged (2026-07-16 — was
+        // previously silent) — this is the single most common reason a
+        // merchant sees "trigger detected, no call ever happened": to a
+        // number in a currently-blocked calling window (e.g. any +91
+        // number outside 9am-9pm IST per TRAI), this loops quietly every
+        // 30min with zero visibility until the window opens, which is
+        // indistinguishable from a real bug without a log line.
+        console.warn(`[scheduler] deferring scheduled call id=${row.id} to ${row.toNumber} — ${windowCheck.reason}`);
         await db
           .update(scheduledCalls)
           .set({ runAt: new Date(Date.now() + 30 * 60 * 1000), status: "pending" })

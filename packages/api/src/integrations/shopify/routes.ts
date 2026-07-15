@@ -157,7 +157,14 @@ shopify
     const phone = (body.phone as string | undefined) ?? undefined;
     if (!phone || !isValidE164(phone)) {
       // No usable phone number on this checkout — nothing to call. Still a
-      // successful, idempotent no-op from weebersh's point of view.
+      // successful, idempotent no-op from weebersh's point of view. Logged
+      // (2026-07-16 — was previously silent) because this is genuinely
+      // indistinguishable from a real bug without it: the checkout still
+      // gets counted in the "carts abandoned" dashboard metric, but no
+      // scheduledCalls row is ever created, so it *looks* like a dropped
+      // trigger from the outside — it's actually just "there was nothing
+      // to call." Confirmed root cause of a real support case this way.
+      console.warn(`[shopify/checkouts] no callable phone on checkout token=${token} shop=${shop} — counted as abandoned, no call scheduled (raw phone: ${phone ?? "none"})`);
       await markProcessed(shop, "checkouts", token);
       return c.json({ status: "no_callable_phone" }, 200);
     }
