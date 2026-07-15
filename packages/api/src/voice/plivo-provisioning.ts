@@ -10,6 +10,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { orgs } from "../database/schema";
+import { storeCredential, PLIVO_FIELDS } from "../database/credential-vault";
 
 export type PlivoStatus = {
   connected: boolean;
@@ -67,10 +68,13 @@ export async function setPlivoByoCredentials(
     .set({
       telephonyProvider: "plivo",
       plivoAuthId: authId,
-      plivoAuthToken: authToken,
+      plivoAuthToken: authToken, // kept for fallback during vault transition
       outboundNumber: phoneNumber,
     })
     .where(eq(orgs.id, orgId));
+
+  await storeCredential(orgId, PLIVO_FIELDS.authId, authId);
+  await storeCredential(orgId, PLIVO_FIELDS.authToken, authToken);
 
   return { ok: true };
 }

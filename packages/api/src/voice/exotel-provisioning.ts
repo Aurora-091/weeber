@@ -12,6 +12,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { orgs } from "../database/schema";
+import { storeCredential, EXOTEL_FIELDS } from "../database/credential-vault";
 
 export type ExotelStatus = {
   connected: boolean;
@@ -82,6 +83,10 @@ export async function setExotelByoCredentials(
       outboundNumber: phoneNumber,
     })
     .where(eq(orgs.id, orgId));
+
+  await storeCredential(orgId, EXOTEL_FIELDS.sid, sid);
+  await storeCredential(orgId, EXOTEL_FIELDS.apiKey, apiKey);
+  await storeCredential(orgId, EXOTEL_FIELDS.apiToken, apiToken);
 
   return { ok: true };
 }

@@ -1,6 +1,6 @@
 /**
  * Retry-once helper for critical DB writes. A single transient network blip
- * (e.g. ECONNRESET to Turso) currently means a write is silently lost forever
+ * (e.g. ECONNRESET to Supabase Postgres) currently means a write is silently lost forever
  * — this wraps a write so it gets one retry with a short delay before giving
  * up and logging loudly instead of swallowing the failure.
  */

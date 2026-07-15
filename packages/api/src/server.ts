@@ -36,6 +36,16 @@ startRetentionSweep(callLogAdapter, {
 // workflows/scheduler.ts).
 startScheduledCallSweep();
 
+// Webhook outbox: delivers queued webhook events with retry + exponential backoff.
+import { processWebhookOutbox } from "./voice/webhooks";
+const WEBHOOK_SWEEP_INTERVAL_MS = 8_000;
+setInterval(() => {
+  void processWebhookOutbox().catch((err) =>
+    console.error("[webhook-outbox] delivery sweep failed", err),
+  );
+}, WEBHOOK_SWEEP_INTERVAL_MS);
+void processWebhookOutbox().catch(() => {});
+
 // Seed default agent templates from prompt copy files
 import { seedAgentTemplates, seedWorkflowTemplates } from "./database/seed";
 void seedAgentTemplates().catch((err) => console.error("[server] seeding templates failed:", err));

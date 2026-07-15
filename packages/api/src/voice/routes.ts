@@ -24,7 +24,7 @@ import { requirePlivoSignature } from "./middleware/plivo-signature";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
-import { calls, callLatency, orgs } from "../database/schema";
+import { calls, callLatency, orgs, twilioStatusEvents } from "../database/schema";
 import { eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
 import { makeFixedWindowLimiter } from "./fixed-window-limiter";
@@ -244,6 +244,21 @@ export const voice = new Hono()
     const terminalStatuses = new Set(["completed", "failed", "busy", "no-answer", "canceled"]);
     const isTerminal = terminalStatuses.has(status);
 
+    if (callSid && isTerminal) {
+      // Idempotency guard — Twilio delivers at-least-once. If we already
+      // processed this (callSid, status) pair, return 200 immediately without
+      // re-executing side effects (workflow advancement, webhook dispatch).
+      try {
+        await db.insert(twilioStatusEvents).values({ callSid, status });
+      } catch (err: unknown) {
+        const msg = (err as Error)?.message ?? "";
+        if (msg.includes("duplicate") || msg.includes("unique")) {
+          return c.text("", 200);
+        }
+        throw err;
+      }
+    }
+
     if (callSid) {
       await db
         .update(calls)
@@ -261,10 +276,6 @@ export const voice = new Hono()
           status,
         });
 
-        // Calls that never actually connected (no-answer/busy/failed) don't
-        // go through stream.ts's disposition capture — run the workflow
-        // directly off the Twilio status so a "no-answer -> retry" workflow
-        // still fires automatically even when the media stream never opened.
         const workflowOutcome: Record<string, string> = {
           "no-answer": "no-answer",
           busy: "busy",

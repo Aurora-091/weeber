@@ -1,4 +1,4 @@
-import { eq, and, lte } from "drizzle-orm";
+import { eq, and, lte, sql } from "drizzle-orm";
 import { db } from "../../database";
 import { scheduledCalls, workflowTemplates, orgWorkflowConfigs, workflowRuns, orgs } from "../../database/schema";
 import { addToDoNotCallList } from "@openvent/compliance";
@@ -112,16 +112,22 @@ export async function advanceWorkflow(
         }
         // Store the next node to advance to after the wait expires
         const nextNodeId = outgoing[0].target;
-        await db
+        const waitResult = await db
           .update(workflowRuns)
           .set({
             currentNodeId: nextNodeId,
             status: "waiting",
             nextRunAt,
             context,
+            version: sql`${workflowRuns.version} + 1`,
             updatedAt: new Date(),
           })
-          .where(eq(workflowRuns.id, runId));
+          .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.version, run.version)))
+          .returning({ id: workflowRuns.id });
+        if (waitResult.length === 0) {
+          console.warn(`[graph-engine] run ${runId} version conflict at wait node ${node.id} — skipping`);
+          return;
+        }
         console.log(
           `[graph-engine] run ${runId} waiting ${config.delayMinutes}min at node ${node.id}, will advance to ${nextNodeId}`,
         );
@@ -141,36 +147,43 @@ export async function advanceWorkflow(
           return;
         }
 
-        await db.insert(scheduledCalls).values({
-          toNumber,
-          workflowName: `graph:${run.templateKey}`,
-          persona: config.persona,
-          attempt: attemptNumber,
-          maxAttempts: 99, // graph handles its own retry logic
-          runAt: new Date(),
-          status: "pending",
-          orgId: run.orgId ?? undefined,
-          checkoutToken: String(context.checkout_token || "") || undefined,
-          metadata: {
-            ...(context as Record<string, string | number>),
-            discount_percent: discountPercent,
-            workflow_run_id: runId,
-            workflow_node_id: node.id,
-          },
-          workflowRunId: runId,
-        });
+        await db.transaction(async (tx) => {
+          await tx.insert(scheduledCalls).values({
+            toNumber,
+            workflowName: `graph:${run.templateKey}`,
+            persona: config.persona,
+            attempt: attemptNumber,
+            maxAttempts: 99, // graph handles its own retry logic
+            runAt: new Date(),
+            status: "pending",
+            orgId: run.orgId ?? undefined,
+            checkoutToken: String(context.checkout_token || "") || undefined,
+            metadata: {
+              ...(context as Record<string, string | number>),
+              discount_percent: discountPercent,
+              workflow_run_id: runId,
+              workflow_node_id: node.id,
+            },
+            workflowRunId: runId,
+          });
 
-        // Park the run — it will resume when the call completes and the
-        // outcome is fed back via advanceWorkflow(runId, outcome)
-        await db
-          .update(workflowRuns)
-          .set({
-            currentNodeId: node.id,
-            status: "waiting",
-            context,
-            updatedAt: new Date(),
-          })
-          .where(eq(workflowRuns.id, runId));
+          // Park the run — it will resume when the call completes and the
+          // outcome is fed back via advanceWorkflow(runId, outcome)
+          const txResult = await tx
+            .update(workflowRuns)
+            .set({
+              currentNodeId: node.id,
+              status: "waiting",
+              context,
+              version: sql`${workflowRuns.version} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.version, run.version)))
+            .returning({ id: workflowRuns.id });
+          if (txResult.length === 0) {
+            console.warn(`[graph-engine] run ${runId} version conflict at call node ${node.id} — aborting`);
+          }
+        });
         console.log(
           `[graph-engine] run ${runId} placed call (attempt ${attemptNumber}, discount ${discountPercent}%) — waiting for outcome`,
         );
@@ -318,10 +331,15 @@ export async function resumeWorkflowAfterCall(
 
   // Advance to the next node (typically a conditionalSplit)
   const nextNodeId = outgoing[0].target;
-  await db
+  const resumeResult = await db
     .update(workflowRuns)
-    .set({ currentNodeId: nextNodeId, context, status: "running", updatedAt: new Date() })
-    .where(eq(workflowRuns.id, workflowRunId));
+    .set({ currentNodeId: nextNodeId, context, status: "running", version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(workflowRuns.id, workflowRunId), eq(workflowRuns.version, run.version)))
+    .returning({ id: workflowRuns.id });
+  if (resumeResult.length === 0) {
+    console.warn(`[graph-engine] run ${workflowRunId} version conflict in resumeWorkflowAfterCall — skipping`);
+    return;
+  }
 
   await advanceWorkflow(workflowRunId, outcome);
 }
@@ -340,11 +358,16 @@ export async function executeDueWorkflowRuns(): Promise<void> {
     // Only runs with nextRunAt set are wait-node pauses (not call-node pauses)
     if (!run.nextRunAt) continue;
     try {
-      // Clear nextRunAt and set to running before advancing
-      await db
+      // Clear nextRunAt and set to running before advancing (CAS on version)
+      const dueResult = await db
         .update(workflowRuns)
-        .set({ status: "running", nextRunAt: null, updatedAt: new Date() })
-        .where(and(eq(workflowRuns.id, run.id), eq(workflowRuns.status, "waiting")));
+        .set({ status: "running", nextRunAt: null, version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
+        .where(and(eq(workflowRuns.id, run.id), eq(workflowRuns.status, "waiting"), eq(workflowRuns.version, run.version)))
+        .returning({ id: workflowRuns.id });
+      if (dueResult.length === 0) {
+        console.warn(`[graph-engine] run ${run.id} version conflict in executeDueWorkflowRuns — skipping`);
+        continue;
+      }
       await advanceWorkflow(run.id);
     } catch (err) {
       console.error(`[graph-engine] failed to advance run ${run.id}`, err);
@@ -361,7 +384,7 @@ async function updateRunPosition(
 ): Promise<void> {
   await db
     .update(workflowRuns)
-    .set({ currentNodeId: nodeId, context, status, updatedAt: new Date() })
+    .set({ currentNodeId: nodeId, context, status, version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
     .where(eq(workflowRuns.id, runId));
 }
 
@@ -372,7 +395,7 @@ async function markRunCompleted(
 ): Promise<void> {
   await db
     .update(workflowRuns)
-    .set({ currentNodeId: nodeId, context, status: "completed", updatedAt: new Date() })
+    .set({ currentNodeId: nodeId, context, status: "completed", version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
     .where(eq(workflowRuns.id, runId));
   console.log(`[graph-engine] run ${runId} completed at node ${nodeId}`);
 }
@@ -380,7 +403,7 @@ async function markRunCompleted(
 async function markRunFailed(runId: string, reason: string): Promise<void> {
   await db
     .update(workflowRuns)
-    .set({ status: "failed", updatedAt: new Date() })
+    .set({ status: "failed", version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
     .where(eq(workflowRuns.id, runId));
   console.error(`[graph-engine] run ${runId} failed: ${reason}`);
 }

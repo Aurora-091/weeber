@@ -6,11 +6,21 @@
 import { db } from "../database";
 import { orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
+import { readCredential, EXOTEL_FIELDS } from "../database/credential-vault";
 
 type ExotelCreds = { sid: string; apiKey: string; apiToken: string; subdomain: string } | null;
 
 export async function getExotelCredsForOrg(orgId?: string | null): Promise<ExotelCreds> {
   if (!orgId) return null;
+
+  const vaultSid = await readCredential(orgId, EXOTEL_FIELDS.sid);
+  const vaultKey = await readCredential(orgId, EXOTEL_FIELDS.apiKey);
+  const vaultToken = await readCredential(orgId, EXOTEL_FIELDS.apiToken);
+  if (vaultSid && vaultKey && vaultToken) {
+    const [org] = await db.select({ subdomain: orgs.exotelSubdomain }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    return { sid: vaultSid, apiKey: vaultKey, apiToken: vaultToken, subdomain: org?.subdomain ?? "api.exotel.com" };
+  }
+
   const [org] = await db
     .select({
       sid: orgs.exotelSid,

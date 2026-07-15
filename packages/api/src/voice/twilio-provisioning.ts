@@ -8,6 +8,7 @@ import Twilio from "twilio";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
 import { orgs, orgPhoneNumbers } from "../database/schema";
+import { storeCredential, TWILIO_FIELDS } from "../database/credential-vault";
 import { twilioClient } from "./twilio-client";
 
 export type TwilioStatus = {
@@ -66,6 +67,9 @@ export async function createSubaccountForOrg(orgId: string, friendlyName: string
     .update(orgs)
     .set({ telephonyProvider: "twilio", twilioMode: "platform", twilioAccountSid: account.sid, twilioAuthToken: account.authToken })
     .where(eq(orgs.id, orgId));
+
+  await storeCredential(orgId, TWILIO_FIELDS.accountSid, account.sid);
+  await storeCredential(orgId, TWILIO_FIELDS.authToken, account.authToken);
 
   return { ok: true, accountSid: account.sid };
 }
@@ -202,6 +206,9 @@ export async function setByoCredentials(
     .update(orgs)
     .set({ telephonyProvider: "twilio", twilioMode: "byo", twilioAccountSid: accountSid, twilioAuthToken: authToken, outboundNumber: phoneNumber })
     .where(eq(orgs.id, orgId));
+
+  await storeCredential(orgId, TWILIO_FIELDS.accountSid, accountSid);
+  await storeCredential(orgId, TWILIO_FIELDS.authToken, authToken);
 
   return { ok: true };
 }

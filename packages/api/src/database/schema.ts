@@ -353,6 +353,15 @@ export const shopifyWebhookEvents = pgTable("shopify_webhook_events", {
   uniqueIndex("shopify_webhook_events_dedupe_idx").on(table.shop, table.topic, table.idempotencyKey),
 ]);
 
+export const twilioStatusEvents = pgTable("twilio_status_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callSid: text("call_sid").notNull(),
+  status: text("status").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("twilio_status_events_sid_status_idx").on(table.callSid, table.status),
+]);
+
 export const supportTickets = pgTable("support_tickets", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id"),
@@ -459,6 +468,7 @@ export const workflowRuns = pgTable("workflow_runs", {
   context: jsonb("context").notNull().$type<Record<string, string | number>>(),
   currentNodeId: text("current_node_id").notNull(),
   status: text("status", { enum: ["running", "waiting", "completed", "failed"] }).notNull().default("running"),
+  version: integer("version").notNull().default(1),
   nextRunAt: timestamp("next_run_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
@@ -529,3 +539,19 @@ export const orgIntegrations = pgTable("org_integrations", {
 }, (table) => [
   uniqueIndex("org_integrations_org_provider_idx").on(table.orgId, table.provider),
 ]);
+
+export const webhookOutbox = pgTable("webhook_outbox", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id"),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  targetUrl: text("target_url").notNull(),
+  status: text("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(5),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: "date" }),
+  alertedAt: timestamp("alerted_at", { withTimezone: true, mode: "date" }),
+});

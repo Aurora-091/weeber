@@ -82,8 +82,11 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
 
   const orgId = `org_${randomUUID()}`;
   const name = email ? `${email.split("@")[0]}'s workspace` : "My workspace";
-  await db.insert(orgs).values({ id: orgId, name, contactEmail: email ?? undefined }).onConflictDoNothing();
-  await db.insert(orgMembers).values({ supabaseUserId: userId, orgId, role: "owner" }).onConflictDoNothing();
+
+  await db.transaction(async (tx) => {
+    await tx.insert(orgs).values({ id: orgId, name, contactEmail: email ?? undefined }).onConflictDoNothing();
+    await tx.insert(orgMembers).values({ supabaseUserId: userId, orgId, role: "owner" }).onConflictDoNothing();
+  });
 
   // Re-select rather than trusting our insert — if a concurrent request won
   // the race with a different org id, this returns the row that actually stuck.

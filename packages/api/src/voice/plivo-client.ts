@@ -7,11 +7,17 @@
 import { db } from "../database";
 import { orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
+import { readCredential, PLIVO_FIELDS } from "../database/credential-vault";
 
 type PlivoCreds = { authId: string; authToken: string } | null;
 
 export async function getPlivoCredsForOrg(orgId?: string | null): Promise<PlivoCreds> {
   if (!orgId) return null;
+
+  const vaultId = await readCredential(orgId, PLIVO_FIELDS.authId);
+  const vaultToken = await readCredential(orgId, PLIVO_FIELDS.authToken);
+  if (vaultId && vaultToken) return { authId: vaultId, authToken: vaultToken };
+
   const [org] = await db
     .select({ authId: orgs.plivoAuthId, authToken: orgs.plivoAuthToken })
     .from(orgs)
