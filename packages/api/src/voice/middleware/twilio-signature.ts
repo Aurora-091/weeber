@@ -1,9 +1,9 @@
 import { createMiddleware } from "hono/factory";
 import twilioPkg from "twilio";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { getPublicUrl, getAuthTokenForOrg } from "../twilio-client";
 import { db } from "../../database";
-import { calls, orgs } from "../../database/schema";
+import { calls, orgs, orgPhoneNumbers } from "../../database/schema";
 
 /**
  * Validates that incoming webhook requests actually came from Twilio, using
@@ -25,8 +25,20 @@ import { calls, orgs } from "../../database/schema";
  *   1. CallSid -> calls.orgId (covers status-callback/recording-status/
  *      amd-status-callback, and the outbound leg of /incoming — the call
  *      row already exists by the time any of these fire).
- *   2. Dialed number (To) -> orgs.outboundNumber (covers a genuinely fresh
- *      inbound call, which has no DB row yet).
+ *   2. Either party's number -> an org's number, checked against BOTH
+ *      `To` (a genuinely fresh *inbound* call: To is the org's own
+ *      number the caller dialed) AND `From` (the very first webhook of an
+ *      *outbound* call we placed: From is the org's number, To is the
+ *      customer's — the calls row from rule 1 doesn't exist yet since
+ *      placeOutboundCall() never inserts one before dialing, it's only
+ *      created inside the /incoming handler once that request clears this
+ *      middleware). Checks both the legacy `orgs.outboundNumber` column
+ *      and the newer per-number `org_phone_numbers` table (C2b), since a
+ *      number bought through the picker only ever lands in the latter.
+ *      Fixed 2026-07-15: previously only checked `To` against
+ *      `orgs.outboundNumber`, which can never match on an outbound call's
+ *      first webhook — every BYO/sub-account org's outbound calls fell
+ *      through to the global token below and got rejected outright.
  *   3. Falls back to the global TWILIO_AUTH_TOKEN when neither resolves —
  *      unchanged behavior for platform-only deployments.
  *
@@ -47,10 +59,24 @@ async function resolveAuthTokenForRequest(params: Record<string, string>): Promi
     if (row?.orgId) return getAuthTokenForOrg(row.orgId);
   }
 
-  const to = params.To;
-  if (to) {
-    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.outboundNumber, to)).limit(1);
-    if (org) return getAuthTokenForOrg(org.id);
+  // Either party's number can be the org's own: `To` on a fresh inbound
+  // call, `From` on the first webhook of an outbound call we placed (its
+  // calls row doesn't exist yet — see rule 1's doc comment above).
+  const candidateNumbers = [params.To, params.From].filter((n): n is string => Boolean(n));
+  if (candidateNumbers.length > 0) {
+    const [legacyOrg] = await db
+      .select({ id: orgs.id })
+      .from(orgs)
+      .where(or(...candidateNumbers.map((n) => eq(orgs.outboundNumber, n))))
+      .limit(1);
+    if (legacyOrg) return getAuthTokenForOrg(legacyOrg.id);
+
+    const [provisionedNumber] = await db
+      .select({ orgId: orgPhoneNumbers.orgId })
+      .from(orgPhoneNumbers)
+      .where(or(...candidateNumbers.map((n) => eq(orgPhoneNumbers.phoneNumber, n))))
+      .limit(1);
+    if (provisionedNumber) return getAuthTokenForOrg(provisionedNumber.orgId);
   }
 
   return process.env.TWILIO_AUTH_TOKEN;

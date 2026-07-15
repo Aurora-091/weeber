@@ -4,6 +4,7 @@ import { createHmac } from "crypto";
 
 let mockCallRows: { orgId: string | null }[] = [];
 let mockOrgRows: { id: string }[] = [];
+let mockOrgPhoneNumberRows: { orgId: string }[] = [];
 let mockOrgCreds: { accountSid: string; authToken: string } | null = null;
 
 function getTableName(table: unknown): string | undefined {
@@ -26,6 +27,7 @@ mock.module("../../database", () => ({
         const name = getTableName(table);
         if (name === "calls") return thenable(mockCallRows);
         if (name === "orgs") return thenable(mockOrgRows);
+        if (name === "org_phone_numbers") return thenable(mockOrgPhoneNumberRows);
         return thenable([]);
       },
     }),
@@ -79,6 +81,7 @@ describe("requireTwilioSignature — org-aware token resolution", () => {
   beforeEach(() => {
     mockCallRows = [];
     mockOrgRows = [];
+    mockOrgPhoneNumberRows = [];
     mockOrgCreds = null;
   });
 
@@ -118,6 +121,37 @@ describe("requireTwilioSignature — org-aware token resolution", () => {
     mockOrgCreds = { accountSid: "ACsub", authToken: "org-specific-token" };
     const app = buildApp();
     const params = { CallSid: "CAfresh", To: "+15550001111" };
+
+    const res = await app.request(signedRequest(params, "org-specific-token"));
+    expect(res.status).toBe(200);
+  });
+
+  // Regression test for the 2026-07-15 production outage: the very first
+  // webhook of an outbound call we placed has no calls row yet (rule 1
+  // can't resolve) and the org's own number is in `From`, not `To` — the
+  // old code only ever checked `To`, so this always fell through to the
+  // global token and got rejected for every BYO/sub-account org.
+  it("falls back to resolving by the calling number (From) on an outbound call's first webhook, via legacy orgs.outboundNumber", async () => {
+    mockCallRows = []; // placeOutboundCall() never inserts a row before dialing
+    mockOrgRows = [{ id: "org_byo" }];
+    mockOrgCreds = { accountSid: "ACsub", authToken: "org-specific-token" };
+    const app = buildApp();
+    const params = { CallSid: "CAoutbound", From: "+15407923044", To: "+917499291834" };
+
+    const res = await app.request(signedRequest(params, "org-specific-token"));
+    expect(res.status).toBe(200);
+
+    const wrongRes = await app.request(signedRequest(params, "global-token"));
+    expect(wrongRes.status).toBe(403);
+  });
+
+  it("falls back to resolving by From/To via the newer org_phone_numbers table (C2b numbers never written to orgs.outboundNumber)", async () => {
+    mockCallRows = [];
+    mockOrgRows = []; // not in the legacy column — bought through the new picker
+    mockOrgPhoneNumberRows = [{ orgId: "org_byo" }];
+    mockOrgCreds = { accountSid: "ACsub", authToken: "org-specific-token" };
+    const app = buildApp();
+    const params = { CallSid: "CAoutbound2", From: "+15407923044", To: "+917499291834" };
 
     const res = await app.request(signedRequest(params, "org-specific-token"));
     expect(res.status).toBe(200);
