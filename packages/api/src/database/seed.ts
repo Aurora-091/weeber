@@ -69,6 +69,36 @@ export const AGENT_TEMPLATES = [
       defaultTools: ["captureField", "bookAppointment", "setDisposition", "crmSync"],
       active: true,
     },
+    {
+      key: "insurance-appointment-setter",
+      name: "Insurance Appointment Setter / Warm-Transfer Router",
+      vertical: "insurance",
+      description: "Confirms continued interest from an already-warm lead and live-transfers to a licensed advisor, or books a specific callback if no advisor is available.",
+      fileName: "06-insurance-appointment-setter-agent.md",
+      literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently shown interest in {{interest_area}}, and I'd love to connect you with one of our licensed advisors. Is now a good time?",
+      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "crmSync"],
+      active: true,
+    },
+    {
+      key: "insurance-post-sale-welcome",
+      name: "Insurance Post-Sale Welcome / Delivery Confirmation",
+      vertical: "insurance",
+      description: "Welcomes a new policyholder after a policy is issued, confirms documents arrived, and routes any coverage/claims/change/cancel request to a licensed advisor.",
+      fileName: "07-insurance-post-sale-welcome-agent.md",
+      literalGreetingTemplate: "Hello, is this {{policyholder_name}}? This is {{agent_name}} calling on behalf of {{company_name}} — a quick welcome call now that your new policy is in place. Do you have a moment?",
+      defaultTools: ["captureField", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "crmSync"],
+      active: true,
+    },
+    {
+      key: "insurance-feedback-nps",
+      name: "Insurance Post-Interaction Feedback / NPS",
+      vertical: "insurance",
+      description: "Collects a 1-5 satisfaction rating and one open comment after a servicing interaction or claim, routing any complaint to a licensed human without engaging on its merits.",
+      fileName: "08-insurance-feedback-nps-agent.md",
+      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{company_name}}. I'm following up on {{interaction_type}} — do you have a minute to share how it went?",
+      defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "crmSync"],
+      active: true,
+    },
   ];
 
 export async function seedAgentTemplates() {

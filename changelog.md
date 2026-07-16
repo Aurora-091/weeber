@@ -4,6 +4,36 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Insurance vertical: 3 more agent prompts landed (appointment setter, post-sale welcome, feedback/NPS)
+
+Data-only change, no new code paths — same pattern as the existing `04-insurance-policy-renewal`/
+`05-insurance-lead-followup` templates. Added `docs/agent-prompts/06-insurance-appointment-setter-
+agent.md`, `07-insurance-post-sale-welcome-agent.md`, `08-insurance-feedback-nps-agent.md` (reviewed
+against the repo's actual conventions before landing — section structure matches `03`-`05` exactly,
+every referenced tool name is real and in `AVAILABLE_TOOL_NAMES`, and the "Phase I structural
+guardrail" caveat the source material flagged was verified accurate: `GuardrailSettings` today is
+prompt-tuning knobs only, not a server-side field-block — so these agents' SSN/PAN/Aadhaar refusals
+are correctly described as behavioral-only, not yet a platform-enforced guarantee).
+
+Added 3 matching rows to `AGENT_TEMPLATES` (`database/seed.ts`): `insurance-appointment-setter`,
+`insurance-post-sale-welcome`, `insurance-feedback-nps` — each with a `literalGreetingTemplate`
+matching its script's Conversation Starter, and `defaultTools` set per the source material's own
+Tools-mapping tables (Shopify-specific tools excluded from all three; `transferToHuman` +
+`flagGuardrailEvent` included on all three). Updated `seed.test.ts`'s hardcoded insert-count
+assertion (5 → 8) to match.
+
+**Not done, left as open decisions per the source material** (recommendations noted, not acted on):
+extending the `disposition` enum for insurance-specific values (recommend: wait for usage data),
+real-time alerting on negative feedback/cancel-intent (recommend: build for insurance — higher
+stakes than Shopify — but not built this pass), advisor presence-aware routing for the appointment-
+setter (recommend: attempt-then-book is fine for pilot).
+
+Verified: typecheck clean (3/3 packages), oxlint 0/0, `bun run test` 363 pass / 0 fail (unchanged
+count — no new tests added, existing `seed.test.ts` assertion updated and confirmed passing, real
+filesystem check confirms all 8 templates now resolve and seed successfully).
+
+---
+
 ## 2026-07-16 — Global Compliance Engine, Tier 0 (all 6 items)
 
 Full detail in `docs/global-compliance-engine-plan.md`'s "Tier 0 — build report" section. Summary
