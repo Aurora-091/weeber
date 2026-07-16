@@ -4,6 +4,25 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 2.5: Sarvam STT mode fix (live-verified)
+
+User also provided a real Sarvam API key, since Sarvam is already live in production and the
+`mode: "transcribe"` vs `mode: "codemix"` fix flagged in Phase 2 was deprioritized without ever
+being tested. Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 2.5 section).
+
+Synthesized the same Hinglish test sentence via Sarvam's own TTS, streamed it through the real
+`connectSarvamStt` code twice (once per mode) to compare directly: `transcribe` (the old default)
+phonetically transliterated English loanwords into Devanagari ("order" → "ऑर्डर", "confirm" →
+"कन्फर्म"); `codemix` kept them in Latin script, matching Sarvam's own docs guidance for
+conversational/agent transcripts verbatim.
+
+Fixed `stt/sarvam.ts` (one-line mode change), added `stt/sarvam.test.ts` (2 tests — first-ever
+coverage for this adapter). Verified: typecheck clean, oxlint 0/0, vite build green, backend suite
+293 pass (was 291, +2 = the new tests) / 38 fail (same baseline, no new failures). API key and all
+temporary test scripts deleted from disk after testing.
+
+---
+
 ## 2026-07-16 — Hindi/Hinglish voice support, Phase 2: ElevenLabs Scribe v2 Realtime STT adapter (live-verified)
 
 Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 2 section) — summary here.

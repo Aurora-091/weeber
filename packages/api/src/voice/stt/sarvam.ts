@@ -15,6 +15,21 @@ import { mulawChunkToWavBase64 } from "../audio-codec";
  * guidance is a client-side concern for very long idle gaps, which a live
  * call turn doesn't hit. An unexpected close surfaces via onFatalError so
  * the call ends cleanly instead of hanging on dead audio.
+ *
+ * mode="codemix" (2026-07-16, docs/hindi-hinglish-voice-support.md,
+ * live-verified): Sarvam's `saaras:v3` exposes a `mode` param — `transcribe`
+ * (native-script-only) was the previous default here. Live-tested both with
+ * a real Sarvam account and the same synthesized Hinglish audio used to
+ * verify the ElevenLabs adapter ("मुझे एक flight book करनी है और मेरा order
+ * भी confirm करना है।"): `transcribe` mode phonetically transliterated the
+ * English loanwords into Devanagari ("order" -> "ऑर्डर", "confirm" ->
+ * "कन्फर्म"); `codemix` kept them in Latin script ("order", "confirm"),
+ * matching Sarvam's own docs guidance verbatim — "Use codemix for
+ * chat/agent transcripts that feel natural, transcribe for clean
+ * native-script records." A live voice agent is squarely the "chat/agent
+ * transcript" case, not the archival-record case, so codemix is the
+ * correct default here, not Hindi-specific (Sarvam's own framing is
+ * English-loanword handling generally, not a Hindi-only feature).
  */
 const SAMPLE_RATE = 8000;
 
@@ -36,7 +51,7 @@ export const connectSarvamStt: ConnectStt = (onTranscript, onFatalError, _onStat
   const params = new URLSearchParams({
     "language-code": languageCode,
     model: "saaras:v3",
-    mode: "transcribe",
+    mode: "codemix",
     sample_rate: String(SAMPLE_RATE),
     input_audio_codec: "pcm_s16le",
     high_vad_sensitivity: "true",

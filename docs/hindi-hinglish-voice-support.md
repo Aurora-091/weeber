@@ -55,9 +55,8 @@ adapter becomes the default, not just taken on faith.
 - `tts/cartesia.ts`: received the call's configured language as `_language` and **discarded it** —
   never sent to Cartesia despite Cartesia's own Generation Request schema having a top-level
   `language` field (confirmed against `docs.cartesia.ai/api-reference/tts/websocket`).
-- `stt/sarvam.ts`: hardcoded to `mode: "transcribe"` instead of Sarvam's own `mode: "codemix"` (not
-  touched in this work since the plan no longer leans on Sarvam as the default — left as a known,
-  low-priority fix if Sarvam is ever used for a non-Hindi Indic language agent).
+- `stt/sarvam.ts`: hardcoded to `mode: "transcribe"` instead of Sarvam's own `mode: "codemix"` —
+  **fixed and live-verified, see "Phase 2.5" below.**
 - No STT adapter for ElevenLabs or Cartesia existed at all — STT providers were Deepgram + Sarvam
   only.
 
@@ -118,6 +117,31 @@ adapter becomes the default, not just taken on faith.
    transcript; same commit message + staying connected = transcript arrives ~1-2s later). Fixed
    with a 1.5s grace period between sending commit and actually closing the socket.
 
+### Phase 2.5 — Sarvam `mode: "codemix"` fix (DONE + LIVE-VERIFIED, 2026-07-16)
+
+User provided a real Sarvam API key too, to check whether the deprioritized `stt/sarvam.ts` fix
+(hardcoded `mode: "transcribe"` instead of Sarvam's own `mode: "codemix"`) was actually worth doing,
+now that live-testing had already caught two silent bugs in the ElevenLabs adapter.
+
+Synthesized the same Hinglish sentence via Sarvam's own TTS ("मुझे एक flight book करनी है और मेरा
+order भी confirm करना है।"), resampled to Twilio's 8kHz mu-law format, and streamed it through the
+real `connectSarvamStt` code twice — once with each mode — to compare directly:
+
+| Mode | Output |
+|---|---|
+| `transcribe` (the old default) | "order" → **"ऑर्डर"**, "confirm" → **"कन्फर्म"** — English loanwords phonetically transliterated into Devanagari |
+| `codemix` | "order" and "confirm" **stayed in Latin script** — matches Sarvam's own docs guidance verbatim |
+
+Sarvam's own docs say it plainly: *"Use codemix for chat/agent transcripts that feel natural,
+transcribe for clean native-script records."* A live voice agent is squarely the "chat/agent
+transcript" case — so `codemix` is the correct default, not a Hindi-only special case (it's about
+English-loanword handling generally, applies to Sarvam's other 9 Indian languages the same way).
+
+Fixed in `stt/sarvam.ts` (one-line mode change + doc comment explaining the live-tested rationale),
+covered by new `stt/sarvam.test.ts` (2 tests — first-ever coverage for this adapter). Verified:
+typecheck clean, oxlint 0/0, vite build green, backend suite 293 pass (was 291, +2 = the new
+tests) / 38 fail (same baseline, no new failures).
+
 ### Phase 3 — Pronunciation dictionaries + domain terms (NOT STARTED)
 - [ ] Create an ElevenLabs pronunciation dictionary with the org/product's actual domain terms
   (brand names, "COD", "UPI", city names as needed) and wire `pronunciation_dictionary_locators`
@@ -139,5 +163,6 @@ adapter becomes the default, not just taken on faith.
 |---|---|
 | 1 — Fix existing TTS adapters | ✅ Done, sanity-checked (fresh typecheck/test/lint/build all green) |
 | 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Done, **live-verified with a real account and real Hinglish audio** — 2 real bugs found and fixed via that test (see above) |
+| 2.5 — Sarvam `mode: codemix` fix | ✅ Done, **live-verified** — real before/after comparison confirmed the fix (see above) |
 | 3 — Pronunciation dictionaries | Not started |
 | 4 — Agents tab language option | Not started |
