@@ -405,7 +405,7 @@ export async function resolveAgentConfig(opts: {
       const systemPrompt = withCallControl(
         buildLanguageInstructionBlock(config.language ?? undefined) +
           buildIdentityBlock(config) +
-          withDisclosure(jobDescription),
+          withDisclosure(jobDescription, { language: config.language ?? undefined }),
         (config.guardrails as GuardrailSettings | null) ?? undefined,
         (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
       );
@@ -473,7 +473,9 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
   }
 
   const systemPrompt = withCallControl(
-    buildLanguageInstructionBlock(override.language) + buildIdentityBlock(override) + withDisclosure(jobDescription),
+    buildLanguageInstructionBlock(override.language) +
+      buildIdentityBlock(override) +
+      withDisclosure(jobDescription, { language: override.language }),
     override.guardrails,
     override.toolsEnabled,
   );

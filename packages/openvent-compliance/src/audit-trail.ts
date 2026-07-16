@@ -36,6 +36,17 @@ export type CallAuditRecord = {
    * empty/failed, should show up as unconfirmed, not silently assumed fine.
    */
   disclosureConfirmed: boolean;
+  /**
+   * The exact disclosure wording this specific call was configured to speak,
+   * as captured at call start (calls.disclosure_text). Null for pre-migration
+   * calls or calls placed with disclosure disabled — in which case the
+   * confirmation check falls back to the app-level default wording passed to
+   * buildCallAuditRecord. Surfacing it makes the audit self-contained: a
+   * reviewer sees what should have been said AND whether it was.
+   */
+  disclosureText: string | null;
+  /** Which disclosure variant was used ("en"/"hi"/"hinglish"/"custom"), for grouping/verifying an audit by language. Null for pre-migration calls. */
+  disclosureVersion: string | null;
   /** Full turn-by-turn transcript, oldest first — the actual record of what was said. */
   transcript: { role: "caller" | "agent"; text: string; at: Date }[];
   /** Whether this number was ever added to the Do-Not-Call list, and when/why, if so — checked at export time, not at call time (a number can be DNC'd after a call happened). */
@@ -59,6 +70,10 @@ export type CallAuditStorageAdapter = {
     endedAt: Date | null;
     status: string;
     disposition: string | null;
+    /** Per-call disclosure wording captured at call start, if your storage persists it (calls.disclosure_text). Optional for backward compatibility. */
+    disclosureText?: string | null;
+    /** Per-call disclosure variant tag ("en"/"hi"/"hinglish"/"custom"), if persisted. Optional for backward compatibility. */
+    disclosureVersion?: string | null;
   } | null>;
   /** Full transcript for a call, oldest turn first. */
   getTranscript(callId: string): Promise<{ role: "caller" | "agent"; text: string; at: Date }[]>;
@@ -89,21 +104,28 @@ function wasDisclosureSpoken(
 
 /**
  * Assembles a single call's full audit record — the core building block.
- * `disclosureText` should be whatever your app actually configured (see
- * consent.ts's getDisclosureLine()) so the check reflects your real wording,
- * not a hardcoded guess.
+ * `fallbackDisclosureText` is used only when a call has no per-call disclosure
+ * persisted (pre-migration rows): pass whatever your app configures as the
+ * default (see consent.ts's getDisclosureLine()). When the call row DOES carry
+ * its own `disclosureText`, that per-call wording is used for the "was it
+ * spoken" check instead — so a Hindi call is verified against the Hindi line,
+ * not the English default.
  */
 export async function buildCallAuditRecord(
   callId: string,
   storage: CallAuditStorageAdapter,
   dncAdapter: DncStorageAdapter,
-  disclosureText: string,
+  fallbackDisclosureText: string,
 ): Promise<CallAuditRecord | null> {
   const call = await storage.getCall(callId);
   if (!call) return null;
 
   const transcript = await storage.getTranscript(callId);
-  const disclosureConfirmed = wasDisclosureSpoken(transcript, disclosureText);
+  // Prefer the wording THIS call was actually configured to speak; only fall
+  // back to the app default for calls that predate per-call persistence.
+  const disclosureText = call.disclosureText ?? null;
+  const disclosureVersion = call.disclosureVersion ?? null;
+  const disclosureConfirmed = wasDisclosureSpoken(transcript, disclosureText ?? fallbackDisclosureText);
 
   const isListed = await dncAdapter.isListed(call.toNumber);
   let dncStatus: CallAuditRecord["dncStatus"] = { isListed };
@@ -113,7 +135,7 @@ export async function buildCallAuditRecord(
     if (entry) dncStatus = { isListed: true, reason: entry.reason, addedAt: entry.addedAt };
   }
 
-  return { ...call, transcript, disclosureConfirmed, dncStatus };
+  return { ...call, transcript, disclosureText, disclosureVersion, disclosureConfirmed, dncStatus };
 }
 
 /**
@@ -126,11 +148,11 @@ export async function buildPhoneNumberAuditTrail(
   phoneNumber: string,
   storage: CallAuditStorageAdapter,
   dncAdapter: DncStorageAdapter,
-  disclosureText: string,
+  fallbackDisclosureText: string,
 ): Promise<CallAuditRecord[]> {
   const calls = await storage.findCallsByPhoneNumber(phoneNumber);
   const records = await Promise.all(
-    calls.map((c) => buildCallAuditRecord(c.callId, storage, dncAdapter, disclosureText)),
+    calls.map((c) => buildCallAuditRecord(c.callId, storage, dncAdapter, fallbackDisclosureText)),
   );
   return records
     .filter((r): r is CallAuditRecord => r !== null)
@@ -156,7 +178,10 @@ export function renderAuditTrailText(records: CallAuditRecord[]): string {
       `  Ended: ${r.endedAt ? r.endedAt.toISOString() : "(call still in progress or ended abnormally)"}`,
       `  Status: ${r.status}`,
       `  Disposition: ${r.disposition ?? "(none recorded)"}`,
-      `  Recording/AI disclosure spoken: ${r.disclosureConfirmed ? "yes" : "NOT CONFIRMED"}`,
+      `  Recording/AI disclosure spoken: ${r.disclosureConfirmed ? "yes" : "NOT CONFIRMED"}${
+        r.disclosureVersion ? ` (variant: ${r.disclosureVersion})` : ""
+      }`,
+      `  Disclosure wording configured: ${r.disclosureText ?? "(not recorded for this call)"}`,
       `  Do-Not-Call status: ${
         r.dncStatus.isListed
           ? `ON THE LIST${r.dncStatus.reason ? ` (${r.dncStatus.reason})` : ""}${

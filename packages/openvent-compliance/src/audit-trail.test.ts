@@ -189,6 +189,8 @@ describe("renderAuditTrailText", () => {
         status: "completed",
         disposition: "interested",
         disclosureConfirmed: true,
+        disclosureText: "Hi there",
+        disclosureVersion: "en",
         transcript: [{ role: "agent", text: "Hi there", at: new Date("2026-07-06T10:00:01Z") }],
         dncStatus: { isListed: false },
       },
@@ -196,6 +198,7 @@ describe("renderAuditTrailText", () => {
     expect(text).toContain("Call 1 of 1");
     expect(text).toContain("Disposition: interested");
     expect(text).toContain("disclosure spoken: yes");
+    expect(text).toContain("variant: en");
     expect(text).toContain("not listed");
     expect(text).toContain("Hi there");
   });
@@ -212,6 +215,8 @@ describe("renderAuditTrailText", () => {
         status: "failed",
         disposition: null,
         disclosureConfirmed: false,
+        disclosureText: null,
+        disclosureVersion: null,
         transcript: [],
         dncStatus: { isListed: true, reason: "opted out", addedAt: new Date("2026-06-01T00:00:00Z") },
       },
@@ -219,5 +224,30 @@ describe("renderAuditTrailText", () => {
     expect(text).toContain("NOT CONFIRMED");
     expect(text).toContain("ON THE LIST");
     expect(text).toContain("opted out");
+  });
+
+  it("uses the call's own persisted disclosure wording for the spoken check, not the fallback", async () => {
+    const storage = createMemoryAuditStorage();
+    const dnc = createMemoryDncAdapter();
+    const hindiLine = "शुरू करने से पहले एक छोटी सी बात — यह कॉल रिकॉर्ड की जा सकती है, और आप एक एआई असिस्टेंट से बात कर रहे हैं।";
+    storage.seedCall({
+      callId: "9",
+      direction: "outbound",
+      fromNumber: "+919000000000",
+      toNumber: "+919111111111",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      status: "completed",
+      disposition: null,
+      disclosureText: hindiLine,
+      disclosureVersion: "hi",
+    });
+    // Agent spoke the Hindi line; the English fallback would NOT match it.
+    storage.seedTranscript("9", [{ role: "agent", text: hindiLine, at: new Date() }]);
+
+    const record = await buildCallAuditRecord("9", storage, dnc, DISCLOSURE_TEXT);
+    expect(record!.disclosureConfirmed).toBe(true);
+    expect(record!.disclosureVersion).toBe("hi");
+    expect(record!.disclosureText).toBe(hindiLine);
   });
 });

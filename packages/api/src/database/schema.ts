@@ -129,6 +129,17 @@ export const calls = pgTable("calls", {
   agentPersona: text("agent_persona"),
   recordingUrl: text("recording_url"),
   webhookUrl: text("webhook_url"),
+  /** Compliance evidence: the exact AI/recording disclosure line this call was
+   * configured to speak, captured at call start (not looked up later). Stored
+   * per-call because the disclosure wording is language-dependent (consent.ts)
+   * and the org's configured line can change over time — an audit must reflect
+   * what THIS call was actually told to say, not today's default. `null` for
+   * pre-migration rows and for calls placed with disclosure disabled. */
+  disclosureText: text("disclosure_text"),
+  /** Version tag of the disclosure wording used (e.g. "en", "hi", "hinglish"),
+   * so audits can group/verify by the exact variant spoken. Mirrors the
+   * language-variant key selected in @openvent/compliance consent.ts. */
+  disclosureVersion: text("disclosure_version"),
   disposition: text("disposition"),
   /** Misc-5: post-call sentiment (positive/neutral/negative), captured by the
    * setDisposition tool call alongside disposition — teardown's recommended

@@ -77,6 +77,8 @@ export const callAuditAdapter: CallAuditStorageAdapter = {
       endedAt: row.endedAt,
       status: row.status,
       disposition: row.disposition,
+      disclosureText: row.disclosureText,
+      disclosureVersion: row.disclosureVersion,
     };
   },
   async getTranscript(callId) {

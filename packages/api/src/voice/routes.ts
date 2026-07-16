@@ -198,7 +198,33 @@ export const voice = new Hono()
     // manual step required. A call that fails either check is rejected and
     // never dials. Applies identically regardless of which provider places
     // the call below.
-    const bypassCompliance = process.env.BYPASS_COMPLIANCE === "true" || (parsed as { bypassCompliance?: boolean }).bypassCompliance;
+    //
+    // Bypass is a DEV-ONLY escape hatch for local prototyping (e.g. dialing a
+    // test number that trips a DNC list). It is HARD-DISABLED in production:
+    //   - The BYPASS_COMPLIANCE env var is treated as a deploy misconfiguration
+    //     in prod and hard-fails the request (500) so it can't silently ship a
+    //     build that skips DNC/consent checks for every call.
+    //   - The request-body `bypassCompliance` flag is never honored in prod —
+    //     no API caller can opt a single call out of compliance.
+    const isProd = (process.env.NODE_ENV || "development") === "production";
+    const envBypass = process.env.BYPASS_COMPLIANCE === "true";
+    const bodyBypass = (parsed as { bypassCompliance?: boolean }).bypassCompliance === true;
+
+    if (isProd && (envBypass || bodyBypass)) {
+      if (envBypass) {
+        // Loud failure: someone deployed with BYPASS_COMPLIANCE=true. Refuse to
+        // place ANY call rather than dial without DNC/consent checks.
+        console.error(
+          "[compliance] BYPASS_COMPLIANCE=true is set in a production build. " +
+            "Refusing all outbound calls until it is unset — compliance gates must never be bypassable in prod.",
+        );
+        return c.json({ error: "Server misconfiguration: compliance bypass is not permitted in production" }, 500);
+      }
+      // bodyBypass in prod: reject just this request, don't take down the endpoint.
+      return c.json({ error: "`bypassCompliance` is not permitted in production" }, 403);
+    }
+
+    const bypassCompliance = !isProd && (envBypass || bodyBypass);
     if (!bypassCompliance) {
       const compliance = await checkOutboundCallCompliance(to, dncAdapter);
       if (!compliance.allowed) {

@@ -18,6 +18,7 @@ import { getTwilioClientForOrg } from "./twilio-client";
 import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
+import { isDisclosureEnabled, getDisclosureLine, getDisclosureVersion } from "@openvent/compliance";
 import { getEffectiveFlags } from "./org-queries";
 import { renderTemplate } from "./workflows/variables";
 import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
@@ -1082,6 +1083,27 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // resolved from context — renderTemplate leaves an unresolved
             // tag as literal "{{tag}}" text, so that's the signal checked.
             const resolvedLanguage = agentConfig.language ?? session?.language ?? numberConfig.language;
+
+            // Compliance evidence (India hardening): persist the exact
+            // disclosure this call is configured to speak, captured now at
+            // call start with the resolved language — not looked up later
+            // against a default that may have drifted. `getDisclosureLine`/
+            // `getDisclosureVersion` here mirror what withDisclosure() bakes
+            // into the system prompt in agent.ts, so the stored record matches
+            // what the agent is actually instructed to say. Best-effort: an
+            // audit-log write must never block or fail the live call.
+            if (dbCallId && isDisclosureEnabled()) {
+              const disclosureOpts = { language: resolvedLanguage ?? undefined };
+              void db
+                .update(calls)
+                .set({
+                  disclosureText: getDisclosureLine(disclosureOpts),
+                  disclosureVersion: getDisclosureVersion(disclosureOpts),
+                })
+                .where(eq(calls.id, dbCallId))
+                .catch(() => undefined as unknown);
+            }
+
             if (agentConfig.literalGreetingTemplate && (!resolvedLanguage || resolvedLanguage === "en")) {
               const merchantName = orgRow[0]?.name;
               const greetingContext: Record<string, string> = { ...capturedState, agent_name: agentConfig.agentName ?? "our team" };

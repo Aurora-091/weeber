@@ -1,4 +1,4 @@
-import { mock, describe, it, expect, beforeEach } from "bun:test";
+import { mock, describe, it, expect, beforeEach, afterEach } from "bun:test";
 
 // requireAdminKey is mocked to a no-op below, but that mock has proven
 // fragile to unrelated changes elsewhere in routes.ts's import graph
@@ -126,5 +126,50 @@ describe("Voice routes - Outbound Caller ID resolution", () => {
     expect(res.status).toBe(201);
     expect(lastTwilioCallParams).toBeDefined();
     expect(lastTwilioCallParams.from).toBe("+15551112222");
+  });
+});
+
+describe("Voice routes - compliance bypass hardening (prod)", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalEnvBypass = process.env.BYPASS_COMPLIANCE;
+
+  beforeEach(() => {
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888" }];
+    lastTwilioCallParams = null;
+    process.env.TWILIO_PHONE_NUMBER = "+15551112222";
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+    if (originalEnvBypass === undefined) delete process.env.BYPASS_COMPLIANCE;
+    else process.env.BYPASS_COMPLIANCE = originalEnvBypass;
+  });
+
+  it("rejects a request-body bypassCompliance in production (403) and never dials", async () => {
+    process.env.NODE_ENV = "production";
+    delete process.env.BYPASS_COMPLIANCE;
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123", bypassCompliance: true }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(lastTwilioCallParams).toBeNull();
+  });
+
+  it("hard-fails (500) when BYPASS_COMPLIANCE=true is set in production and never dials", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.BYPASS_COMPLIANCE = "true";
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123" }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(lastTwilioCallParams).toBeNull();
   });
 });
