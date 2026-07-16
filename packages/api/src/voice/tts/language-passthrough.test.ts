@@ -80,6 +80,56 @@ describe("connectElevenLabsTts — language_code passthrough", () => {
   });
 });
 
+describe("connectElevenLabsTts — pronunciation dictionary (Phase 3, 2026-07-16)", () => {
+  const originalDictId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
+  const originalDictVersionId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
+
+  afterEach(() => {
+    if (originalDictId === undefined) delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
+    else process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = originalDictId;
+    if (originalDictVersionId === undefined) delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
+    else process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID = originalDictVersionId;
+  });
+
+  it("includes pronunciation_dictionary_locators in the initial handshake message when both env vars are set", async () => {
+    process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = "dict-123";
+    process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID = "ver-456";
+    const { connectElevenLabsTts } = await import("./elevenlabs");
+    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    const handshake = JSON.parse(ws.sent[0]);
+    expect(handshake.pronunciation_dictionary_locators).toEqual([
+      { pronunciation_dictionary_id: "dict-123", version_id: "ver-456" },
+    ]);
+  });
+
+  it("omits pronunciation_dictionary_locators entirely when the env vars are unset", async () => {
+    delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
+    delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
+    const { connectElevenLabsTts } = await import("./elevenlabs");
+    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    const handshake = JSON.parse(ws.sent[0]);
+    expect(handshake.pronunciation_dictionary_locators).toBeUndefined();
+  });
+
+  it("omits it when only one of the two required env vars is set (both required together)", async () => {
+    process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = "dict-123";
+    delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
+    const { connectElevenLabsTts } = await import("./elevenlabs");
+    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    const handshake = JSON.parse(ws.sent[0]);
+    expect(handshake.pronunciation_dictionary_locators).toBeUndefined();
+  });
+});
+
 describe("connectCartesiaTts — language field passthrough", () => {
   it("includes a top-level language field in the generation request when a language is set", async () => {
     const { connectCartesiaTts } = await import("./cartesia");

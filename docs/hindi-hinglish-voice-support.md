@@ -142,11 +142,45 @@ covered by new `stt/sarvam.test.ts` (2 tests — first-ever coverage for this ad
 typecheck clean, oxlint 0/0, vite build green, backend suite 293 pass (was 291, +2 = the new
 tests) / 38 fail (same baseline, no new failures).
 
-### Phase 3 — Pronunciation dictionaries + domain terms (NOT STARTED)
-- [ ] Create an ElevenLabs pronunciation dictionary with the org/product's actual domain terms
-  (brand names, "COD", "UPI", city names as needed) and wire `pronunciation_dictionary_locators`
-  into the TTS connection. This is a content/curation step (needs real terms decided with the
-  user), not just a code change — do not build this blind.
+### Phase 3 — Pronunciation dictionaries + domain terms (DONE + LIVE-VERIFIED, 2026-07-16)
+
+**Wiring:** `tts/elevenlabs.ts` now includes `pronunciation_dictionary_locators` in the initial
+WS handshake message (confirmed from ElevenLabs' own reference: this field belongs in the first
+message, alongside `voice_settings`/`xi_api_key`, not as a query param) whenever both
+`ELEVENLABS_PRONUNCIATION_DICTIONARY_ID` and `ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID` are
+set — omitted entirely otherwise, same no-op-by-default pattern as `language_code`. Covered by 3
+new tests in `tts/language-passthrough.test.ts` (both-set / neither-set / only-one-set cases).
+
+**Domain terms (decided with the user):** OTP, Weeber (brand name), COD, RTO, UPI, KYC, plus two
+more added from research into common Indian fintech/e-commerce TTS mispronunciation issues — GST
+and PIN code, both near-universal in COD-confirmation/order calls. All encoded as **alias rules**
+(not phoneme rules) since alias rules work on every ElevenLabs model, while phoneme rules are
+restricted to specific models — a real constraint found during the research, not assumed.
+
+**Live-created and live-verified with the user's real ElevenLabs account:**
+- Dictionary created via `POST /v1/pronunciation-dictionaries/add-from-rules`:
+  `id: 3ygOtN1S5v8oM8eoBHvn`, `version_id: wid8pyPH48GSfGg73uFc`, 8 rules confirmed by the API's
+  own response (`version_rules_num: 8`).
+- **Direct before/after proof, not just a successful API call:** synthesized "Please confirm your
+  COD order using OTP and UPI." twice — once without the dictionary, once with — then transcribed
+  both back through the now-verified ElevenLabs Scribe STT adapter:
+  - **Without the dictionary:** "Please confirm your **card** order using OTP and UPI." — COD was
+    genuinely mispronounced/misheard as "card."
+  - **With the dictionary:** "Please confirm your **COD** order using OTP and UPI." — correct.
+  - This is exactly the failure mode the dictionary exists to prevent, caught and fixed with real
+    evidence, not assumed to work because the create-dictionary API call returned 200.
+
+**Action needed from the user (not done by me — Railway is intentionally out of scope per earlier
+instruction):** set these two env vars on Railway to activate the dictionary in production:
+```
+ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=3ygOtN1S5v8oM8eoBHvn
+ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=wid8pyPH48GSfGg73uFc
+```
+Until these are set, the code path is a safe no-op — no behavior change for any existing deployment.
+
+Verified: typecheck clean, oxlint 0/0, vite build green, backend suite 296 pass (was 293, +3 = the
+new tests) / 38 fail (same baseline, no new failures). API key and all temporary test scripts
+deleted from disk after testing.
 
 ### Phase 4 — Agents tab language option (NOT STARTED)
 - [ ] Add a real **"Hindi (Hinglish)"** entry to `RECOMMENDED_LANGUAGES` (agent-frame.ts), distinct
@@ -164,5 +198,5 @@ tests) / 38 fail (same baseline, no new failures).
 | 1 — Fix existing TTS adapters | ✅ Done, sanity-checked (fresh typecheck/test/lint/build all green) |
 | 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Done, **live-verified with a real account and real Hinglish audio** — 2 real bugs found and fixed via that test (see above) |
 | 2.5 — Sarvam `mode: codemix` fix | ✅ Done, **live-verified** — real before/after comparison confirmed the fix (see above) |
-| 3 — Pronunciation dictionaries | Not started |
+| 3 — Pronunciation dictionaries | ✅ Done, **live-created + live-verified** — real before/after COD mispronunciation fix confirmed. Needs env vars set on Railway (see above) to activate |
 | 4 — Agents tab language option | Not started |

@@ -4,6 +4,39 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 3: pronunciation dictionaries (live-verified)
+
+Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 3 section). Summary:
+
+`tts/elevenlabs.ts` now includes `pronunciation_dictionary_locators` in the initial WS handshake
+message (confirmed placement from ElevenLabs' own reference — this field belongs in the first
+message, not a query param) whenever `ELEVENLABS_PRONUNCIATION_DICTIONARY_ID` +
+`ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID` are both set; a safe no-op otherwise. 3 new tests
+in `tts/language-passthrough.test.ts`.
+
+Domain terms decided with the user (OTP, Weeber, COD, RTO, UPI, KYC) plus two more from research
+into common Indian fintech/e-commerce TTS mispronunciation issues (GST, PIN code) — all encoded as
+alias rules (phoneme rules are restricted to specific ElevenLabs models, alias rules work on all of
+them). Dictionary live-created via the user's real ElevenLabs account:
+`id: 3ygOtN1S5v8oM8eoBHvn`, `version_id: wid8pyPH48GSfGg73uFc`.
+
+**Live-verified with real before/after evidence, not just a successful create call:** synthesized
+"Please confirm your COD order using OTP and UPI." with and without the dictionary, transcribed
+both back through the (already live-verified) ElevenLabs Scribe STT adapter. Without the
+dictionary: "Please confirm your **card** order using OTP and UPI." — COD was genuinely
+mispronounced. With it: "...your **COD** order..." — correct. Exactly the failure mode this
+feature exists to prevent, caught with real evidence.
+
+**Needs a user action to activate in production:** the two env vars above must be set on Railway
+(intentionally not done by me — Railway changes are out of scope per earlier instruction this
+session). Until set, this is a no-op, zero behavior change.
+
+Verified: typecheck clean, oxlint 0/0, vite build green. Backend suite 296 pass (was 293, +3 = the
+new tests) / 38 fail (same baseline, no new failures). API key and all temporary test scripts
+deleted from disk after testing.
+
+---
+
 ## 2026-07-16 — Hindi/Hinglish voice support, Phase 2.5: Sarvam STT mode fix (live-verified)
 
 User also provided a real Sarvam API key, since Sarvam is already live in production and the

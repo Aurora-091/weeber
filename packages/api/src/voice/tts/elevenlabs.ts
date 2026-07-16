@@ -18,9 +18,22 @@ import type { ConnectTts } from "./types";
  * already threading a `language` value through from stream.ts for this
  * exact purpose. Omitted (falls back to the model's own detection) when no
  * language is configured for the call, same as before this change.
+ *
+ * Phase 3 (2026-07-16): optional pronunciation dictionary support — confirmed
+ * from ElevenLabs' own WS reference that `pronunciation_dictionary_locators`
+ * is a field in the *initial handshake message* (same one that already sends
+ * `voice_settings`/`xi_api_key`), not a query param, and "must only be
+ * provided in the first message." Configured via
+ * `ELEVENLABS_PRONUNCIATION_DICTIONARY_ID` +
+ * `ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID` (both required together —
+ * a dictionary is created once via ElevenLabs' dashboard/API, not something
+ * this codebase creates per-call). Omitted entirely when unset, same
+ * no-op-by-default pattern as `language_code` above.
  */
 export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language) => {
   const voiceId = voiceIdOverride || process.env.ELEVENLABS_VOICE_ID;
+  const dictionaryId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
+  const dictionaryVersionId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
   // "multi" is Deepgram STT's own code-switching mode (agent-frame.ts's
   // RECOMMENDED_LANGUAGES) — not a real ISO 639-1 language, so it's never
   // valid to forward as ElevenLabs' language_code (a TTS call always speaks
@@ -42,6 +55,13 @@ export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, 
         text: " ",
         voice_settings: { stability: 0.5, similarity_boost: 0.8 },
         xi_api_key: process.env.ELEVENLABS_API_KEY,
+        ...(dictionaryId && dictionaryVersionId
+          ? {
+              pronunciation_dictionary_locators: [
+                { pronunciation_dictionary_id: dictionaryId, version_id: dictionaryVersionId },
+              ],
+            }
+          : {}),
       }),
     );
   });
