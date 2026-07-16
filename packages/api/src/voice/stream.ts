@@ -1010,7 +1010,6 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (row) {
               humanNumber = resolveHumanNumber(row.direction, row.fromNumber, row.toNumber);
               humanNumberOrgId = row.orgId ?? undefined;
-              callerMemoryFacts = await getCallerMemory(humanNumberOrgId, humanNumber).catch(() => ({}));
             }
 
             // Per-number config (see number-config.ts) applies to every call
@@ -1018,17 +1017,33 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // e.g. POST /calls/outbound) takes precedence when both exist.
             const numberConfig = getNumberConfig(row?.toNumber);
             webhookUrl = resolveWebhookUrl(session?.webhookUrl ?? numberConfig.webhookUrl ?? row?.webhookUrl ?? undefined);
-            // Misc-1: a "call my phone" test call carries the merchant's
-            // exact in-progress form state — use it directly and skip the
-            // DB-backed resolution entirely, same as the WS test call does.
-            const agentConfig = session?.resolvedConfigOverride
-              ? session.resolvedConfigOverride
-              : await resolveAgentConfig({
-                  explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
-                  calledNumber: row?.toNumber,
-                  orgId: session?.orgId ?? row?.orgId ?? undefined,
-                  templateKey: session?.workflowName ?? undefined,
-                });
+
+            // Latency fix (audit follow-up, 2026-07-16): these three lookups
+            // are mutually independent — each only needs `row`/`session`/
+            // `numberConfig`/`humanNumberOrgId`, all already resolved above —
+            // but used to run as three sequential awaited DB round-trips
+            // before the greeting could even start. On an outbound call this
+            // entire chain runs only *after* pickup, directly adding to the
+            // caller-perceived pickup-to-first-word delay (measured ~1-3s in
+            // production). Running them concurrently instead of in sequence
+            // removes two round-trips' worth of that wait for free — no
+            // behavior change, purely a scheduling change.
+            const [callerMemoryResult, agentConfig, effectiveFlagsResult] = await Promise.all([
+              row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
+              // Misc-1: a "call my phone" test call carries the merchant's
+              // exact in-progress form state — use it directly and skip the
+              // DB-backed resolution entirely, same as the WS test call does.
+              session?.resolvedConfigOverride
+                ? Promise.resolve(session.resolvedConfigOverride)
+                : resolveAgentConfig({
+                    explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
+                    calledNumber: row?.toNumber,
+                    orgId: session?.orgId ?? row?.orgId ?? undefined,
+                    templateKey: session?.workflowName ?? undefined,
+                  }),
+              humanNumberOrgId ? getEffectiveFlags(humanNumberOrgId).catch(() => ({})) : Promise.resolve({}),
+            ]);
+            callerMemoryFacts = callerMemoryResult;
             persona = agentConfig.systemPrompt;
             enabledToolsOverride = agentConfig.enabledTools;
             llmModelOverride = agentConfig.llmModel;
@@ -1058,10 +1073,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
             // §3b: resolved once per call, here, alongside every other
             // org-scoped setting — the media handler below can't itself
-            // await a flag lookup on every single audio frame.
-            const noiseFilterFlags: Record<string, boolean> = humanNumberOrgId
-              ? await getEffectiveFlags(humanNumberOrgId).catch(() => ({}))
-              : {};
+            // await a flag lookup on every single audio frame. Fetched
+            // concurrently with callerMemory/agentConfig above, not again here.
+            const noiseFilterFlags: Record<string, boolean> = effectiveFlagsResult;
             if (noiseFilterFlags[ADAPTIVE_NOISE_FILTER_FLAG] === true) {
               noiseFilter = createRollingNoiseFilter();
             }

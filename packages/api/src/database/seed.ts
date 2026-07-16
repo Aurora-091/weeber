@@ -4,18 +4,21 @@ import { eq } from "drizzle-orm";
 import { join } from "path";
 import { CART_RECOVERY_TEMPLATE } from "../voice/workflows/seed-graph";
 
-export async function seedAgentTemplates() {
-  console.log("[db-seed] Seeding agent templates...");
-  // packages/api/src/database -> repo root is 4 levels up, not 3 (D5, this
-  // audit): the prompt files live at <repo-root>/docs/agent-prompts, not
-  // packages/docs/agent-prompts. The off-by-one silently meant every
-  // Bun.file(...).exists() check below returned false in every environment
-  // (local and Railway alike), so seeding always skipped all 3 templates via
-  // `continue` — while still logging "seeded successfully" unconditionally
-  // at the end, regardless of whether anything was actually written.
-  const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
-
-  const templates = [
+/**
+ * Single source of truth for the seeded agent templates — exported (not
+ * inlined in seedAgentTemplates) so seed.test.ts can assert every template's
+ * `defaultTools` is actually a subset of `AVAILABLE_TOOL_NAMES` (agent-frame.ts)
+ * without duplicating this list. Guards against a repeat of the
+ * confirmCodOrder/offerCartRecoveryDiscount bug: both tools were listed here
+ * and referenced in their script docs' own "Tools" table, but were never
+ * added to AVAILABLE_TOOL_NAMES or agent.ts's buildVoiceTools map, so
+ * buildVoiceTools silently filtered them out of every call's actual tool
+ * list — the model was told (by its own persona) to call a tool it never
+ * had, with zero error anywhere. That was only caught by reading a live
+ * call's production log line by line, not by any test — this test exists so
+ * the next tool addition fails CI instead of shipping silently broken.
+ */
+export const AGENT_TEMPLATES = [
     {
       key: "shopify-cart-recovery",
       name: "Shopify Cart Recovery",
@@ -62,6 +65,18 @@ export async function seedAgentTemplates() {
       active: true,
     },
   ];
+
+export async function seedAgentTemplates() {
+  console.log("[db-seed] Seeding agent templates...");
+  // packages/api/src/database -> repo root is 4 levels up, not 3 (D5, this
+  // audit): the prompt files live at <repo-root>/docs/agent-prompts, not
+  // packages/docs/agent-prompts. The off-by-one silently meant every
+  // Bun.file(...).exists() check below returned false in every environment
+  // (local and Railway alike), so seeding always skipped all 3 templates via
+  // `continue` — while still logging "seeded successfully" unconditionally
+  // at the end, regardless of whether anything was actually written.
+  const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
+  const templates = AGENT_TEMPLATES;
 
   let seededCount = 0;
   let skippedCount = 0;
