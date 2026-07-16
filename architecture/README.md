@@ -24,8 +24,9 @@ rules, the dashboards, all inspectable and yours. The *AI layer* (LLM inference,
 *telephony layer* (PSTN) remain cloud APIs by necessity — see `DECISIONS.md` ADR-016 for the full
 reasoning on why "fully local" is a legitimate but different product, not a near-term goal here.
 
-What you actually own at this position: which provider plugs into each slot (swap Deepgram ↔ Sarvam,
-swap Twilio ↔ Plivo ↔ Exotel, swap ElevenLabs ↔ Cartesia ↔ Sarvam — no migration, no platform lock-in),
+What you actually own at this position: which provider plugs into each slot (swap Deepgram ↔ Sarvam ↔
+ElevenLabs, swap Twilio ↔ Plivo ↔ Exotel, swap ElevenLabs ↔ Cartesia ↔ Sarvam — no migration, no
+platform lock-in),
 where the call data lands (your own Postgres, not a platform's dashboard), and every line of call logic
 and compliance enforcement. What you don't own: the phone network itself, or the model weights the
 LLM/STT/TTS calls run against.
@@ -47,7 +48,7 @@ packages/
 │           ├── routes.ts          # main /api/voice/* surface — start here
 │           ├── stream.ts          # per-call WebSocket state machine (the pipeline below)
 │           ├── agent.ts           # LLM turn runner + persona + known-facts prompt injection
-│           ├── stt/               # deepgram.ts, sarvam.ts — STT provider abstraction
+│           ├── stt/               # deepgram.ts, sarvam.ts, elevenlabs.ts — STT provider abstraction
 │           ├── tts/               # elevenlabs.ts, cartesia.ts, sarvam.ts — TTS provider abstraction
 │           ├── llm/               # AI Gateway / Groq provider abstraction
 │           ├── telephony-transport.ts   # Twilio/Plivo/Exotel wire-format abstraction
@@ -89,7 +90,8 @@ Media Stream (bidirectional WS, base64 mu-law 8kHz audio frames, Twilio/Plivo/Ex
 normalized by telephony-transport.ts)
         |  caller audio chunks
         v
-STT  (Deepgram nova-3, or Sarvam Saaras for Indic — stt/deepgram.ts / stt/sarvam.ts)
+STT  (Deepgram nova-3, Sarvam Saaras, or ElevenLabs Scribe v2 Realtime for Indic —
+     stt/deepgram.ts / stt/sarvam.ts / stt/elevenlabs.ts, see docs/hindi-hinglish-voice-support.md)
         |  finalized transcript
         v
 LLM Agent (AI Gateway or Groq — voice/llm/, streamed, tool-calling, latency telemetry)

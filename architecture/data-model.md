@@ -50,7 +50,7 @@ erDiagram
         text org_id FK
         text template_key FK
         text voice_provider "elevenlabs | cartesia | sarvam"
-        text stt_provider "deepgram | sarvam"
+        text stt_provider "deepgram | sarvam | elevenlabs"
         text llm_provider
         text[] tools_enabled
         jsonb guardrails

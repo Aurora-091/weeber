@@ -34,14 +34,33 @@ DATABASE_URL=                # Turso/libSQL connection string
 
 **TTS provider (pick one, default is Cartesia):**
 ```
-TTS_PROVIDER=cartesia        # or "elevenlabs"
+TTS_PROVIDER=cartesia        # or "elevenlabs" or "sarvam"
 CARTESIA_API_KEY=
 CARTESIA_VOICE_ID=
 ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_ID=
+# Optional — pronunciation dictionary for domain terms (COD, UPI, KYC, etc.) that get
+# mispronounced by default. Both required together; omitted = safe no-op. See
+# docs/hindi-hinglish-voice-support.md Phase 3 for the exact terms and how this was
+# live-verified (real before/after: "COD" was being misheard as "card" without it).
+ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=
+ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=
+SARVAM_API_KEY=               # Sarvam Bulbul v3 — natural Indic-language voices
 ```
 Note: ElevenLabs' free tier blocks all library voices via API (`402 payment_required`) — Cartesia's free/
 Starter tier works out of the box. See [`DECISIONS.md`](../DECISIONS.md) for why Cartesia is the default.
+
+**STT provider (pick one, default is Deepgram):**
+```
+STT_PROVIDER=deepgram         # or "sarvam" or "elevenlabs"
+# DEEPGRAM_API_KEY is under Core above.
+# SARVAM_API_KEY (shared with the TTS section above) — Saaras v3, mode: "codemix", live-verified
+#   to keep English words in Latin script instead of transliterating them to Devanagari.
+# ELEVENLABS_API_KEY (shared with the TTS section above) — Scribe v2 Realtime, live-verified with
+#   real Hinglish audio to do the same. Currently the agents-tab UI's recommended default for
+#   Hindi/Hinglish agents — see docs/hindi-hinglish-voice-support.md for the full research and
+#   live-verification writeup (all 4 phases done 2026-07-16).
+```
 
 **LLM provider (pick one, default is the AI Gateway):**
 ```

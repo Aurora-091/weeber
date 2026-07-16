@@ -10,7 +10,7 @@ sequenceDiagram
     participant Caller
     participant Tel as Telephony provider<br/>(Twilio / Plivo / Exotel)
     participant WS as voice/stream.ts<br/>(per-call WS state machine)
-    participant STT as voice/stt/*.ts<br/>(Deepgram nova-3 / Sarvam Saaras)
+    participant STT as voice/stt/*.ts<br/>(Deepgram nova-3 / Sarvam Saaras / ElevenLabs Scribe v2 Realtime)
     participant Agent as voice/agent.ts<br/>(runVoiceAgentTurn)
     participant LLM as voice/llm/*.ts<br/>(AI Gateway / Groq)
     participant TTS as voice/tts/*.ts<br/>(ElevenLabs / Cartesia / Sarvam Bulbul)
@@ -81,8 +81,16 @@ means `voice/routes.ts` and `voice/stream.ts` never branch on provider directly.
 ## STT/TTS provider selection today
 
 Per-agent config (`agentTemplates`/`orgAgentConfigs`) lets an operator pick `sttProvider` (`deepgram` |
-`sarvam`) and `voiceProvider` (`elevenlabs` | `cartesia` | `sarvam`) — **but this is one static field per
-agent, not a per-call, per-language switch.** Building the actual dual-language-in-one-call behavior
-(detect language mid-call, switch TTS voice, debounce noisy short-utterance detections) is tracked as
-**Phase B2** in `WEEBER-PLAN.md` — the provider adapters (`stt/sarvam.ts`, `tts/sarvam.ts`) already exist,
-the orchestration logic to actually switch languages inside one call does not yet.
+`sarvam` | `elevenlabs`) and `voiceProvider` (`elevenlabs` | `cartesia` | `sarvam`) — **but this is one
+static field per call, not a per-call, per-language switch.** Building the actual dual-language-in-one-call
+behavior (detect language mid-call, switch TTS voice, debounce noisy short-utterance detections) is
+tracked as **Phase B2** in `WEEBER-PLAN.md` — that part is still not built.
+
+The STT/TTS *quality* half of the Hindi/Hinglish story, however, was live-verified 2026-07-16
+(`docs/hindi-hinglish-voice-support.md`, not duplicated here): `stt/elevenlabs.ts` (new — ElevenLabs
+Scribe v2 Realtime, confirmed with real audio to keep English words in Latin script mid-sentence
+instead of transliterating them) and `stt/sarvam.ts` (fixed from `mode: "transcribe"` to `"codemix"`,
+same live-verification approach) are both real, tested options for Hindi today — the agents-tab UI
+recommends ElevenLabs as the tested default. `tts/elevenlabs.ts` also gained pronunciation-dictionary
+support (`pronunciation_dictionary_locators`) for domain terms (COD, UPI, KYC, etc.) that were being
+mispronounced.
