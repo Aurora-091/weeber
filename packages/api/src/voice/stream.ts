@@ -110,7 +110,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
   let llmProviderOverride: "gateway" | "groq" | undefined;
-  let sttProviderOverride: "deepgram" | "sarvam" | undefined;
+  let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
   /** Per-agent frame overrides (see agent-frame.ts, agent.ts's resolveAgentConfig) — all
    * undefined unless the call's org+template has a configured agent config row. */

@@ -226,6 +226,7 @@ function VoiceTab({ row, form, set }: TabProps) {
         <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
           <option value="deepgram">Deepgram</option>
           <option value="sarvam">Sarvam (Indian-language STT)</option>
+          <option value="elevenlabs">ElevenLabs Scribe (Hindi/Hinglish code-switching)</option>
         </select>
       </div>
     </div>

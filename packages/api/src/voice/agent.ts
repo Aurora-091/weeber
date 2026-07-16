@@ -340,7 +340,7 @@ export type ResolvedAgentConfig = {
   enabledTools?: AvailableToolName[];
   /** STT provider override (agent-frame.ts's `sttProvider`) — undefined falls through to
    * number-config/session/global STT_PROVIDER default ("deepgram"). */
-  sttProvider?: "deepgram" | "sarvam";
+  sttProvider?: "deepgram" | "sarvam" | "elevenlabs";
   /** Drives both STT and TTS for the call (agent-frame.ts's `language`) — see RECOMMENDED_LANGUAGES. */
   language?: string;
   /** Per-org agent display name (agent-frame.ts's `name`, e.g. "Amit") — used to fill
@@ -417,7 +417,7 @@ export async function resolveAgentConfig(opts: {
         llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
-        sttProvider: (config.sttProvider as "deepgram" | "sarvam" | null) ?? undefined,
+        sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
         language: config.language ?? undefined,
         agentName: config.name ?? undefined,
         // Latency fix (2026-07-16): only offer the literal (LLM-free)

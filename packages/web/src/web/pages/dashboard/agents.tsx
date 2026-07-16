@@ -356,6 +356,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={fieldCls}>
                   <option value="deepgram">Deepgram</option>
                   <option value="sarvam">Sarvam</option>
+                  <option value="elevenlabs">ElevenLabs Scribe</option>
                 </select>
               </div>
               <div>

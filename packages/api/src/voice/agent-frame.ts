@@ -97,7 +97,7 @@ export const AgentFrameSchema = z.object({
    * and TTS choice for a given language don't have to be the same vendor,
    * e.g. Deepgram STT (fast, English-strong) + Sarvam TTS (natural Hindi
    * voice) for a Hindi-first agent. Defaults to "deepgram" when unset. */
-  sttProvider: z.enum(["deepgram", "sarvam"]).optional(),
+  sttProvider: z.enum(["deepgram", "sarvam", "elevenlabs"]).optional(),
   llmProvider: z.enum(["gateway", "groq"]).optional(),
   llmModel: z.string().min(1).max(200).optional(),
   toolsEnabled: z.array(z.enum(AVAILABLE_TOOL_NAMES)).optional(),

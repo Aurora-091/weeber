@@ -1,6 +1,7 @@
 import type { ConnectStt, SttProvider } from "./types";
 import { connectDeepgram } from "./deepgram";
 import { connectSarvamStt } from "./sarvam";
+import { connectElevenLabsStt } from "./elevenlabs";
 
 /**
  * STT provider registry — mirrors tts/index.ts's pattern. Add a new
@@ -11,6 +12,7 @@ import { connectSarvamStt } from "./sarvam";
 const providers: Record<SttProvider, ConnectStt> = {
   deepgram: connectDeepgram,
   sarvam: connectSarvamStt,
+  elevenlabs: connectElevenLabsStt,
 };
 
 /**
@@ -21,7 +23,7 @@ const providers: Record<SttProvider, ConnectStt> = {
  */
 export function resolveSttProvider(override?: string | null): SttProvider {
   const configured = (override ?? process.env.STT_PROVIDER ?? "deepgram").toLowerCase();
-  if (configured === "deepgram" || configured === "sarvam") return configured;
+  if (configured === "deepgram" || configured === "sarvam" || configured === "elevenlabs") return configured;
   console.warn(`[stt] Unknown STT provider "${configured}" — falling back to "deepgram"`);
   return "deepgram";
 }

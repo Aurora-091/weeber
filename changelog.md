@@ -4,6 +4,29 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 2: ElevenLabs Scribe v2 Realtime STT adapter
+
+Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 2 section) — summary here.
+
+New `stt/elevenlabs.ts`, wired into the existing provider-abstraction pattern (`SttProvider` type,
+`stt/index.ts` registry, `agent-frame.ts`'s `sttProvider` enum, `agent.ts`'s `ResolvedAgentConfig`,
+`stream.ts`/`test-call-stream.ts` local override types) and exposed as a selectable option in both
+the merchant and admin agents-tab STT provider dropdowns.
+
+**Disclosed, unresolved risk:** ElevenLabs' public docs only show raw PCM16 examples for Scribe v2
+Realtime's WebSocket API — despite marketing claiming mu-law support, no confirmed mu-law
+`audio_format` literal could be found in their public reference. Rather than guess one in
+production code, this adapter decodes Twilio's mu-law to PCM16 first (reusing the same
+`mulawToPcm16` helper `stt/sarvam.ts` already uses for the identical reason) and sends raw PCM —
+the one path ElevenLabs' own examples actually demonstrate. Code-complete, unit-tested against a
+mocked WebSocket (6 new tests in `stt/elevenlabs.test.ts`), but **never tested against a real
+ElevenLabs connection** — do a live test call before defaulting any agent onto this provider.
+
+Verified: typecheck clean, oxlint 0/0, vite build green. Backend suite 291 pass (was 285, +6 = the
+new tests) / 38 fail (same baseline, no new failures).
+
+---
+
 ## 2026-07-16 — Hindi/Hinglish voice support, Phase 1: fix ElevenLabs/Cartesia TTS language passthrough
 
 Full plan tracked in `docs/hindi-hinglish-voice-support.md` — read that for the research behind

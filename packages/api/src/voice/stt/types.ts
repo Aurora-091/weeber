@@ -21,7 +21,7 @@ export type SttConnection = {
   close(): void;
 };
 
-export type SttProvider = "deepgram" | "sarvam";
+export type SttProvider = "deepgram" | "sarvam" | "elevenlabs";
 
 export type ConnectStt = (
   onTranscript: SttTranscriptHandler,

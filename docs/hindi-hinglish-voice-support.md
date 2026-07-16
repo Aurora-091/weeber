@@ -79,16 +79,36 @@ adapter becomes the default, not just taken on faith.
   failures — confirmed none of the 6 new tests appear in the fail list).
 - Commit: (see git log after this doc is committed)
 
-### Phase 2 — Build the ElevenLabs Scribe v2 Realtime STT adapter (NOT STARTED)
-- [ ] `stt/elevenlabs.ts` implementing the same `ConnectStt` shape as `stt/deepgram.ts`/
-  `stt/sarvam.ts` — WebSocket streaming, mu-law 8kHz input (no re-encoding needed), wired into
-  `stt/index.ts`'s provider registry.
-- [ ] Wire ElevenLabs keyterm prompting for domain terms (order IDs, "COD", "UPI", merchant name)
-  once the adapter exists — same mechanism Scribe already supports for STT, mirrors what
-  pronunciation dictionaries do on the TTS side.
-- [ ] **Verify the Indic-English code-switching claim empirically** with one real test call before
-  treating Scribe v2 Realtime as reliable for Hindi/Hinglish — do not take the marketing claim on
-  faith (see the caveat above).
+### Phase 2 — Build the ElevenLabs Scribe v2 Realtime STT adapter (DONE, 2026-07-16 — see caveat)
+- [x] `stt/elevenlabs.ts` — same `ConnectStt` shape as `stt/deepgram.ts`/`stt/sarvam.ts`, wired into
+  `stt/index.ts`'s provider registry, `SttProvider` type, `agent-frame.ts`'s `sttProvider` enum,
+  `agent.ts`'s `ResolvedAgentConfig`, and both `stream.ts`/`test-call-stream.ts` local override
+  types. Also added an "ElevenLabs Scribe" option to both the merchant (`pages/app/agents.tsx`) and
+  admin (`pages/dashboard/agents.tsx`) STT provider dropdowns so it's actually selectable end-to-end,
+  not backend-only dead code.
+- [x] Test coverage: `stt/elevenlabs.test.ts` (6 tests) — mocked-WebSocket coverage of connection
+  URL/headers, `session_started` → `onConnected`, `partial_transcript`/`committed_transcript` →
+  final/non-final, mu-law→PCM16 audio encoding, and the close/commit sequence.
+- [ ] Keyterm prompting for domain terms — deferred, not done in this pass (needs the actual term
+  list, same reasoning as Phase 3's pronunciation dictionaries).
+- [ ] **Still unverified — the Indic-English code-switching claim empirically.** Not tested against
+  a real ElevenLabs connection in this pass (no API credentials available in the build
+  environment). See the important caveat below before treating this as production-ready.
+
+**⚠️ Real, disclosed risk carried by this adapter:** ElevenLabs' public docs only ever show raw
+16-bit PCM audio chunks in their Scribe v2 Realtime WebSocket examples (`sample_rate: 16000`,
+`audio_base_64` of raw PCM bytes) — despite their marketing page stating the API "supports PCM
+(8-48kHz) and mu-law encoding," no confirmed mu-law/`audio_format` WebSocket parameter literal
+could be found in their public reference (only an SDK-level `AudioFormat.PCM_16000` enum turned up,
+no `ULAW_8000` equivalent). Rather than guess an unconfirmed encoding literal in code that reaches
+production, this adapter decodes Twilio's 8kHz mu-law to 16-bit PCM first (reusing
+`mulawToPcm16` from `audio-codec.ts`, the same approach `stt/sarvam.ts` already uses for the same
+reason) and sends that as raw PCM at `sample_rate: 8000` — the one path actually demonstrated
+working in ElevenLabs' own examples. This is a defensible, code-complete implementation, but it has
+**never been tested against a real ElevenLabs connection** — connection success, transcription
+accuracy, and the specific Hindi/Hinglish code-switching quality are all unverified. Do a real test
+call (or provide a test API key for a sandbox smoke test) before making this the default
+`sttProvider` for any live agent.
 
 ### Phase 3 — Pronunciation dictionaries + domain terms (NOT STARTED)
 - [ ] Create an ElevenLabs pronunciation dictionary with the org/product's actual domain terms
@@ -109,7 +129,7 @@ adapter becomes the default, not just taken on faith.
 
 | Phase | Status |
 |---|---|
-| 1 — Fix existing TTS adapters | ✅ Done |
-| 2 — ElevenLabs Scribe v2 Realtime STT adapter | Not started |
+| 1 — Fix existing TTS adapters | ✅ Done, sanity-checked (fresh typecheck/test/lint/build all green) |
+| 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Code-complete, ⚠️ **unverified against a real connection** — see caveat above |
 | 3 — Pronunciation dictionaries | Not started |
 | 4 — Agents tab language option | Not started |
