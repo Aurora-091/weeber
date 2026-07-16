@@ -4,6 +4,37 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 1: fix ElevenLabs/Cartesia TTS language passthrough
+
+Full plan tracked in `docs/hindi-hinglish-voice-support.md` — read that for the research behind
+this (why Hinglish breaks monolingual STT/TTS, provider comparison, and the reconstructed
+ElevenLabs/Cartesia-first plan vs the original Sarvam-first draft).
+
+Found both existing TTS adapters were using their provider at a fraction of real capability:
+- `tts/elevenlabs.ts` never accepted a `language` argument at all (4-param signature), despite
+  ElevenLabs' own `stream-input` endpoint documenting `language_code` as a real query param to
+  enforce/hint pronunciation for multilingual models.
+- `tts/cartesia.ts` received the call's language as `_language` and silently discarded it, despite
+  Cartesia's own Generation Request schema having a top-level `language` field (confirmed against
+  `docs.cartesia.ai/api-reference/tts/websocket`).
+
+Both now pass the language through (guarding against forwarding `"multi"` — Deepgram STT's own
+code-switching mode, not a real ISO language — to either provider). `tts/types.ts`'s `ConnectTts`
+doc comment corrected; it previously and incorrectly claimed both providers ignore `language`.
+
+Added `tts/language-passthrough.test.ts` (6 tests) — first-ever test coverage for either adapter's
+URL/payload construction, using a minimal mocked `WebSocket` (no prior pattern for this existed in
+the repo).
+
+Verified: typecheck clean, oxlint 0/0, vite build green, backend suite 285 pass (was 279, +6 = the
+new tests) / 38 fail (same as the immediately-prior checkpoint, confirmed none of the 6 new tests
+are among the failures).
+
+Remaining phases (STT adapter for ElevenLabs Scribe v2 Realtime, pronunciation dictionaries, the
+agents-tab Hinglish language option) not started — see the tracking doc.
+
+---
+
 ## 2026-07-16 — Skip the LLM for the opening greeting when it's a fixed, scripted line
 
 Follow-up to the pickup-to-first-word latency fix earlier the same day (Promise.all-parallelized

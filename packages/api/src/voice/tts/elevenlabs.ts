@@ -9,12 +9,27 @@ import type { ConnectTts } from "./types";
  * persistent reconnect here — instead, an unexpected close/error calls
  * `onError` so the caller can end the turn cleanly instead of hanging forever
  * waiting for audio that will never arrive.
+ *
+ * Hindi/Hinglish research (2026-07-16, docs/hindi-hinglish-voice-support.md):
+ * `language_code` is a real, documented query param on this endpoint ("the
+ * ISO 639-1 language code, for specific models") that enforces/hints the
+ * target language for multilingual-capable models like eleven_flash_v2_5 —
+ * this was previously never passed at all despite the ConnectTts type
+ * already threading a `language` value through from stream.ts for this
+ * exact purpose. Omitted (falls back to the model's own detection) when no
+ * language is configured for the call, same as before this change.
  */
-export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride) => {
+export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language) => {
   const voiceId = voiceIdOverride || process.env.ELEVENLABS_VOICE_ID;
+  // "multi" is Deepgram STT's own code-switching mode (agent-frame.ts's
+  // RECOMMENDED_LANGUAGES) — not a real ISO 639-1 language, so it's never
+  // valid to forward as ElevenLabs' language_code (a TTS call always speaks
+  // one concrete language's phonology, even for a call whose STT side is
+  // set to auto-detect across two).
+  const languageParam = language && language !== "multi" ? `&language_code=${encodeURIComponent(language)}` : "";
   const url =
     `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input` +
-    `?model_id=eleven_flash_v2_5&output_format=ulaw_8000`;
+    `?model_id=eleven_flash_v2_5&output_format=ulaw_8000${languageParam}`;
 
   const ws = new WebSocket(url);
   let closedIntentionally = false;

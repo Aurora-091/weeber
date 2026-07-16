@@ -22,9 +22,15 @@ export type ConnectTts = (
   /** Per-agent voice ID override (agent-frame.ts's voiceId) — falls back to
    * the provider's env-configured default voice when omitted. */
   voiceId?: string,
-  /** Per-agent language override (agent-frame.ts's language) — only Sarvam
-   * uses this today (it needs an explicit target language); ElevenLabs and
-   * Cartesia ignore it since their voices are already language-specific. */
+  /** Per-agent language override (agent-frame.ts's language) — Sarvam needs
+   * this to pick its target language. ElevenLabs (language_code query param)
+   * and Cartesia (top-level `language` field) both also use it, as of the
+   * 2026-07-16 Hindi/Hinglish work (docs/hindi-hinglish-voice-support.md),
+   * to enforce/hint pronunciation for their multilingual models — previously
+   * documented here as ignored by both, which was true in code but not
+   * actually correct per either provider's own API (both accept and use it).
+   * "multi" (Deepgram STT's own code-switching mode) is never forwarded to
+   * any TTS provider — it isn't a real language. */
   language?: string,
   /**
    * Word-level timing, as each word is synthesized — currently only

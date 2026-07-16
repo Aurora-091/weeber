@@ -9,10 +9,20 @@ import type { ConnectTts } from "./types";
  * share a single `context_id`, sent with `continue: true` until the turn
  * ends, at which point a final empty-transcript message with
  * `continue: false` flushes and closes out that context.
+ *
+ * Hindi/Hinglish research (2026-07-16, docs/hindi-hinglish-voice-support.md):
+ * Cartesia's Generation Request schema (docs.cartesia.ai/api-reference/tts/
+ * websocket) documents a top-level `language` field selecting between 40+
+ * supported languages/accents — this was previously received from stream.ts
+ * (as `_language`) and silently discarded on every call. Omitted (Cartesia
+ * falls back to the voice's own default) when no language is configured,
+ * same as before this change; "multi" (Deepgram STT's own code-switching
+ * mode, not a real language) is never forwarded either.
  */
-export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, _language, onWordTimestamp) => {
+export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language, onWordTimestamp) => {
   const apiKey = process.env.CARTESIA_API_KEY ?? "";
   const voiceId = voiceIdOverride || process.env.CARTESIA_VOICE_ID;
+  const cartesiaLanguage = language && language !== "multi" ? language : undefined;
   const cartesiaVersion = "2025-11-04";
   const url = `wss://api.cartesia.ai/tts/websocket?api_key=${encodeURIComponent(apiKey)}&cartesia_version=${cartesiaVersion}`;
 
@@ -83,6 +93,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         model_id: "sonic-3",
         transcript: text,
         voice: { mode: "id", id: voiceId },
+        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {}),
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: true,
         add_timestamps: true,
@@ -94,6 +105,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         model_id: "sonic-3",
         transcript: "",
         voice: { mode: "id", id: voiceId },
+        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {}),
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: false,
         add_timestamps: true,
