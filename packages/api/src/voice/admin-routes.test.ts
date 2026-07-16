@@ -65,7 +65,7 @@ const adminHeaders = { "X-OpenVent-Admin-Key": "test-admin-key", "Content-Type":
 
 describe("admin flags routes", () => {
   beforeEach(() => {
-    rowsByTable = { orgs: [], feature_flags: [], do_not_call: [], tool_calls: [], calls: [] };
+    rowsByTable = { orgs: [], feature_flags: [], do_not_call: [], tool_calls: [], calls: [], consent_records: [] };
     insertsByTable = {};
     updatesByTable = {};
   });
@@ -98,5 +98,71 @@ describe("admin flags routes", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// Consent ledger read endpoints (Marketing + Consent UI plan, 2026-07-16,
+// docs/marketing-and-consent-ui-plan.md Part B).
+describe("admin consent ledger routes", () => {
+  beforeEach(() => {
+    rowsByTable = { orgs: [], feature_flags: [], do_not_call: [], tool_calls: [], calls: [], consent_records: [] };
+    insertsByTable = {};
+    updatesByTable = {};
+  });
+
+  it("requires the admin key on /compliance/consent", async () => {
+    const res = await admin.request("/compliance/consent?principal=%2B15550001111");
+    expect(res.status).toBe(401);
+  });
+
+  it("requires the admin key on /compliance/consent/summary", async () => {
+    const res = await admin.request("/compliance/consent/summary");
+    expect(res.status).toBe(401);
+  });
+
+  it("400s /compliance/consent without a principal query param", async () => {
+    const res = await admin.request("/compliance/consent", { headers: adminHeaders });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns every record for the given principal", async () => {
+    rowsByTable.consent_records = [
+      { orgId: "org-a", dataPrincipal: "+15550001111", purpose: "marketing", granted: true, grantedAt: new Date(), expiresAt: null, version: "v1", channel: "shopify", source: "checkout", withdrawnAt: null },
+    ];
+    const res = await admin.request("/compliance/consent?principal=%2B15550001111", { headers: adminHeaders });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { principal: string; records: unknown[] };
+    expect(body.principal).toBe("+15550001111");
+    expect(body.records.length).toBe(1);
+  });
+
+  it("summary buckets an active grant under activeByOrgPurpose", async () => {
+    rowsByTable.consent_records = [
+      { orgId: "org-a", dataPrincipal: "+1", purpose: "marketing", granted: true, grantedAt: new Date(), expiresAt: null, version: "v1", channel: "shopify", source: "checkout", withdrawnAt: null },
+    ];
+    const res = await admin.request("/compliance/consent/summary", { headers: adminHeaders });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { activeByOrgPurpose: Record<string, Record<string, number>>; totalRecords: number };
+    expect(body.activeByOrgPurpose["org-a"]?.marketing).toBe(1);
+    expect(body.totalRecords).toBe(1);
+  });
+
+  it("summary buckets a withdrawn grant under withdrawnByOrgPurpose, not active", async () => {
+    rowsByTable.consent_records = [
+      { orgId: "org-a", dataPrincipal: "+1", purpose: "marketing", granted: true, grantedAt: new Date(), expiresAt: null, version: "v1", channel: "shopify", source: "checkout", withdrawnAt: new Date() },
+    ];
+    const res = await admin.request("/compliance/consent/summary", { headers: adminHeaders });
+    const body = await res.json() as { activeByOrgPurpose: Record<string, Record<string, number>>; withdrawnByOrgPurpose: Record<string, Record<string, number>> };
+    expect(body.activeByOrgPurpose["org-a"]?.marketing ?? 0).toBe(0);
+    expect(body.withdrawnByOrgPurpose["org-a"]?.marketing).toBe(1);
+  });
+
+  it("summary treats an expired (non-withdrawn) grant as not active", async () => {
+    rowsByTable.consent_records = [
+      { orgId: "org-a", dataPrincipal: "+1", purpose: "marketing", granted: true, grantedAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() - 500), version: "v1", channel: "shopify", source: "checkout", withdrawnAt: null },
+    ];
+    const res = await admin.request("/compliance/consent/summary", { headers: adminHeaders });
+    const body = await res.json() as { activeByOrgPurpose: Record<string, Record<string, number>> };
+    expect(body.activeByOrgPurpose["org-a"]?.marketing ?? 0).toBe(0);
   });
 });

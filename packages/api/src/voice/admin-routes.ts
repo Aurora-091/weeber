@@ -13,6 +13,7 @@ import { db } from "../database";
 import {
   agentTemplates,
   calls,
+  consentRecords,
   doNotCall,
   featureFlags,
   orgMembers,
@@ -364,6 +365,59 @@ export const admin = new Hono<AdminEnv>()
       },
       200,
     );
+  })
+
+  // Consent ledger read endpoints (Marketing + Consent UI plan, 2026-07-16,
+  // docs/marketing-and-consent-ui-plan.md Part B) — Global Compliance Engine Tier 0
+  // (docs/global-compliance-engine-plan.md) shipped the write/check path
+  // (grant/withdraw/hasConsent via ConsentStorageAdapter) but no read API for a UI to call.
+  // These two close that gap. Admin surface, so queried directly against `consentRecords`
+  // (same pattern as `/compliance/overview` querying `doNotCall` directly) rather than through
+  // `createConsentAdapterForOrg`, which is intentionally single-org-scoped and not meant for
+  // cross-org admin oversight.
+  .get("/compliance/consent", async (c) => {
+    const principal = c.req.query("principal");
+    const orgId = c.req.query("orgId");
+    if (!principal?.trim()) {
+      return c.json({ error: "`principal` query param is required (e.g. an e.164 phone number)" }, 400);
+    }
+    const conditions = [eq(consentRecords.dataPrincipal, principal.trim())];
+    if (orgId?.trim()) conditions.push(eq(consentRecords.orgId, orgId.trim()));
+
+    const rows = await db
+      .select()
+      .from(consentRecords)
+      .where(and(...conditions))
+      .orderBy(desc(consentRecords.grantedAt));
+
+    return c.json({ principal: principal.trim(), records: rows }, 200);
+  })
+
+  // Aggregate consent counts per org per purpose — a "how much consent do we actually have on
+  // file" overview, same shape as /compliance/overview's guardrailEventsByOrg. A record counts as
+  // "active" only if granted, not withdrawn, and not expired — same semantics as
+  // ConsentStorageAdapter.hasConsent, kept in sync deliberately (don't let this drift into a
+  // simpler-but-wrong "just count granted rows" query).
+  .get("/compliance/consent/summary", async (c) => {
+    const orgId = c.req.query("orgId");
+    const conditions = orgId?.trim() ? [eq(consentRecords.orgId, orgId.trim())] : [];
+    const rows = await db
+      .select()
+      .from(consentRecords)
+      .where(conditions.length ? and(...conditions) : undefined);
+
+    const now = Date.now();
+    const activeByOrgPurpose: Record<string, Record<string, number>> = {};
+    const withdrawnByOrgPurpose: Record<string, Record<string, number>> = {};
+    for (const row of rows) {
+      const isActive = row.granted && !row.withdrawnAt && (!row.expiresAt || row.expiresAt.getTime() > now);
+      const target = isActive ? activeByOrgPurpose : row.withdrawnAt ? withdrawnByOrgPurpose : null;
+      if (!target) continue;
+      target[row.orgId] ??= {};
+      target[row.orgId]![row.purpose] = (target[row.orgId]![row.purpose] ?? 0) + 1;
+    }
+
+    return c.json({ activeByOrgPurpose, withdrawnByOrgPurpose, totalRecords: rows.length }, 200);
   })
 
   // Feature flags — flat table, global (orgId "") or org-scoped rows.

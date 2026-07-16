@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell, Webhook, ShieldAlert } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
@@ -164,6 +164,23 @@ export function UserSettingsPage() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  // Consent ledger summary (Marketing + Consent UI plan, 2026-07-16, Part B) — org-scoped counts
+  // of active/withdrawn consent per purpose. See voice/routes.ts's checkOutboundCallCompliance for
+  // what "active" means (granted, not withdrawn, not expired) — kept in sync deliberately.
+  const consentSummary = useQuery<{
+    activeByPurpose: Record<string, number>;
+    withdrawnByPurpose: Record<string, number>;
+    totalRecords: number;
+  }>({
+    queryKey: ["app-consent-summary"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/compliance/consent-summary");
+      if (!res.ok) throw new Error("Failed to load consent summary");
+      return res.json();
+    },
+  });
+
 
   return (
     <div className="page-enter">
@@ -346,6 +363,39 @@ export function UserSettingsPage() {
               Turns back on automatically at {testModeUntil.toLocaleString()}.
             </p>
           )}
+
+          <div className="mt-6 pt-6 border-t border-border">
+            <div className="flex items-center gap-1.5 mb-2">
+              <FileCheck className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Consent on file</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">
+              How many of your contacts have active consent, by purpose. Consent for one purpose (e.g.
+              marketing) never covers a different purpose (e.g. underwriting) — each is checked separately
+              before a call goes out.
+            </p>
+            {consentSummary.isLoading && (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            )}
+            {consentSummary.data && consentSummary.data.totalRecords === 0 && (
+              <p className="text-xs text-muted-foreground">No consent records on file yet.</p>
+            )}
+            {consentSummary.data && consentSummary.data.totalRecords > 0 && (
+              <div className="flex flex-wrap gap-3 text-xs">
+                {Object.entries(consentSummary.data.activeByPurpose).map(([purpose, count]) => (
+                  <span key={purpose} className="rounded-md border border-border px-2.5 py-1.5">
+                    <span className="font-medium">{count}</span>{" "}
+                    <span className="text-muted-foreground">{purpose} (active)</span>
+                  </span>
+                ))}
+                {Object.entries(consentSummary.data.withdrawnByPurpose).map(([purpose, count]) => (
+                  <span key={`withdrawn-${purpose}`} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground">
+                    <span className="font-medium">{count}</span> {purpose} (withdrawn)
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </Section>
 
         <Section icon={Bell} title="Notifications">

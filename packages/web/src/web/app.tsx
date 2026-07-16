@@ -27,6 +27,8 @@ const PricingPage = lazy(() => import("./pages/pricing").then((m) => ({ default:
 const AboutPage = lazy(() => import("./pages/about").then((m) => ({ default: m.AboutPage })));
 const FaqPage = lazy(() => import("./pages/faq").then((m) => ({ default: m.FaqPage })));
 const ContactPage = lazy(() => import("./pages/contact").then((m) => ({ default: m.ContactPage })));
+const PrivacyPage = lazy(() => import("./pages/privacy").then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazy(() => import("./pages/terms").then((m) => ({ default: m.TermsPage })));
 
 const AdminKeyGate = lazy(() =>
   import("./components/dashboard/admin-key-gate").then((m) => ({ default: m.AdminKeyGate })),
@@ -175,6 +177,8 @@ function App() {
           {showPublic && <Route path="/about" component={AboutPage} />}
           {showPublic && <Route path="/faq" component={FaqPage} />}
           {showPublic && <Route path="/contact" component={ContactPage} />}
+          {showPublic && <Route path="/privacy" component={PrivacyPage} />}
+          {showPublic && <Route path="/terms" component={TermsPage} />}
 
           {/* User auth pages (no shell — must be BEFORE the catch-all) */}
           {showUser && <Route path={appPath("/login")} component={UserLoginPage} />}

@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers } from "../database/schema";
+import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers, consentRecords } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
@@ -574,6 +574,29 @@ export const userApp = new Hono<UserEnv>()
     const callingWindowTestModeUntil = enabled ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
     await db.update(orgs).set({ callingWindowTestModeUntil }).where(eq(orgs.id, orgId));
     return c.json({ callingWindowTestModeUntil }, 200);
+  })
+
+  // Consent ledger summary, org-scoped (Marketing + Consent UI plan, 2026-07-16,
+  // docs/marketing-and-consent-ui-plan.md Part B) — a merchant's own per-purpose active/withdrawn
+  // counts, same bucketing semantics as the admin summary endpoint
+  // (voice/admin-routes.ts's /compliance/consent/summary), scoped to this org only.
+  .get("/compliance/consent-summary", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const rows = await db.select().from(consentRecords).where(eq(consentRecords.orgId, orgId));
+
+    const now = Date.now();
+    const activeByPurpose: Record<string, number> = {};
+    const withdrawnByPurpose: Record<string, number> = {};
+    for (const row of rows) {
+      const isActive = row.granted && !row.withdrawnAt && (!row.expiresAt || row.expiresAt.getTime() > now);
+      if (isActive) {
+        activeByPurpose[row.purpose] = (activeByPurpose[row.purpose] ?? 0) + 1;
+      } else if (row.withdrawnAt) {
+        withdrawnByPurpose[row.purpose] = (withdrawnByPurpose[row.purpose] ?? 0) + 1;
+      }
+    }
+
+    return c.json({ activeByPurpose, withdrawnByPurpose, totalRecords: rows.length }, 200);
   })
 
   // Orders page (2026-07-16) — every Shopify-vertical trigger our own

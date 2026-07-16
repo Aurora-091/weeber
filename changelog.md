@@ -4,6 +4,33 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Marketing pages + Consent Ledger UI (backend read-endpoints + admin/merchant UI)
+
+Full detail in `docs/marketing-and-consent-ui-plan.md`'s "Build report" section. Summary here.
+
+**Consent ledger read endpoints (the prerequisite Tier 0 didn't build):** `GET
+/api/voice/compliance/consent` + `/consent/summary` (admin, cross-org), `GET
+/api/app/compliance/consent-summary` (merchant, org-scoped). Wired into new UI: a Consent Ledger
+section on `dashboard/compliance.tsx` (search + summary cards) and a "Consent on file" sub-section
+on `app/settings.tsx`'s existing Compliance section. Still shows zero real data until a workflow
+actually passes a `purpose` into the consent check — that classification decision is still open,
+flagged again here so it isn't lost.
+
+**Marketing pages:** added real `/privacy` and `/terms` pages (previously dead footer links,
+confirmed via `app.tsx` having no route for either). Fixed a real overclaim found while grounding
+this work: `HOW_IT_WORKS`/FAQ/About all said some version of "every number is checked against your
+consent records before a call goes out" — true for the Do-Not-Call check (always enforced, no
+exceptions), not yet true for the purpose-scoped consent ledger (opt-in, not wired into any route
+yet). Tightened the wording to distinguish the two rather than continuing to conflate them. Added
+Insurance to the `VERTICALS` array (**draft, needs sign-off** — replaced the placeholder
+"Enterprise" slot, not added as a 4th grid column) and a new FAQ entry on calling-hour enforcement
+(TCPA + mini-TCPA + TRAI).
+
+Verified: typecheck clean (3/3 packages), oxlint 0/0, `bun run test` 370 pass / 0 fail (was 363,
++7), build succeeds.
+
+---
+
 ## 2026-07-16 — Insurance vertical: 3 more agent prompts landed (appointment setter, post-sale welcome, feedback/NPS)
 
 Data-only change, no new code paths — same pattern as the existing `04-insurance-policy-renewal`/

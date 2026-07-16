@@ -36,9 +36,10 @@ export function AboutPage() {
               legal team to keep them out of trouble.
             </p>
             <p className="text-[16px] text-[var(--m-text-secondary)] leading-relaxed">
-              So we built the thing we wished existed: consent enforced at the infrastructure level, not a
-              disclaimer in the terms of service. You cannot dial a number that hasn't passed the consent gate.
-              That's not a feature you toggle on — it's how the system works.
+              So we built the thing we wished existed: the Do-Not-Call check and calling-window rules enforced
+              at the infrastructure level, not a disclaimer in the terms of service. You cannot dial a number
+              on the Do-Not-Call list, or outside the hours its jurisdiction allows. That's not a feature you
+              toggle on — it's how the system works.
             </p>
           </div>
         </div>

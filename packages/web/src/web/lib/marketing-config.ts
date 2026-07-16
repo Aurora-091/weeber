@@ -82,13 +82,17 @@ export const VERTICALS = [
     cta: { label: "Join the waitlist", href: "/#waitlist" },
   },
   {
-    label: "Enterprise",
-    headline: "High-volume & regulated teams",
-    problem: "Thousands of calls across locations and queues, legacy systems that don't talk, and compliance you can't bend on.",
-    solution: "A voice agent built to your scripts, systems and security bar — custom integrations, audit logs, SLAs. Our engineers, not a help doc.",
-    demoLabel: "Support triage",
-    demoAccent: "English \u00b7 neutral",
-    demoDuration: "0:21",
+    // DRAFT — replaces the previous generic "Enterprise / regulated teams" slot. Needs your
+    // sign-off before this ships, same review bar as the underlying agent scripts: licensed-advisor
+    // routing and no-quote/no-underwrite language are load-bearing regulatory claims, not just copy.
+    // See docs/marketing-and-consent-ui-plan.md Part A #2.
+    label: "Insurance",
+    headline: "Agencies & brokers",
+    problem: "Warm leads go cold waiting on a callback, new policyholders cancel from buyer's remorse nobody caught in time, and every script needs a licensed human for the parts that actually matter.",
+    solution: "Weeber qualifies, live-transfers to your licensed advisors, and welcomes new policyholders — never quoting, advising, or underwriting. It knows exactly where its job ends.",
+    demoLabel: "Warm lead transfer",
+    demoAccent: "English \u00b7 professional",
+    demoDuration: "0:24",
     cta: { label: "Talk to our team", href: "mailto:hello@weeber.ai" },
   },
 ] as const;
@@ -96,8 +100,8 @@ export const VERTICALS = [
 export const HOW_IT_WORKS = [
   {
     step: "01",
-    title: "Consent is verified first.",
-    body: "Every number is checked against your consent records before Weeber can dial it. If consent isn't on file, the call does not happen. You cannot accidentally break the law.",
+    title: "Consent and Do-Not-Call are checked first.",
+    body: "Every outbound call is checked against the Do-Not-Call list automatically, with no exceptions or overrides — and for purposes that require it, against consent records scoped to that exact purpose. If a required check fails, the call does not happen.",
   },
   {
     step: "02",
@@ -223,7 +227,8 @@ export const FAQ_GROUPS = [
     title: "Compliance & data",
     items: [
       { q: "Is this legal?", a: "Yes, when consent and calling-window rules are followed — which is exactly what Weeber enforces automatically, not something you have to remember." },
-      { q: "How does consent work?", a: "Every number is checked against your consent records before a call goes out. If consent isn't on file, the call simply doesn't happen." },
+      { q: "How does consent work?", a: "The Do-Not-Call list is checked before every single outbound call, with no exceptions — that's not configurable. For purposes that legally require explicit consent (like marketing outreach), consent is scoped to that specific purpose: agreeing to receive order-status calls doesn't authorize a marketing call. Withdrawing consent stops future calls for that purpose." },
+      { q: "What calling hours do you enforce?", a: "Whatever the recipient's jurisdiction requires — 8am-9pm under the US federal TCPA baseline (narrower in Florida, Oklahoma, and Washington, which cap at 8pm), and 9am-9pm IST under India's TRAI rules. This is checked automatically per call, not left to you to configure correctly." },
       { q: "Is my customers' data safe?", a: "Encrypted end to end, used only to run the flows you build — never sold, never shared, never used to train anyone else's models." },
       { q: "Do you train models on my calls?", a: "No." },
     ],
