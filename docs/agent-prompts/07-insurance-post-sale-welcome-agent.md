@@ -2,6 +2,8 @@
 
 **File:** `07-insurance-post-sale-welcome-agent.md` · **Workflow name:** `insurance-post-sale-welcome`
 
+**Regulatory grounding:** `00-insurance-regulatory-reference.md` — India (IRDAI) + US (NAIC/state producer licensing) citations for every guardrail below, researched 2026-07-16. Read it before editing this script's guardrails.
+
 Triggered by: a policy being issued (source: the insurer's own policy admin system, synced via the org's
 configured integration — the insurance vertical's own `policy_issued` trigger, no Shopify webhook). Default
 delay: 1–2 days after issue, so the policy documents have realistically arrived. Max attempts: 1 — a missed

@@ -4,6 +4,48 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Insurance agents: India + US regulatory iteration, all 5 prompts hardened
+
+Full detail in `docs/agent-prompts/00-insurance-regulatory-reference.md` (new — single source of
+truth for every insurance script's regulatory citations, researched this session: IRDAI's
+Distance Marketing Guidelines + PPI Regulations + the TRAI/IRDAI 1600-series mandate on the India
+side; NAIC Unfair Trade Practices Act/replacement regulations + state producer licensing +
+TCPA's AI-consent flux + all-party-consent-recording states + CA AB 2905 on the US side).
+
+**Prompt changes** (04-insurance-policy-renewal, 05-insurance-lead-followup, 06-insurance-
+appointment-setter, 07-insurance-post-sale-welcome, 08-insurance-feedback-nps): all 5 now point to
+the shared regulatory reference doc; 04/05 fixed to cite both IRDAI *and* US rules (were IRDAI-only,
+inconsistent with 06-08's existing dual citation); all 5 (07 already adequate) gained a new,
+specifically-named "replacement" guardrail — discussing replacing/switching/cancelling an existing
+policy is its own regulated topic (NAIC replacement rules), not just a subset of general advice.
+
+**Real bug found and fixed while iterating**: 04/05's guardrails now explicitly call
+`flagGuardrailEvent` on the new replacement refusal, but that tool was missing from both templates'
+`defaultTools` in `seed.ts` — the exact confirmCodOrder/offerCartRecoveryDiscount failure mode
+(agent instructed to call a tool it doesn't actually have) recurring with a different tool/template
+pair. Fixed by adding `flagGuardrailEvent` to both.
+
+**New automated regression test** in `seed.test.ts`: parses each template's real, seeded prompt
+content, extracts just its "## Tools — explicit mapping" table (not the whole file — a first draft
+of this test false-positived on `01-cart-recovery-agent.md`'s prose, which mentions `sendSms` while
+describing a *different* system — `workflows/engine.ts`'s SMS action — not a tool that agent
+actually calls), and asserts every tool named in that table is present in the template's
+`defaultTools`. Generalizes the manual check done this session so this bug class can't silently
+recur for any future template.
+
+**Real, unbuilt platform gaps flagged** (not fixed this pass — documented, not silently worked
+around): (1) India's insurance-specific 1600-series calling-number mandate has zero support in the
+existing number-routing work, which was scoped around the general 140/160 series; (2) no check
+exists that a transferred-to advisor is actually licensed in the lead's US state; (3) no
+call-monitoring/sampling exists for India's 1%-live/3%-verify requirement; (4) the all-party-
+consent-recording-state nuance in the US is unresolved by wording alone. All four require actual
+platform/legal work, correctly out of scope for a prompt-content pass.
+
+Verified: typecheck clean (3/3 packages), oxlint 0/0, `bun run test` 370 pass / 0 fail (unchanged
+count — the new check is an added assertion inside an existing test, not a new one).
+
+---
+
 ## 2026-07-16 — Marketing pages + Consent Ledger UI (backend read-endpoints + admin/merchant UI)
 
 Full detail in `docs/marketing-and-consent-ui-plan.md`'s "Build report" section. Summary here.

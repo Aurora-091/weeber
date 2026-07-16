@@ -56,7 +56,11 @@ export const AGENT_TEMPLATES = [
       description: "Reminds policyholders of an upcoming renewal or premium due date and routes anything beyond a simple confirm/decline to a licensed agent.",
       fileName: "04-insurance-policy-renewal-agent.md",
       literalGreetingTemplate: "Hello, this is {{agent_name}} calling on behalf of {{company_name}} — a quick reminder about your policy renewal. Do you have a moment?",
-      defaultTools: ["captureField", "setDisposition", "transferToHuman", "crmSync"],
+      // flagGuardrailEvent added 2026-07-16 during the India+US regulatory iteration — the script
+      // now explicitly calls it on the new "replacement" refusal (see
+      // docs/agent-prompts/00-insurance-regulatory-reference.md); would otherwise repeat the
+      // confirmCodOrder/offerCartRecoveryDiscount silent-drop bug seed.test.ts guards against.
+      defaultTools: ["captureField", "setDisposition", "transferToHuman", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {
@@ -66,7 +70,8 @@ export const AGENT_TEMPLATES = [
       description: "Follows up on a new inbound lead, qualifies interest, and books a callback with a licensed advisor.",
       fileName: "05-insurance-lead-followup-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{company_name}} — you'd recently shown interest in {{interest_area}}. Do you have a couple of minutes?",
-      defaultTools: ["captureField", "bookAppointment", "setDisposition", "crmSync"],
+      // flagGuardrailEvent added 2026-07-16 — same reasoning as insurance-policy-renewal above.
+      defaultTools: ["captureField", "bookAppointment", "setDisposition", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {

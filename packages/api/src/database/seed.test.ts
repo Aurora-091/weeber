@@ -116,5 +116,51 @@ describe("seedAgentTemplates", () => {
     for (const row of inserted) {
       expect(row.defaultPersonaPrompt.length).toBeGreaterThan(0);
     }
+
+    // Stronger regression guard (2026-07-16, insurance India+US regulatory iteration): the
+    // registry-consistency test above only checks that defaultTools is a *subset* of
+    // AVAILABLE_TOOL_NAMES — it doesn't catch the actual confirmCodOrder/offerCartRecoveryDiscount
+    // failure mode, which was a script's prompt text calling a tool that was silently missing from
+    // that template's OWN defaultTools (found again manually this session: 04/05 started calling
+    // flagGuardrailEvent in their guardrails text without it being added to defaultTools, until
+    // fixed). Every backtick-wrapped tool name mentioned in a template's real prompt file must be
+    // present in that same template's defaultTools — parse the actual seeded content, not a
+    // hand-maintained list, so this can't drift out of sync with the prompt files again.
+    const missingFromDefaultTools: string[] = [];
+    const knownToolNames = new Set<string>(AVAILABLE_TOOL_NAMES);
+    for (const row of inserted) {
+      const template = AGENT_TEMPLATES.find((t) => t.key === row.key);
+      if (!template) continue;
+      // Scoped to the "## Tools — explicit mapping" section specifically (every prompt file has
+      // one, confirmed by convention) — scanning the whole file catches prose that merely
+      // *mentions* a tool name in passing (e.g. explaining a "known gap" about a different
+      // system's tool of the same name), which is a real false positive this test hit once while
+      // being written: 01-cart-recovery-agent.md's "known gap" paragraph about
+      // workflows/engine.ts's SMS action mentions `sendSms` in prose, but that agent never
+      // actually calls it — its real Tools table doesn't list it. Only the Tools table itself
+      // reflects what the agent is actually instructed to call.
+      // Bounded to the markdown table itself (lines starting with "|"), not any prose before/after
+      // it — every prompt's "## Tools" section is often followed by a "Known gap" paragraph that
+      // can legitimately mention an unrelated tool name in passing (found exactly this while
+      // writing this test: 01-cart-recovery-agent.md's known-gap prose mentions `sendSms` as a
+      // different system's action, not something this agent calls — only the table itself
+      // reflects what the agent actually calls).
+      const afterHeading = row.defaultPersonaPrompt.split("## Tools")[1] ?? "";
+      const toolsSection = afterHeading
+        .split("\n")
+        .filter((line) => line.trim().startsWith("|"))
+        .join("\n");
+      const toolNamesInPrompt = new Set(
+        [...toolsSection.matchAll(/`([a-zA-Z]+)/g)]
+          .map((m) => m[1])
+          .filter((name): name is string => Boolean(name) && knownToolNames.has(name!)),
+      );
+      for (const toolName of toolNamesInPrompt) {
+        if (!(template.defaultTools as readonly string[]).includes(toolName)) {
+          missingFromDefaultTools.push(`Template "${template.key}" calls \`${toolName}\` in its Tools table but doesn't list it in defaultTools.`);
+        }
+      }
+    }
+    expect(missingFromDefaultTools).toEqual([]);
   });
 });
