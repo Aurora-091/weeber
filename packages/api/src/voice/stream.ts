@@ -19,6 +19,7 @@ import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
 import { getEffectiveFlags } from "./org-queries";
+import { renderTemplate } from "./workflows/variables";
 import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
 import type { NoiseFilter } from "./audio-noise-filter";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
@@ -209,6 +210,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let humanNumber: string | undefined;
   let humanNumberOrgId: string | undefined;
   let callerMemoryFacts: Record<string, string> = {};
+  /** Latency fix (2026-07-16): the fully-rendered, ready-to-speak literal
+   * greeting text for this call (every {{merge_tag}} resolved), or
+   * undefined if no literalGreetingTemplate applies / some tag couldn't be
+   * resolved — see the "start" handler below for how this gets set, and
+   * runGreeting() for how it's consumed (speaks this directly via
+   * speakCannedLine, skipping the LLM entirely, when set). */
+  let literalGreetingText: string | undefined;
 
   let stt: SttConnection | null = null;
   let tts: TtsConnection | null = null;
@@ -825,6 +833,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   async function runGreeting(ws: Sendable) {
+    // Latency fix (2026-07-16): a fully-resolved literal greeting was
+    // rendered in the "start" handler — speak it directly via the same
+    // canned-line path as the silence re-prompt/goodbye (no LLM call, and
+    // eligible for the hybrid-audio-cache flag same as those). Falls
+    // through to the LLM-generated greeting below whenever this is unset.
+    if (literalGreetingText) {
+      await speakCannedLine(ws, literalGreetingText);
+      return;
+    }
+
     const turnLlmTtftRef: { value?: number } = {};
     await speak(
       ws,
@@ -1028,7 +1046,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // production). Running them concurrently instead of in sequence
             // removes two round-trips' worth of that wait for free — no
             // behavior change, purely a scheduling change.
-            const [callerMemoryResult, agentConfig, effectiveFlagsResult] = await Promise.all([
+            const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow] = await Promise.all([
               row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
               // Misc-1: a "call my phone" test call carries the merchant's
               // exact in-progress form state — use it directly and skip the
@@ -1042,9 +1060,40 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                     templateKey: session?.workflowName ?? undefined,
                   }),
               humanNumberOrgId ? getEffectiveFlags(humanNumberOrgId).catch(() => ({})) : Promise.resolve({}),
+              // Only needed to fill {{merchant_name}}/{{company_name}} in a
+              // literalGreetingTemplate (see below) — folded into the same
+              // batch rather than a separate later round-trip.
+              humanNumberOrgId
+                ? db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, humanNumberOrgId)).limit(1).catch(() => [])
+                : Promise.resolve([]),
             ]);
             callerMemoryFacts = callerMemoryResult;
             persona = agentConfig.systemPrompt;
+
+            // Latency fix (2026-07-16): render the template's fixed
+            // greeting line directly instead of paying the LLM's ~1s+
+            // time-to-first-token for a line that's deterministic once its
+            // merge tags resolve. Falls back to the existing LLM-generated
+            // greeting (literalGreetingText stays undefined) whenever:
+            // there's no literalGreetingTemplate for this call (custom
+            // persona, or a template that doesn't have one), the language
+            // is anything other than English (Hindi/other variants aren't
+            // wired here yet), or any {{tag}} in the template can't be
+            // resolved from context — renderTemplate leaves an unresolved
+            // tag as literal "{{tag}}" text, so that's the signal checked.
+            const resolvedLanguage = agentConfig.language ?? session?.language ?? numberConfig.language;
+            if (agentConfig.literalGreetingTemplate && (!resolvedLanguage || resolvedLanguage === "en")) {
+              const merchantName = orgRow[0]?.name;
+              const greetingContext: Record<string, string> = { ...capturedState, agent_name: agentConfig.agentName ?? "our team" };
+              if (merchantName) {
+                greetingContext.merchant_name = merchantName;
+                greetingContext.company_name = merchantName;
+              }
+              const rendered = renderTemplate(agentConfig.literalGreetingTemplate, greetingContext);
+              if (!/\{\{\w+\}\}/.test(rendered)) {
+                literalGreetingText = rendered;
+              }
+            }
             enabledToolsOverride = agentConfig.enabledTools;
             llmModelOverride = agentConfig.llmModel;
             ttsVoiceIdOverride = agentConfig.voiceId;

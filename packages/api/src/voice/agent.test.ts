@@ -124,6 +124,78 @@ describe("resolvePersona", () => {
   });
 });
 
+describe("resolveAgentConfig — literalGreetingTemplate (latency fix, 2026-07-16)", () => {
+  beforeEach(() => {
+    mockOrgConfig = null;
+    mockTemplate = null;
+  });
+
+  it("surfaces the template's literalGreetingTemplate when the org has no persona override", async () => {
+    mockOrgConfig = { personaPrompt: null, name: "Priya" };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{merchant_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cod-confirmation",
+      orgId: "org-123",
+      templateKey: "shopify-cod-confirmation",
+    });
+
+    expect(config.literalGreetingTemplate).toBe("Hello, this is {{agent_name}} calling from {{merchant_name}}.");
+    expect(config.agentName).toBe("Priya");
+  });
+
+  it("omits literalGreetingTemplate when the org has customized its own personaPrompt", async () => {
+    mockOrgConfig = { personaPrompt: "This merchant wrote their own entire script." };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{merchant_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cod-confirmation",
+      orgId: "org-123",
+      templateKey: "shopify-cod-confirmation",
+    });
+
+    // A customized persona may have rewritten the opener entirely — speaking
+    // the template's fixed line verbatim would be wrong regardless of latency,
+    // so this must fall back to the existing LLM-generated greeting.
+    expect(config.literalGreetingTemplate).toBeUndefined();
+  });
+
+  it("surfaces literalGreetingTemplate from the template even with no org config row at all", async () => {
+    mockOrgConfig = null;
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{merchant_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    });
+
+    expect(config.literalGreetingTemplate).toBe("Hi, this is {{agent_name}} calling from {{merchant_name}}.");
+  });
+
+  it("is undefined when the template has none set", async () => {
+    mockOrgConfig = null;
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt", literalGreetingTemplate: null };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-feedback",
+      orgId: "org-123",
+      templateKey: "shopify-feedback",
+    });
+
+    expect(config.literalGreetingTemplate).toBeUndefined();
+  });
+});
+
 import { buildPreviewAgentConfig } from "./agent";
 
 describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", () => {

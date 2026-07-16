@@ -39,6 +39,17 @@ export const agentTemplates = pgTable("agent_templates", {
   name: text("name").notNull(),
   description: text("description"),
   defaultPersonaPrompt: text("default_persona_prompt"),
+  // Latency fix (2026-07-16): the "Conversation Starter" line from each
+  // template's script doc (docs/agent-prompts/*) is a fixed, deterministic
+  // line — merge-tag variables only, not something that needs a fresh LLM
+  // generation every call. When set (English only for v1) and every
+  // {{merge_tag}} resolves from context (org name + capturedState),
+  // stream.ts renders and speaks it directly (see speakCannedLine), skipping
+  // the ~1.2s LLM time-to-first-token the greeting used to cost. Null (the
+  // seed default for templates without a scripted opener, or any org that
+  // has overridden its persona) falls back to the existing LLM-generated
+  // greeting unchanged — this is additive, not a behavior change for those.
+  literalGreetingTemplate: text("literal_greeting_template"),
   defaultTools: jsonb("default_tools").$type<unknown[]>().default([]),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

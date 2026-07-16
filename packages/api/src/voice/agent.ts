@@ -343,6 +343,16 @@ export type ResolvedAgentConfig = {
   sttProvider?: "deepgram" | "sarvam";
   /** Drives both STT and TTS for the call (agent-frame.ts's `language`) — see RECOMMENDED_LANGUAGES. */
   language?: string;
+  /** Per-org agent display name (agent-frame.ts's `name`, e.g. "Amit") — used to fill
+   * `{{agent_name}}` in `literalGreetingTemplate` below. Undefined = no org override configured. */
+  agentName?: string;
+  /** Latency fix (2026-07-16): the template's fixed "Conversation Starter" line
+   * (merge-tag string, e.g. "Hello, this is {{agent_name}} calling from
+   * {{merchant_name}}...") — set only when this call is using the template's
+   * stock, uncustomized persona. stream.ts renders this directly and speaks
+   * it without an LLM call when every {{tag}} resolves from context;
+   * undefined means always use the existing LLM-generated greeting. */
+  literalGreetingTemplate?: string;
 };
 
 /**
@@ -383,12 +393,12 @@ export async function resolveAgentConfig(opts: {
 
     if (config) {
       let jobDescription = config.personaPrompt;
+      const [tmpl] = await db
+        .select()
+        .from(agentTemplates)
+        .where(eq(agentTemplates.key, resolvedTemplateKey))
+        .limit(1);
       if (!jobDescription) {
-        const [tmpl] = await db
-          .select()
-          .from(agentTemplates)
-          .where(eq(agentTemplates.key, resolvedTemplateKey))
-          .limit(1);
         jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
       }
 
@@ -409,7 +419,31 @@ export async function resolveAgentConfig(opts: {
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | null) ?? undefined,
         language: config.language ?? undefined,
+        agentName: config.name ?? undefined,
+        // Latency fix (2026-07-16): only offer the literal (LLM-free)
+        // greeting when this org is actually using the template's stock
+        // persona — an org that's customized its own personaPrompt may
+        // have rewritten the opener entirely, so speaking the *template's*
+        // fixed greeting line verbatim in that case would be wrong,
+        // regardless of latency. Falls back to the existing LLM-generated
+        // greeting for those orgs, unchanged.
+        literalGreetingTemplate: config.personaPrompt ? undefined : (tmpl?.literalGreetingTemplate ?? undefined),
       };
+    }
+  }
+
+  // No org+template config row, but we do know which template this is —
+  // still a stock/uncustomized persona (nothing to conflict with), so the
+  // literal greeting is safe to offer here too.
+  if (resolvedTemplateKey) {
+    const [tmpl] = await db
+      .select()
+      .from(agentTemplates)
+      .where(eq(agentTemplates.key, resolvedTemplateKey))
+      .limit(1);
+    if (tmpl?.literalGreetingTemplate) {
+      const systemPrompt = await resolvePersona(opts);
+      return { systemPrompt, literalGreetingTemplate: tmpl.literalGreetingTemplate };
     }
   }
 

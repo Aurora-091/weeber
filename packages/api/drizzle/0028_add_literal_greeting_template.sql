@@ -1,0 +1,1 @@
+ALTER TABLE "agent_templates" ADD COLUMN "literal_greeting_template" text;

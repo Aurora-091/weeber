@@ -4,6 +4,51 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Skip the LLM for the opening greeting when it's a fixed, scripted line
+
+Follow-up to the pickup-to-first-word latency fix earlier the same day (Promise.all-parallelized
+the callerMemory/agentConfig/effectiveFlags lookups). That fix removed the DB round-trip portion of
+the delay; this one removes the other big chunk — the greeting's own ~1.2s LLM time-to-first-token
+(measured directly in production logs), which was being paid on every call even though the actual
+script docs (`docs/agent-prompts/01` through `05`) show the opening line ("Hello, this is
+{{agent_name}} calling from {{merchant_name}}...") is a fixed, deterministic line with only
+merge-tag substitution — not something that needs fresh LLM generation.
+
+Validated the approach against public research before building it (Vapi's own engineering blog
+explicitly documents audio/text caching for predictable phrases like greetings as a standard
+industry technique, not something unusual to this codebase; Hamming's latency benchmark guide
+confirms STT+LLM+TTS costs are strictly additive, so removing a fixed line from that chain is the
+correct fix rather than trying to speed up LLM generation for it).
+
+**What shipped:**
+- `agent_templates.literal_greeting_template` (new nullable text column, migration `0028`) — each
+  seeded template's Section 2 "Conversation Starter" line, English only for v1 (Hindi/other
+  languages still fall back to the existing LLM-generated greeting, unchanged).
+- `resolveAgentConfig` (`agent.ts`) surfaces `literalGreetingTemplate` **only** when the org is
+  using the template's stock, uncustomized persona — an org that's rewritten its own
+  `personaPrompt` may have rewritten the opener entirely, so speaking the template's original line
+  verbatim in that case would be wrong regardless of latency. That org keeps the existing
+  LLM-generated greeting, unchanged.
+- `stream.ts`'s "start" handler renders the template via the existing `renderTemplate()` helper
+  (`workflows/variables.ts`) using `agentConfig.agentName`/`orgs.name` (fetched in the same
+  Promise.all batch added earlier the same day — no new sequential round-trip) plus `capturedState`.
+  If every `{{tag}}` resolves, `runGreeting()` speaks it directly via the existing
+  `speakCannedLine()` path (same one used for the silence re-prompt/goodbye) — no LLM call at all,
+  and eligible for the `hybrid-audio-cache` flag same as those two lines. If any tag can't be
+  resolved, or the call's language isn't English, it falls straight through to the unchanged
+  LLM-generated greeting — this is purely additive, no existing call path changes behavior.
+
+**Verified:** typecheck clean (api+web), oxlint 0/0, vite build green. Backend suite: 279 pass / 38
+fail (was 277/36 immediately before this change). +2 pass is 2 of the 4 new `resolveAgentConfig`
+tests covering the override-skip/no-override/no-config-row/no-template-value cases — the other 2
+only fail when the full 54-file suite runs together, confirmed by running them standalone (`bun
+test src/voice/agent.test.ts`), where all 4 pass 100%. Root cause of those 2: the same pre-existing
+cross-file `mock.module("../database", ...)` interference already responsible for this repo's
+`buildPreviewAgentConfig`/`requireTwilioSignature`/etc. baseline failures (documented in prior
+sessions) — not a defect in the new logic itself.
+
+---
+
 ## 2026-07-15 — Made every existing migration idempotent (safe fresh-bootstrap + disaster-recovery replay)
 
 Follow-up to the outage above — asked to make the whole migration set robust the same way, not just
