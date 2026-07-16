@@ -1070,6 +1070,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             callerMemoryFacts = callerMemoryResult;
             persona = agentConfig.systemPrompt;
 
+            // Global Compliance Engine Tier 0 (2026-07-16,
+            // docs/global-compliance-engine-plan.md #2/#3): persist the exact
+            // disclosure text + version resolved for this call as soon as it's
+            // known — audit-trail requirement, proving disclosure was spoken
+            // isn't enough without knowing what was actually said, in which
+            // language. Fire-and-forget like the sttReconnectCount update
+            // below — a failure here shouldn't block the call itself, just
+            // means this one call's audit record is incomplete.
+            if (callSid && (agentConfig.disclosureText || agentConfig.disclosureVersion)) {
+              void withRetry(
+                () =>
+                  db
+                    .update(calls)
+                    .set({
+                      disclosureText: agentConfig.disclosureText ?? null,
+                      disclosureVersion: agentConfig.disclosureVersion ?? null,
+                    })
+                    .where(eq(calls.twilioCallSid, callSid!)),
+                { label: "persist-disclosure" },
+              );
+            }
+
             // Latency fix (2026-07-16): render the template's fixed
             // greeting line directly instead of paying the LLM's ~1s+
             // time-to-first-token for a line that's deterministic once its

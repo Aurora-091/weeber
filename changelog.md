@@ -4,6 +4,46 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Global Compliance Engine, Tier 0 (all 6 items)
+
+Full detail in `docs/global-compliance-engine-plan.md`'s "Tier 0 — build report" section. Summary
+here.
+
+**Closed a real gap:** `voice/routes.ts`'s `/calls/outbound` used to honor a client-supplied
+`bypassCompliance` request-body flag with no environment restriction — any caller could disable
+DNC/calling-window checks on their own request. Now: the request-body variant is never honored in
+any environment, and the `BYPASS_COMPLIANCE` env var is hard-disabled whenever
+`NODE_ENV === "production"` regardless of its value.
+
+**Disclosure is now versioned and localized.** `@openvent/compliance`'s `consent.ts`:
+`resolveDisclosure(options)` returns `{text, version}`, resolved per-language (`en` default + a
+draft Hindi/Hinglish line pending human review) instead of one hardcoded US/EU-shaped English
+sentence. `calls` gained `disclosure_text`/`disclosure_version` columns (migration `0030`),
+populated the moment an agent's config resolves for every call, not just India-specific ones.
+
+**Calling-window logic is now jurisdiction-pack shaped, not one hardcoded if/else.** Split
+`calling-window.ts`'s India-vs-NANP branch into `packs/india.ts` + `packs/us.ts` behind a thin
+resolver — same public API, zero behavior change (all 9 pre-existing tests pass unchanged).
+Bundled in the same pass: Florida/Oklahoma/Washington's mini-TCPA 8pm cutoff (stricter than the
+federal 9pm baseline) — a real, previously-unenforced gap for any US call, not gated by
+jurisdiction ambition at all. Attempt-cap enforcement (FL's max-3/24h) explicitly NOT done this
+pass — needs stateful call-history lookup in `workflows/scheduler.ts`, flagged for later.
+
+**Built a generic (not India-only) purpose-scoped consent ledger.** New `ConsentStorageAdapter`
+interface + `ConsentPurpose` type (service/transactional/marketing/underwriting/feedback) in
+`@openvent/compliance`, a memory reference adapter, and an optional 4th param on
+`checkOutboundCallCompliance` (omit it, behavior is unchanged — fully opt-in). New `consent_records`
+table (migration `0031`, org-scoped, purpose-indexed) + `createConsentAdapterForOrg(orgId)` factory
+in the API package (org-scoping happens at this call site since the package interface itself is
+intentionally org-agnostic). Not yet wired into any real dial-time route — that requires classifying
+each existing workflow trigger's actual purpose, a product decision, not guessed silently here.
+
+Verified: typecheck clean (3/3 packages), oxlint 0/0. `@openvent/compliance`: 62 pass / 0 fail (was
+26). `packages/api` (`bun run test`, the real `--isolate` script): 363 pass / 0 fail (was 353).
+Build succeeds.
+
+---
+
 ## 2026-07-16 — Correction: the "38 pre-existing test failures" cited throughout this changelog was a false signal (ADR-056)
 
 Every "296/305/etc pass / 38 fail (same pre-existing baseline)" note below and in

@@ -1,4 +1,12 @@
-import type { CallLogStorageAdapter, CallRecord, DncStorageAdapter, DoNotCallEntry } from "../storage";
+import type {
+  CallLogStorageAdapter,
+  CallRecord,
+  ConsentPurpose,
+  ConsentRecord,
+  ConsentStorageAdapter,
+  DncStorageAdapter,
+  DoNotCallEntry,
+} from "../storage";
 
 /**
  * In-memory reference adapters — useful for tests, quick prototypes, or a
@@ -22,6 +30,42 @@ export function createMemoryDncAdapter(): DncStorageAdapter {
     },
     async list() {
       return [...entries.values()];
+    },
+  };
+}
+
+/**
+ * In-memory consent ledger — same reference-implementation caveats as
+ * createMemoryDncAdapter above (not for production use). Stores every grant/withdrawal as an
+ * append-only list per (dataPrincipal, purpose), matching the real ledger semantics a Drizzle
+ * adapter needs to preserve (see docs/global-compliance-engine-plan.md Tier 0 #6).
+ */
+export function createMemoryConsentAdapter(): ConsentStorageAdapter & {
+  seed: (records: ConsentRecord[]) => void;
+} {
+  let records: ConsentRecord[] = [];
+  function activeGrant(dataPrincipal: string, purpose: ConsentPurpose): ConsentRecord | undefined {
+    return [...records]
+      .filter((r) => r.dataPrincipal === dataPrincipal && r.purpose === purpose)
+      .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())
+      .find((r) => r.granted && !r.withdrawnAt && (!r.expiresAt || r.expiresAt.getTime() > Date.now()));
+  }
+  return {
+    seed(seedRecords) {
+      records = seedRecords;
+    },
+    async hasConsent(dataPrincipal, purpose) {
+      return Boolean(activeGrant(dataPrincipal, purpose));
+    },
+    async grant(record) {
+      records.push(record);
+    },
+    async withdraw(dataPrincipal, purpose) {
+      const active = activeGrant(dataPrincipal, purpose);
+      if (active) active.withdrawnAt = new Date();
+    },
+    async listForPrincipal(dataPrincipal) {
+      return records.filter((r) => r.dataPrincipal === dataPrincipal);
     },
   };
 }

@@ -136,6 +136,15 @@ export const calls = pgTable("calls", {
   sentiment: text("sentiment"),
   sttReconnectCount: integer("stt_reconnect_count").default(0),
   capturedState: jsonb("captured_state").$type<Record<string, string>>().default({}),
+  // Global Compliance Engine Tier 0 (2026-07-16, docs/global-compliance-engine-plan.md #2/#3):
+  // the exact recording/AI disclosure text + version resolved and embedded into this call's
+  // agent prompt. Nullable — a call finalized before this column existed, or one whose
+  // disclosure-persist update raced/failed (fire-and-forget, doesn't block the call), simply
+  // has no record here rather than a misleading default. `disclosureVersion` is either
+  // consent.ts's DISCLOSURE_VERSION constant (a built-in, language-matched line) or the literal
+  // string "custom" (an explicit override / env var was used instead — see resolveDisclosure).
+  disclosureText: text("disclosure_text"),
+  disclosureVersion: text("disclosure_version"),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
 }, (table) => [
@@ -199,6 +208,46 @@ export const doNotCall = pgTable("do_not_call", {
   source: text("source").default("manual"),
   addedAt: timestamp("added_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
+
+/**
+ * Consent ledger (Global Compliance Engine Tier 0, 2026-07-16,
+ * docs/global-compliance-engine-plan.md #6) — backs @openvent/compliance's ConsentStorageAdapter.
+ * Replaces shopifyContacts.marketingConsent's single boolean with a real, purpose-scoped,
+ * append-only ledger: many rows per (orgId, dataPrincipal, purpose), one new row each time
+ * consent is granted or re-granted, withdrawals recorded via `withdrawnAt` rather than deleting
+ * the row (the ledger keeps its full history, including withdrawals).
+ *
+ * 7-year retention on this table (DPDP consent-record requirement) — deliberately NOT wired into
+ * gdpr.ts's purge sweep, which targets `calls`. Proof-of-consent metadata (this table) and the
+ * underlying call/recording data (`calls`, purged on GDPR's shorter data-minimization clock) are
+ * two different retention windows on purpose — see docs/global-compliance-engine-plan.md Tier 1
+ * #10 for why they have to be split rather than sharing one retention number.
+ *
+ * Backfill note (not yet run): existing `shopifyContacts.marketingConsent = true` rows should
+ * migrate into this table as one row per contact with `purpose = 'marketing'`, `channel =
+ * 'shopify'`, `source = 'backfilled from shopify_contacts.marketing_consent'` — a one-time data
+ * migration, not part of this schema change itself. Do this before wiring any real dial-time
+ * `hasConsent('marketing')` check into a live Shopify workflow, or every existing consented
+ * contact would suddenly look unconsented.
+ */
+export const consentRecords = pgTable("consent_records", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  /** e.164 phone number or email — whatever channel this consent was captured for. */
+  dataPrincipal: text("data_principal").notNull(),
+  purpose: text("purpose", { enum: ["service", "transactional", "marketing", "underwriting", "feedback"] }).notNull(),
+  granted: boolean("granted").notNull().default(true),
+  grantedAt: timestamp("granted_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+  /** Which consent notice/wording they agreed to — same "version alongside the record" pattern as
+   * consent.ts's DISCLOSURE_VERSION and calls.disclosureVersion. */
+  version: text("version").notNull(),
+  channel: text("channel", { enum: ["shopify", "ivr", "web", "import"] }).notNull(),
+  source: text("source").notNull(),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true, mode: "date" }),
+}, (table) => [
+  index("consent_records_org_principal_purpose_idx").on(table.orgId, table.dataPrincipal, table.purpose),
+]);
 
 export const featureFlags = pgTable("feature_flags", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

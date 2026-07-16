@@ -68,7 +68,7 @@ mock.module("./middleware/rate-limit", () => {
 mock.module("@openvent/compliance", () => {
   return {
     checkOutboundCallCompliance: async () => {
-      return { allowed: true };
+      return mockComplianceResult;
     },
     addToDoNotCallList: async () => {},
     removeFromDoNotCallList: async () => {},
@@ -80,6 +80,8 @@ mock.module("@openvent/compliance", () => {
     renderAuditTrailText: () => ""
   };
 });
+
+let mockComplianceResult: { allowed: boolean; reason?: string; failedCheck?: string } = { allowed: true };
 
 import { voice } from "./routes";
 
@@ -126,5 +128,92 @@ describe("Voice routes - Outbound Caller ID resolution", () => {
     expect(res.status).toBe(201);
     expect(lastTwilioCallParams).toBeDefined();
     expect(lastTwilioCallParams.from).toBe("+15551112222");
+  });
+});
+
+// Global Compliance Engine Tier 0 fix #1 (docs/global-compliance-engine-plan.md,
+// 2026-07-16): BYPASS_COMPLIANCE used to be reachable via a client-supplied
+// request-body flag with no environment restriction at all. Locks in: the
+// request-body variant is never honored (any environment), and the env var
+// itself is hard-disabled in production regardless of its value.
+describe("Voice routes - BYPASS_COMPLIANCE hardening", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalBypassEnv = process.env.BYPASS_COMPLIANCE;
+
+  beforeEach(() => {
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888" }];
+    lastTwilioCallParams = null;
+    process.env.TWILIO_PHONE_NUMBER = "+15551112222";
+    // A call blocked by real compliance is the control for every test below —
+    // if the bypass logic is broken, a "blocked" call would silently succeed instead.
+    mockComplianceResult = { allowed: false, reason: "blocked for test", failedCheck: "dnc" };
+  });
+
+  it("ignores a client-supplied bypassCompliance:true in the request body (dev/test env)", async () => {
+    delete process.env.NODE_ENV; // non-production
+    delete process.env.BYPASS_COMPLIANCE;
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123", bypassCompliance: true })
+    });
+
+    expect(res.status).toBe(403);
+    expect(lastTwilioCallParams).toBeNull();
+
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.BYPASS_COMPLIANCE = originalBypassEnv;
+  });
+
+  it("ignores a client-supplied bypassCompliance:true even when BYPASS_COMPLIANCE=true is also set", async () => {
+    delete process.env.NODE_ENV;
+    process.env.BYPASS_COMPLIANCE = "not-the-string-true"; // env bypass itself off
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123", bypassCompliance: true })
+    });
+
+    expect(res.status).toBe(403);
+    expect(lastTwilioCallParams).toBeNull();
+
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.BYPASS_COMPLIANCE = originalBypassEnv;
+  });
+
+  it("honors BYPASS_COMPLIANCE=true outside production", async () => {
+    delete process.env.NODE_ENV;
+    process.env.BYPASS_COMPLIANCE = "true";
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123" })
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastTwilioCallParams).toBeDefined();
+
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.BYPASS_COMPLIANCE = originalBypassEnv;
+  });
+
+  it("hard-disables BYPASS_COMPLIANCE=true in production — the real gap this fix closes", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.BYPASS_COMPLIANCE = "true";
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123" })
+    });
+
+    expect(res.status).toBe(403);
+    expect(lastTwilioCallParams).toBeNull();
+
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.BYPASS_COMPLIANCE = originalBypassEnv;
   });
 });

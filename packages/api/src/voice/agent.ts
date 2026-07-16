@@ -12,7 +12,7 @@ import { transferToHuman } from "./tools/transferToHuman";
 import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
 import { confirmCodOrder } from "./tools/confirmCodOrder";
 import { offerCartRecoveryDiscount } from "./tools/offerCartRecoveryDiscount";
-import { withDisclosure } from "@openvent/compliance";
+import { withDisclosure, resolveDisclosure } from "@openvent/compliance";
 import { resolveVoiceModel, getActiveModelLabel } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates } from "../database/schema";
@@ -353,6 +353,14 @@ export type ResolvedAgentConfig = {
    * it without an LLM call when every {{tag}} resolves from context;
    * undefined means always use the existing LLM-generated greeting. */
   literalGreetingTemplate?: string;
+  /** Global Compliance Engine Tier 0 (2026-07-16, docs/global-compliance-engine-plan.md
+   * #2/#3): the exact disclosure line + version actually embedded in this call's
+   * system prompt — persist both alongside the call row so an audit record can
+   * prove not just "disclosure was spoken" but *which wording, in which language*.
+   * Always populated (never undefined) — every code path below resolves it,
+   * language-matched when a language is known, English default otherwise. */
+  disclosureText?: string;
+  disclosureVersion?: string;
 };
 
 /**
@@ -402,10 +410,11 @@ export async function resolveAgentConfig(opts: {
         jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
       }
 
+      const disclosure = resolveDisclosure({ language: config.language ?? undefined });
       const systemPrompt = withCallControl(
         buildLanguageInstructionBlock(config.language ?? undefined) +
           buildIdentityBlock(config) +
-          withDisclosure(jobDescription),
+          withDisclosure(jobDescription, { language: config.language ?? undefined }),
         (config.guardrails as GuardrailSettings | null) ?? undefined,
         (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
       );
@@ -420,6 +429,8 @@ export async function resolveAgentConfig(opts: {
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
         language: config.language ?? undefined,
         agentName: config.name ?? undefined,
+        disclosureText: disclosure.text,
+        disclosureVersion: disclosure.version,
         // Latency fix (2026-07-16): only offer the literal (LLM-free)
         // greeting when this org is actually using the template's stock
         // persona — an org that's customized its own personaPrompt may
@@ -443,14 +454,24 @@ export async function resolveAgentConfig(opts: {
       .limit(1);
     if (tmpl?.literalGreetingTemplate) {
       const systemPrompt = await resolvePersona(opts);
-      return { systemPrompt, literalGreetingTemplate: tmpl.literalGreetingTemplate };
+      const disclosure = resolveDisclosure({});
+      return {
+        systemPrompt,
+        literalGreetingTemplate: tmpl.literalGreetingTemplate,
+        disclosureText: disclosure.text,
+        disclosureVersion: disclosure.version,
+      };
     }
   }
 
   // No org+template config row (or no orgId/templateKey at all) — fall back
-  // to the plain persona-resolution chain, no frame overrides.
+  // to the plain persona-resolution chain, no frame overrides. No language
+  // signal available at this level (resolvePersona's opts carry none) — the
+  // disclosure resolves to the English default, same as this path's existing
+  // (pre-localization) behavior.
   const systemPrompt = await resolvePersona(opts);
-  return { systemPrompt };
+  const disclosure = resolveDisclosure({});
+  return { systemPrompt, disclosureText: disclosure.text, disclosureVersion: disclosure.version };
 }
 
 /**
@@ -472,8 +493,11 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
     jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
   }
 
+  const disclosure = resolveDisclosure({ language: override.language });
   const systemPrompt = withCallControl(
-    buildLanguageInstructionBlock(override.language) + buildIdentityBlock(override) + withDisclosure(jobDescription),
+    buildLanguageInstructionBlock(override.language) +
+      buildIdentityBlock(override) +
+      withDisclosure(jobDescription, { language: override.language }),
     override.guardrails,
     override.toolsEnabled,
   );
@@ -487,6 +511,8 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
     enabledTools: override.toolsEnabled,
     sttProvider: override.sttProvider,
     language: override.language,
+    disclosureText: disclosure.text,
+    disclosureVersion: disclosure.version,
   };
 }
 

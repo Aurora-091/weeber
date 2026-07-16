@@ -198,7 +198,20 @@ export const voice = new Hono()
     // manual step required. A call that fails either check is rejected and
     // never dials. Applies identically regardless of which provider places
     // the call below.
-    const bypassCompliance = process.env.BYPASS_COMPLIANCE === "true" || (parsed as { bypassCompliance?: boolean }).bypassCompliance;
+    //
+    // Global Compliance Engine Tier 0 fix (2026-07-16, docs/global-compliance-engine-plan.md
+    // #1): this used to also honor a client-supplied `bypassCompliance` request-body flag —
+    // any caller of this endpoint could disable every legal gate on their own request. Fixed:
+    // the request-body variant is never honored, in any environment — it's stripped entirely,
+    // not just gated. The env var is now hard-disabled in production regardless of its value —
+    // `BYPASS_COMPLIANCE=true` shipped to prod by accident (or left over from a staging config)
+    // can no longer silently disable compliance. Outside production (dev/test), the env var
+    // still works for local testing. The only other sanctioned bypass anywhere in this codebase
+    // is the calling-window-only, self-expiring `orgs.callingWindowTestModeUntil` (see
+    // workflows/scheduler.ts) — DNC has no bypass anywhere, on purpose, and this endpoint's
+    // bypass never covered DNC either.
+    const isProduction = process.env.NODE_ENV === "production";
+    const bypassCompliance = !isProduction && process.env.BYPASS_COMPLIANCE === "true";
     if (!bypassCompliance) {
       const compliance = await checkOutboundCallCompliance(to, dncAdapter);
       if (!compliance.allowed) {

@@ -1,7 +1,7 @@
-import type { CallAuditStorageAdapter, CallLogStorageAdapter, DncStorageAdapter } from "@openvent/compliance";
+import type { CallAuditStorageAdapter, CallLogStorageAdapter, ConsentPurpose, ConsentRecord, ConsentStorageAdapter, DncStorageAdapter } from "@openvent/compliance";
 import { db } from "../../database";
-import { calls, doNotCall, transcripts, toolCalls } from "../../database/schema";
-import { eq, lt, or, asc } from "drizzle-orm";
+import { calls, consentRecords, doNotCall, transcripts, toolCalls } from "../../database/schema";
+import { desc, eq, lt, or, asc } from "drizzle-orm";
 
 /**
  * Drizzle/Turso storage adapters wiring OpenVent's own schema into the
@@ -35,6 +35,81 @@ export const dncAdapter: DncStorageAdapter = {
     }));
   },
 };
+
+/**
+ * Consent ledger adapter (Global Compliance Engine Tier 0, 2026-07-16,
+ * docs/global-compliance-engine-plan.md #6) — a factory, not a single shared instance like
+ * `dncAdapter` above. @openvent/compliance's `ConsentStorageAdapter` interface is
+ * intentionally org-agnostic (just `dataPrincipal` + `purpose`, no `orgId` param) so the package
+ * itself has zero multi-tenancy opinion — but this app's `consent_records` table is genuinely
+ * per-org (the same phone number can be a customer of more than one org on this platform, and
+ * consent granted to one org must never satisfy a check for a different org). Closing that gap
+ * here, at the call site, rather than changing the package's interface: call
+ * `createConsentAdapterForOrg(orgId)` once per org context and pass the result as
+ * `checkOutboundCallCompliance`'s `consentCheck.adapter`.
+ *
+ * `hasConsent`/`withdraw` only ever look at the MOST RECENT record for a given
+ * (orgId, dataPrincipal, purpose) — mirrors the memory adapter's `activeGrant` semantics in
+ * packages/openvent-compliance/src/adapters/memory.ts exactly, so behavior is identical between
+ * the reference adapter used in tests and this production one.
+ */
+export function createConsentAdapterForOrg(orgId: string): ConsentStorageAdapter {
+  async function mostRecentRecord(dataPrincipal: string, purpose: ConsentPurpose) {
+    const [row] = await db
+      .select()
+      .from(consentRecords)
+      .where(and(eq(consentRecords.orgId, orgId), eq(consentRecords.dataPrincipal, dataPrincipal), eq(consentRecords.purpose, purpose)))
+      .orderBy(desc(consentRecords.grantedAt))
+      .limit(1);
+    return row;
+  }
+
+  return {
+    async hasConsent(dataPrincipal, purpose) {
+      const row = await mostRecentRecord(dataPrincipal, purpose);
+      if (!row || !row.granted || row.withdrawnAt) return false;
+      if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) return false;
+      return true;
+    },
+    async grant(record: ConsentRecord) {
+      await db.insert(consentRecords).values({
+        orgId,
+        dataPrincipal: record.dataPrincipal,
+        purpose: record.purpose,
+        granted: record.granted,
+        grantedAt: record.grantedAt,
+        expiresAt: record.expiresAt ?? null,
+        version: record.version,
+        channel: record.channel,
+        source: record.source,
+        withdrawnAt: record.withdrawnAt ?? null,
+      });
+    },
+    async withdraw(dataPrincipal, purpose) {
+      const row = await mostRecentRecord(dataPrincipal, purpose);
+      if (!row || row.withdrawnAt) return;
+      await db.update(consentRecords).set({ withdrawnAt: new Date() }).where(eq(consentRecords.id, row.id));
+    },
+    async listForPrincipal(dataPrincipal) {
+      const rows = await db
+        .select()
+        .from(consentRecords)
+        .where(and(eq(consentRecords.orgId, orgId), eq(consentRecords.dataPrincipal, dataPrincipal)))
+        .orderBy(desc(consentRecords.grantedAt));
+      return rows.map((r) => ({
+        dataPrincipal: r.dataPrincipal,
+        purpose: r.purpose as ConsentPurpose,
+        granted: r.granted,
+        grantedAt: r.grantedAt,
+        expiresAt: r.expiresAt,
+        version: r.version,
+        channel: r.channel as ConsentRecord["channel"],
+        source: r.source,
+        withdrawnAt: r.withdrawnAt,
+      }));
+    },
+  };
+}
 
 export const callLogAdapter: CallLogStorageAdapter = {
   async findCallsStartedBefore(cutoff) {

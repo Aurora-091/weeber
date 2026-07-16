@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { checkCallingWindow } from "./calling-window";
 import { checkOutboundCallCompliance } from "./index";
-import { createMemoryDncAdapter, createMemoryCallLogAdapter } from "./adapters/memory";
+import { createMemoryDncAdapter, createMemoryCallLogAdapter, createMemoryConsentAdapter } from "./adapters/memory";
 import { withDisclosure, isDisclosureEnabled } from "./consent";
 import { isHipaaMode, assertHipaaPreflight } from "./hipaa";
 import { purgeExpiredData, eraseCallerData, getRetentionDays } from "./gdpr";
@@ -40,6 +40,191 @@ describe("dnc (memory adapter)", () => {
     // wide open to isolate "DNC check passes" from calling-window timing.
     const allowed = await checkOutboundCallCompliance("+12125550100", dnc, { startHour: 0, endHour: 24 });
     expect(allowed.allowed).toBe(true);
+  });
+});
+
+describe("consent ledger — Global Compliance Engine Tier 0 #6 (memory adapter)", () => {
+  it("hasConsent is false with no grant on record", async () => {
+    const consent = createMemoryConsentAdapter();
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(false);
+  });
+
+  it("hasConsent is true after a grant for that exact purpose", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(true);
+  });
+
+  it("consent for one purpose never satisfies a check for a different purpose", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    expect(await consent.hasConsent("+15550001111", "underwriting")).toBe(false);
+  });
+
+  it("withdrawal stops hasConsent from returning true for that purpose going forward", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(true);
+
+    await consent.withdraw("+15550001111", "marketing");
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(false);
+  });
+
+  it("withdrawing one purpose does not affect a different purpose's active grant", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "service",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "order placement",
+    });
+
+    await consent.withdraw("+15550001111", "marketing");
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(false);
+    expect(await consent.hasConsent("+15550001111", "service")).toBe(true);
+  });
+
+  it("an expired grant does not satisfy hasConsent", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(Date.now() - 1000),
+      expiresAt: new Date(Date.now() - 500),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(false);
+  });
+
+  it("re-granting after a withdrawal restores hasConsent (ledger keeps both rows, doesn't overwrite)", async () => {
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    await consent.withdraw("+15550001111", "marketing");
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(false);
+
+    await consent.grant({
+      dataPrincipal: "+15550001111",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "web",
+      source: "re-opted-in via settings page",
+    });
+    expect(await consent.hasConsent("+15550001111", "marketing")).toBe(true);
+
+    const history = await consent.listForPrincipal("+15550001111");
+    expect(history.length).toBe(2);
+  });
+
+  it("checkOutboundCallCompliance's consent check is opt-in — omitting it keeps today's DNC+window-only behavior", async () => {
+    const dnc = createMemoryDncAdapter();
+    const result = await checkOutboundCallCompliance("+12125550100", dnc, { startHour: 0, endHour: 24 });
+    expect(result.allowed).toBe(true);
+  });
+
+  it("checkOutboundCallCompliance blocks a dial with no consent for the given purpose when wired", async () => {
+    const dnc = createMemoryDncAdapter();
+    const consent = createMemoryConsentAdapter();
+    const result = await checkOutboundCallCompliance(
+      "+12125550100",
+      dnc,
+      { startHour: 0, endHour: 24 },
+      { adapter: consent, purpose: "marketing" },
+    );
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.failedCheck).toBe("consent");
+  });
+
+  it("checkOutboundCallCompliance allows a dial once the purpose-matched consent is granted", async () => {
+    const dnc = createMemoryDncAdapter();
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+12125550100",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    const result = await checkOutboundCallCompliance(
+      "+12125550100",
+      dnc,
+      { startHour: 0, endHour: 24 },
+      { adapter: consent, purpose: "marketing" },
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it("DNC is still checked first even when a consent check is wired — DNC has no bypass, ever", async () => {
+    const dnc = createMemoryDncAdapter();
+    await dnc.add({ phoneNumber: "+12125550100", source: "manual", addedAt: new Date() });
+    const consent = createMemoryConsentAdapter();
+    await consent.grant({
+      dataPrincipal: "+12125550100",
+      purpose: "marketing",
+      granted: true,
+      grantedAt: new Date(),
+      version: "v1",
+      channel: "shopify",
+      source: "checkout consent checkbox",
+    });
+    const result = await checkOutboundCallCompliance(
+      "+12125550100",
+      dnc,
+      { startHour: 0, endHour: 24 },
+      { adapter: consent, purpose: "marketing" },
+    );
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.failedCheck).toBe("dnc");
   });
 });
 
