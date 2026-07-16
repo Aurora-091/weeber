@@ -13,3 +13,7 @@ actual code, not these.
   migration finished under ADR-034). Stale as of 2026-07-13.
 - **`component-documentation-template.md`** — a generic, unused component-documentation template, never
   actually adopted for any real component in this repo. Archived, not deleted, 2026-07-13.
+- **`workflow-canvas-bolt-prompt.md`** — the original copy-paste prompt used to scaffold the Workflow
+  Canvas UI in an AI coding tool. The canvas is built and live; this prompt is a one-time build
+  instruction with no further use beyond history. Moved out of `workflow-canvas-architecture.md` §7
+  during a docs cleanup pass, 2026-07-16.

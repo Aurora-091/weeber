@@ -83,7 +83,16 @@ shape as this week's `turn_latency` dashboard addition, no changes to the graph 
 engine. Ship this regardless of what else gets decided; it's useful either way.
 
 **Option B — Generalize `conditionalSplit` to expression edges over `context`, stay away from LLM
-conditions.**
+conditions.** ***RESOLVED 2026-07-16*** — decided as part of scoping `workflow-canvas-v3-user-
+builder-plan.md`, with one change from the framing below: instead of generalizing `conditionalSplit`'s
+edges, a separate new **`condition`** node type was chosen (field/operator/value config, `true`/`false`
+outgoing edges) — keeps "route on how a call ended" (`conditionalSplit`) and "route on arbitrary
+context data" (`condition`) as two distinct, individually-simpler node types rather than one node
+whose edges mean different things depending on config. Same underlying idea as below (deterministic,
+non-Turing-complete, no `new Function()` eval), same six data points confirmed for v1 (cart/order
+value, customer tag, past order count, discount-used flag, time-of-day/day-of-week, custom field).
+See that doc's §2 for the actual config shape. Original framing kept below for context.
+
 Medium effort. Instead of routing only on the fixed `WORKFLOW_OUTCOMES` enum, let a `conditionalSplit`
 edge's condition be a small, safe expression over `context` (e.g. `cart_value > 100`,
 `attempt_number >= 2`) — parsed and evaluated server-side in `graph-engine.ts` with a tiny, deliberately
@@ -299,11 +308,12 @@ baseline, no new failures).
   Also fixed, unplanned but urgent: `workflowAdminRoutes` had zero authentication — see Part 3.3.
 - **Not done yet, still recommended**: the webhook/call failure-routing field (§1.5) — small,
   additive, didn't fit in the same session as the security fix above.
-- **Needs a real decision before building**: whether to generalize `conditionalSplit` to expression
-  edges (§1.4 Option B) and whether LLM-condition edges are ever appropriate given this product's
-  compliance posture (§1.4 Option C — Bolna's hybrid deterministic-first/LLM-fallback model
-  (Part 3.1) refines but doesn't remove this concern; still leaning no unless a concrete case
-  appears and gets an explicit compliance sign-off).
+- **Resolved (2026-07-16)**: Option B (§1.4) — decided as a new `condition` node type, scoped in
+  `workflow-canvas-v3-user-builder-plan.md`, not yet built. See that doc for status.
+- **Still needs a real decision before building**: whether LLM-condition edges are ever appropriate
+  given this product's compliance posture (§1.4 Option C — Bolna's hybrid deterministic-first/
+  LLM-fallback model (Part 3.1) refines but doesn't remove this concern; still leaning no unless a
+  concrete case appears and gets an explicit compliance sign-off).
 - **Don't build yet**: multi-voice (§2) — no identified need in any current vertical, and the two
   architecturally-obvious ways to build it both regress this session's latency work. Revisit only if
   Phase B2 doesn't already cover the actual underlying (bilingual, not multi-character) need, or a
