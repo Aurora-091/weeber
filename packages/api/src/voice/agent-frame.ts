@@ -24,6 +24,8 @@ export const AVAILABLE_TOOL_NAMES = [
   "flagGuardrailEvent",
   "sendSms",
   "sendDtmf",
+  "confirmCodOrder",
+  "offerCartRecoveryDiscount",
 ] as const;
 
 export type AvailableToolName = (typeof AVAILABLE_TOOL_NAMES)[number];

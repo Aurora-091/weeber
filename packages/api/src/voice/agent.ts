@@ -10,6 +10,8 @@ import { sendDtmf } from "./tools/sendDtmf";
 import { hangUp } from "./tools/hangUp";
 import { transferToHuman } from "./tools/transferToHuman";
 import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
+import { confirmCodOrder } from "./tools/confirmCodOrder";
+import { offerCartRecoveryDiscount } from "./tools/offerCartRecoveryDiscount";
 import { withDisclosure } from "@openvent/compliance";
 import { resolveVoiceModel, getActiveModelLabel } from "./llm";
 import { db } from "../database";
@@ -468,6 +470,8 @@ export const voiceTools = {
   flagGuardrailEvent,
   sendSms,
   sendDtmf,
+  confirmCodOrder,
+  offerCartRecoveryDiscount,
 };
 
 /**
