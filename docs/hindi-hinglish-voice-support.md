@@ -3,6 +3,28 @@
 Started 2026-07-16. Tracks the work to make Hindi/Hinglish agents actually good, not just
 "technically has a language dropdown entry."
 
+## ✅ All 4 phases complete (2026-07-16)
+
+Every phase below was built and then **live-verified** with the user's real ElevenLabs and Sarvam
+accounts and real Hinglish audio — not shipped on documentation/marketing claims alone. Two real,
+silent bugs were caught this way (see Phase 2) that would otherwise have shipped broken.
+
+**One action still needed from the user, not done here (Railway is intentionally out of scope):**
+set these two env vars on Railway to activate the Phase 3 pronunciation dictionary in production —
+everything else is already live the moment it's deployed, no other config needed.
+```
+ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=3ygOtN1S5v8oM8eoBHvn
+ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=wid8pyPH48GSfGg73uFc
+```
+
+| Phase | What | Result |
+|---|---|---|
+| 1 | Fixed ElevenLabs/Cartesia TTS silently ignoring the call's configured language | Both now pass it through correctly |
+| 2 | New ElevenLabs Scribe v2 Realtime STT adapter | Live-verified real Hinglish code-switching works; found + fixed 2 silent bugs (wrong audio config, close-race losing final transcripts) |
+| 2.5 | Sarvam STT `mode: "transcribe"` → `"codemix"` | Live-verified: stopped transliterating English loanwords into Devanagari |
+| 3 | ElevenLabs pronunciation dictionary (OTP, COD, RTO, UPI, KYC, GST, PIN code, Weeber) | Live-verified real before/after fix: "COD" was being misheard as "card" without it |
+| 4 | Agents tab UI — Hindi/Hinglish provider recommendation + one-click apply | Also fixed a real drift bug: the frontend's tool checkbox list was missing 2 tools fixed earlier this session, which would have silently undone that fix for any org that saved agent settings |
+
 ## Why this exists
 
 Hinglish (Hindi-English code-switching) is how most urban Indian callers actually speak — not a
@@ -182,14 +204,41 @@ Verified: typecheck clean, oxlint 0/0, vite build green, backend suite 296 pass 
 new tests) / 38 fail (same baseline, no new failures). API key and all temporary test scripts
 deleted from disk after testing.
 
-### Phase 4 — Agents tab language option (NOT STARTED)
-- [ ] Add a real **"Hindi (Hinglish)"** entry to `RECOMMENDED_LANGUAGES` (agent-frame.ts), distinct
-  from plain `"hi"`.
-- [ ] Selecting it should default `sttProvider: "elevenlabs"` (once Phase 2 ships) + an
-  ElevenLabs/Cartesia TTS voice — not Sarvam — with a short UI explainer on why.
-- [ ] Update the agents tab UI (packages/web) to surface the recommended provider pairing when this
-  language is chosen, instead of leaving the org to guess at a combination that might silently
-  underperform (e.g. Deepgram `multi` for Hindi).
+### Phase 4 — Agents tab language option (DONE, 2026-07-16)
+
+**Design decision — recommendation overlay, not a fake language code.** `language` is a single
+plain ISO-639-1-ish string used identically by every provider adapter (STT and TTS both just read
+the same value) — introducing a literal separate code like `"hi-hinglish"` would have meant
+teaching every adapter (Deepgram, Sarvam STT/TTS, Cartesia, ElevenLabs) to normalize a made-up code
+back to `"hi"`, for zero real benefit. Instead: `"hi"` stays the one code (relabeled "Hindi /
+Hinglish" in `RECOMMENDED_LANGUAGES` to reflect what it now means), and a new
+`getRecommendedVoiceStack(language)` helper (`lib/agent-config.ts`) returns the live-verified
+provider pairing (`sttProvider: "elevenlabs"`, `voiceProvider: "elevenlabs"`) only for `"hi"`,
+`null` for every other language — this is a Hindi-specific recommendation, not a general
+"ElevenLabs is always best" claim.
+
+**UI:** both the merchant (`pages/app/agents.tsx`) and admin (`pages/dashboard/agents.tsx`) agent
+config forms now show an inline recommendation card the moment `language` is `"hi"` and the
+current STT/TTS provider selection doesn't already match — explaining *why* (the live-tested
+Latin-script code-switching result, and the known Deepgram Hindi/Spanish misdetection bug from the
+Phase 2 research) with a one-click "Use recommended (ElevenLabs)" button that sets both providers
+at once. Nothing is force-changed automatically — an org can still pick Sarvam/Deepgram/Cartesia
+deliberately, the hint just stops them from silently landing on a combination we already know
+underperforms for this language.
+
+**Also fixed while in this file — a real, directly-relevant bug found by inspection:** the
+frontend's own copy of `AVAILABLE_TOOL_NAMES` (`lib/agent-config.ts`) was missing
+`confirmCodOrder`/`offerCartRecoveryDiscount` — the exact two tools fixed on the backend earlier
+this session (commit `3f29be6`). This list is what renders the tool checkboxes in both agent
+config forms; a tool missing from it can never be toggled on from the UI, and if a merchant saved
+*any* change to their agent through this form, the submitted `toolsEnabled` array would have
+silently omitted those two tools going forward (the backend's `resolveAgentConfig` prefers a saved
+org override over the template default once one exists) — undoing the earlier fix for any org
+that touched their settings. Added both to the frontend list with a doc comment explaining the
+sync requirement, so this doesn't drift again.
+
+Verified: typecheck clean (api+web), oxlint 0/0, vite build green, backend suite 296 pass / 38 fail
+(unchanged — this phase touched frontend only, no backend logic changed).
 
 ## Status snapshot
 
@@ -199,4 +248,4 @@ deleted from disk after testing.
 | 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Done, **live-verified with a real account and real Hinglish audio** — 2 real bugs found and fixed via that test (see above) |
 | 2.5 — Sarvam `mode: codemix` fix | ✅ Done, **live-verified** — real before/after comparison confirmed the fix (see above) |
 | 3 — Pronunciation dictionaries | ✅ Done, **live-created + live-verified** — real before/after COD mispronunciation fix confirmed. Needs env vars set on Railway (see above) to activate |
-| 4 — Agents tab language option | Not started |
+| 4 — Agents tab language option | ✅ Done — inline recommendation + one-click apply in both merchant/admin forms, plus a related tool-list drift bug fixed along the way |

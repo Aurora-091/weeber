@@ -4,6 +4,37 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 4: agents tab recommendation UI (all 4 phases complete)
+
+Full detail in `docs/hindi-hinglish-voice-support.md` (now has an "all phases complete" summary at
+the top). Summary here.
+
+**Design decision:** kept `language` as a single plain code (no fake `"hi-hinglish"` value) —
+`RECOMMENDED_LANGUAGES`'s `"hi"` entry relabeled "Hindi / Hinglish", and a new
+`getRecommendedVoiceStack(language)` helper (`lib/agent-config.ts`) returns the live-verified
+provider pairing (ElevenLabs STT + ElevenLabs TTS) only for `"hi"`, `null` otherwise.
+
+**UI:** both `pages/app/agents.tsx` (merchant) and `pages/dashboard/agents.tsx` (admin) now show an
+inline recommendation card when `language === "hi"` and the current provider selection doesn't
+already match, explaining why (the live-tested code-switching result from Phase 2, and Deepgram's
+known Hindi/Spanish misdetection bug) with a one-click "Use recommended (ElevenLabs)" button that
+sets both providers at once. Nothing auto-changes — orgs can still deliberately pick something
+else, this only stops them from silently landing on a combination already known to underperform.
+
+**Also fixed — a real bug found by inspection, directly relevant to earlier work:** the frontend's
+own `AVAILABLE_TOOL_NAMES` copy (`lib/agent-config.ts`) was missing `confirmCodOrder`/
+`offerCartRecoveryDiscount`, the exact two tools fixed on the backend in commit `3f29be6`. Since
+this list is what renders the tool checkboxes in both agent forms, a merchant saving any change to
+their agent through the UI would have silently stripped those two tools from their config going
+forward (the backend prefers a saved org override over the template default once one exists) —
+quietly undoing the earlier fix. Added both tools to the frontend list with a doc comment
+explaining why they must stay in sync with the backend's copy.
+
+Verified: typecheck clean (api+web), oxlint 0/0, vite build green, backend suite unchanged at 296
+pass / 38 fail (this phase only touched frontend code).
+
+---
+
 ## 2026-07-16 — Hindi/Hinglish voice support, Phase 3: pronunciation dictionaries (live-verified)
 
 Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 3 section). Summary:

@@ -16,7 +16,7 @@ import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
-  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES,
+  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -372,6 +372,30 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
               </div>
             </div>
+            {(() => {
+              const recommended = getRecommendedVoiceStack(form.language);
+              const matchesRecommended = recommended && form.sttProvider === recommended.sttProvider && form.voiceProvider === recommended.voiceProvider;
+              if (!recommended || matchesRecommended) return null;
+              return (
+                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
+                  <p className="text-foreground">
+                    <span className="font-medium">Recommended for Hindi/Hinglish:</span> ElevenLabs Scribe (STT) +
+                    ElevenLabs (voice) — live-tested to keep English words in Latin script mid-sentence instead of
+                    transliterating them, and to avoid a known Deepgram issue misdetecting Hindi as Spanish.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      set("sttProvider", recommended.sttProvider);
+                      set("voiceProvider", recommended.voiceProvider);
+                    }}
+                    className="mt-1.5 inline-flex items-center rounded-md border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    Use recommended (ElevenLabs)
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

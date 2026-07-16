@@ -19,7 +19,7 @@ import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
-  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES,
+  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -189,6 +189,9 @@ function IdentityTab({ row, form, set }: TabProps) {
 }
 
 function VoiceTab({ row, form, set }: TabProps) {
+  const recommended = getRecommendedVoiceStack(form.language);
+  const matchesRecommended = recommended && form.sttProvider === recommended.sttProvider && form.voiceProvider === recommended.voiceProvider;
+
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -206,6 +209,26 @@ function VoiceTab({ row, form, set }: TabProps) {
           <datalist id={`langs-${row.templateKey}`}>{RECOMMENDED_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</datalist>
         </div>
       </div>
+      {recommended && !matchesRecommended && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
+          <p className="text-foreground">
+            <span className="font-medium">Recommended for Hindi/Hinglish:</span> ElevenLabs Scribe (speech-to-text) +
+            ElevenLabs (voice) — live-tested to keep English words like "flight" or "order" in Latin script
+            mid-sentence instead of transliterating them, and to avoid a known Deepgram issue misdetecting
+            Hindi as Spanish.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              set("sttProvider", recommended.sttProvider);
+              set("voiceProvider", recommended.voiceProvider);
+            }}
+            className="mt-1.5 inline-flex items-center rounded-md border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+          >
+            Use recommended (ElevenLabs)
+          </button>
+        </div>
+      )}
       <div>
         <label className={labelCls}>Voice</label>
         <VoicePicker

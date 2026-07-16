@@ -1,5 +1,18 @@
 // Shared types, constants, and form utilities for the agent config form.
 // Used by both pages/app/agents.tsx (user) and pages/dashboard/agents.tsx (admin).
+//
+// IMPORTANT: AVAILABLE_TOOL_NAMES here must stay in sync with the backend's own
+// list (packages/api/src/voice/agent-frame.ts) — this file only renders
+// checkboxes for tools listed here, so a tool present on the backend but
+// missing here can never be toggled on from the UI at all. If a merchant
+// then saves ANY change to their agent's tool config through this form, the
+// submitted toolsEnabled array silently omits that tool going forward (the
+// backend's resolveAgentConfig prefers a saved org override over the
+// template default once one exists) — exactly what happened here before
+// this fix: confirmCodOrder/offerCartRecoveryDiscount were added to the
+// backend list (agent-frame.ts, fixed 2026-07-16) but never mirrored here,
+// so saving agent settings through the UI would have silently stripped
+// those two tools from any org that touched this form, undoing that fix.
 
 export const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
 export const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
@@ -14,6 +27,8 @@ export const AVAILABLE_TOOL_NAMES = [
   "flagGuardrailEvent",
   "sendSms",
   "sendDtmf",
+  "confirmCodOrder",
+  "offerCartRecoveryDiscount",
 ] as const;
 export const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
@@ -23,7 +38,7 @@ export const RECOMMENDED_LLM_MODELS = [
 ] as const;
 export const RECOMMENDED_LANGUAGES = [
   { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
+  { code: "hi", label: "Hindi / Hinglish" },
   { code: "mr", label: "Marathi" },
   { code: "ta", label: "Tamil" },
   { code: "te", label: "Telugu" },
@@ -34,6 +49,25 @@ export const RECOMMENDED_LANGUAGES = [
   { code: "pa", label: "Punjabi" },
   { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
 ] as const;
+
+/**
+ * Hindi/Hinglish voice support (2026-07-16, docs/hindi-hinglish-voice-support.md)
+ * — live-verified provider pairing for code-switched Hindi/English calls.
+ * ElevenLabs Scribe (STT) keeps English words in Latin script mid-sentence
+ * automatically (confirmed with real Hinglish audio, not just marketing:
+ * "मुझे एक flight book करनी है" transcribed back correctly with "flight"
+ * intact), and ElevenLabs TTS is the pairing this pass tested end-to-end —
+ * Deepgram's own "multi" mode has a real, reported bug misdetecting Hindi as
+ * Spanish, and Sarvam's STT stayed on `mode: "transcribe"` for a long time
+ * (now fixed to `codemix`, see the same doc) but ElevenLabs is the
+ * more-tested default for this specific language. Returns null for every
+ * other language — this is a Hindi-specific recommendation, not a general
+ * "always prefer ElevenLabs" rule.
+ */
+export function getRecommendedVoiceStack(language: string): { sttProvider: string; voiceProvider: string } | null {
+  if (language.trim().toLowerCase() !== "hi") return null;
+  return { sttProvider: "elevenlabs", voiceProvider: "elevenlabs" };
+}
 
 export type AgentConfigRow = {
   templateKey: string;
