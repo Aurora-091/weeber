@@ -79,7 +79,7 @@ adapter becomes the default, not just taken on faith.
   failures — confirmed none of the 6 new tests appear in the fail list).
 - Commit: (see git log after this doc is committed)
 
-### Phase 2 — Build the ElevenLabs Scribe v2 Realtime STT adapter (DONE, 2026-07-16 — see caveat)
+### Phase 2 — Build the ElevenLabs Scribe v2 Realtime STT adapter (DONE + LIVE-VERIFIED, 2026-07-16)
 - [x] `stt/elevenlabs.ts` — same `ConnectStt` shape as `stt/deepgram.ts`/`stt/sarvam.ts`, wired into
   `stt/index.ts`'s provider registry, `SttProvider` type, `agent-frame.ts`'s `sttProvider` enum,
   `agent.ts`'s `ResolvedAgentConfig`, and both `stream.ts`/`test-call-stream.ts` local override
@@ -88,27 +88,35 @@ adapter becomes the default, not just taken on faith.
   not backend-only dead code.
 - [x] Test coverage: `stt/elevenlabs.test.ts` (6 tests) — mocked-WebSocket coverage of connection
   URL/headers, `session_started` → `onConnected`, `partial_transcript`/`committed_transcript` →
-  final/non-final, mu-law→PCM16 audio encoding, and the close/commit sequence.
-- [ ] Keyterm prompting for domain terms — deferred, not done in this pass (needs the actual term
-  list, same reasoning as Phase 3's pronunciation dictionaries).
-- [ ] **Still unverified — the Indic-English code-switching claim empirically.** Not tested against
-  a real ElevenLabs connection in this pass (no API credentials available in the build
-  environment). See the important caveat below before treating this as production-ready.
+  final/non-final, raw mu-law passthrough, and the close/commit sequence.
+- [x] **Live-tested against a real ElevenLabs account and real Hinglish audio.** User provided a
+  real API key; synthesized "मुझे एक flight book करनी है, aur mera order भी confirm karna hai."
+  via ElevenLabs TTS, resampled to Twilio's exact 8kHz mu-law format, and streamed it through the
+  actual `connectElevenLabsStt` code path (not a mock). Result:
+  **"मुझे एक flight book करनी है और मेरा order भी confirm करना है।"** —
+  flight/book/order/confirm all stayed in Latin script automatically, Hindi stayed in Devanagari.
+  The Indic-English code-switching claim is confirmed real, not just marketing copy.
+- [ ] Keyterm prompting for domain terms — still deferred (needs the actual term list, same
+  reasoning as Phase 3's pronunciation dictionaries).
 
-**⚠️ Real, disclosed risk carried by this adapter:** ElevenLabs' public docs only ever show raw
-16-bit PCM audio chunks in their Scribe v2 Realtime WebSocket examples (`sample_rate: 16000`,
-`audio_base_64` of raw PCM bytes) — despite their marketing page stating the API "supports PCM
-(8-48kHz) and mu-law encoding," no confirmed mu-law/`audio_format` WebSocket parameter literal
-could be found in their public reference (only an SDK-level `AudioFormat.PCM_16000` enum turned up,
-no `ULAW_8000` equivalent). Rather than guess an unconfirmed encoding literal in code that reaches
-production, this adapter decodes Twilio's 8kHz mu-law to 16-bit PCM first (reusing
-`mulawToPcm16` from `audio-codec.ts`, the same approach `stt/sarvam.ts` already uses for the same
-reason) and sends that as raw PCM at `sample_rate: 8000` — the one path actually demonstrated
-working in ElevenLabs' own examples. This is a defensible, code-complete implementation, but it has
-**never been tested against a real ElevenLabs connection** — connection success, transcription
-accuracy, and the specific Hindi/Hinglish code-switching quality are all unverified. Do a real test
-call (or provide a test API key for a sandbox smoke test) before making this the default
-`sttProvider` for any live agent.
+**Two real bugs found and fixed via the live test (would have shipped silently broken otherwise):**
+1. **`audio_format`/`sample_rate` are connection-time query params, not per-message fields.** The
+   first version of this adapter put `sample_rate: 8000` inside each `input_audio_chunk` message —
+   the server silently ignored that and defaulted the whole session to 16kHz PCM regardless.
+   Feeding 8kHz audio into a session that assumed 16kHz produced a corrupted waveform and nonsense
+   transcripts (literally Korean-looking gibberish from the distorted audio), with **zero errors of
+   any kind** — a real, silent-failure class of bug that only a live test could catch. Fixed by
+   moving `sample_rate=8000&audio_format=ulaw_8000` onto the connection URL itself.
+2. **`ulaw_8000` is a valid `audio_format`, confirmed directly from the server's own error message**
+   enumerating valid values (`pcm_8000, pcm_16000, pcm_22050, pcm_24000, pcm_44100, pcm_48000,
+   ulaw_8000`) — so the original defensive PCM16-decode step (taken because the mu-law option
+   couldn't be confirmed from public docs alone) was unnecessary. Removed; Twilio's raw mu-law
+   bytes now go straight over the wire, same zero-re-encoding path the TTS adapters already use.
+3. **`close()` raced the server's response.** Sending `commit:true` and immediately calling
+   `ws.close()` right after killed the connection before the server could send back the final
+   `committed_transcript` — confirmed directly (identical commit message + immediate close = no
+   transcript; same commit message + staying connected = transcript arrives ~1-2s later). Fixed
+   with a 1.5s grace period between sending commit and actually closing the socket.
 
 ### Phase 3 — Pronunciation dictionaries + domain terms (NOT STARTED)
 - [ ] Create an ElevenLabs pronunciation dictionary with the org/product's actual domain terms
@@ -130,6 +138,6 @@ call (or provide a test API key for a sandbox smoke test) before making this the
 | Phase | Status |
 |---|---|
 | 1 — Fix existing TTS adapters | ✅ Done, sanity-checked (fresh typecheck/test/lint/build all green) |
-| 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Code-complete, ⚠️ **unverified against a real connection** — see caveat above |
+| 2 — ElevenLabs Scribe v2 Realtime STT adapter | ✅ Done, **live-verified with a real account and real Hinglish audio** — 2 real bugs found and fixed via that test (see above) |
 | 3 — Pronunciation dictionaries | Not started |
 | 4 — Agents tab language option | Not started |

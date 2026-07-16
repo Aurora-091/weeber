@@ -1,38 +1,46 @@
 import type { ConnectStt } from "./types";
-import { mulawToPcm16 } from "../audio-codec";
 
 /**
  * Thin wrapper around ElevenLabs' Scribe v2 Realtime streaming STT
  * WebSocket — see docs/hindi-hinglish-voice-support.md Phase 2 for the
  * research this is based on.
  *
- * IMPORTANT — verify before treating this as production-reliable:
+ * LIVE-VERIFIED (2026-07-16, real API key, real Hinglish audio — see the
+ * tracking doc for the full transcript): synthesized "मुझे एक flight book
+ * करनी है, aur mera order भी confirm karna hai." via ElevenLabs TTS,
+ * resampled to Twilio's exact 8kHz mu-law format, streamed through this
+ * exact code path, and got back "मुझे एक flight book करनी है और मेरा order
+ * भी confirm करना है।" — flight/book/order/confirm all stayed in Latin
+ * script automatically, confirming the Indic-English code-switching claim
+ * for real, not just from marketing copy.
  *
- * 1. Audio format: ElevenLabs' own realtime-speech-to-text landing page
- *    states the API "supports PCM (8-48kHz) and mu-law encoding", but every
- *    worked example in their public docs (server-side-streaming guide) only
- *    shows raw 16-bit PCM chunks sent as `{"message_type":
- *    "input_audio_chunk", "audio_base_64": ..., "sample_rate": N}` — no
- *    documented `audio_format`/encoding literal for mu-law was found in the
- *    public WebSocket reference (only their SDK-level `AudioFormat.PCM_16000`
- *    enum appeared, no `ULAW_8000` equivalent could be confirmed). Rather
- *    than guess an unconfirmed mu-law mode, this adapter decodes Twilio's
- *    8kHz mu-law to 16-bit PCM first (mulawToPcm16, already used for
- *    Sarvam's STT for the same reason) and sends that as
- *    `sample_rate: 8000` raw PCM — the one path actually shown working in
- *    ElevenLabs' own examples. Costs a small CPU decode step per chunk
- *    (same cost Sarvam's adapter already pays), not a network/latency cost.
- * 2. Language: Scribe v2 Realtime's docs describe fully automatic language
- *    detection and mid-conversation switching with "no language
- *    configuration required" — so, unlike Deepgram/Sarvam, this adapter
- *    intentionally does not send a language parameter at all. The `language`
- *    argument is accepted (for interface consistency with the other
- *    providers) but currently unused.
- * 3. The specific "Indic-English code-switching" quality claim (English
- *    words stay in Latin script automatically) was published for "Scribe
- *    v2" — this needs a real test call to confirm it holds identically for
- *    "Scribe v2 Realtime" (the streaming model this adapter actually uses)
- *    before defaulting any org's Hindi/Hinglish agent onto this provider.
+ * Two real bugs were found and fixed via that live test, replacing what was
+ * originally a defensive, unverified guess:
+ *   1. `audio_format`/`sample_rate` are CONNECTION-TIME query parameters,
+ *      not per-message fields — the first version of this file put
+ *      `sample_rate: 8000` inside each `input_audio_chunk` message, which
+ *      the server silently ignored, defaulting the whole session to
+ *      16kHz PCM regardless. Feeding 8kHz audio into a 16kHz-assumed
+ *      session produced a corrupted waveform and nonsense transcripts
+ *      (literally Korean-looking gibberish from the distorted audio) with
+ *      no error of any kind — a real, silent-failure class of bug.
+ *   2. `ulaw_8000` IS a valid `audio_format` (confirmed directly from the
+ *      server's own error message enumerating valid values: `pcm_8000,
+ *      pcm_16000, pcm_22050, pcm_24000, pcm_44100, pcm_48000, ulaw_8000`)
+ *      — so Twilio's raw mu-law chunks can be sent completely unconverted,
+ *      same zero-re-encoding path as the Deepgram/ElevenLabs/Cartesia TTS
+ *      adapters. The original version defensively decoded to PCM16 first
+ *      (extra CPU cost, and per-chunk `sample_rate` that turned out not to
+ *      matter) because the mu-law option couldn't be confirmed from public
+ *      docs alone — now confirmed, so that decode step is removed.
+ *
+ * Language: Scribe v2 Realtime's docs describe fully automatic language
+ * detection and mid-conversation switching with "no language configuration
+ * required" — so, unlike Deepgram/Sarvam, this adapter intentionally does
+ * not send a language parameter at all (matches the live test above, which
+ * used no language_code and still produced a clean code-switched result).
+ * The `language` argument is accepted (for interface consistency with the
+ * other providers) but currently unused.
  *
  * No reconnect loop (matches Sarvam's adapter, not Deepgram's) — an
  * unexpected close surfaces via onFatalError so the call ends cleanly
@@ -40,11 +48,11 @@ import { mulawToPcm16 } from "../audio-codec";
  * real call surfaces mid-call drops, same as Deepgram's adapter already
  * does.
  */
-const SAMPLE_RATE = 8000;
-
 export const connectElevenLabsStt: ConnectStt = (onTranscript, onFatalError, _onStatsUpdate, onConnected) => {
   const apiKey = process.env.ELEVENLABS_API_KEY ?? "";
-  const url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime";
+  const url =
+    "wss://api.elevenlabs.io/v1/speech-to-text/realtime" +
+    "?model_id=scribe_v2_realtime&sample_rate=8000&audio_format=ulaw_8000";
 
   const stats = { reconnectCount: 0, totalGapMs: 0 };
   const connectRequestedAt = Date.now();
@@ -116,9 +124,12 @@ export const connectElevenLabsStt: ConnectStt = (onTranscript, onFatalError, _on
   return {
     sendAudio(chunk: Uint8Array) {
       if (!isOpen || ws.readyState !== WebSocket.OPEN) return;
-      const pcm16 = mulawToPcm16(chunk);
-      const audioBase64 = Buffer.from(pcm16).toString("base64");
-      ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: audioBase64, commit: false, sample_rate: SAMPLE_RATE }));
+      // Sent completely unconverted — ulaw_8000 is a confirmed-valid
+      // audio_format for this connection (see doc comment above), so
+      // Twilio's mu-law bytes go straight over the wire, same
+      // zero-re-encoding path the TTS adapters already use.
+      const audioBase64 = Buffer.from(chunk).toString("base64");
+      ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: audioBase64, commit: false }));
     },
     getStats() {
       return { ...stats };
@@ -126,8 +137,18 @@ export const connectElevenLabsStt: ConnectStt = (onTranscript, onFatalError, _on
     close() {
       closedIntentionally = true;
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: "", commit: true, sample_rate: SAMPLE_RATE }));
-        ws.close();
+        ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: "", commit: true }));
+        // Live-test bug found and fixed (2026-07-16, see doc comment above):
+        // closing the socket immediately after sending commit:true raced
+        // the server's response — the final utterance's committed_transcript
+        // was lost every time (confirmed directly: the exact same
+        // send-commit-then-immediately-close sequence produced nothing,
+        // while leaving the socket open after the identical commit message
+        // reliably produced a committed_transcript ~1-2s later). A bounded
+        // grace period, not a real ack/response wait, matches the same
+        // "give the in-flight thing a beat before hard-closing"
+        // pattern stream.ts's own hangUp/transfer handling already uses.
+        setTimeout(() => ws.close(), 1500);
       }
     },
   };

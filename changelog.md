@@ -4,7 +4,7 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
-## 2026-07-16 — Hindi/Hinglish voice support, Phase 2: ElevenLabs Scribe v2 Realtime STT adapter
+## 2026-07-16 — Hindi/Hinglish voice support, Phase 2: ElevenLabs Scribe v2 Realtime STT adapter (live-verified)
 
 Full detail in `docs/hindi-hinglish-voice-support.md` (Phase 2 section) — summary here.
 
@@ -13,17 +13,32 @@ New `stt/elevenlabs.ts`, wired into the existing provider-abstraction pattern (`
 `stream.ts`/`test-call-stream.ts` local override types) and exposed as a selectable option in both
 the merchant and admin agents-tab STT provider dropdowns.
 
-**Disclosed, unresolved risk:** ElevenLabs' public docs only show raw PCM16 examples for Scribe v2
-Realtime's WebSocket API — despite marketing claiming mu-law support, no confirmed mu-law
-`audio_format` literal could be found in their public reference. Rather than guess one in
-production code, this adapter decodes Twilio's mu-law to PCM16 first (reusing the same
-`mulawToPcm16` helper `stt/sarvam.ts` already uses for the identical reason) and sends raw PCM —
-the one path ElevenLabs' own examples actually demonstrate. Code-complete, unit-tested against a
-mocked WebSocket (6 new tests in `stt/elevenlabs.test.ts`), but **never tested against a real
-ElevenLabs connection** — do a live test call before defaulting any agent onto this provider.
+**Live-tested with a real ElevenLabs account and real Hinglish audio** (user-provided API key):
+synthesized "मुझे एक flight book करनी है, aur mera order भी confirm karna hai." via ElevenLabs TTS,
+resampled to Twilio's exact 8kHz mu-law format, streamed through the actual adapter code (not
+mocked) — got back "मुझे एक flight book करनी है और मेरा order भी confirm करना है।". Confirmed the
+Indic-English code-switching claim for real: flight/book/order/confirm stayed in Latin script,
+Hindi stayed in Devanagari.
+
+That live test caught two real, silent bugs the original (defensively-written, docs-only) version
+would have shipped with:
+1. `audio_format`/`sample_rate` are connection-time query params, not per-message fields — the
+   server silently defaulted to 16kHz PCM regardless of what was sent per-message, and feeding 8kHz
+   audio into that assumption produced nonsense transcripts (literally Korean-looking gibberish)
+   with zero errors. Fixed by moving these onto the connection URL.
+2. `close()` sent `commit:true` and immediately closed the socket, racing the server's final
+   `committed_transcript` response — confirmed directly (same commit message, immediate close = no
+   transcript; same commit, stay connected = transcript arrives ~1-2s later). Fixed with a 1.5s
+   grace period before the actual close.
+
+Also dropped the original PCM16-decode step entirely — `ulaw_8000` turned out to be a valid
+`audio_format` (confirmed from the server's own error message listing valid values), so Twilio's
+raw mu-law bytes now go straight over the wire unconverted, same zero-re-encoding path the TTS
+adapters already use.
 
 Verified: typecheck clean, oxlint 0/0, vite build green. Backend suite 291 pass (was 285, +6 = the
-new tests) / 38 fail (same baseline, no new failures).
+new tests) / 38 fail (same baseline, no new failures). All temporary smoke-test scripts and the
+API key were deleted from disk after testing — nothing test-related persisted in the repo.
 
 ---
 

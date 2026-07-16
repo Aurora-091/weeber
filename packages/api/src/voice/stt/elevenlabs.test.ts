@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 
 /**
  * Hindi/Hinglish Phase 2 (2026-07-16, docs/hindi-hinglish-voice-support.md):
- * regression coverage for the new ElevenLabs Scribe v2 Realtime STT adapter.
+ * regression coverage for the ElevenLabs Scribe v2 Realtime STT adapter.
  * Exercises actual message construction against a minimal mocked WebSocket
- * (same pattern as tts/language-passthrough.test.ts) — not a live-API test.
- * The exact mu-law/audio_format WS parameter could not be confirmed from
- * public ElevenLabs docs (see elevenlabs.ts's own doc comment), so this
- * adapter decodes to raw PCM16 instead of guessing an unconfirmed encoding
- * literal — these tests confirm that decode path, not real transcription
- * accuracy, which still needs a live test call to verify.
+ * (same pattern as tts/language-passthrough.test.ts) — not a live-API test
+ * (that was done separately, see the tracking doc for the real transcript).
+ * These assertions lock in the two real bugs found and fixed via that live
+ * test: `sample_rate`/`audio_format` must be connection-time query params
+ * (not per-message fields, which the server silently ignores), and
+ * `ulaw_8000` is a valid format — no PCM16 decode step needed.
  */
 
 type Listener = (...args: any[]) => void;
@@ -62,12 +62,14 @@ afterEach(() => {
 });
 
 describe("connectElevenLabsStt", () => {
-  it("connects to the Scribe v2 Realtime endpoint with the xi-api-key header", async () => {
+  it("connects with model_id, sample_rate, and audio_format=ulaw_8000 as connection query params", async () => {
     const { connectElevenLabsStt } = await import("./elevenlabs");
     connectElevenLabsStt(() => {});
 
     const ws = MockWebSocket.instances[0];
-    expect(ws.url).toBe("wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime");
+    expect(ws.url).toBe(
+      "wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&sample_rate=8000&audio_format=ulaw_8000",
+    );
     expect(ws.headers?.["xi-api-key"]).toBeDefined();
   });
 
@@ -100,21 +102,26 @@ describe("connectElevenLabsStt", () => {
     ]);
   });
 
-  it("decodes mu-law audio to PCM16 and sends it as a base64 input_audio_chunk", async () => {
+  it("sends mu-law audio completely unconverted (base64 of the raw bytes, no PCM decode)", async () => {
     const { connectElevenLabsStt } = await import("./elevenlabs");
     const conn = connectElevenLabsStt(() => {});
 
     const ws = MockWebSocket.instances[0];
     ws.emitOpen();
-    conn.sendAudio(new Uint8Array([0xff, 0x7f, 0x00]));
+    const rawMulaw = new Uint8Array([0xff, 0x7f, 0x00]);
+    conn.sendAudio(rawMulaw);
 
     expect(ws.sent.length).toBe(1);
     const payload = JSON.parse(ws.sent[0]);
     expect(payload.message_type).toBe("input_audio_chunk");
     expect(payload.commit).toBe(false);
-    expect(payload.sample_rate).toBe(8000);
-    expect(typeof payload.audio_base_64).toBe("string");
-    expect(payload.audio_base_64.length).toBeGreaterThan(0);
+    // No per-message sample_rate — that field is ignored by the server;
+    // sample_rate/audio_format are set once at connection time (see the
+    // first test above). Confirmed via a live test that the server
+    // silently defaults to 16kHz PCM if this isn't set at connect time,
+    // regardless of what (if anything) is sent per-message.
+    expect(payload.sample_rate).toBeUndefined();
+    expect(payload.audio_base_64).toBe(Buffer.from(rawMulaw).toString("base64"));
   });
 
   it("does not send audio before the socket reports open", async () => {
