@@ -4,6 +4,45 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Workflow Canvas analytics overlay (Bolna-informed) + unrelated security fix
+
+Full detail in `docs/workflow-canvas-v2-and-multivoice-research.md` Part 3. Summary here.
+
+**Research**: read Bolna's own graph-agent docs (nodes: llm/static/router; edges: llm/expression/
+unconditional/event) to complete the competitive picture alongside the existing ElevenLabs research
+(2026-07-15). Key new fact: Bolna's routing checks deterministic edges first and only falls back to
+an LLM-evaluated condition when nothing deterministic matches — a hybrid, not the all-or-nothing
+framing the existing "Option C" (LLM-condition edges) decision assumed. Refines but doesn't remove
+the compliance concern for this product's TCPA/DNC audit trail — still not building LLM-condition
+edges today, still needs a concrete use case + explicit compliance sign-off first.
+
+**Shipped — workflow analytics overlay (Option A):** `workflow_runs.nodeHistory` (new jsonb column,
+migration `0029`) — the schema had no way to compute per-node analytics at all before this
+(`currentNodeId` gets overwritten every transition, no history existed). Appended via a race-free
+`jsonb || jsonb` SQL concat in `graph-engine.ts` (not a stale read-modify-write). New
+`GET /workflows/workflow-templates/:id/analytics` aggregates entry count / avg time-in-node /
+termination count per node. Rendered directly on the canvas (`WorkflowNode.tsx`, merged into React
+Flow node data via `workflow-editor.tsx`).
+
+**Found and fixed, unplanned — `workflowAdminRoutes` had zero authentication.** Found by direct
+inspection, not something this work was looking for: `voice/workflows/admin-routes.ts` exports a
+separate Hono instance from `voice/admin-routes.ts`'s `admin`, mounted independently in `index.ts` —
+Hono middleware on one instance never applies to another just because both get `.route()`-mounted
+onto the same parent. Every one of its 9 routes was reachable with no auth: real PII exposure via
+`GET /workflow-runs`/`:id` (customer names, phone numbers, cart values, checkout tokens), any org's
+workflow config readable/writable by guessing an orgId, and the platform-wide workflow templates
+every org's cart-recovery/COD flow runs on were editable/deletable by anyone. Fixed with the same
+gate `voice/admin-routes.ts` already uses. Frontend already sent `adminHeaders()` on every call site
+— no frontend change needed to restore functionality, this was a pure backend gap.
+
+Added `voice/workflows/admin-routes.test.ts` (had zero test coverage before — 9 tests: 6 for the
+auth gate, 3 for the analytics aggregation math with realistic multi-run fixtures).
+
+Verified: typecheck clean (api+web), oxlint 0/0, vite build green. Backend suite 305 pass (was 296
+before this work, +9 = the new tests) / 38 fail (same pre-existing baseline, no new failures).
+
+---
+
 ## 2026-07-16 — Hindi/Hinglish voice support, Phase 4: agents tab recommendation UI (all 4 phases complete)
 
 Full detail in `docs/hindi-hinglish-voice-support.md` (now has an "all phases complete" summary at

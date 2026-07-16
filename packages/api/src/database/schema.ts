@@ -488,6 +488,15 @@ export const workflowRuns = pgTable("workflow_runs", {
   currentNodeId: text("current_node_id").notNull(),
   status: text("status", { enum: ["running", "waiting", "completed", "failed"] }).notNull().default("running"),
   version: integer("version").notNull().default(1),
+  // Workflow analytics overlay (2026-07-16, docs/workflow-canvas-architecture.md's Option A,
+  // informed by researching ElevenLabs' and Bolna's graph-agent analytics/debugging features).
+  // Append-only log of every node this run has entered, in order — `currentNodeId` alone only
+  // ever tells you where a run IS right now, not the full path it took to get there or how long
+  // it spent at each stop, so per-node entry counts/avg-time-in-node/termination breakdowns were
+  // not previously computable from this table at all. Each entry: {nodeId, enteredAt (ISO
+  // string)}. Appended via a jsonb `||` concat in graph-engine.ts, not a stale read-then-write, to
+  // avoid a race between concurrent scheduler ticks touching the same run.
+  nodeHistory: jsonb("node_history").notNull().default([]).$type<Array<{ nodeId: string; enteredAt: string }>>(),
   nextRunAt: timestamp("next_run_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

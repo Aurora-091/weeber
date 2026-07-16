@@ -384,7 +384,14 @@ async function updateRunPosition(
 ): Promise<void> {
   await db
     .update(workflowRuns)
-    .set({ currentNodeId: nodeId, context, status, version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
+    .set({
+      currentNodeId: nodeId,
+      context,
+      status,
+      version: sql`${workflowRuns.version} + 1`,
+      updatedAt: new Date(),
+      nodeHistory: appendNodeHistorySql(nodeId),
+    })
     .where(eq(workflowRuns.id, runId));
 }
 
@@ -395,7 +402,14 @@ async function markRunCompleted(
 ): Promise<void> {
   await db
     .update(workflowRuns)
-    .set({ currentNodeId: nodeId, context, status: "completed", version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
+    .set({
+      currentNodeId: nodeId,
+      context,
+      status: "completed",
+      version: sql`${workflowRuns.version} + 1`,
+      updatedAt: new Date(),
+      nodeHistory: appendNodeHistorySql(nodeId),
+    })
     .where(eq(workflowRuns.id, runId));
   console.log(`[graph-engine] run ${runId} completed at node ${nodeId}`);
 }
@@ -406,4 +420,20 @@ async function markRunFailed(runId: string, reason: string): Promise<void> {
     .set({ status: "failed", version: sql`${workflowRuns.version} + 1`, updatedAt: new Date() })
     .where(eq(workflowRuns.id, runId));
   console.error(`[graph-engine] run ${runId} failed: ${reason}`);
+}
+
+/**
+ * Analytics overlay (2026-07-16) — appends {nodeId, enteredAt} to the run's
+ * `nodeHistory` via a jsonb `||` concat evaluated by Postgres itself, not a
+ * read-modify-write from application code. `advanceWorkflow`'s own in-memory
+ * `run` value could be stale by the time this write lands (the scheduler
+ * sweep and a live call's resumeWorkflowAfterCall can both touch the same
+ * run), so appending via SQL against whatever `node_history` currently holds
+ * in the database is the only race-free way to do this — same reasoning
+ * `version` already uses `sql`${workflowRuns.version} + 1`` for instead of
+ * incrementing an in-memory counter.
+ */
+function appendNodeHistorySql(nodeId: string) {
+  const entry = JSON.stringify([{ nodeId, enteredAt: new Date().toISOString() }]);
+  return sql`${workflowRuns.nodeHistory} || ${entry}::jsonb`;
 }

@@ -3,8 +3,28 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../database";
 import { workflowTemplates, orgWorkflowConfigs, workflowRuns } from "../../database/schema";
 import type { WorkflowGraph } from "./graph-types";
+import { requireAdminKey, type AdminAuthVariables } from "../middleware/admin-auth";
+import { adminSessionAuth } from "../middleware/admin-session";
 
-export const workflowAdminRoutes = new Hono();
+/**
+ * SECURITY FIX (2026-07-16, found during unrelated workflow-analytics work):
+ * this router is mounted at `/api/workflows` in index.ts, completely
+ * separately from `voice/admin-routes.ts`'s own `admin` Hono instance —
+ * Hono middleware registered on one router instance does NOT apply to a
+ * different instance just because both get `.route()`-mounted onto the same
+ * parent app. This file had ZERO authentication on every route: anyone who
+ * could reach the API could read every org's workflow run data (customer
+ * names, phone numbers, cart values, checkout tokens — real PII, via
+ * GET /workflow-runs and /workflow-runs/:id), read or overwrite any org's
+ * workflow config by guessing an orgId (GET/PUT /orgs/:orgId/workflow-
+ * configs/...), and create/edit/delete the platform-wide workflow templates
+ * every org's cart-recovery/COD workflow runs on (POST/PUT/DELETE
+ * /workflow-templates). Same gate as voice/admin-routes.ts, applied here
+ * directly since these are two separate Hono router instances.
+ */
+export const workflowAdminRoutes = new Hono<{ Variables: AdminAuthVariables }>()
+  .use("*", adminSessionAuth)
+  .use("*", requireAdminKey);
 
 /**
  * Validate a workflow graph before saving:
@@ -194,4 +214,65 @@ workflowAdminRoutes.get("/workflow-runs/:id", async (c) => {
   const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, id)).limit(1);
   if (!run) return c.json({ error: "not_found" }, 404);
   return c.json(run);
+});
+
+// --- Analytics overlay (2026-07-16) ---
+// docs/workflow-canvas-v2-and-multivoice-research.md's Option A, informed by researching
+// ElevenLabs' (per-node entry/duration/termination overlay) and Bolna's ("easy to debug — when
+// something breaks, you know which node failed and why") graph-agent analytics. Aggregated in
+// application code, not SQL, matching this codebase's general style for read-side aggregation at
+// this data volume — revisit with a real SQL aggregate query if a template's run count ever gets
+// large enough for this to matter.
+
+type NodeHistoryEntry = { nodeId: string; enteredAt: string };
+
+workflowAdminRoutes.get("/workflow-templates/:id/analytics", async (c) => {
+  const id = c.req.param("id");
+  const [template] = await db.select().from(workflowTemplates).where(eq(workflowTemplates.id, id)).limit(1);
+  if (!template) return c.json({ error: "not_found" }, 404);
+
+  const graph = template.graph as WorkflowGraph;
+  const runs = await db.select().from(workflowRuns).where(eq(workflowRuns.templateKey, id));
+
+  const entryCounts: Record<string, number> = {};
+  const durationSums: Record<string, number> = {};
+  const durationCounts: Record<string, number> = {};
+  const terminationCounts: Record<string, number> = {};
+
+  for (const run of runs) {
+    const history = (run.nodeHistory as NodeHistoryEntry[]) ?? [];
+    for (let i = 0; i < history.length; i++) {
+      const entry = history[i]!;
+      entryCounts[entry.nodeId] = (entryCounts[entry.nodeId] ?? 0) + 1;
+
+      // Time spent at this node: until the next entry, or (for the last entry) until the run's
+      // own updatedAt — best-effort, since a still-"running"/"waiting" run's last node hasn't
+      // technically finished yet, but updatedAt is the closest real signal available without a
+      // dedicated "node exited at" timestamp (out of scope for this pass — see doc for why
+      // nodeHistory's {nodeId, enteredAt} shape was kept minimal).
+      const nextEntry = history[i + 1];
+      const enteredAt = new Date(entry.enteredAt).getTime();
+      const exitedAt = nextEntry ? new Date(nextEntry.enteredAt).getTime() : new Date(run.updatedAt).getTime();
+      const durationMs = exitedAt - enteredAt;
+      if (Number.isFinite(durationMs) && durationMs >= 0) {
+        durationSums[entry.nodeId] = (durationSums[entry.nodeId] ?? 0) + durationMs;
+        durationCounts[entry.nodeId] = (durationCounts[entry.nodeId] ?? 0) + 1;
+      }
+
+      const isLastEntry = i === history.length - 1;
+      if (isLastEntry && (run.status === "completed" || run.status === "failed")) {
+        terminationCounts[entry.nodeId] = (terminationCounts[entry.nodeId] ?? 0) + 1;
+      }
+    }
+  }
+
+  const nodes = graph.nodes.map((node) => ({
+    nodeId: node.id,
+    nodeType: node.type,
+    entryCount: entryCounts[node.id] ?? 0,
+    avgDurationMs: durationCounts[node.id] ? Math.round(durationSums[node.id]! / durationCounts[node.id]!) : null,
+    terminationCount: terminationCounts[node.id] ?? 0,
+  }));
+
+  return c.json({ templateKey: id, totalRuns: runs.length, nodes });
 });

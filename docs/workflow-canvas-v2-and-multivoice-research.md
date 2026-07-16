@@ -1,11 +1,16 @@
-# Research + Plan: Workflow Canvas v2 (ElevenLabs-informed) + Multi-Voice Feature Gap
+# Research + Plan: Workflow Canvas v2 (ElevenLabs + Bolna-informed) + Multi-Voice Feature Gap
 
-**Date**: 2026-07-15. **Status**: research + proposed plan, nothing built yet — same "needs a design
-decision, don't silently default" discipline as `audit/2026-07-15-audit-05.md`, which this doc directly
-follows up on. Grounded in: (1) ElevenLabs Agents' public docs on Workflows and the Prompting Guide
-(user-provided reference material, 2026-07-15), (2) this repo's actual current code
-(`components/canvas/*`, `voice/workflows/graph-engine.ts`, `voice/workflows/admin-routes.ts`,
-`voice/tts/{cartesia,elevenlabs}.ts`), (3) `docs/workflow-canvas-architecture.md` (the original spec
+**Date**: 2026-07-15, updated 2026-07-16. **Status**: Part 1/2 (2026-07-15) were research + a
+proposed plan. **Part 3 (2026-07-16) is live-shipped**: the workflow analytics overlay (Part 1 §1.4
+Option A) is built, tested, and rendered on the canvas; a real, unrelated, zero-authentication
+security bug found while doing this work is also fixed. Options B/C (expression/LLM-condition
+edges) and multi-voice (Part 2) are still research-only, no design decision made — same "needs a
+design decision, don't silently default" discipline as `audit/2026-07-15-audit-05.md`, which this
+doc directly follows up on. Grounded in: (1) ElevenLabs Agents' public docs on Workflows and the
+Prompting Guide (user-provided reference material, 2026-07-15), (2) Bolna's own public graph-agent
+docs (`bolna.ai/docs/graph-agent/*`, researched 2026-07-16 — see Part 3.1), (3) this repo's actual
+current code (`components/canvas/*`, `voice/workflows/graph-engine.ts`,
+`voice/workflows/admin-routes.ts`, `voice/tts/{cartesia,elevenlabs}.ts`), (4) `docs/workflow-canvas-architecture.md` (the original spec
 this was built from) and `audit/2026-07-15-audit-05.md` (the gaps this plan addresses).
 
 ---
@@ -201,16 +206,104 @@ for the common (no-switch) case at all.
 
 ---
 
+## Part 3 — Update (2026-07-16): Bolna's graph agent, shipped work, and an unrelated security fix
+
+### 3.1 Bolna's graph agent — research summary, not aspirational
+
+Read directly from Bolna's own docs (`bolna.ai/docs/graph-agent/introduction` and
+`/edges-and-routing`), the third real competitor reference point alongside ElevenLabs (Part 1) and
+this product's own existing engine:
+
+- **Node types**: `llm` (default, a real conversational turn), `static` (pre-cached audio, plays
+  in ~50ms, **zero LLM cost** — Bolna's own framing), `router` (silent dispatch, no `prompt`, just
+  routes in one turn without speaking). Weeber has no equivalent *node type* for either static or
+  router today, but functionally already has the static-node mechanism at the line level:
+  `tts-cache.ts`'s `hybrid-audio-cache` flag + `stream.ts`'s `speakCannedLine()` already play
+  pre-synthesized audio with zero live TTS cost for the silence-reprompt/goodbye lines — a real,
+  working precedent for "static node," just not surfaced as a distinct graph node type yet. Worth a
+  future pass, not urgent — the underlying mechanism already exists and works.
+- **Edge types**: `llm` (default, natural-language condition), `expression` (deterministic,
+  variable-based), `unconditional`, and **`event`** (driven by an external REST call, not
+  previously covered in the ElevenLabs research in Part 1). Each edge has a `priority` — deterministic
+  edge types default to `0`, `llm` defaults to `100`.
+- **The routing mechanic is the single most useful new fact from this research**: *"the framework
+  picks the next node by checking deterministic edges first (instant, free), then handing off to
+  the routing LLM if nothing deterministic matches."* This is a **hybrid, not an either/or** — LLM
+  conditions are a fallback layer for the cases deterministic rules can't express, not the primary
+  mechanism. This meaningfully changes the risk framing of Part 1 §1.4's "Option C" (LLM-condition
+  edges): the real-world version of this isn't "replace enum-based branching with an LLM," it's
+  "add an LLM tie-breaker only when nothing deterministic fires." Still a genuine compliance
+  question for a TCPA/DNC-audit-trail product (an LLM-decided branch still doesn't have the same
+  fixed, provable answer to "why did this call go here" that a matched expression/unconditional
+  edge does) — **the recommendation from Part 1 §1.4 is unchanged: don't build this today, revisit
+  only with a concrete use case and an explicit compliance sign-off** — but it's worth recording
+  that the *shape* of a future Option C, if ever built, should be this hybrid, not a wholesale
+  LLM-decides-everything redesign.
+
+### 3.2 Shipped today (2026-07-16)
+
+**Option A — workflow analytics overlay: done.** The schema had no way to compute this at all
+before today — `workflow_runs.currentNodeId` gets overwritten on every transition, so there was no
+history of what nodes a run had visited or how long it spent at each one (checked directly, not
+assumed: `graph-engine.ts`'s only "history" was ephemeral `console.log` calls). Added
+`workflow_runs.nodeHistory` (jsonb array of `{nodeId, enteredAt}`, migration `0029`), appended via
+a race-free `jsonb || jsonb` SQL concat in `graph-engine.ts` (not a stale read-modify-write — a
+concurrent scheduler tick and a live call's `resumeWorkflowAfterCall` can touch the same run). New
+`GET /workflows/workflow-templates/:id/analytics` aggregates this into per-node entry count,
+average time-in-node, and termination count. Rendered directly on the canvas nodes themselves
+(`WorkflowNode.tsx` — a small 3-column badge row: entries in / avg time / runs ending here),
+merged into React Flow node data via a `useEffect` in `workflow-editor.tsx` so a refetch never
+clobbers in-progress edits. 9 new tests (6 covering the auth fix below, 3 covering the analytics
+aggregation math itself with realistic multi-run fixtures).
+
+**§1.5 (webhook/call failure-routing field) — not done today.** Time this session went instead to
+the security fix below, which wasn't optional. Still recommended, still small or additive — revisit
+next.
+
+### 3.3 Unrelated but urgent: `workflowAdminRoutes` had zero authentication
+
+Found by direct inspection while scoping the analytics endpoint's route file, not something this
+research was looking for. `voice/workflows/admin-routes.ts` exports its own separate Hono
+instance (`workflowAdminRoutes`), mounted independently in `index.ts` — `.route('/workflows',
+workflowAdminRoutes)`, completely separately from `voice/admin-routes.ts`'s `admin` instance.
+Hono middleware registered on one router instance never applies to a different instance just
+because both get `.route()`-mounted onto the same parent app — confirmed directly via `grep` for
+`requireAdminKey`/`adminSessionAuth` in the file, zero matches. Every one of its 9 routes was
+reachable with no authentication at all: `GET /workflow-runs` and `/workflow-runs/:id` exposed
+every org's run context (customer names, phone numbers, cart values, checkout tokens — real PII);
+`GET`/`PUT /orgs/:orgId/workflow-configs` let anyone read or overwrite any org's workflow config by
+guessing an orgId; `POST`/`PUT`/`DELETE /workflow-templates` let anyone create, edit, or delete the
+platform-wide graph templates every org's cart-recovery/COD workflow actually runs on.
+
+Fixed with the same gate `voice/admin-routes.ts` already uses (`adminSessionAuth` +
+`requireAdminKey`), applied directly to this router since it's a genuinely separate Hono instance.
+The frontend (`workflow-editor.tsx`, `workflows-list.tsx`, `workflow-runs.tsx`) was already sending
+`adminHeaders()` on every one of its 5 call sites to these routes — the gate was the only missing
+half, so no frontend change was needed to restore functionality. Added
+`voice/workflows/admin-routes.test.ts` (had zero test coverage before this) — 6 tests locking in
+the auth gate (unauthenticated → 401, valid key → 200) so this can't silently regress.
+
+Verified: typecheck clean (api+web), oxlint 0/0, vite build green. Backend suite 305 pass (was 296
+before this update's commits, +9 = the new auth + analytics tests) / 38 fail (same pre-existing
+baseline, no new failures).
+
+---
+
 ## Summary / next actions
 
-- **Do now, independent of any decision above**: the five audit #05 bug fixes in §1.3 — these are
-  bugs, not design questions.
-- **Cheap, high-value, no open design question**: build the workflow-analytics graph overlay (§1.4
-  Option A) and the webhook/call failure-routing field (§1.5) — both additive, both directly answer
-  gaps already found in this audit series.
+- **Done (2026-07-15, verified in code before this update)**: the five audit #05 bug fixes in
+  §1.3 — checked directly, 4 of 5 already fixed (the -Infinity key bug, delay clamping client+
+  server, the "Load example" confirm guard, palette click-fallback). The 5th (single-agent
+  agent-switcher pill) is unconfirmed/minor, not chased down.
+- **Done (2026-07-16)**: the workflow-analytics graph overlay (§1.4 Option A) — see Part 3.2.
+  Also fixed, unplanned but urgent: `workflowAdminRoutes` had zero authentication — see Part 3.3.
+- **Not done yet, still recommended**: the webhook/call failure-routing field (§1.5) — small,
+  additive, didn't fit in the same session as the security fix above.
 - **Needs a real decision before building**: whether to generalize `conditionalSplit` to expression
   edges (§1.4 Option B) and whether LLM-condition edges are ever appropriate given this product's
-  compliance posture (§1.4 Option C, leaning no unless a concrete case appears).
+  compliance posture (§1.4 Option C — Bolna's hybrid deterministic-first/LLM-fallback model
+  (Part 3.1) refines but doesn't remove this concern; still leaning no unless a concrete case
+  appears and gets an explicit compliance sign-off).
 - **Don't build yet**: multi-voice (§2) — no identified need in any current vertical, and the two
   architecturally-obvious ways to build it both regress this session's latency work. Revisit only if
   Phase B2 doesn't already cover the actual underlying (bilingual, not multi-character) need, or a

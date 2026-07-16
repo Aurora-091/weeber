@@ -179,6 +179,7 @@ shopify
     if (graphTemplate) {
       // Graph-based path — create a workflow_run and let the graph engine handle everything
       const abandonedCheckoutUrl = (body.abandoned_checkout_url as string) ?? "";
+      const startNodeId = graphTemplate.graph.nodes.find((n: { type: string }) => n.type === "trigger")?.id ?? graphTemplate.graph.nodes[0]?.id ?? "trigger";
       const [run] = await db.insert(workflowRuns).values({
         orgId,
         templateKey: graphTemplate.id,
@@ -194,7 +195,11 @@ shopify
           attempt_number: 0,
           discount_percent: 0,
         },
-        currentNodeId: graphTemplate.graph.nodes.find((n: { type: string }) => n.type === "trigger")?.id ?? graphTemplate.graph.nodes[0]?.id ?? "trigger",
+        currentNodeId: startNodeId,
+        // Analytics overlay (2026-07-16) — seed nodeHistory with the run's starting node so the
+        // very first entry isn't missing from the per-node count; every later transition appends
+        // via graph-engine.ts's appendNodeHistorySql.
+        nodeHistory: [{ nodeId: startNodeId, enteredAt: new Date().toISOString() }],
         status: "running",
       }).returning();
 

@@ -34,6 +34,11 @@ const ICON_MAP = {
 type WorkflowNodeData = {
   nodeType: WorkflowNodeType;
   config: NodeConfig;
+  analytics?: {
+    entryCount: number;
+    avgDurationMs: number | null;
+    terminationCount: number;
+  };
 };
 
 function formatEvent(event: string): string {
@@ -41,6 +46,15 @@ function formatEvent(event: string): string {
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.round(minutes / 60)}h`;
 }
 
 function getNodeSummary(nodeType: WorkflowNodeType, config: NodeConfig): string {
@@ -75,7 +89,7 @@ function getNodeSummary(nodeType: WorkflowNodeType, config: NodeConfig): string 
 }
 
 export function WorkflowNode({ data }: NodeProps) {
-  const { nodeType, config } = data as unknown as WorkflowNodeData;
+  const { nodeType, config, analytics } = data as unknown as WorkflowNodeData;
   const style = NODE_STYLES[nodeType];
   const Icon = ICON_MAP[style.icon as keyof typeof ICON_MAP];
 
@@ -95,6 +109,14 @@ export function WorkflowNode({ data }: NodeProps) {
       <p className="text-xs font-medium leading-tight truncate">
         {getNodeSummary(nodeType, config)}
       </p>
+
+      {analytics && (
+        <div className="mt-2 grid grid-cols-3 gap-1 border-t border-border/50 pt-2 text-[9px] text-muted-foreground">
+          <span title="Node entries"><span className="font-semibold text-foreground">{analytics.entryCount}</span> in</span>
+          <span title="Average time in node"><span className="font-semibold text-foreground">{formatDuration(analytics.avgDurationMs)}</span> avg</span>
+          <span title="Runs ending here"><span className="font-semibold text-foreground">{analytics.terminationCount}</span> end</span>
+        </div>
+      )}
 
       <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground" />
     </div>

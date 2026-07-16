@@ -204,6 +204,13 @@
       "when": 1784198680413,
       "tag": "0028_add_literal_greeting_template",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784214789157,
+      "tag": "0029_add_workflow_run_node_history",
+      "breakpoints": true
     }
   ]
 }

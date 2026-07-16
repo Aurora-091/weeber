@@ -1,0 +1,1 @@
+ALTER TABLE "workflow_runs" ADD COLUMN "node_history" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
@@ -35,6 +35,18 @@ type TemplateResponse = {
   vertical: string;
   graph: WorkflowGraph;
   active: boolean;
+};
+
+type WorkflowAnalyticsResponse = {
+  templateKey: string;
+  totalRuns: number;
+  nodes: Array<{
+    nodeId: string;
+    nodeType: string;
+    entryCount: number;
+    avgDurationMs: number | null;
+    terminationCount: number;
+  }>;
 };
 
 const nodeTypes = { workflow: WorkflowNode };
@@ -81,6 +93,42 @@ function EditorInner({ template }: { template: TemplateResponse }) {
   const qc = useQueryClient();
   const initial = useMemo(() => graphToFlow(template.graph), [template.graph]);
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState(initial.nodes);
+
+  // Analytics overlay (2026-07-16, docs/workflow-canvas-v2-and-multivoice-research.md Option A) —
+  // per-node entry/duration/termination counts from real workflow_runs, rendered directly on the
+  // canvas nodes. Read-only, additive: a fetch failure here just means no badges show, never
+  // blocks loading/editing the graph itself.
+  const analytics = useQuery<WorkflowAnalyticsResponse>({
+    queryKey: ["workflow-template-analytics", template.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/workflows/workflow-templates/${encodeURIComponent(template.id)}/analytics`, {
+        headers: adminHeaders(),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+  });
+
+  // Merge analytics into node data once loaded — separate from graphToFlow's initial mapping so
+  // an analytics refetch never clobbers in-progress node edits (position drags, config changes).
+  useEffect(() => {
+    if (!analytics.data) return;
+    const byId = new Map(analytics.data.nodes.map((n) => [n.nodeId, n]));
+    setNodes((nds) =>
+      nds.map((n) => {
+        const stats = byId.get(n.id);
+        if (!stats) return n;
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            analytics: { entryCount: stats.entryCount, avgDurationMs: stats.avgDurationMs, terminationCount: stats.terminationCount },
+          },
+        };
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics.data]);
   const [edges, setEdges, onEdgesChangeRaw] = useEdgesState(initial.edges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
