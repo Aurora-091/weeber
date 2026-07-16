@@ -4,6 +4,20 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Correction: the "38 pre-existing test failures" cited throughout this changelog was a false signal (ADR-056)
+
+Every "296/305/etc pass / 38 fail (same pre-existing baseline)" note below and in
+`docs/hindi-hinglish-voice-support.md`/`docs/workflow-canvas-v2-and-multivoice-research.md` came from
+running bare `bun test` instead of the package's real `test` script, `bun test --isolate src/` (i.e.
+`bun run test`). Without `--isolate`, all 58 test files share one module registry in a single process,
+so `global.fetch` mocks (salesforce/hubspot/google-calendar/gohighlevel/shopify-routes tests) and other
+module-level state leak across files depending on run order. Every one of the 38 "failing" tests passes
+cleanly on its own. Correct current baseline, verified via `bun run test`: **353 pass / 0 fail.** No
+source or test code changed — this was a verification-command mistake, not a real bug. Full writeup:
+`DECISIONS.md` ADR-056. Always use `bun run test` in this repo, never bare `bun test`.
+
+---
+
 ## 2026-07-16 — Workflow Canvas analytics overlay (Bolna-informed) + unrelated security fix
 
 Full detail in `docs/workflow-canvas-v2-and-multivoice-research.md` Part 3. Summary here.
