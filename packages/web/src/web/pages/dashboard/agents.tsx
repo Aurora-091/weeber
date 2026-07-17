@@ -17,6 +17,7 @@ import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
+  TTS_COST_TIERS, STT_COST_TIERS,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -264,10 +265,11 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Provider</label>
           <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
-            <option value="cartesia">Cartesia</option>
-            <option value="elevenlabs">ElevenLabs</option>
-            <option value="sarvam">Sarvam</option>
+            <option value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</option>
+            <option value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</option>
+            <option value="sarvam">Sarvam ({TTS_COST_TIERS.sarvam.tier})</option>
           </select>
+          <p className="mt-1 text-xs text-muted-foreground">{TTS_COST_TIERS[form.voiceProvider]?.note ?? ""}</p>
         </div>
         <div>
           <label className={labelCls}>Voice</label>
@@ -354,10 +356,11 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               <div>
                 <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>STT provider</label>
                 <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={fieldCls}>
-                  <option value="deepgram">Deepgram</option>
-                  <option value="sarvam">Sarvam</option>
-                  <option value="elevenlabs">ElevenLabs Scribe</option>
+                  <option value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</option>
+                  <option value="sarvam">Sarvam ({STT_COST_TIERS.sarvam.tier})</option>
+                  <option value="elevenlabs">ElevenLabs Scribe ({STT_COST_TIERS.elevenlabs.tier})</option>
                 </select>
+                <p className="mt-1 text-xs text-muted-foreground">{STT_COST_TIERS[form.sttProvider]?.note ?? ""}</p>
               </div>
               <div>
                 <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>

@@ -69,6 +69,28 @@ export function getRecommendedVoiceStack(language: string): { sttProvider: strin
   return { sttProvider: "elevenlabs", voiceProvider: "elevenlabs" };
 }
 
+/**
+ * Real per-minute cost tiers (2026-07-17, docs/agents-ux-audit-and-cogs-2026-07-17.md) — surfaced
+ * in the Voice tab so a provider choice isn't a cosmetic dropdown that happens to also be a real
+ * unit-economics decision with zero visibility. STT providers are all roughly the same cost
+ * bracket (~$0.004-0.007/min, sourced), so a single "$" tier for all three is honest, not
+ * misleading. TTS has a real, large spread: Cartesia/Sarvam are both roughly $0.02-0.04/min
+ * (estimated) vs. ElevenLabs at ~$0.10-0.12/min (sourced range) — a genuine 2.5-3x difference,
+ * which is why TTS gets three distinct tiers and STT doesn't. `note` values mirror the audit
+ * doc's confidence flags (estimated vs. sourced) rather than presenting a false-precision number.
+ */
+export const TTS_COST_TIERS: Record<string, { tier: "$" | "$" | "$$"; note: string }> = {
+  cartesia: { tier: "$", note: "~$0.02-0.04/min (estimated)" },
+  sarvam: { tier: "$", note: "~$0.003/min (estimated)" },
+  elevenlabs: { tier: "$$", note: "~$0.10-0.12/min (sourced) — roughly 3x Cartesia/Sarvam" },
+};
+
+export const STT_COST_TIERS: Record<string, { tier: "$"; note: string }> = {
+  deepgram: { tier: "$", note: "~$0.005/min (sourced)" },
+  sarvam: { tier: "$", note: "~$0.006/min (sourced)" },
+  elevenlabs: { tier: "$", note: "~$0.004-0.007/min (sourced) — similar bracket to the others" },
+};
+
 export type AgentConfigRow = {
   templateKey: string;
   templateName: string;

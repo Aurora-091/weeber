@@ -20,6 +20,7 @@ import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
+  TTS_COST_TIERS, STT_COST_TIERS,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -198,10 +199,13 @@ function VoiceTab({ row, form, set }: TabProps) {
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Voice provider</label>
           <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
-            <option value="cartesia">Cartesia</option>
-            <option value="elevenlabs">ElevenLabs</option>
-            <option value="sarvam">Sarvam (Indian-language)</option>
+            <option value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</option>
+            <option value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</option>
+            <option value="sarvam">Sarvam — Indian-language ({TTS_COST_TIERS.sarvam.tier})</option>
           </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {TTS_COST_TIERS[form.voiceProvider]?.note ?? ""}
+          </p>
         </div>
         <div>
           <label htmlFor={`lang-${row.templateKey}`} className={labelCls}>Language</label>
@@ -247,10 +251,13 @@ function VoiceTab({ row, form, set }: TabProps) {
       <div>
         <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>Speech-to-text</label>
         <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
-          <option value="deepgram">Deepgram</option>
-          <option value="sarvam">Sarvam (Indian-language STT)</option>
-          <option value="elevenlabs">ElevenLabs Scribe (Hindi/Hinglish code-switching)</option>
+          <option value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</option>
+          <option value="sarvam">Sarvam — Indian-language STT ({STT_COST_TIERS.sarvam.tier})</option>
+          <option value="elevenlabs">ElevenLabs Scribe — Hindi/Hinglish code-switching ({STT_COST_TIERS.elevenlabs.tier})</option>
         </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {STT_COST_TIERS[form.sttProvider]?.note ?? ""} — STT cost is similar across all three providers, unlike voice/TTS.
+        </p>
       </div>
     </div>
   );
