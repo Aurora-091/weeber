@@ -153,3 +153,40 @@ optional global default, most workflows pass their own webhook URL per-call.
   `/api/health`, not a live call to each provider's own auth-check endpoint.
 - Didn't chase the `waitlist_signups = 0` question to a root cause — flagged, not diagnosed.
 - No load/traffic testing — same disclosed limitation as every prior audit in this series.
+
+---
+
+## Follow-up (same day, 2026-07-17) — findings actioned
+
+After reviewing the findings above, went back and fixed/investigated the four items that had a
+clear path forward. Real changes to production this round (all confirmed working, not just
+applied):
+
+1. **`PUBLIC_USER_APP_URL` added to Railway** (`https://app.weeber.ai`, same value as the old
+   `PUBLIC_MERCHANT_APP_URL`, which stays set as the one-release fallback). Purely additive.
+2. **`SUPABASE_KB_BUCKET` removed from Railway** — confirmed via `railway variables --json` it's
+   gone; zero functional impact since nothing read it.
+3. **LLM cross-provider failover activated**: `LLM_PROVIDER` switched from `groq` to `gateway`,
+   `AI_GATEWAY_FALLBACK_MODELS=openai/gpt-5.4-mini,groq/llama-3.3-70b-versatile` set — real
+   cross-vendor redundancy (Google Gemini primary → OpenAI → Groq-hosted Llama), not same-vendor
+   fallback. This trades away some of Groq's raw speed edge for actual resilience — a real
+   tradeoff, made deliberately, not a free lunch. Railway required manual approval for the
+   resulting deploy (a safety gate on this project) — waited for that, then verified `/api/health`
+   directly: `activeLlmProvider` flipped from `"groq"` to `"gateway"`, `activeModel` is now
+   `"gateway/google/gemini-3.1-flash-lite"`. Real, verified, not assumed from the variable change
+   alone.
+4. **`waitlist_signups = 0` — investigated, not a bug.** `getWaitlistDisplayCount()` (`app/waitlist.ts`)
+   adds a `WAITLIST_DISPLAY_OFFSET` of 40 to the real row count for the public-facing number — the
+   `count: 40` the public `/api/public/waitlist/count` endpoint returns is `40 + 0`, an intentional
+   social-proof baseline, not evidence the form is broken. Confirmed the insert path genuinely works
+   end-to-end with a real live test: `POST /api/public/waitlist` with a throwaway test email
+   returned `{"joined":true,"position":1,"displayCount":41}` — position 1 confirms the real
+   underlying count really was 0 before this test, exactly matching the DB query from earlier in
+   this audit. Test row deleted immediately after (`DELETE FROM waitlist_signups WHERE
+   email = 'audit-test-2026-07-17@weeber.ai'`, confirmed 1 row removed, count back to 40/0). So:
+   the backend is correct and working, there have just genuinely been zero real waitlist signups
+   so far — a marketing/traffic question, not an engineering one.
+
+Verified after all four changes: `/api/health` still reports `"status": "ok"`, every provider key
+still configured, compliance defaults unchanged.
+
