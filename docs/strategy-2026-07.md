@@ -71,6 +71,12 @@ deterministic within-call state, and its actual mechanism (raw chat-message hist
 complementary, currently-missing feature.
 - **Action (lower priority, later):** cross-call memory (keyed by phone number, not caller-ID-as-identity
   since that's spoofable) as a genuinely separate addition on top of, not instead of, `capturedState`.
+- **STATUS (verified 2026-07-17): already shipped, this doc was stale — built 2 days after this doc was
+  written.** ADR-023 (2026-07-08), `voice/caller-memory.ts` — flat per-phone-number key/value overlay,
+  merged not replaced, exactly the shape recommended above (keyed by phone number via
+  `resolveHumanNumber`'s inbound/outbound direction logic, not caller-ID). Landing page and
+  `docs/state-engine.md` were synced to this in ADR-027. This section is left in place as the original
+  reasoning for *why* it was recommended, not as an open item.
 
 ## Competitive positioning — what Voximplant's model tells us
 

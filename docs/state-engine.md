@@ -14,7 +14,7 @@ OpenVent keeps a separate, deterministic state layer instead:
   the system prompt every turn as an explicit "Known facts — do not ask for these again" block
   (`agent.ts`'s `buildKnownFactsBlock`).
 - The result: the model reads ground truth instead of re-deriving it from scrollback, and every fact is
-  inspectable afterward — on the [dashboard](./dashboard.md) or via `GET /api/voice/calls/:id`.
+  inspectable afterward — on the [dashboard](./dashboard.md) or via `GET /api/voice/calls/:id/status`.
 
 See [`DECISIONS.md`](../DECISIONS.md) ADR-012 for the full reasoning, including what's deliberately not
 built yet (no per-persona required-slot schema — the model decides what's worth capturing based on the
