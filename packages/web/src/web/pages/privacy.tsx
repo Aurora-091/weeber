@@ -43,7 +43,7 @@ export function PrivacyPage() {
 
       <Section title="What we collect, and why">
         <p>
-          When a merchant using {SITE.name} calls one of their customers (or a customer calls in), we
+          When a {SITE.name} user calls one of their customers (or a customer calls in), we
           process: the phone number, the call recording and transcript, and any facts the agent
           captures during the call that are relevant to the reason for the call (e.g. a delivery
           confirmation, an appointment time, a satisfaction rating). We don't collect more than the
@@ -59,7 +59,7 @@ export function PrivacyPage() {
       <Section title="Consent">
         <p>
           Outbound calls are gated by two independent checks before they're placed: a Do-Not-Call
-          check (no exceptions, ever — this cannot be bypassed by any merchant or configuration), and
+          check (no exceptions, ever — this cannot be bypassed by any user or configuration), and
           a calling-window check (calls are only placed within the hours permitted in the recipient's
           jurisdiction — e.g. 9am-9pm in India, 8am-9pm federally in the US, narrower in states with
           their own rules).
@@ -107,7 +107,7 @@ export function PrivacyPage() {
 
       <Section title="Questions">
         <p>
-          Reach out any time — see the Contact page, or the address on your account's merchant
+          Reach out any time — see the Contact page, or the address on your account's user
           agreement. This policy describes the system as it actually works; if anything here doesn't
           match what you're seeing in your account, tell us — that's a bug in this page or in the
           product, and we want to know either way.
