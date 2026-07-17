@@ -190,3 +190,98 @@ applied):
 Verified after all four changes: `/api/health` still reports `"status": "ok"`, every provider key
 still configured, compliance defaults unchanged.
 
+---
+
+## Follow-up #2 (same day, 2026-07-17) — capacity & concurrency
+
+Explicitly requested after the fact: "what is our capacity, call concurrency and etc." Real
+numbers pulled directly from Railway's GraphQL API and the live Postgres instance — not a load
+test (none was run; see the honest limit at the end of this section), but not guessed either.
+
+### The one number that matters most: 1 replica, in-memory session store
+`serviceManifest.deploy.numReplicas` is **1** (confirmed via the deployment metadata API, Singapore
+region). `REDIS_URL` is unset (confirmed in the original env-var audit above), which means
+`session-store.ts` is running its in-memory `Map` backend, not the Redis-backed one from ADR-026.
+**This is the real structural ceiling, not CPU or memory** — per `docs/configuration.md`'s own
+"Scaling to multiple instances" section, an outbound call triggered on instance A whose webhook
+then lands on instance B won't find its session. Today that's a non-issue only because there's
+exactly one instance. **The system cannot horizontally scale past this single container without
+first setting `REDIS_URL`** — that's a config flag away (no code change needed, per ADR-026), but
+it hasn't been flipped, so right now "capacity" means "whatever one container can do," full stop.
+
+### Compute ceiling (Railway container limits — confirmed via API, not inferred)
+- **8 vCPU, 8 GB memory, 1000 PID limit** — this is Railway's container ceiling for this service
+  (`serviceInstanceLimits` query), not a guarantee of dedicated capacity, but the real cap this
+  single replica can burst up to.
+- **Real current usage, last 24h:** CPU averaging ~0.01 vCPU (roughly 0.1% of the 8-vCPU ceiling),
+  peaking barely above that. Memory averaging ~0.26 GB, peaking at ~0.75 GB out of 8 GB. This is
+  essentially idle-baseline (Bun runtime + open connections overhead) — **not a meaningful
+  concurrency data point**, because real call volume has been extremely low (10 calls total, ever,
+  per the DB row count earlier in this doc). There is no real-traffic data to extrapolate a true
+  concurrency ceiling from yet.
+- The call pipeline itself (`stream.ts`) is I/O-bound per call, not compute-heavy — no local
+  ML inference, audio encode/decode is lightweight mu-law/PCM16 conversion (see
+  `voice/audio-codec.ts`), the actual work (STT/LLM/TTS) happens on the provider side over the
+  network. This architecturally favors many concurrent calls per vCPU compared to a
+  compute-bound workload — but "architecturally favors" is not the same as a measured number.
+
+### Database connection pool — the most likely real bottleneck before CPU/memory
+- `database/index.ts`'s `postgres()` client is created with **no explicit `max` connection count**
+  — `postgres-js`'s default is **10 connections** per client instance. With 1 replica, that's a
+  hard ceiling of 10 concurrent DB connections from the whole API process.
+- The underlying Postgres instance itself: `max_connections = 60` (confirmed via `SHOW
+  max_connections` against the live DB), currently ~15 active (Supabase's own internal
+  connections + this app's idle pool) — plenty of headroom on the *Postgres* side, the tighter
+  constraint is the **application's own unconfigured pool size (10)**, not the database's ceiling.
+- Every real call does multiple DB round-trips over its lifetime (call row insert/update,
+  transcript insert per turn, `capturedState` update per `captureField` call, latency row writes,
+  the new `providerFailoverCount` update on a failover) — under real concurrent load, 10 shared
+  connections across every simultaneous call is the single most likely thing to queue/bottleneck
+  before CPU or memory does. **Worth tuning `postgres(process.env.DATABASE_URL!, { prepare: false,
+  max: N })` explicitly once real concurrency is a live concern** — no urgency at 10 calls total,
+  but this is the first knob to turn, not vCPU/memory, if latency degrades under real load.
+
+### Telephony provider ceiling
+- **Twilio: confirmed "Full" account, status active** (queried directly via the Twilio API using
+  the real production credentials) — not a trial account, so none of Twilio's trial-specific
+  restrictions (verified-numbers-only, low daily caps) apply. 4 real phone numbers provisioned.
+- Twilio's actual concurrent-call/API-rate ceiling for a Full account isn't something the API
+  exposes directly (no `accountLimits` endpoint queried this round) — Twilio's commonly-documented
+  default is a modest outbound call-creation rate (historically ~1 call/sec) unless a higher
+  throughput has been explicitly requested from Twilio support for this account. **Not verified
+  either way this round** — flagging as a real unknown rather than asserting a number I can't back
+  up with this account's actual configured limits.
+- **Application-level self-imposed cap, confirmed in code:** `OUTBOUND_CALL_RATE_LIMIT` defaults to
+  **30 calls per window** (`middleware/rate-limit.ts`) — this is deliberately conservative and
+  configurable, a safety guard against a runaway integration bug, not a reflection of Twilio's own
+  ceiling.
+- **Not checked this round:** per-provider concurrent-connection limits for Deepgram, ElevenLabs,
+  Cartesia, Groq, or the AI Gateway — each has its own plan-tier concurrency caps (e.g. ElevenLabs'
+  free/starter tiers cap concurrent requests) that would need checking against each account's
+  actual plan/tier, not something inferable from an API key's presence alone.
+
+### Honest bottom line
+**There is no real load-test number to report** — this system has handled 10 calls total, ever,
+and current resource usage (CPU/memory) reflects an idle service, not one under concurrent voice
+traffic. What's real and verified: the architecture is I/O-bound (favorable for concurrency), the
+DB pool (10 connections, unconfigured) is the most likely first bottleneck under real load, and the
+single-replica/in-memory-session-store combination means **today's actual capacity ceiling is "one
+container, however many concurrent WebSocket+provider connections that one Bun process can hold
+open" — not something Railway's 8 vCPU/8GB limit will meaningfully constrain before the DB pool or
+a telephony/provider-side rate limit does.** A real number requires either (a) an actual load test
+against a staging environment (placing N simultaneous synthetic calls and watching where things
+degrade), or (b) getting Twilio/Deepgram/ElevenLabs/Cartesia/Groq's own account-level concurrency
+limits directly from their dashboards/support, neither of which was done this round.
+
+### Concrete next steps, if real capacity numbers matter for a launch decision
+1. Set an explicit `max` on the `postgres()` client (`database/index.ts`) sized to the DB's real
+   `max_connections` headroom, before anything else.
+2. Set `REDIS_URL` and confirm multi-replica works (ADR-026 says it's just a config flag — worth
+   actually testing with 2 replicas before relying on it under real load, not just trusting the
+   doc comment).
+3. Ask Twilio (and each STT/TTS/LLM provider) directly what this account's actual concurrent-call/
+   concurrent-connection limits are — none of this is derivable from an API key alone.
+4. Only then, a real synthetic load test (N simultaneous calls against a non-production
+   environment) to find where the system actually degrades first.
+
+
