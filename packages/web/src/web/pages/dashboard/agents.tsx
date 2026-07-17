@@ -378,6 +378,19 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
               </div>
             </div>
+            {form.llmProvider === "groq" && form.language.trim().toLowerCase() === "hi" && (
+              <div className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
+                <p className="text-foreground">
+                  <span className="font-medium">Groq + Hindi — not yet live-verified.</span>{" "}
+                  Llama 3.3 70B officially supports Hindi, but only on formal-language benchmarks, not
+                  the Hindi/English code-switching (Hinglish) real callers use — the same gap that made
+                  Deepgram's "multi" STT mode unreliable for Hindi despite being marketed for
+                  code-switching. AI Gateway (Gemini) is the safer default for a Hindi/Hinglish agent
+                  until this has been tested the same way; Groq is a strong pick for English-language
+                  agents specifically.
+                </p>
+              </div>
+            )}
 
             <SectionDivider>Cross-provider failover</SectionDivider>
             <FailoverGuidanceBanner />

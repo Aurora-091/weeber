@@ -381,6 +381,20 @@ function CallingModelTab({ row, form, set }: TabProps) {
             <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
           </div>
         </div>
+        {form.llmProvider === "groq" && form.language.trim().toLowerCase() === "hi" && (
+          <div className="mt-3 rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
+            <p className="text-foreground">
+              <span className="font-medium">Groq + Hindi — not yet live-verified for this platform.</span>{" "}
+              Groq's fastest model (Llama 3.3 70B) officially supports Hindi, but that's tested on
+              formal-language benchmarks, not the Hindi/English code-switching (Hinglish) real callers
+              actually use — the exact gap that made Deepgram's "multi" STT mode unreliable for Hindi
+              despite being marketed for code-switching (see the Voice tab's own recommendation). AI
+              Gateway (Gemini) is the safer choice for a Hindi/Hinglish agent until Groq's conversational
+              quality here has been tested the same way — Groq is a strong pick for English-language
+              agents specifically, where this risk doesn't apply.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border pt-5">
