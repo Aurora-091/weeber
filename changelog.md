@@ -4,6 +4,39 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Insurance pre-launch blockers built: India 1600-series gate + US producer-state-licensing gate
+
+Full detail in `docs/agent-prompts/00-insurance-regulatory-reference.md`'s "Platform gaps #1/#2 —
+build report" section. Confirmed with the user these are genuine pre-launch blockers (no insurance
+calls placed yet, launching India + US simultaneously), not scale-gated items.
+
+Both are dial-time gates, wired into the same two dispatch points as DNC/calling-window
+(`workflows/scheduler.ts`'s `dispatchScheduledCall`, `voice/routes.ts`'s manual `/calls/outbound`)
+— no-ops for any non-insurance org.
+
+**India — TRAI 1600-series**: new `orgPhoneNumbers.numberSeries` column
+(`"140"|"160"|"1600"`); `checkInsuranceNumberSeriesCompliance` blocks an insurance-vertical org
+from dialing an India number with no active 1600-series number on file. Merchant UI: a series
+dropdown per number on the numbers page.
+
+**US — producer state licensing**: new `insurance_advisors` table (manual-entry MVP —
+`licensedStates` array per advisor, shaped to accept a future NIPR integration without a schema
+change); `checkInsuranceProducerLicensing` resolves a lead's state from a new ~230-entry
+`AREA_CODE_STATE` map (`@openvent/compliance`'s `packs/us.ts`) and blocks if no advisor on file
+covers that state — fails open (allows) on an unresolved area code, matching the calling-window
+gate's existing philosophy for unresolved codes. Merchant UI: a "Licensed advisors" manager in
+settings, insurance-vertical orgs only.
+
+Researched (not assumed) that NIPR (National Insurance Producer Registry) is the actual industry-
+standard source every compliance vendor here (AgentSync, Sircon, TrustLayer) wraps — none have
+independent license data. Not integrated this pass (no subscriber credentials available), but the
+schema (`npn`, `source`, `lastVerifiedAt`) is shaped for that upgrade later without a migration.
+
+12 new tests (`insurance-gates.test.ts`). Verified: typecheck clean (3/3 packages), oxlint 0/0,
+`bun run test` 382 pass / 0 fail (was 370, +12), build succeeds.
+
+---
+
 ## 2026-07-16 — Insurance agents: India + US regulatory iteration, all 5 prompts hardened
 
 Full detail in `docs/agent-prompts/00-insurance-regulatory-reference.md` (new — single source of

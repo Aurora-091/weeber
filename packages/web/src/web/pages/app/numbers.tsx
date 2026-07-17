@@ -16,6 +16,7 @@ type OrgPhoneNumber = {
   provider: "twilio" | "plivo" | "exotel";
   phoneNumber: string;
   status: "active" | "released";
+  numberSeries: "140" | "160" | "1600" | null;
   purchasedAt: string;
 };
 
@@ -82,6 +83,27 @@ export function UserNumbersPage() {
     },
     onSuccess: () => {
       toast.success("Number released");
+      queryClient.invalidateQueries({ queryKey: ["app-numbers"] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Insurance vertical India/US iteration (2026-07-16,
+  // docs/agent-prompts/00-insurance-regulatory-reference.md, "Platform gaps" #1) — lets any org
+  // record which TRAI number series a number is registered under. Only actually enforced for
+  // insurance-vertical orgs (see checkInsuranceNumberSeriesCompliance), but any org can set it.
+  const setSeries = useMutation({
+    mutationFn: async ({ id, numberSeries }: { id: number; numberSeries: string | null }) => {
+      const res = await appFetch(`/api/app/numbers/${id}/series`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numberSeries }),
+      });
+      const data = await res.json().catch(() => ({ error: "Failed to update series" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to update series");
+      return data;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["app-numbers"] });
     },
     onError: (err) => toast.error(err.message),
@@ -175,20 +197,37 @@ export function UserNumbersPage() {
                     {row.provider} · purchased {new Date(row.purchasedAt).toLocaleDateString()}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    if (confirm(`Release ${row.phoneNumber}? Any agent assigned to it will need a new number.`)) {
-                      release.mutate(row.id);
-                    }
-                  }}
-                  disabled={release.isPending}
-                >
-                  <Trash2 className="size-4" />
-                  Release
-                </Button>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Series
+                    <select
+                      className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
+                      value={row.numberSeries ?? ""}
+                      onChange={(e) => setSeries.mutate({ id: row.id, numberSeries: e.target.value || null })}
+                      disabled={setSeries.isPending}
+                      aria-label={`TRAI number series for ${row.phoneNumber}`}
+                    >
+                      <option value="">— unset —</option>
+                      <option value="140">140 (promotional)</option>
+                      <option value="160">160 (transactional)</option>
+                      <option value="1600">1600 (BFSI/insurance)</option>
+                    </select>
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Release ${row.phoneNumber}? Any agent assigned to it will need a new number.`)) {
+                        release.mutate(row.id);
+                      }
+                    }}
+                    disabled={release.isPending}
+                  >
+                    <Trash2 className="size-4" />
+                    Release
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

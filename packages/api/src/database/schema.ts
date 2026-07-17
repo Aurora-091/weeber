@@ -316,9 +316,48 @@ export const orgPhoneNumbers = pgTable("org_phone_numbers", {
   provider: text("provider", { enum: ["twilio", "plivo", "exotel"] }).notNull(),
   phoneNumber: text("phone_number").notNull(),
   status: text("status", { enum: ["active", "released"] }).notNull().default("active"),
+  // Insurance vertical India/US iteration (2026-07-16,
+  // docs/agent-prompts/00-insurance-regulatory-reference.md, "Platform gaps" #1): which TRAI
+  // number series this number is registered under. "1600" is the TRAI/IRDAI-mandated series for
+  // BFSI (banking/insurance/etc) service & transactional calls in India — distinct from the
+  // general 140 (promotional)/160 (transactional) series most orgs use. Nullable/optional for
+  // every non-insurance org and for orgs outside India — this column only matters when
+  // checkInsuranceNumberSeriesCompliance actually evaluates it.
+  numberSeries: text("number_series", { enum: ["140", "160", "1600"] }),
   purchasedAt: timestamp("purchased_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("org_phone_numbers_org_id_idx").on(table.orgId),
+]);
+
+/**
+ * Insurance vertical India/US iteration (2026-07-16,
+ * docs/agent-prompts/00-insurance-regulatory-reference.md, "Platform gaps" #2) — backs
+ * checkInsuranceProducerLicensing. A US insurance producer must be licensed in the state where the
+ * prospect resides; nothing enforced that before this. One row per licensed advisor an org
+ * transfers calls to (today org-level, not per-specific-agent-config, since `orgs.humanTransferNumber`
+ * is a single number per org — matches the existing granularity of that field).
+ *
+ * `source` distinguishes how `licensedStates`/`linesOfAuthority` were populated: `"manual"` (an
+ * admin/merchant typed them in — the MVP path, ships without any external dependency) vs.
+ * `"nipr"` (pulled from the National Insurance Producer Registry's Producer Database via NPN —
+ * the industry-standard real-time source every compliance vendor in this space, AgentSync/
+ * Sircon/TrustLayer, ultimately wraps; not integrated yet, `npn` + `lastVerifiedAt` are here so
+ * that upgrade doesn't need a schema change later).
+ */
+export const insuranceAdvisors = pgTable("insurance_advisors", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  /** National Producer Number — the NIPR-wide identifier for a licensed producer. Null until/
+   * unless the NIPR integration is wired up; not required for the manual-entry MVP path. */
+  npn: text("npn"),
+  licensedStates: jsonb("licensed_states").$type<string[]>().notNull().default([]),
+  linesOfAuthority: jsonb("lines_of_authority").$type<string[] | null>(),
+  source: text("source", { enum: ["manual", "nipr"] }).notNull().default("manual"),
+  lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("insurance_advisors_org_id_idx").on(table.orgId),
 ]);
 
 // One row per org, drives the dashboard "finish setup" checklist + the

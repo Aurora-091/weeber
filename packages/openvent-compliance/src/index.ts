@@ -11,6 +11,8 @@ export * from "./storage";
 export * from "./adapters/memory";
 export * from "./national-dnc";
 export * from "./audit-trail";
+export * from "./packs/us";
+export * from "./packs/india";
 
 export type OutboundComplianceResult =
   | { allowed: true }

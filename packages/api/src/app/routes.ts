@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
-import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers, consentRecords } from "../database/schema";
+import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers, consentRecords, insuranceAdvisors } from "../database/schema";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
@@ -833,6 +833,63 @@ export const userApp = new Hono<UserEnv>()
     const result = await buyNumberForOrg(orgId, phoneNumber.trim());
     if (!result.ok) return c.json({ error: result.error }, 400);
     return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  // Insurance vertical India/US iteration (2026-07-16,
+  // docs/agent-prompts/00-insurance-regulatory-reference.md, "Platform gaps" #1) — lets an
+  // insurance-vertical org mark which TRAI number series a number is registered under. Any org can
+  // set this (not gated to insurance-vertical orgs specifically — the compliance check itself,
+  // checkInsuranceNumberSeriesCompliance, is what only fires for insurance orgs; letting any org
+  // record this is harmless and avoids a confusing "why can't I set this" for a non-insurance org
+  // that still wants accurate records).
+  .patch("/numbers/:id/series", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const phoneNumberId = Number(c.req.param("id"));
+    if (!Number.isInteger(phoneNumberId)) return c.json({ error: "`id` must be an integer" }, 400);
+    const body = await c.req.json().catch(() => null);
+    const { numberSeries } = (body ?? {}) as { numberSeries?: string | null };
+    if (numberSeries !== null && !["140", "160", "1600"].includes(numberSeries ?? "")) {
+      return c.json({ error: '`numberSeries` must be "140", "160", "1600", or null' }, 400);
+    }
+    const [row] = await db
+      .update(orgPhoneNumbers)
+      .set({ numberSeries: numberSeries as "140" | "160" | "1600" | null })
+      .where(and(eq(orgPhoneNumbers.id, phoneNumberId), eq(orgPhoneNumbers.orgId, orgId)))
+      .returning();
+    if (!row) return c.json({ error: "Number not found for this org" }, 404);
+    return c.json({ number: row }, 200);
+  })
+
+  // Insurance vertical India/US iteration — "Platform gaps" #2. Simple manual-entry MVP for
+  // licensed-advisor state coverage (see insuranceAdvisors's schema doc comment for the NIPR
+  // upgrade path this is designed to accept later without a schema change).
+  .get("/insurance-advisors", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const rows = await db.select().from(insuranceAdvisors).where(eq(insuranceAdvisors.orgId, orgId));
+    return c.json({ advisors: rows }, 200);
+  })
+
+  .post("/insurance-advisors", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const { name, npn, licensedStates } = (body ?? {}) as { name?: string; npn?: string; licensedStates?: string[] };
+    if (!name?.trim()) return c.json({ error: "`name` is required" }, 400);
+    if (!Array.isArray(licensedStates) || licensedStates.length === 0) {
+      return c.json({ error: "`licensedStates` must be a non-empty array of state codes, e.g. [\"NY\", \"NJ\"]" }, 400);
+    }
+    const [row] = await db
+      .insert(insuranceAdvisors)
+      .values({ orgId, name: name.trim(), npn: npn?.trim() || null, licensedStates, source: "manual" })
+      .returning();
+    return c.json({ advisor: row }, 201);
+  })
+
+  .delete("/insurance-advisors/:id", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const advisorId = Number(c.req.param("id"));
+    if (!Number.isInteger(advisorId)) return c.json({ error: "`id` must be an integer" }, 400);
+    await db.delete(insuranceAdvisors).where(and(eq(insuranceAdvisors.id, advisorId), eq(insuranceAdvisors.orgId, orgId)));
+    return c.json({ ok: true }, 200);
   })
 
   .post("/numbers/:id/release", async (c) => {

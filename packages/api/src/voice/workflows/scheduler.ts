@@ -5,6 +5,7 @@ import { placeOutboundCall } from "../place-outbound-call";
 import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
+import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
 import { executeDueWorkflowRuns } from "./graph-engine";
 
 const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
@@ -36,7 +37,7 @@ async function checkCallingWindowForRow(orgId: string | null, toNumber: string):
 
 type DispatchResult =
   | { ok: true }
-  | { ok: false; reason: "dnc" | "calling_window" | "place_failed"; detail: string };
+  | { ok: false; reason: "dnc" | "calling_window" | "insurance_number_series" | "insurance_producer_licensing" | "place_failed"; detail: string };
 
 /**
  * The actual DNC-check -> calling-window-check -> place-call -> session-
@@ -57,6 +58,17 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
   const windowCheck = await checkCallingWindowForRow(row.orgId, row.toNumber);
   if (!windowCheck.allowed) {
     return { ok: false, reason: "calling_window", detail: windowCheck.reason };
+  }
+
+  // Insurance-vertical-only gates (no-op for every other org) — see
+  // voice/compliance/insurance-gates.ts's doc comments for what each one actually checks.
+  const numberSeriesCheck = await checkInsuranceNumberSeriesCompliance(row.orgId, row.toNumber);
+  if (!numberSeriesCheck.allowed) {
+    return { ok: false, reason: "insurance_number_series", detail: numberSeriesCheck.reason };
+  }
+  const producerLicensingCheck = await checkInsuranceProducerLicensing(row.orgId, row.toNumber);
+  if (!producerLicensingCheck.allowed) {
+    return { ok: false, reason: "insurance_producer_licensing", detail: producerLicensingCheck.reason };
   }
 
   // Dispatch through the shared placement path so a scheduled retry dials
@@ -90,7 +102,8 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
  * Executes due scheduled calls (workflow retries) — the automated
  * follow-through for a "no-answer -> retry in 60min" style workflow action.
  * Runs the same compliance gates as a manual outbound call (DNC + calling
- * window) so scheduled retries never bypass the guardrails.
+ * window + the insurance-vertical-only number-series/producer-licensing gates) so scheduled
+ * retries never bypass the guardrails.
  */
 export async function executeDueScheduledCalls() {
   const due = await db

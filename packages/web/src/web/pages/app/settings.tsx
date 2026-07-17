@@ -181,6 +181,54 @@ export function UserSettingsPage() {
     },
   });
 
+  // Insurance producer licensing (2026-07-16,
+  // docs/agent-prompts/00-insurance-regulatory-reference.md, "Platform gaps" #2) — manual-entry
+  // MVP: which states each licensed advisor covers, checked by checkInsuranceProducerLicensing
+  // before any insurance-vertical call transfers/books to that advisor. Only rendered when this
+  // org's vertical is "insurance" — see the JSX below.
+  type InsuranceAdvisor = { id: number; name: string; npn: string | null; licensedStates: string[] };
+  const advisors = useQuery<{ advisors: InsuranceAdvisor[] }>({
+    queryKey: ["app-insurance-advisors"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/insurance-advisors");
+      if (!res.ok) throw new Error("Failed to load advisors");
+      return res.json();
+    },
+    enabled: me.org.vertical === "insurance",
+  });
+  const [advisorName, setAdvisorName] = useState("");
+  const [advisorStates, setAdvisorStates] = useState("");
+  const addAdvisor = useMutation({
+    mutationFn: async () => {
+      const licensedStates = advisorStates
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      const res = await appFetch("/api/app/insurance-advisors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: advisorName.trim(), licensedStates }),
+      });
+      const data = await res.json().catch(() => ({ error: "Failed to add advisor" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to add advisor");
+      return data;
+    },
+    onSuccess: () => {
+      setAdvisorName("");
+      setAdvisorStates("");
+      queryClient.invalidateQueries({ queryKey: ["app-insurance-advisors"] });
+      toast.success("Advisor added");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+  const removeAdvisor = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await appFetch(`/api/app/insurance-advisors/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove advisor");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["app-insurance-advisors"] }),
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   return (
     <div className="page-enter">
@@ -396,6 +444,59 @@ export function UserSettingsPage() {
               </div>
             )}
           </div>
+
+          {me.org.vertical === "insurance" && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <div className="flex items-center gap-1.5 mb-2">
+                <FileCheck className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Licensed advisors</h3>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                A US producer must be licensed in the state a prospect lives in. Add each advisor
+                you transfer calls to and the states they're licensed in — a call to a lead in a
+                state none of your advisors cover will be blocked automatically instead of
+                transferring anyway.
+              </p>
+
+              {advisors.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {advisors.data && advisors.data.advisors.length === 0 && (
+                <p className="text-xs text-muted-foreground mb-3">No advisors on file yet.</p>
+              )}
+              {advisors.data && advisors.data.advisors.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {advisors.data.advisors.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between text-xs rounded-md border border-border px-3 py-2">
+                      <div>
+                        <span className="font-medium">{a.name}</span>{" "}
+                        <span className="text-muted-foreground">— {a.licensedStates.join(", ")}</span>
+                      </div>
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-6 px-2" onClick={() => removeAdvisor.mutate(a.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Advisor name</Label>
+                  <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Jane Smith" className="h-8 w-48 text-xs" />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Licensed states (comma-separated)</Label>
+                  <Input value={advisorStates} onChange={(e) => setAdvisorStates(e.target.value)} placeholder="NY, NJ, CT" className="h-8 w-48 text-xs" />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => addAdvisor.mutate()}
+                  disabled={addAdvisor.isPending || !advisorName.trim() || !advisorStates.trim()}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+          )}
         </Section>
 
         <Section icon={Bell} title="Notifications">

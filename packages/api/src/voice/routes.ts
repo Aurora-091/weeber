@@ -44,6 +44,7 @@ import {
   renderAuditTrailText,
 } from "@openvent/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter } from "./compliance/adapters";
+import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
 import { runWorkflowForOutcome } from "./workflows/engine";
 import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
@@ -216,6 +217,16 @@ export const voice = new Hono()
       const compliance = await checkOutboundCallCompliance(to, dncAdapter);
       if (!compliance.allowed) {
         return c.json({ error: compliance.reason }, 403);
+      }
+      // Insurance-vertical-only gates (no-op for every other org) — same dual-wiring as
+      // workflows/scheduler.ts's dispatchScheduledCall, so a manual call can't route around them.
+      const numberSeriesCheck = await checkInsuranceNumberSeriesCompliance(orgId, to);
+      if (!numberSeriesCheck.allowed) {
+        return c.json({ error: numberSeriesCheck.reason }, 403);
+      }
+      const producerLicensingCheck = await checkInsuranceProducerLicensing(orgId, to);
+      if (!producerLicensingCheck.allowed) {
+        return c.json({ error: producerLicensingCheck.reason }, 403);
       }
     }
 
