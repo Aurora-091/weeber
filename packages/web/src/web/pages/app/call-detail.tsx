@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench } from "lucide-react";
+import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench, RefreshCw } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -17,6 +17,7 @@ type CallRow = {
   sentiment: string | null;
   recordingUrl: string | null;
   capturedState: Record<string, unknown> | null;
+  providerFailoverCount: number | null;
 };
 
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
@@ -39,6 +40,20 @@ const TOOL_LABELS: Record<string, string> = {
   sendSms: "Sent a text message",
   sendDtmf: "Pressed keys on a phone menu",
 };
+
+/** Only rendered when a call actually fell back off its configured primary
+ * STT/TTS provider mid-call (voice/failover.ts) — most calls never see this. */
+function FailoverBadge({ count }: { count: number }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-weeber-warning/30 bg-weeber-warning/10 px-2.5 py-0.5 text-xs font-medium text-weeber-warning"
+      title="This call switched providers mid-call due to an error or timeout on the primary provider."
+    >
+      <RefreshCw className="size-3" aria-hidden />
+      Failed over {count}×
+    </span>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   let dotClass = "bg-muted-foreground/40";
@@ -128,6 +143,9 @@ export function UserCallDetailPage() {
                 {row.direction === "inbound" ? row.fromNumber : row.toNumber}
               </h1>
               <StatusBadge status={row.status} />
+              {(row.providerFailoverCount ?? 0) > 0 && (
+                <FailoverBadge count={row.providerFailoverCount as number} />
+              )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {row.direction} · {row.status}

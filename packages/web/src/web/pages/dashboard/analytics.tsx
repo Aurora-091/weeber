@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Clock, Wrench, ShieldAlert } from "lucide-react";
+import { Phone, Clock, Wrench, ShieldAlert, RefreshCw } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
@@ -282,6 +282,40 @@ export function AnalyticsPage() {
               <BreakdownList counts={data.guardrailEventCounts} />
             </div>
           </div>
+
+          {data.reliability && (
+            <div className="card-weeber p-5">
+              <div className="flex items-center gap-1.5 text-sm font-medium mb-1">
+                <RefreshCw className="size-3.5" aria-hidden />
+                Provider reliability
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                How often a call had to fall back off its configured primary STT/TTS provider —
+                the failover chain set on each agent's Voice tab.
+              </p>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <StatCard
+                  label="Calls with failover"
+                  value={String(data.reliability.callsWithFailover)}
+                  icon={RefreshCw}
+                />
+                <StatCard
+                  label="Failover rate"
+                  value={
+                    data.reliability.failoverRate == null
+                      ? "—"
+                      : `${(data.reliability.failoverRate * 100).toFixed(1)}%`
+                  }
+                  icon={RefreshCw}
+                />
+                <StatCard
+                  label="Total failover events"
+                  value={String(data.reliability.totalFailoverEvents)}
+                  icon={RefreshCw}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

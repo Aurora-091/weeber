@@ -480,6 +480,19 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
   const org = await getOrg(orgId);
   const kpis = await computeKpis(orgId, since, orgCalls, toolRows);
 
+  // Provider reliability — how often a call had to fall back off its
+  // configured primary STT/TTS provider (see voice/failover.ts + the
+  // agents-ux-audit-and-cogs doc, "written to DB but shown nowhere"). A call
+  // counts here the moment providerFailoverCount > 0, regardless of how many
+  // times it fell back within that one call.
+  const callsWithFailover = orgCalls.filter((call) => (call.providerFailoverCount ?? 0) > 0).length;
+  const totalFailoverEvents = orgCalls.reduce((sum, call) => sum + (call.providerFailoverCount ?? 0), 0);
+  const reliability = {
+    callsWithFailover,
+    totalFailoverEvents,
+    failoverRate: totalCalls > 0 ? callsWithFailover / totalCalls : null,
+  };
+
   const dailyVolume: { date: string; count: number }[] = [];
   const dayCounts: Record<string, number> = {};
   for (const call of orgCalls) {
@@ -503,6 +516,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     currency: org?.currency ?? null,
     kpis,
     turnLatencyPercentiles,
+    reliability,
   };
 }
 
