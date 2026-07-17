@@ -132,6 +132,10 @@ export const PLATFORM_FEATURES = [
     title: "Shopify + WhatsApp sync",
     body: "Orders, carts, and messages stay connected automatically.",
   },
+  {
+    title: "Resilient by default",
+    body: "If a voice provider has an outage mid-call, we fail over automatically — STT, TTS, and LLM all have backups built in. Your calls don't drop because one vendor did.",
+  },
 ] as const;
 
 export const READY_FLOWS = [
