@@ -183,6 +183,7 @@ export const userApp = new Hono<UserEnv>()
           timezone: org.timezone,
           contactEmail: org.contactEmail,
           webhookUrl: org.webhookUrl,
+          humanTransferNumber: org.humanTransferNumber,
           callingWindowTestModeUntil: org.callingWindowTestModeUntil,
         },
       },
@@ -199,7 +200,7 @@ export const userApp = new Hono<UserEnv>()
     if (!body || typeof body !== "object") {
       return c.json({ error: "Expected a JSON object" }, 400);
     }
-    const allowed = ["name", "timezone", "countryCode", "contactEmail", "webhookUrl", "vertical"] as const;
+    const allowed = ["name", "timezone", "countryCode", "contactEmail", "webhookUrl", "vertical", "humanTransferNumber"] as const;
     const updates: Record<string, string | null> = {};
     for (const key of allowed) {
       if (key in body) {
@@ -211,6 +212,14 @@ export const userApp = new Hono<UserEnv>()
           if (!/^https?:\/\//i.test(val)) {
             return c.json({ error: "webhookUrl must start with http:// or https://" }, 400);
           }
+        }
+        // Real regression this closes (2026-07-17): transfer-to-human had a global
+        // HUMAN_TRANSFER_NUMBER env-var fallback removed same day for a real cross-org
+        // safety reason (see stream.ts's resolveHumanTransferNumber) — which left zero
+        // way for an org to configure this at all, since no UI/API route existed either.
+        // E.164-validated so a malformed number never silently reaches Twilio's transfer API.
+        if (key === "humanTransferNumber" && val && !isValidE164(val)) {
+          return c.json({ error: "humanTransferNumber must be a valid E.164 number, e.g. +15551234567" }, 400);
         }
         // Keep in sync with lib/verticals.ts's VERTICALS registry on the
         // frontend (no shared package between packages/api and packages/web
@@ -238,6 +247,7 @@ export const userApp = new Hono<UserEnv>()
         timezone: org!.timezone,
         contactEmail: org!.contactEmail,
         webhookUrl: org!.webhookUrl,
+        humanTransferNumber: org!.humanTransferNumber,
       },
     }, 200);
   })

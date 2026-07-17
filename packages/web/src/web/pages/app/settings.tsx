@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
@@ -62,6 +62,7 @@ export function UserSettingsPage() {
   const [countryCode, setCountryCode] = useState(me.org.countryCode ?? "IN");
   const [contactEmail, setContactEmail] = useState(me.org.contactEmail ?? "");
   const [webhookUrl, setWebhookUrl] = useState(me.org.webhookUrl ?? "");
+  const [humanTransferNumber, setHumanTransferNumber] = useState(me.org.humanTransferNumber ?? "");
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -73,6 +74,7 @@ export function UserSettingsPage() {
     setCountryCode(me.org.countryCode ?? "IN");
     setContactEmail(me.org.contactEmail ?? "");
     setWebhookUrl(me.org.webhookUrl ?? "");
+    setHumanTransferNumber(me.org.humanTransferNumber ?? "");
   }, [me.org]);
 
   const saveOrg = useMutation({
@@ -87,6 +89,7 @@ export function UserSettingsPage() {
           countryCode,
           contactEmail: contactEmail || null,
           webhookUrl: webhookUrl || null,
+          humanTransferNumber: humanTransferNumber || null,
         }),
       });
       if (!res.ok) {
@@ -357,6 +360,30 @@ export function UserSettingsPage() {
           >
             {saveOrg.isPending ? "Saving…" : "Save changes"}
           </Button>
+        </Section>
+
+        <Section icon={PhoneForwarded} title="Human Transfer">
+          <p className="mb-4 text-sm text-muted-foreground">
+            The real phone number your agents transfer live calls to when a caller asks for a person, or
+            an agent decides one is needed. <strong>Required for transfer-to-human to work at all</strong> —
+            there's no shared/default number anymore (removed on purpose: a shared fallback used to risk
+            silently routing another org's caller to your line). Leave blank and a transfer request will
+            just end the call gracefully instead of connecting anywhere.
+          </p>
+          <div className="max-w-md space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Transfer number</Label>
+            <Input
+              type="tel"
+              value={humanTransferNumber}
+              onChange={(e) => setHumanTransferNumber(e.target.value)}
+              placeholder="+15551234567"
+            />
+          </div>
+          <div className="mt-5">
+            <Button size="sm" disabled={saveOrg.isPending} onClick={() => saveOrg.mutate()}>
+              {saveOrg.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
         </Section>
 
         <Section icon={Webhook} title="Webhooks">
