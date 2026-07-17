@@ -4,6 +4,22 @@ This document tracks system changes, database schemas, API parameters, and archi
 
 ---
 
+## 2026-07-16 — Insurance launch readiness resource doc (docs only, no code)
+
+New `docs/insurance-launch-readiness.md` — the operational companion to the previous entry's
+compliance gates. Docs-only, no code changes. Covers: the actual DLT/1600-series registration
+process for India (who to contact — telecom operator business/enterprise sales teams, specifically
+asking for "TRAI 1600-series registration for an IRDAI-regulated entity" — and the 4 concrete steps:
+PE/DLT registration, telemarketer chain registration, voice content template registration using
+each agent's real Conversation Starter line, then 1600-series allocation), what to gather per US
+licensed advisor and where to cross-check state licenses for free today (NIPR's public lookup tool,
+state DOI agent-lookup tools), and NIPR subscriber signup info (nipr.com/industry-solutions,
+(855) 674-6477, PDB Gateway) for whenever the optional real-time upgrade is wanted. Ends with a
+concrete pre-launch checklist tying back to the gates already built plus the still-open legal item
+(all-party-consent-recording states).
+
+---
+
 ## 2026-07-16 — Insurance pre-launch blockers built: India 1600-series gate + US producer-state-licensing gate
 
 Full detail in `docs/agent-prompts/00-insurance-regulatory-reference.md`'s "Platform gaps #1/#2 —

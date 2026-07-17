@@ -86,6 +86,11 @@ elsewhere in this repo are tracked (see `docs/global-compliance-engine-plan.md`'
 
 ## Platform gaps #1/#2 — build report (2026-07-16, same day)
 
+> **See `docs/insurance-launch-readiness.md` for the actual "who do I call, what do I fill in"
+> checklist** — DLT/1600-series registration steps + contacts, what to gather per licensed
+> advisor, NIPR signup info if/when you want the real-time upgrade. This section below is the
+> engineering build report; that doc is the operational companion.
+
 Both built as dial-time gates, not mid-call tool checks — simpler, and matches the existing
 DNC/calling-window architecture exactly: wired into both `workflows/scheduler.ts`'s
 `dispatchScheduledCall` and `voice/routes.ts`'s manual `/calls/outbound` endpoint, the same two
