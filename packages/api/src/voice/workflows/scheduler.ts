@@ -6,6 +6,7 @@ import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
+import { checkIndiaNumberSeriesCompliance } from "../compliance/number-series-gate";
 import { checkFtsaAttemptCap } from "../compliance/attempt-cap";
 import { executeDueWorkflowRuns } from "./graph-engine";
 
@@ -38,7 +39,7 @@ async function checkCallingWindowForRow(orgId: string | null, toNumber: string):
 
 type DispatchResult =
   | { ok: true }
-  | { ok: false; reason: "dnc" | "calling_window" | "attempt_cap" | "insurance_number_series" | "insurance_producer_licensing" | "place_failed"; detail: string };
+  | { ok: false; reason: "dnc" | "calling_window" | "attempt_cap" | "insurance_number_series" | "insurance_producer_licensing" | "india_number_series" | "place_failed"; detail: string };
 
 /**
  * The actual DNC-check -> calling-window-check -> place-call -> session-
@@ -77,6 +78,14 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
   const producerLicensingCheck = await checkInsuranceProducerLicensing(row.orgId, row.toNumber);
   if (!producerLicensingCheck.allowed) {
     return { ok: false, reason: "insurance_producer_licensing", detail: producerLicensingCheck.reason };
+  }
+
+  // General (non-insurance) India DLT number-series gate (2026-07-17) — no-op
+  // unless INDIA_NUMBER_SERIES_FLAG is on for this org, see
+  // compliance/number-series-gate.ts's doc comment for why it defaults off.
+  const generalNumberSeriesCheck = await checkIndiaNumberSeriesCompliance(row.orgId, row.toNumber);
+  if (!generalNumberSeriesCheck.allowed) {
+    return { ok: false, reason: "india_number_series", detail: generalNumberSeriesCheck.reason };
   }
 
   // Dispatch through the shared placement path so a scheduled retry dials

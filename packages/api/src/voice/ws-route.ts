@@ -2,6 +2,7 @@ import { createVoiceStreamHandlers } from "./stream";
 import type { TelephonyProvider } from "./telephony-transport";
 import { createTestCallStreamHandlers } from "./test-call-stream";
 import { consumeTestCallToken } from "./test-call-tokens";
+import { verifyExotelStreamAuth } from "./middleware/exotel-auth";
 
 /**
  * Native Bun WebSocket handling for the live-call media stream, kept out of
@@ -43,7 +44,14 @@ const TEST_CALL_WS_PATH = "/api/voice/test-call";
 /** Kept for any existing code that only knows about the Twilio path. */
 export const VOICE_WS_PATH = VOICE_WS_PATHS.twilio;
 
-export function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Function }): boolean {
+/**
+ * Async since 2026-07-17 (Exotel stream auth) — every other branch here
+ * resolves synchronously, but verifying an Exotel connection's Basic Auth
+ * header against that org's stored Exotel API token (verifyExotelStreamAuth)
+ * needs a DB/vault round-trip. See server.ts's `fetch` for the one call
+ * site, already an async function.
+ */
+export async function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Function }): Promise<boolean> {
   const url = new URL(request.url);
 
   if (url.pathname === TEST_CALL_WS_PATH) {
@@ -58,6 +66,21 @@ export function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Funct
     | TelephonyProvider
     | undefined);
   if (!provider) return false;
+
+  // Exotel stream auth (2026-07-17, middleware/exotel-auth.ts) — Twilio and
+  // Plivo are already guarded at their HTTP answer-webhook layer
+  // (requireTwilioSignature/requirePlivoSignature in routes.ts); Exotel has
+  // no such route, so this is the actual entry point that needs guarding
+  // for that provider. Rejects the upgrade outright on any failure —
+  // logged so a real misconfiguration (wrong token, no creds on file) is
+  // visible in Railway logs rather than a silent connection drop.
+  if (provider === "exotel") {
+    const auth = await verifyExotelStreamAuth(request);
+    if (!auth.ok) {
+      console.warn(`[exotel-auth] rejected WS upgrade: ${auth.error}`);
+      return false;
+    }
+  }
 
   const handlers = createVoiceStreamHandlers(provider);
   return Boolean(server.upgrade(request, { data: { kind: "voice", handlers } satisfies VoiceSocketData }));

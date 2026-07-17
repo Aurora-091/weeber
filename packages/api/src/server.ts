@@ -90,7 +90,12 @@ const server = Bun.serve({
   async fetch(request, srv) {
     const url = new URL(request.url);
 
-    if (tryUpgradeVoiceSocket(request, srv) || tryUpgradeWaitlistSocket(request, srv)) {
+    // tryUpgradeVoiceSocket is async since 2026-07-17 (Exotel stream auth
+    // needs a DB/vault round-trip) — awaited first, then waitlist checked,
+    // preserving the original "voice first" short-circuit order without
+    // mixing an awaited and a sync call in one `||` expression.
+    const voiceUpgraded = await tryUpgradeVoiceSocket(request, srv);
+    if (voiceUpgraded || tryUpgradeWaitlistSocket(request, srv)) {
       // `upgrade()` takes over the connection; no HTTP response needed here.
       return undefined as unknown as Response;
     }

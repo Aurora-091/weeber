@@ -45,6 +45,7 @@ import {
 } from "@openvent/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter } from "./compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
+import { checkIndiaNumberSeriesCompliance } from "./compliance/number-series-gate";
 import { runWorkflowForOutcome } from "./workflows/engine";
 import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
@@ -251,6 +252,13 @@ export const voice = new Hono()
       const producerLicensingCheck = await checkInsuranceProducerLicensing(orgId, to);
       if (!producerLicensingCheck.allowed) {
         return c.json({ error: producerLicensingCheck.reason }, 403);
+      }
+      // General (non-insurance) India DLT number-series gate (2026-07-17) —
+      // no-op unless INDIA_NUMBER_SERIES_FLAG is on for this org, see
+      // compliance/number-series-gate.ts's doc comment for why it defaults off.
+      const generalNumberSeriesCheck = await checkIndiaNumberSeriesCompliance(orgId, to);
+      if (!generalNumberSeriesCheck.allowed) {
+        return c.json({ error: generalNumberSeriesCheck.reason }, 403);
       }
     }
 

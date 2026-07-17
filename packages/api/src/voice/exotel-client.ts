@@ -8,6 +8,24 @@ import { orgs } from "../database/schema";
 import { eq } from "drizzle-orm";
 import { readCredential, EXOTEL_FIELDS } from "../database/credential-vault";
 
+/**
+ * Embeds `orgId`:`apiToken` as HTTP Basic Auth credentials into a bare
+ * `wss://host/path` URL — the shape Exotel's Voicebot Applet WSS URL field
+ * expects per their own docs (support.exotel.com/support/solutions/articles/
+ * 3000108630: "specify credentials in the WSS URL, but Exotel transmits
+ * them securely in headers during the connection"). Verified server-side by
+ * middleware/exotel-auth.ts's verifyExotelStreamAuth — kept here rather than
+ * there specifically to avoid a circular import (that file already imports
+ * getExotelCredsForOrg from this one). `baseWsUrl` must have no existing
+ * credentials; this always overwrites username/password.
+ */
+export function buildExotelStreamUrl(baseWsUrl: string, orgId: string, apiToken: string): string {
+  const url = new URL(baseWsUrl);
+  url.username = encodeURIComponent(orgId);
+  url.password = encodeURIComponent(apiToken);
+  return url.toString();
+}
+
 type ExotelCreds = { sid: string; apiKey: string; apiToken: string; subdomain: string } | null;
 
 export async function getExotelCredsForOrg(orgId?: string | null): Promise<ExotelCreds> {
@@ -62,6 +80,13 @@ export async function createExotelOutboundCall(input: {
   if (!creds) return { ok: false, error: "No Exotel credentials configured for this org" };
 
   try {
+    // Exotel stream auth (2026-07-17, middleware/exotel-auth.ts) — the
+    // caller passes a bare streamUrl (no credentials); embedded here rather
+    // than by the caller since this is the one place that already has this
+    // org's real Exotel creds in hand. A bare, unauthenticated URL would be
+    // rejected by ws-route.ts's verifyExotelStreamAuth on connect.
+    const authenticatedStreamUrl = buildExotelStreamUrl(input.streamUrl, input.orgId, creds.apiToken);
+
     // Exotel's own param names are inverted from our convention: its `from`
     // is "the number to dial" (our `to`, the customer) and `callerid` is
     // "your Exophone" (our `from`, the org's number) — mapped explicitly
@@ -70,7 +95,7 @@ export async function createExotelOutboundCall(input: {
     const body = new URLSearchParams({
       from: input.to,
       callerid: input.from,
-      streamurl: input.streamUrl,
+      streamurl: authenticatedStreamUrl,
       streamtype: "bidirectional",
     });
     const res = await fetch(
