@@ -3,7 +3,8 @@ import { tool } from "ai";
 
 /**
  * Lets the agent hand a live call off to a real person — the user's own
- * number (see `orgs.humanTransferNumber` / `HUMAN_TRANSFER_NUMBER` env var).
+ * number, configured per-org via `orgs.humanTransferNumber` (no global/shared
+ * fallback — see stream.ts's `resolveHumanTransferNumber`).
  *
  * Signals intent only, same pattern as every other tool here. The actual
  * transfer (redirecting the live Twilio call out of the media stream into a

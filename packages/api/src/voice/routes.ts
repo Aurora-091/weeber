@@ -173,9 +173,9 @@ export const voice = new Hono()
   // Fetched by Plivo itself when transferPlivoCall (plivo-client.ts) redirects a live call's
   // A-leg — the "aleg_url" Plivo's Transfer API fetches new XML from mid-call (see stream.ts's
   // performTransfer). No signature check: this only ever returns a static <Dial> instruction for
-  // a number we ourselves already resolved server-side (resolveHumanTransferNumber/
-  // HUMAN_TRANSFER_NUMBER) before building the URL — nothing here is caller-influenced, same
-  // trust boundary as buildPlivoStreamXml above.
+  // a number we ourselves already resolved server-side (resolveHumanTransferNumber, per-org only)
+  // before building the URL — nothing here is caller-influenced, same trust boundary as
+  // buildPlivoStreamXml above.
   .get("/transfer-xml/plivo", (c) => {
     const to = c.req.query("to") ?? "";
     const safeTo = to.replace(/[<>&"']/g, ""); // defensive XML-escaping; a real E.164 number never contains these anyway

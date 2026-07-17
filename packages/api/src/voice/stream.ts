@@ -439,12 +439,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     void finalizeCall("failed");
   }
 
-  /** `orgs.humanTransferNumber` for this call's org, falling back to the
-   * HUMAN_TRANSFER_NUMBER env var — same override-then-env-fallback pattern
-   * as the outbound caller ID (see routes.ts's /calls/outbound). */
+  /** `orgs.humanTransferNumber` for this call's org — per-org only, no global fallback (2026-07-17
+   * decision: a shared HUMAN_TRANSFER_NUMBER env var meant any org without its own number configured
+   * would silently transfer callers to a DIFFERENT org's human line, which is worse than just
+   * hanging up — removed rather than left as a footgun). An org with nothing configured here simply
+   * can't transfer; performTransfer falls back to a hang-up in that case, same as any other
+   * "no transfer number configured" path. */
   async function resolveHumanTransferNumber(orgId: string): Promise<string | undefined> {
     const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1).catch(() => [] as never[]);
-    return org?.humanTransferNumber ?? process.env.HUMAN_TRANSFER_NUMBER ?? undefined;
+    return org?.humanTransferNumber ?? undefined;
   }
 
   /** Actually ends the call — terminates the real Twilio call leg (not just
@@ -504,9 +507,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
-    const transferNumber = humanNumberOrgId
-      ? await resolveHumanTransferNumber(humanNumberOrgId)
-      : (process.env.HUMAN_TRANSFER_NUMBER ?? undefined);
+    // No global env-var fallback (2026-07-17) — see resolveHumanTransferNumber's doc comment. A
+    // call with no resolved org can't transfer at all; falls through to the "no transfer number
+    // configured" hang-up below, same as an org that simply hasn't set one.
+    const transferNumber = humanNumberOrgId ? await resolveHumanTransferNumber(humanNumberOrgId) : undefined;
 
     if (!transferNumber) {
       console.error("[voice] transferToHuman requested but no transfer number is configured anywhere — hanging up instead");
