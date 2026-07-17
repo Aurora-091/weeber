@@ -94,7 +94,19 @@ export const voice = new Hono()
     const webhookUrl = resolveWebhookUrl(session?.webhookUrl);
 
     if (callSid) {
-      await db
+      // Latency fix (2026-07-17, pickup-to-first-word investigation): this
+      // used to be awaited, blocking the TwiML response — and therefore
+      // Twilio's own <Connect><Stream> handshake — on a full DB round-trip
+      // that exists purely for call-history bookkeeping, not anything
+      // Twilio needs to proceed. Made fire-and-forget like dispatchWebhook
+      // just below. Safe to do now (previously wasn't): the WS "start"
+      // handler's fallback-insert-if-missing path (stream.ts) now covers
+      // Twilio too and is enriched from the same in-memory `session` this
+      // handler already has — so a call whose media stream connects before
+      // this insert lands still resolves org/persona context correctly,
+      // it just runs the insert itself a beat later (onConflictDoNothing
+      // on both sides makes the eventual duplicate a no-op either way).
+      void db
         .insert(calls)
         .values({
           twilioCallSid: callSid,
@@ -111,7 +123,7 @@ export const voice = new Hono()
           orgId: session?.orgId ?? null,
         })
         .onConflictDoNothing()
-        .catch(() => undefined as unknown);
+        .catch((err) => console.error("[voice] failed to insert call row from /incoming", err));
 
       void dispatchWebhook(webhookUrl, "call.started", {
         callSid,

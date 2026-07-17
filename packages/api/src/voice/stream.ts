@@ -1163,19 +1163,36 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // `calls` row) before the WS ever opens — Exotel's WS-only
             // AgentStream has no such step (see voice/routes.ts), so if
             // nothing was pre-created, insert a minimal row now from
-            // whatever the start event itself carried. Best-effort: this
-            // call won't have org/persona/session context an outbound
-            // trigger would have set, only what the wire protocol told us.
-            if (!row && provider !== "twilio" && event.from && event.to) {
+            // whatever the start event itself carried.
+            //
+            // Latency fix (2026-07-17): this used to explicitly exclude
+            // Twilio (`provider !== "twilio"`) on the theory that Twilio's
+            // own answer webhook always finishes its insert first — true
+            // when that insert was awaited, but it's now fire-and-forget
+            // (routes.ts's /incoming) specifically so it stops blocking the
+            // TwiML response, which means the media stream can legitimately
+            // connect and reach here before that insert lands. Now covers
+            // Twilio too, and — since `session` (outbound calls: set at
+            // placement time, well before ringing) already carries the real
+            // org/persona/direction context that a bare Exotel fallback
+            // never has — enriched from it instead of the placeholder
+            // "inbound" direction with no persona/org this branch used to
+            // fall back to for Twilio never has. onConflictDoNothing means
+            // whichever insert (this one, or the webhook's) lands second is
+            // a harmless no-op.
+            if (!row && event.from && event.to) {
               const [inserted] = await db
                 .insert(calls)
                 .values({
                   provider,
                   twilioCallSid: callSid,
-                  direction: "inbound",
+                  direction: session?.direction ?? "inbound",
                   fromNumber: event.from,
                   toNumber: event.to,
                   status: "in-progress",
+                  agentPersona: session?.persona ?? null,
+                  webhookUrl: session?.webhookUrl ?? null,
+                  orgId: session?.orgId ?? null,
                 })
                 .onConflictDoNothing()
                 .returning();
