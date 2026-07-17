@@ -239,6 +239,13 @@
       "when": 1784260072424,
       "tag": "0033_chubby_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784288430987,
+      "tag": "0034_add_pickup_to_first_audio_latency",
+      "breakpoints": true
     }
   ]
 }

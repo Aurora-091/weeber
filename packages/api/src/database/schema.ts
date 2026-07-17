@@ -165,6 +165,16 @@ export const callLatency = pgTable("call_latency", {
   sttConnectMs: integer("stt_connect_ms"),
   llmTtftMs: integer("llm_ttft_ms"),
   ttsFirstByteMs: integer("tts_first_byte_ms"),
+  /** Caller-perceived "pickup to first word" latency (2026-07-17 follow-up
+   * to audit #01's D7 finding: this exact gap — session setup + the
+   * greeting's own STT/LLM/TTS work combined — was previously unmeasured).
+   * Measured from the moment the media stream's "start" event arrives
+   * (as close as this codebase gets to "call answered") to the greeting's
+   * first TTS audio byte. Unlike sttConnectMs/llmTtftMs/ttsFirstByteMs
+   * (each one pipeline stage), this is the actual end-to-end number a
+   * caller experiences as "dead air before the agent speaks" — the metric
+   * the "why is there a 5-10s pause on outbound calls" complaint is about. */
+  pickupToFirstAudioMs: integer("pickup_to_first_audio_ms"),
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 

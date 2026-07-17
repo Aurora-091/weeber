@@ -184,6 +184,7 @@ export function CallDetailPage() {
             Latency breakdown
           </h2>
           <div className="rounded-lg border border-border bg-card p-4 mb-6">
+            <LatencyRow label="Pickup to first word (caller-perceived)" ms={latencyRow?.pickupToFirstAudioMs ?? null} />
             <LatencyRow label="STT connect" ms={latencyRow?.sttConnectMs ?? null} />
             <LatencyRow label="LLM time-to-first-token" ms={latencyRow?.llmTtftMs ?? null} />
             <LatencyRow label="TTS first byte" ms={latencyRow?.ttsFirstByteMs ?? null} />

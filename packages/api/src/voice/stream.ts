@@ -184,6 +184,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let sttConnectMs: number | undefined;
   let llmTtftMs: number | undefined;
   let ttsFirstByteMs: number | undefined;
+  /** Set the instant the media stream's "start" event arrives (see the
+   * "start" handler below) — as close as this codebase gets to "the call
+   * was answered". Paired with ttsFirstByteMs's own first-set instant
+   * below to compute pickupToFirstAudioMs, the actual caller-perceived
+   * "dead air before the agent speaks" number (schema.ts's callLatency
+   * doc comment has the full reasoning). */
+  let callAnsweredAt: number | undefined;
+  let pickupToFirstAudioMs: number | undefined;
 
   /**
    * Upserts whichever of the three metrics are currently set. Safe to call multiple times per call
@@ -192,13 +200,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   async function persistLatency() {
     if (!dbCallId) return;
-    if (sttConnectMs === undefined && llmTtftMs === undefined && ttsFirstByteMs === undefined) return;
+    if (
+      sttConnectMs === undefined &&
+      llmTtftMs === undefined &&
+      ttsFirstByteMs === undefined &&
+      pickupToFirstAudioMs === undefined
+    ) {
+      return;
+    }
     await db
       .insert(callLatency)
-      .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs })
+      .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs, pickupToFirstAudioMs })
       .onConflictDoUpdate({
         target: callLatency.callId,
-        set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, capturedAt: new Date() },
+        set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, pickupToFirstAudioMs, capturedAt: new Date() },
       })
       .catch((err) => console.error("[voice] failed to persist call latency", err));
   }
@@ -718,6 +733,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       tts = null;
       if (ttsFirstByteMs === undefined) {
         ttsFirstByteMs = 0;
+        if (pickupToFirstAudioMs === undefined && callAnsweredAt !== undefined) {
+          pickupToFirstAudioMs = Date.now() - callAnsweredAt;
+          console.log(`[voice] pickup-to-first-audio (cache hit): ${pickupToFirstAudioMs}ms`);
+        }
         void persistLatency();
       }
       turnTtsFirstByteMs = 0;
@@ -749,6 +768,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
               ttsFirstByteMs = Date.now() - ttsRequestedAt;
+              if (pickupToFirstAudioMs === undefined && callAnsweredAt !== undefined) {
+                pickupToFirstAudioMs = Date.now() - callAnsweredAt;
+                console.log(`[voice] pickup-to-first-audio: ${pickupToFirstAudioMs}ms`);
+              }
               void persistLatency();
             }
             if (turnTtsFirstByteMs === undefined) {
@@ -1084,6 +1107,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
       try {
         if (event.type === "start") {
+          // Captured before anything else in this handler runs — every DB
+          // round-trip, provider connect, and greeting-generation step that
+          // follows counts against pickupToFirstAudioMs from this instant.
+          callAnsweredAt = Date.now();
           streamSid = event.streamId;
           callSid = event.callId;
           const session = callSid ? await sessionStore.get(callSid) : undefined;
