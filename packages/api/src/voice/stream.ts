@@ -24,6 +24,8 @@ import { getEffectiveFlags } from "./org-queries";
 import { renderTemplate } from "./workflows/variables";
 import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
 import type { NoiseFilter } from "./audio-noise-filter";
+import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } from "./wind-noise-filter";
+import type { HighPassFilter } from "./wind-noise-filter";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -157,6 +159,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * existing calls/deployments see byte-for-byte unchanged behavior.
    */
   let noiseFilter: NoiseFilter | null = null;
+  /**
+   * Wind-noise high-pass filter (2026-07-17, see wind-noise-filter.ts) —
+   * same "created once per call, only when its flag is on, null = no-op"
+   * pattern as noiseFilter above, but independently toggleable: the two
+   * filters solve different noise types (steady hum vs bursty wind), and
+   * an org may want either, both, or neither. Applied *before* noiseFilter
+   * in the media handler when both are on — see that handler for why the
+   * order matters.
+   */
+  let windFilter: HighPassFilter | null = null;
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -1334,6 +1346,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (noiseFilterFlags[ADAPTIVE_NOISE_FILTER_FLAG] === true) {
               noiseFilter = createRollingNoiseFilter();
             }
+            if (noiseFilterFlags[WIND_NOISE_FILTER_FLAG] === true) {
+              windFilter = createHighPassFilter();
+            }
           }
 
           connectSttForCall(ws);
@@ -1344,9 +1359,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
         if (event.type === "media") {
           let audio = Buffer.from(event.mulawBase64, "base64");
-          // §3b: only runs when ADAPTIVE_NOISE_FILTER_FLAG resolved true for
-          // this call — noiseFilter stays null otherwise, so this is a
-          // zero-cost no-op for every call that hasn't opted in.
+          // Wind-noise filter runs *before* the adaptive noise filter on
+          // purpose (2026-07-17, wind-noise-filter.ts) — stripping out
+          // wind's low-frequency rumble first means noiseFilter's RMS gate
+          // (below) is judging genuine remaining loudness, not a signal
+          // still inflated by a wind gust it can't otherwise tell apart
+          // from speech. Both independently flag-gated; either, both, or
+          // neither can be null, and each is a zero-cost no-op when off.
+          if (windFilter) {
+            audio = Buffer.from(applyHighPassToMulaw(audio, windFilter));
+          }
           if (noiseFilter) {
             audio = Buffer.from(applyNoiseFilterToMulaw(audio, noiseFilter));
           }
