@@ -28,7 +28,7 @@ Different Twilio numbers can run different behavior without touching code, via `
 
 ## Agent tools
 
-Tools live in `packages/web/src/api/voice/tools/`:
+Tools live in `packages/api/src/voice/tools/`:
 
 - `lookupInfo` — answers factual questions (stub — wire to a real KB/CRM)
 - `bookAppointment` — books a real Google Calendar event once `GOOGLE_CALENDAR_ACCESS_TOKEN` is set (falls
@@ -42,7 +42,7 @@ Tools live in `packages/web/src/api/voice/tools/`:
 
 ## Integrations
 
-Every integration (`packages/web/src/api/voice/integrations/`) is wrapped in a shared resilience layer
+Every integration (`packages/api/src/voice/integrations/`) is wrapped in a shared resilience layer
 (`resilient-fetch.ts`) — timeout, retry with backoff, and a per-integration circuit breaker — so a slow or
 down third-party API can never stall or crash a live call turn. A tripped breaker skips the network call
 entirely for a cooldown window and returns a clear "temporarily skipped" result instead.
@@ -55,7 +55,7 @@ entirely for a cooldown window and returns a clear "temporarily skipped" result 
 | Google Calendar | `GOOGLE_CALENDAR_ACCESS_TOKEN`, `GOOGLE_CALENDAR_ID` (optional, defaults to `primary`) | `bookAppointment` |
 
 Salesforce and Google Calendar expect an already-valid access token — OAuth/token-refresh is your own
-app's responsibility, not something OpenVent handles for you (see [`docs/testing.md`](./docs/testing.md) for
+app's responsibility, not something OpenVent handles for you (see [`docs/testing.md`](./testing.md) for
 what is and isn't covered by tests here).
 
 ## Personas
