@@ -10,7 +10,7 @@ doc directly follows up on. Grounded in: (1) ElevenLabs Agents' public docs on W
 Prompting Guide (user-provided reference material, 2026-07-15), (2) Bolna's own public graph-agent
 docs (`bolna.ai/docs/graph-agent/*`, researched 2026-07-16 — see Part 3.1), (3) this repo's actual
 current code (`components/canvas/*`, `voice/workflows/graph-engine.ts`,
-`voice/workflows/admin-routes.ts`, `voice/tts/{cartesia,elevenlabs}.ts`), (4) `docs/workflow-canvas-architecture.md` (the original spec
+`voice/workflows/admin-routes.ts`, `voice/tts/{cartesia,elevenlabs}.ts`), (4) `docs/workflow-canvas/architecture.md` (the original spec
 this was built from) and `audit/2026-07-15-audit-05.md` (the gaps this plan addresses).
 
 ---

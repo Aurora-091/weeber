@@ -75,7 +75,7 @@ complementary, currently-missing feature.
   written.** ADR-023 (2026-07-08), `voice/caller-memory.ts` — flat per-phone-number key/value overlay,
   merged not replaced, exactly the shape recommended above (keyed by phone number via
   `resolveHumanNumber`'s inbound/outbound direction logic, not caller-ID). Landing page and
-  `docs/state-engine.md` were synced to this in ADR-027. This section is left in place as the original
+  `docs/reference/state-engine.md` were synced to this in ADR-027. This section is left in place as the original
   reasoning for *why* it was recommended, not as an open item.
 
 ## Competitive positioning — what Voximplant's model tells us

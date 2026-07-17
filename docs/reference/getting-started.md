@@ -41,7 +41,7 @@ ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_ID=
 # Optional — pronunciation dictionary for domain terms (COD, UPI, KYC, etc.) that get
 # mispronounced by default. Both required together; omitted = safe no-op. See
-# docs/hindi-hinglish-voice-support.md Phase 3 for the exact terms and how this was
+# docs/voice-quality/hindi-hinglish-voice-support.md Phase 3 for the exact terms and how this was
 # live-verified (real before/after: "COD" was being misheard as "card" without it).
 ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=
 ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=
@@ -58,7 +58,7 @@ STT_PROVIDER=deepgram         # or "sarvam" or "elevenlabs"
 #   to keep English words in Latin script instead of transliterating them to Devanagari.
 # ELEVENLABS_API_KEY (shared with the TTS section above) — Scribe v2 Realtime, live-verified with
 #   real Hinglish audio to do the same. Currently the agents-tab UI's recommended default for
-#   Hindi/Hinglish agents — see docs/hindi-hinglish-voice-support.md for the full research and
+#   Hindi/Hinglish agents — see docs/voice-quality/hindi-hinglish-voice-support.md for the full research and
 #   live-verification writeup (all 4 phases done 2026-07-16).
 ```
 
@@ -72,7 +72,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 **Optional:**
 ```
 WEBHOOK_URL=                          # default n8n/Zapier/Make webhook target
-NUMBER_CONFIG=                        # JSON per-number config, see docs/configuration.md
+NUMBER_CONFIG=                        # JSON per-number config, see docs/reference/configuration.md
 WORKFLOWS=                            # JSON workflow configs, see docs/workflows.md
 AGENT_PERSONAS=                       # JSON per-number persona overrides
 HUBSPOT_API_KEY=                      # for the crmSync tool
@@ -80,9 +80,9 @@ RECORDING_DISCLOSURE_ENABLED=true     # spoken consent/AI disclosure at call sta
 RECORDING_DISCLOSURE_TEXT=            # override the default disclosure wording
 DATA_RETENTION_DAYS=90                # GDPR: auto-purge call data older than this
 COMPLIANCE_MODE=                      # set to "hipaa" to enable the HIPAA boot guardrail
-HIPAA_BAA_CONFIRMED=                  # must be "true" if COMPLIANCE_MODE=hipaa — see docs/compliance.md
+HIPAA_BAA_CONFIRMED=                  # must be "true" if COMPLIANCE_MODE=hipaa — see docs/reference/compliance.md
 HIPAA_RETENTION_DAYS=30               # shorter retention window used automatically in HIPAA mode
-ADMIN_API_KEY=                        # protects ops endpoints — see docs/security.md. Strongly recommended.
+ADMIN_API_KEY=                        # protects ops endpoints — see docs/reference/security.md. Strongly recommended.
 OUTBOUND_CALL_RATE_LIMIT=30           # max outbound calls per window (default 30)
 OUTBOUND_CALL_RATE_WINDOW_MS=60000    # rate-limit window in ms (default 1 minute)
 ```
@@ -112,8 +112,8 @@ dialing — a blocked call returns a `403` with the reason, and never reaches Tw
 ## Next steps
 
 - [`architecture/README.md`](../architecture/README.md) — how a call flows through the system, repo layout, plus diagrams (`architecture/voice-orchestration.md`, `api-flow.md`, `user-flow.md`, `data-model.md`)
-- [`docs/api-reference.md`](./api-reference.md) — every endpoint
-- [`docs/compliance.md`](./compliance.md) — TCPA/DNC/HIPAA/GDPR, what's enforced automatically
-- [`docs/security.md`](./security.md) — admin auth, webhook signature validation, rate limiting, tunneling
-- [`docs/configuration.md`](./configuration.md) — per-number config, personas, workflows
+- [`docs/reference/api-reference.md`](./api-reference.md) — every endpoint
+- [`docs/reference/compliance.md`](./compliance.md) — TCPA/DNC/HIPAA/GDPR, what's enforced automatically
+- [`docs/reference/security.md`](./security.md) — admin auth, webhook signature validation, rate limiting, tunneling
+- [`docs/reference/configuration.md`](./configuration.md) — per-number config, personas, workflows
 - The in-app `/docs` page (running server) mirrors this for anyone browsing the live app directly

@@ -17,3 +17,7 @@ actual code, not these.
   Canvas UI in an AI coding tool. The canvas is built and live; this prompt is a one-time build
   instruction with no further use beyond history. Moved out of `workflow-canvas-architecture.md` §7
   during a docs cleanup pass, 2026-07-16.
+- **`UI-UX-AUDIT-CONTEXT.md`** — a UI/UX audit checklist whose own status banner (2026-07-13, later
+  same day) marks items 1, 2, 4, 5, 7 as superseded — most of what it tracked has since shipped or been
+  re-planned elsewhere (see `AGENT-CONSOLE-UI-PLAN.md`, `UI-DESIGN-BRIEF.md`). Archived during the
+  `docs/` reorg, 2026-07-17.

@@ -108,7 +108,7 @@ external blockers (DLT number, advisor licensing) since the code side is done, (
 WhatsApp/clinic pieces the site already markets but the codebase doesn't have, (c) validating the
 failover/noise-filter work just shipped with real test calls, (d) the "Advanced Cascaded" prosody
 layer discussed as the next latency/quality lever (see
-`docs/voice-ai-breakthrough-leverage-study-2026-07-17.md`).
+`docs/voice-quality/voice-ai-breakthrough-leverage-study-2026-07-17.md`).
 
 **Real internal test metrics:** 14 total calls in production, all outbound-completed or
 inbound-completed, 3 booked, 2 not-interested. This is internal testing scale, not a beta cohort

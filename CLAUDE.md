@@ -57,7 +57,7 @@ both.
   package; same bar applies, arguably higher (see "Compliance package" below).
 - `bun test <path>` — run a single test file directly (all packages use plain `bun:test`, no separate
   runner/mocking library; tests live next to the code as `foo.test.ts`). Backend tests are in
-  `packages/api/src/`. See `docs/testing.md` for the full convention (stubbing `fetch`, resetting
+  `packages/api/src/`. See `docs/reference/testing.md` for the full convention (stubbing `fetch`, resetting
   module-level state between tests, etc.).
 - `bun run lint` (repo root) — oxlint, zero warnings required.
 - `cd packages/api && bun run db:push` — applies `src/database/schema.ts` changes to the live DB
@@ -105,8 +105,8 @@ openvent/  (this repo)
 ## The call pipeline (base OpenVent — read this before touching anything in `voice/`)
 
 This is the one piece of architecture the Weeber-specific docs above assume you already know. Full detail
-in `architecture/voice-orchestration.md`, `docs/state-engine.md`, `docs/configuration.md`,
-`docs/api-reference.md`; the shape of it:
+in `architecture/voice-orchestration.md`, `docs/reference/state-engine.md`, `docs/reference/configuration.md`,
+`docs/reference/api-reference.md`; the shape of it:
 
 ```text
 Inbound:  Caller -> Twilio number -> POST /api/voice/incoming (TwiML) -> wss connect
