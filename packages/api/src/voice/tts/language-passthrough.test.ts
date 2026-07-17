@@ -164,3 +164,57 @@ describe("connectCartesiaTts — language field passthrough", () => {
     expect(payload.language).toBeUndefined();
   });
 });
+
+describe("connectCartesiaTts — setTone (Expressive delivery, Tier 1, 2026-07-17)", () => {
+  it("omits generation_config entirely before setTone is ever called", async () => {
+    const { connectCartesiaTts } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.sendText("hello");
+
+    const payload = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(payload.generation_config).toBeUndefined();
+  });
+
+  it("includes generation_config.emotion on sendText once setTone has been called", async () => {
+    const { connectCartesiaTts } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.setTone!("sympathetic");
+    conn.sendText("I'm sorry to hear that.");
+
+    const payload = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(payload.generation_config).toEqual({ emotion: "sympathetic" });
+  });
+
+  it("also includes generation_config.emotion on endTurn, not just sendText", async () => {
+    const { connectCartesiaTts } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.setTone!("determined");
+    conn.sendText("Let's get this sorted right away.");
+    conn.endTurn();
+
+    const payload = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(payload.continue).toBe(false);
+    expect(payload.generation_config).toEqual({ emotion: "determined" });
+  });
+
+  it("keeps the same emotion for every subsequent sendText call within the turn (not reset per call)", async () => {
+    const { connectCartesiaTts } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.setTone!("calm");
+    conn.sendText("First chunk. ");
+    conn.sendText("Second chunk.");
+
+    const firstPayload = JSON.parse(ws.sent[ws.sent.length - 2]);
+    const secondPayload = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(firstPayload.generation_config).toEqual({ emotion: "calm" });
+    expect(secondPayload.generation_config).toEqual({ emotion: "calm" });
+  });
+});

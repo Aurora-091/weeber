@@ -32,6 +32,12 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
   let finished = false;
   let opened = false;
   const pendingSends: string[] = [];
+  // Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) — set via
+  // setTone() below once stream.ts parses the LLM's leading tone tag out of
+  // this turn's text, before any of it is sent. Included in every
+  // sendText/endTurn message's generation_config for the rest of this
+  // turn/connection (one connection per turn, so no cross-turn leakage).
+  let currentEmotion: string | undefined;
 
   function send(payload: Record<string, unknown>) {
     const json = JSON.stringify(payload);
@@ -97,6 +103,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: true,
         add_timestamps: true,
+        ...(currentEmotion ? { generation_config: { emotion: currentEmotion } } : {}),
       });
     },
     endTurn() {
@@ -109,11 +116,15 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
         output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
         continue: false,
         add_timestamps: true,
+        ...(currentEmotion ? { generation_config: { emotion: currentEmotion } } : {}),
       });
     },
     close() {
       closedIntentionally = true;
       if (opened) ws.close();
+    },
+    setTone(tone: string) {
+      currentEmotion = tone;
     },
   };
 };

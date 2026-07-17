@@ -26,6 +26,7 @@ import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTE
 import type { NoiseFilter } from "./audio-noise-filter";
 import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } from "./wind-noise-filter";
 import type { HighPassFilter } from "./wind-noise-filter";
+import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -169,6 +170,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * order matters.
    */
   let windFilter: HighPassFilter | null = null;
+  /** Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) —
+   * EXPRESSIVE_DELIVERY_FLAG, resolved once alongside noiseFilter/
+   * windFilter above. Gates only the tts?.setTone?.() call in
+   * sendTtsTextWithTone below; the tone tag itself is always stripped
+   * before reaching TTS regardless of this flag. */
+  let expressiveDeliveryEnabled = false;
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -705,6 +712,49 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
+  /**
+   * Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) — per-turn
+   * state for extracting the LLM's leading `[[tone:value]]` tag out of the
+   * streamed text before any of it ever reaches TTS or the transcript.
+   * Reset at the top of every `speak()` call (a fresh turn). Always runs
+   * (the prompt instruction in agent.ts is unconditional) regardless of
+   * `expressiveDeliveryEnabled` — that flag only gates whether the parsed
+   * tone actually gets applied to Cartesia via `setTone`; the tag itself is
+   * stripped either way, so a caller never hears it spoken.
+   *
+   * Bounded latency cost, by design: this holds back at most
+   * TONE_TAG_MAX_BUFFER_CHARS (24) worth of streamed text before flushing —
+   * in the normal case (the model actually emits the ~20-char tag as
+   * instructed) this resolves almost immediately once the tag closes, not
+   * at the 24-char cap; the cap only matters as a fallback if the model
+   * ever omits the tag entirely, so a turn is never held back indefinitely
+   * waiting for a tag that isn't coming.
+   */
+  let toneTagBuffer = "";
+  let toneTagResolved = false;
+
+  function sendTtsTextWithTone(text: string) {
+    if (toneTagResolved) {
+      tts?.sendText(text);
+      return;
+    }
+    toneTagBuffer += text;
+    const { tone, text: stripped } = stripToneTag(toneTagBuffer);
+    const looksLikeClosedTag = /\]\]/.test(toneTagBuffer);
+    if (tone !== null || looksLikeClosedTag || toneTagBuffer.length >= TONE_TAG_MAX_BUFFER_CHARS) {
+      toneTagResolved = true;
+      if (tone !== null && expressiveDeliveryEnabled) {
+        const emotion = CARTESIA_EMOTION_BY_TONE[tone];
+        if (emotion) tts?.setTone?.(emotion);
+      }
+      if (stripped) tts?.sendText(stripped);
+      toneTagBuffer = "";
+      return;
+    }
+    // Still might be a tag forming (no closing "]]" seen yet, under the
+    // buffer cap) — hold this chunk back until the next delta resolves it.
+  }
+
   /** Shared turn runner — used for both the opening greeting and normal replies. */
   async function speak(
     ws: Sendable,
@@ -733,6 +783,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   ) {
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
+    // Expressive delivery (2026-07-17) — fresh tone-tag state for this turn.
+    toneTagBuffer = "";
+    toneTagResolved = false;
 
     const ttsRequestedAt = Date.now();
     let turnTtsFirstByteMs: number | undefined;
@@ -856,6 +909,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let wasInterrupted = false;
     try {
       fullText = await generate(turnAbortController.signal);
+      // Expressive delivery (2026-07-17) — `fullText` is generate()'s own
+      // complete return value, entirely separate from the streamed deltas
+      // sendTtsTextWithTone already stripped above. Stripped here too so the
+      // tag never lands in conversation history, the transcript, or the
+      // barge-in "what did the caller actually hear" reconstruction below —
+      // none of which should ever show `[[tone:calm]]` as if it were
+      // something the agent said out loud.
+      fullText = stripToneTag(fullText).text;
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         console.error("[voice] agent turn failed", err);
@@ -960,7 +1021,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           history,
           persona,
           signal,
-          onTextDelta: (delta) => tts?.sendText(delta),
+          onTextDelta: (delta) => sendTtsTextWithTone(delta),
           onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
           onLatency: (ms, model) => {
             console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
@@ -1003,7 +1064,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         runVoiceAgentGreeting({
           persona,
           signal,
-          onTextDelta: (delta) => tts?.sendText(delta),
+          onTextDelta: (delta) => sendTtsTextWithTone(delta),
           capturedState,
           callerMemory: callerMemoryFacts,
           llmProvider: llmProviderOverride,
@@ -1349,6 +1410,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (noiseFilterFlags[WIND_NOISE_FILTER_FLAG] === true) {
               windFilter = createHighPassFilter();
             }
+            expressiveDeliveryEnabled = noiseFilterFlags[EXPRESSIVE_DELIVERY_FLAG] === true;
           }
 
           connectSttForCall(ws);
