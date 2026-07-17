@@ -1,5 +1,5 @@
 import { Phone, ShieldCheck, PackageCheck, RotateCcw, MessageSquare, Zap } from "lucide-react";
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SectionHeading } from "../components/marketing/SectionHeading";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
@@ -41,7 +41,12 @@ const SETUP_STEPS = [
 ] as const;
 
 export function ShopifySolutionPage() {
-  usePageTitle("AI Voice Agent for Shopify — Abandoned Cart Recovery & COD Confirmation");
+  usePageMeta({
+    title: "AI Voice Agent for Shopify — Abandoned Cart Recovery & COD Confirmation",
+    description:
+      "Weeber calls every abandoned Shopify cart, confirms COD orders, and sends the checkout link to WhatsApp — automatically, compliance-checked, live in an afternoon.",
+    path: "/shopify",
+  });
 
   return (
     <MarketingPageShell>

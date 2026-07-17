@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Mail, CalendarClock, Users, Send, CircleCheck as CheckCircle2 } from "lucide-react";
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { apiFetch } from "../lib/api";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { EnterpriseDialog } from "../components/marketing/EnterpriseDialog";
@@ -81,7 +81,11 @@ function GeneralContactForm() {
 }
 
 export function ContactPage() {
-  usePageTitle("Contact Weeber — Waitlist, Demos & Partnerships");
+  usePageMeta({
+    title: "Contact Weeber — Waitlist, Demos & Partnerships",
+    description: "Get in touch with Weeber — general questions, enterprise inquiries, demo requests, or partnership conversations. We reply by email, usually the same day.",
+    path: "/contact",
+  });
   const [enterpriseOpen, setEnterpriseOpen] = useState(false);
 
   return (

@@ -15,6 +15,7 @@ export const SITE = {
 export const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/shopify", label: "Shopify" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/compliance", label: "Compliance" },
   { href: "/about", label: "About" },
   { href: "/faq", label: "FAQ" },
 ];
@@ -29,6 +30,14 @@ export const FOOTER_COLUMNS = [
     ],
   },
   {
+    title: "Compliance",
+    links: [
+      { label: "How it works", href: "/compliance" },
+      { label: "India (DPDP & TRAI)", href: "/compliance/india" },
+      { label: "US, EU & global", href: "/compliance/global" },
+    ],
+  },
+  {
     title: "Company",
     links: [
       { label: "About", href: "/about" },
@@ -40,7 +49,6 @@ export const FOOTER_COLUMNS = [
     links: [
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Terms of Service", href: "/terms" },
-      { label: "TCPA Compliance", href: "/terms#tcpa" },
     ],
   },
   {
@@ -80,20 +88,6 @@ export const VERTICALS = [
     demoAccent: "English \u00b7 friendly",
     demoDuration: "0:25",
     cta: { label: "Join the waitlist", href: "/#waitlist" },
-  },
-  {
-    // Approved 2026-07-17 — replaces the previous generic "Enterprise / regulated teams" slot.
-    // Licensed-advisor routing and no-quote/no-underwrite language are load-bearing regulatory
-    // claims, not just copy — reviewed at the same bar as the underlying agent scripts.
-    // See docs/marketing-and-consent-ui-plan.md Part A #2.
-    label: "Insurance",
-    headline: "Agencies & brokers",
-    problem: "Warm leads go cold waiting on a callback, new policyholders cancel from buyer's remorse nobody caught in time, and every script needs a licensed human for the parts that actually matter.",
-    solution: "Weeber qualifies, live-transfers to your licensed advisors, and welcomes new policyholders — never quoting, advising, or underwriting. It knows exactly where its job ends.",
-    demoLabel: "Warm lead transfer",
-    demoAccent: "English \u00b7 professional",
-    demoDuration: "0:24",
-    cta: { label: "Talk to our team", href: "mailto:hello@weeber.ai" },
   },
 ] as const;
 
@@ -179,35 +173,8 @@ export const SECURITY_FEATURES = [
   },
 ] as const;
 
-export const FAQ = [
-  {
-    q: "Will it actually sound human?",
-    a: "Yes — natural AI voices with real back-and-forth, not a phone-tree robot. Most callers don't realize it's AI.",
-  },
-  {
-    q: "Do I need a developer?",
-    a: "No. You configure your agent with simple rules and prompts. Most setups take under an hour.",
-  },
-  {
-    q: "Which platforms does it work with?",
-    a: "Launching with Shopify and WhatsApp. WordPress, WooCommerce, and more connectors follow based on waitlist demand.",
-  },
-  {
-    q: "What will it cost?",
-    a: "The first waitlist customers lock in founder pricing for life. Full pricing is set at launch.",
-  },
-  {
-    q: "Is my customers' data safe?",
-    a: "Encrypted end to end, used only to run the flows you build, never sold or shared.",
-  },
-  {
-    q: "When does the beta open?",
-    a: "We're onboarding in small batches soon. Join the list and we'll reach out by industry.",
-  },
-] as const;
-
-/** Expanded, grouped FAQ for the dedicated /faq page — Home keeps the
- * condensed 6-question version above. Same tone/directness, more coverage. */
+/** Grouped FAQ for the dedicated /faq page. Home no longer duplicates a condensed version of
+ * this — it links straight to /faq instead, so there's exactly one place this content lives. */
 export const FAQ_GROUPS = [
   {
     title: "Product",

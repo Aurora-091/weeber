@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Lock, Shield, SlidersHorizontal } from "lucide-react";
+import { Lock, Shield, SlidersHorizontal, ArrowRight } from "lucide-react";
 import { Toaster } from "../components/ui/sonner";
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { useWaitlistCount } from "../lib/useWaitlistCount";
 import { useReveal } from "../lib/useReveal";
 import { MarketingNav } from "../components/marketing/MarketingNav";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 import { AgentDemoWidget } from "../components/marketing/AgentDemoWidget";
-import { EnterpriseDialog } from "../components/marketing/EnterpriseDialog";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
 import { GrainOverlay } from "../components/marketing/GrainOverlay";
-import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, READY_FLOWS, UPCOMING_VERTICALS, SECURITY_FEATURES, FAQ, VERTICALS } from "../lib/marketing-config";
+import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, READY_FLOWS, UPCOMING_VERTICALS, SECURITY_FEATURES, VERTICALS } from "../lib/marketing-config";
 
 /**
  * Weeber public waitlist/marketing page — faithfully ported from Vocalist's
@@ -111,9 +110,12 @@ function HeroBadge() {
 }
 
 function LandingContent() {
-  usePageTitle("Join the waitlist");
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [enterpriseOpen, setEnterpriseOpen] = useState(false);
+  usePageMeta({
+    title: "AI Voice Agents for Missed Calls — Join the Waitlist",
+    description:
+      "Weeber answers inbound calls, recovers abandoned carts, books appointments, and routes to humans — without breaking consent regulations. Join the waitlist for founder pricing.",
+    path: "/",
+  });
   const revealRef = useReveal();
 
   return (
@@ -193,8 +195,8 @@ function LandingContent() {
                 Shopify stores, clinics, and local service businesses use Weeber to handle inbound calls, recover abandoned carts, and book appointments without hiring staff.
               </p>
             </div>
-            <div className="grid md:grid-cols-3 gap-4" data-reveal>
-              {VERTICALS.map((v, i) => (
+            <div className="grid md:grid-cols-2 gap-4" data-reveal>
+              {VERTICALS.map((v) => (
                 <div key={v.label} className="p-6 md:p-8 bg-[var(--m-bg)] border border-[var(--m-border)] rounded-lg card-lift">
                   <div className="font-mono text-[11px] tracking-[.12em] uppercase text-[var(--m-text-muted)] mb-3">{v.label}</div>
                   <h3 className="font-display font-bold text-[var(--m-text)] text-[17px] leading-snug mb-4">{v.headline}</h3>
@@ -207,15 +209,9 @@ function LandingContent() {
                         {v.demoAccent} &middot; {v.demoDuration}
                       </div>
                     </div>
-                    {i === 2 ? (
-                      <button type="button" onClick={() => setEnterpriseOpen(true)} className="text-xs font-semibold text-[var(--m-text)] hover:opacity-70 transition-opacity">
-                        Talk to us →
-                      </button>
-                    ) : (
-                      <a href={v.cta.href} className="text-xs font-semibold text-[var(--m-text)] hover:opacity-70 transition-opacity">
-                        {v.cta.label} &rarr;
-                      </a>
-                    )}
+                    <a href={v.cta.href} className="text-xs font-semibold text-[var(--m-text)] hover:opacity-70 transition-opacity">
+                      {v.cta.label} &rarr;
+                    </a>
                   </div>
                 </div>
               ))}
@@ -501,38 +497,32 @@ function LandingContent() {
           </div>
         </section>
 
-        {/* FAQ */}
-        <section id="faq" className="border-b border-[var(--m-border)] bg-[var(--m-bg-alt)]">
-          <div className="max-w-[1100px] mx-auto px-6 py-24 md:py-28">
+        {/* FAQ teaser — full FAQ lives at /faq only, so this doesn't duplicate it */}
+        <section className="border-b border-[var(--m-border)] bg-[var(--m-bg-alt)]">
+          <div className="max-w-[1100px] mx-auto px-6 py-20 md:py-24 text-center">
             <div data-reveal>
-              <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[.16em] uppercase text-[var(--m-text-muted)]">
+              <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[.16em] uppercase text-[var(--m-text-muted)] justify-center">
                 <span className="w-[6px] h-[6px] rounded-full bg-[var(--m-text)] animate-pulse" />
                 Questions
               </span>
-              <h2 className="mt-4 mb-10 font-display text-[clamp(28px,3.8vw,46px)] font-extrabold tracking-[-0.03em] leading-[1.04] text-[var(--m-text)]">Good to know before you join.</h2>
-            </div>
-            <div className="max-w-[760px]" data-reveal>
-              {FAQ.map((item, i) => (
-                <div key={item.q} className={`border-t border-[var(--m-border)] ${i === FAQ.length - 1 ? "border-b" : ""}`}>
-                  <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full flex items-center justify-between gap-4 py-5 text-left group">
-                    <span className="font-display font-bold text-[18px] tracking-[-0.01em] text-[var(--m-text)] group-hover:text-[var(--m-text-secondary)] transition-colors">{item.q}</span>
-                    <span className="text-[var(--m-text-secondary)] text-xl flex-none leading-none">{openFaq === i ? "\u2013" : "+"}</span>
-                  </button>
-                  <div className="overflow-hidden transition-all duration-300" style={{ maxHeight: openFaq === i ? "200px" : "0", opacity: openFaq === i ? 1 : 0 }}>
-                    <p className="pb-5 text-[15px] text-[var(--m-text-secondary)] leading-relaxed">{item.a}</p>
-                  </div>
-                </div>
-              ))}
+              <h2 className="mt-4 font-display text-[clamp(26px,3.4vw,36px)] font-extrabold tracking-[-0.03em] leading-[1.05] text-[var(--m-text)]">
+                Good to know before you join.
+              </h2>
+              <p className="mt-3 text-[15.5px] text-[var(--m-text-secondary)] max-w-md mx-auto">
+                Setup, pricing, compliance, languages — short direct answers, no marketing fluff.
+              </p>
+              <a
+                href="/faq"
+                className="mt-7 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full border border-[var(--m-border)] text-[14px] font-semibold text-[var(--m-text)] hover:border-[var(--m-text-muted)] transition-colors"
+              >
+                Read the full FAQ <ArrowRight className="w-4 h-4" aria-hidden />
+              </a>
             </div>
           </div>
         </section>
       </main>
 
       <MarketingFooter />
-
-      {/* Only trigger today is the Insurance card's "Talk to us" button (i === 2 above) —
-          context="insurance" swaps the header/success copy accordingly. */}
-      <EnterpriseDialog open={enterpriseOpen} onOpenChange={setEnterpriseOpen} context="insurance" />
     </div>
   );
 }

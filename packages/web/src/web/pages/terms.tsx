@@ -1,4 +1,4 @@
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SITE } from "../lib/marketing-config";
 
@@ -18,7 +18,11 @@ function Section({ id, title, children }: { id?: string; title: string; children
 }
 
 export function TermsPage() {
-  usePageTitle(`Terms of Service — ${SITE.name}`);
+  usePageMeta({
+    title: `Terms of Service — ${SITE.name}`,
+    description: `${SITE.name}'s Terms of Service — acceptable use, TCPA/telemarketing compliance enforcement, and liability, describing what the platform actually enforces at dial time.`,
+    path: "/terms",
+  });
 
   return (
     <MarketingPageShell>

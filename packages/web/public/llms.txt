@@ -23,11 +23,17 @@ Weeber is a vertical voice AI platform that gives Shopify stores, clinics, and l
 
 ## Compliance
 
-Weeber enforces consent at the infrastructure level. Calls cannot be placed to numbers that haven't passed the consent gate. Features include:
-- Automatic Do-Not-Call list management
-- TCPA calling-window enforcement by timezone
-- Full audit trail for every call (exportable)
-- GDPR data retention and erasure support
+Weeber enforces consent and calling-window rules at the infrastructure level, with dedicated pages
+per jurisdiction:
+- India: https://www.weeber.ai/compliance/india — DPDP Act 2023, TRAI TCCCPR calling windows (9am-9pm IST), DND, DLT registration
+- US/EU/global: https://www.weeber.ai/compliance/global — federal TCPA (8am-9pm), state mini-TCPA (FL/OK/WA cap at 8pm), GDPR data-subject rights
+- Overview: https://www.weeber.ai/compliance
+
+Mechanisms enforced today:
+- Automatic Do-Not-Call list checks, no exceptions or overrides
+- Calling-window enforcement by the recipient's jurisdiction, checked automatically per call
+- Purpose-scoped consent (consent for one purpose doesn't authorize another)
+- Full audit trail for every call (transcripts, recordings, disclosure version spoken)
 
 ## Integrations
 
@@ -39,6 +45,9 @@ Weeber enforces consent at the infrastructure level. Calls cannot be placed to n
 
 - Website: https://www.weeber.ai
 - Waitlist: https://www.weeber.ai/#waitlist
+- Pricing: https://www.weeber.ai/pricing
+- FAQ: https://www.weeber.ai/faq
+- Compliance: https://www.weeber.ai/compliance
 - Contact: hello@weeber.ai
 
 ## Status

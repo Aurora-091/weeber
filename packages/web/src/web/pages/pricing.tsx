@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SectionHeading } from "../components/marketing/SectionHeading";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
@@ -13,7 +13,12 @@ const PRICING_FAQ = [
 ] as const;
 
 export function PricingPage() {
-  usePageTitle("Weeber Pricing — Simple, No Rev-Share Voice AI for SMBs");
+  usePageMeta({
+    title: "Weeber Pricing — Simple, No Rev-Share Voice AI for SMBs",
+    description:
+      "Founder pricing for the first 100 Weeber customers, locked for life. Simple flat tiers, no revenue-share tax on recovered carts — see the plan shapes and what's included on every tier.",
+    path: "/pricing",
+  });
 
   return (
     <MarketingPageShell>
