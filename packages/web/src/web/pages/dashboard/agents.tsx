@@ -14,7 +14,7 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
-import { ProviderFallbackOrder, ModelFallbackList } from "../../components/agent-config/FallbackControls";
+import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
@@ -182,11 +182,11 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
     });
 
-  const testCallTokenFetchFn = () =>
+  const testCallTokenFetchFn = (simulateFailover?: boolean) =>
     apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...adminHeaders() },
-      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+      body: JSON.stringify({ configOverride: formToAgentFrame(form), simulateFailover }),
     });
 
   const testCallPhoneFetchFn = (phone: string) =>
@@ -380,6 +380,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
             </div>
 
             <SectionDivider>Cross-provider failover</SectionDivider>
+            <FailoverGuidanceBanner />
             <div className="grid sm:grid-cols-3 gap-4">
               <div>
                 <span className={labelCls}>STT failover order</span>

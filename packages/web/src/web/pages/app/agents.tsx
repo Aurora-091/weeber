@@ -17,7 +17,7 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
-import { ProviderFallbackOrder, ModelFallbackList } from "../../components/agent-config/FallbackControls";
+import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
@@ -216,6 +216,7 @@ function VoiceTab({ row, form, set }: TabProps) {
           <datalist id={`langs-${row.templateKey}`}>{RECOMMENDED_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</datalist>
         </div>
       </div>
+      <FailoverGuidanceBanner />
       <div>
         <span className={labelCls}>Voice failover order <span className="text-muted-foreground/60">(if the voice provider above fails mid-call)</span></span>
         <ProviderFallbackOrder
@@ -452,11 +453,11 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
     });
 
-  const testCallTokenFetchFn = () =>
+  const testCallTokenFetchFn = (simulateFailover?: boolean) =>
     appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+      body: JSON.stringify({ configOverride: formToAgentFrame(form), simulateFailover }),
     });
 
   const testCallPhoneFetchFn = (phone: string) =>

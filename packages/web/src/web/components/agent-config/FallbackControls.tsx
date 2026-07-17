@@ -7,10 +7,36 @@
 // No drag-and-drop library exists in this codebase (checked package.json) — a plain numbered
 // list with up/down buttons gives the exact same "set the order" outcome without adding a new
 // dependency for what's a 2-3 item list, not a long draggable canvas.
-import { ArrowUp, ArrowDown, X, Plus, RotateCcw } from "lucide-react";
+import { ArrowUp, ArrowDown, X, Plus, RotateCcw, Info } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useState } from "react";
+
+/**
+ * Inline guidance banner (Phase 3, 2026-07-17) — sits once above the
+ * STT/TTS/LLM failover controls on both pages/app/agents.tsx and
+ * pages/dashboard/agents.tsx's Voice/Advanced sections. Answers the two
+ * questions this feature actually raises for a first-time reader: "what
+ * counts as a failure" and "how do I know this works without waiting for a
+ * real outage" — the latter now has a real answer (the Preview drawer's
+ * "Simulate provider failure" toggle), so this banner is also the one place
+ * that cross-references it.
+ */
+export function FailoverGuidanceBanner() {
+  return (
+    <div className="flex gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+      <Info className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+      <p>
+        A "failure" here means the provider's connection errors out or times out mid-call — not slow
+        responses. When that happens, the call automatically retries with the next provider in the
+        order below instead of dropping; callers hear a brief pause, not a disconnect. Leave a list
+        empty to use the platform's own default order for that type. Want to see it happen without
+        waiting for a real outage? Open Preview and check "Simulate provider failure" before starting
+        a test call.
+      </p>
+    </div>
+  );
+}
 
 const controlBtnCls =
   "inline-flex items-center justify-center rounded border border-border w-6 h-6 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:pointer-events-none transition-colors";

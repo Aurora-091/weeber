@@ -9,11 +9,17 @@ export type VoiceTestCallStatus = "idle" | "connecting" | "listening" | "speakin
 
 export type VoiceTestCallTranscriptEntry = { role: "caller" | "agent"; text: string };
 
+/** One simulated mid-call provider switch (Phase 3, 2026-07-17) — only ever
+ * sent when the caller opted into "Simulate provider failure"; see
+ * test-call-stream.ts's wire-format doc comment. */
+export type VoiceTestCallFailoverEvent = { channel: "stt" | "tts"; from: string; to: string };
+
 type ServerEvent =
   | { type: "ready" }
   | { type: "audio"; audio: string }
   | { type: "transcript"; role: "caller" | "agent"; text: string }
   | { type: "clear" }
+  | { type: "failover"; simulated: boolean; channel: "stt" | "tts"; from: string; to: string }
   | { type: "ended"; reason?: string }
   | { type: "error"; message?: string };
 
@@ -34,6 +40,7 @@ export function useVoiceTestCall(tokenFetchFn: () => Promise<Response>) {
   const [micLevel, setMicLevel] = useState(0);
   const [agentLevel, setAgentLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failoverEvents, setFailoverEvents] = useState<VoiceTestCallFailoverEvent[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -170,6 +177,7 @@ export function useVoiceTestCall(tokenFetchFn: () => Promise<Response>) {
     cleanupGuardRef.current = false;
     setErrorMessage(null);
     setTranscripts([]);
+    setFailoverEvents([]);
     setStatus("connecting");
 
     try {
@@ -246,6 +254,9 @@ export function useVoiceTestCall(tokenFetchFn: () => Promise<Response>) {
           case "clear":
             clearPlayback();
             break;
+          case "failover":
+            setFailoverEvents((prev) => [...prev, { channel: data.channel, from: data.from, to: data.to }]);
+            break;
           case "transcript":
             setTranscripts((prev) => [...prev, { role: data.role, text: data.text }]);
             if (data.role === "caller") setStatus("listening");
@@ -276,5 +287,5 @@ export function useVoiceTestCall(tokenFetchFn: () => Promise<Response>) {
     cleanup("idle");
   }, [cleanup]);
 
-  return { status, transcripts, micLevel, agentLevel, errorMessage, start, stop };
+  return { status, transcripts, micLevel, agentLevel, errorMessage, failoverEvents, start, stop };
 }

@@ -24,16 +24,27 @@
  *                      {"type":"audio","audio":"<base64 mulaw>"}
  *                      {"type":"transcript","role":"caller"|"agent","text":"..."}
  *                      {"type":"clear"}   (barge-in: stop queued playback now)
+ *                      {"type":"failover","simulated":true,"channel":"stt"|"tts","from":"...","to":"..."}
  *                      {"type":"ended","reason":"..."}
  *                      {"type":"error","message":"..."}
+ *
+ * The "failover" event only ever fires when the caller opted into the
+ * Preview drawer's "Simulate provider failure" toggle (test-call-tokens.ts's
+ * `simulateFailover`) — sent once right after "ready", before the greeting,
+ * for each channel (STT/TTS) that has a resolvable fallback. Always carries
+ * `simulated: true`; there is no code path today that emits a real one from
+ * this sandbox handler (a genuine mid-call failover is stream.ts/production
+ * territory), so `simulated` is forward-looking documentation of intent, not
+ * a field the client needs to branch on yet.
  */
 import type { ModelMessage } from "ai";
-import { connectStt } from "./stt";
+import { connectStt, resolveSttProvider } from "./stt";
 import type { SttConnection } from "./stt";
-import { connectTts } from "./tts";
+import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, buildPreviewAgentConfig } from "./agent";
 import type { TestCallTokenPayload } from "./test-call-tokens";
+import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
 
@@ -215,6 +226,31 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
         sttProviderOverride = agentConfig.sttProvider;
         languageOverride = agentConfig.language;
 
+        // Phase 3 (2026-07-17): "Simulate provider failure" toggle in the
+        // Preview drawer. Resolves this agent's actual configured STT/TTS
+        // failover chain (same resolveXFailoverChain calls stream.ts makes
+        // on a real mid-call provider error) and starts the test call
+        // straight on the first fallback instead of the primary — no real
+        // error is injected into any provider connection, this just proves
+        // the configured chain by using it, then announces it over the WS
+        // so the drawer can show exactly what a real failover would look
+        // like for this agent's current settings.
+        const failoverEvents: { channel: "stt" | "tts"; from: string; to: string }[] = [];
+        if (payload.simulateFailover) {
+          const sttPrimary = resolveSttProvider(sttProviderOverride);
+          const sttChain = resolveSttFailoverChain(sttPrimary, agentConfig.sttFallbackOrder);
+          if (sttChain.length > 0) {
+            failoverEvents.push({ channel: "stt", from: sttPrimary, to: sttChain[0] });
+            sttProviderOverride = sttChain[0];
+          }
+          const ttsPrimary = resolveTtsProvider(ttsProviderOverride);
+          const ttsChain = resolveTtsFailoverChain(ttsPrimary, agentConfig.ttsFallbackOrder);
+          if (ttsChain.length > 0) {
+            failoverEvents.push({ channel: "tts", from: ttsPrimary, to: ttsChain[0] });
+            ttsProviderOverride = ttsChain[0];
+          }
+        }
+
         maxDurationTimer = setTimeout(() => {
           console.warn(`[test-call] org ${payload.orgId} test call hit its max duration — ending`);
           endCall(ws, "max-duration");
@@ -223,6 +259,9 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
         connectSttForCall(ws);
         history = [];
         ws.send(JSON.stringify({ type: "ready" }));
+        for (const evt of failoverEvents) {
+          ws.send(JSON.stringify({ type: "failover", simulated: true, ...evt }));
+        }
         await runGreeting(ws);
       } catch (err) {
         console.error("[test-call] failed to start test call", err);

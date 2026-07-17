@@ -27,6 +27,14 @@ export type TestCallTokenPayload = {
   configOverride?: AgentFrame;
   /** Who to attribute this test call to in logs — user org id or the admin actor string. */
   actor: string;
+  /** Phase 3 of the Agents UI/UX plan (2026-07-17): when true, the test call
+   * deliberately starts on the *second* entry of the resolved STT and TTS
+   * failover chains instead of the primary, and announces it over the WS
+   * (test-call-stream.ts) — a safe, no-real-error way to let a merchant/admin
+   * see their configured fallback order actually take effect, without
+   * needing to break a live provider connection to prove it works. Test-only
+   * flag — never touches production call handling (stream.ts). */
+  simulateFailover?: boolean;
 };
 
 const TOKEN_TTL_MS = 2 * 60_000;

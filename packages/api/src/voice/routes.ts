@@ -713,7 +713,8 @@ export const voice = new Hono()
       }
       configOverride = parsedOverride.data;
     }
-    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}` });
+    const simulateFailover = body && typeof body === "object" && "simulateFailover" in body && body.simulateFailover === true;
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}`, simulateFailover });
     return c.json({ token }, 201);
   })
 
