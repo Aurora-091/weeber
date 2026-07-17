@@ -45,10 +45,18 @@ to receive a call on):**
 - Whether Exotel's `/calls/connect` response `call.sid` matches the `call_sid` in the later WS `start`
   event is unconfirmed for the same reason — `stream.ts`'s lazy-insert fallback exists specifically so a
   mismatch here doesn't leave a call with no DB row, just without this request's org/persona context.
-- Mid-call hang-up (`performHangUp`) and transfer-to-human (`performTransfer`) remain Twilio-only. Both
-  now explicitly no-op-with-a-warning (falling back to just closing the socket, or to hang-up) for
-  Plivo/Exotel rather than silently calling the wrong provider's API — implementing their real
-  equivalents (Plivo `Call.transfer`, Exotel's Legs API transfer action) is follow-up work.
+- Mid-call hang-up (`performHangUp`) and transfer-to-human (`performTransfer`) — **Plivo now real,
+  2026-07-17.** `plivo-client.ts`'s `hangupPlivoCall` (`DELETE /Call/{call_uuid}/`) and
+  `transferPlivoCall` (`POST /Call/{call_uuid}/` with `legs=aleg` + a new `aleg_url`, served by
+  this API's own `GET /transfer-xml/plivo` route) are both wired into `stream.ts`. Untested
+  against a real Plivo account/live call for the same reason as everything else in this section —
+  no real account/public WS URL in this sandbox — but the request shapes match Plivo's own
+  documented API directly (`plivo.com/docs/voice/api/calls`), not a guess. **Exotel still
+  no-op-with-a-warning** (falls back to hang-up on a transfer request) — its "Call Transfer"
+  feature is dashboard/App-Bazaar-driven in Exotel's public docs, with no confirmed REST endpoint
+  for hanging up or transferring an already-connected call the way Twilio/Plivo have; implementing
+  against an unconfirmed endpoint would be guessing, not building, so this stays flagged rather
+  than shipped.
 - Unit tests cover the wire-format parsing/building and the mu-law<->PCM16 codec round-trip
   (`voice/telephony-transport.test.ts`) — that's confidence in the *protocol translation logic*, not a
   substitute for one real end-to-end call through each provider.

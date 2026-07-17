@@ -33,6 +33,12 @@ about it... produce that log on demand and you've handled most of the actual fea
 - **This is now the highest-priority concrete build item**, ahead of the integrations work that was
   previously "in progress." It's cheap (data already exists), differentiated (nobody else in the OSS
   conversation ships this), and directly answers the #1 fear identified in the original market research.
+- **STATUS (verified 2026-07-17): already shipped, this doc was stale.** `baf170d "Compliance
+  audit-trail export (ADR-017)"` — `GET /calls/:id/audit` and `GET /callers/:phoneNumber/audit`
+  (per-call and per-recipient, respectively), both JSON and `?format=text` (lawyer/compliance-
+  officer-ready plain text), assembled via `buildCallAuditRecord`/`buildPhoneNumberAuditTrail` +
+  `renderAuditTrailText`. This section is left in place as the original reasoning for *why* it was
+  prioritized, not as an open item.
 
 ### 4. State engine — strongly, independently validated
 Two separate people described nearly the identical design ("transcript as event log, separate canonical
@@ -49,6 +55,11 @@ scoping that now.
 - **Action:** per-call latency breakdown (STT connect, first STT result, LLM TTFT, TTS first byte, total
   round-trip), surfaced on the dashboard's call detail page — not just console logs. Concrete, scoped,
   cheap relative to its diagnostic value.
+- **STATUS (verified 2026-07-17): already shipped, this doc was stale.** `GET /calls/:id/latency`
+  (call-level: STT connect/LLM TTFT/TTS first byte) is rendered as a "Latency breakdown" section on
+  `dashboard/call-detail.tsx`; per-turn p50/p90 distributions (voice-to-voice, LLM TTFT, TTS first
+  byte) are on `dashboard/analytics.tsx` via `turnLatencyPercentiles`. This section is left in place
+  as the original reasoning for *why* it was prioritized, not as an open item.
 
 ### 6. Cross-call memory is a real, separate feature — not a competing solution
 Voximplant (managed voice-AI orchestration platform, CPaaS) ships `ApplicationStorage` for cross-call

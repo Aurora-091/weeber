@@ -15,7 +15,8 @@ import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
-import { getTwilioClientForOrg } from "./twilio-client";
+import { getTwilioClientForOrg, getPublicUrl } from "./twilio-client";
+import { hangupPlivoCall, transferPlivoCall } from "./plivo-client";
 import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
@@ -465,6 +466,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         .calls(callSid)
         .update({ status: "completed" })
         .catch((err) => console.error("[voice] failed to end Twilio call via REST API", err));
+    } else if (callSid && provider === "plivo" && humanNumberOrgId) {
+      // Plivo hangup (2026-07-17, closing the gap flagged in docs/india-telephony.md) — see
+      // plivo-client.ts's hangupPlivoCall doc comment for the API this calls.
+      const result = await hangupPlivoCall(humanNumberOrgId, callSid);
+      if (!result.ok) console.error(`[voice] failed to end Plivo call via REST API: ${result.error}`);
     } else if (callSid) {
       console.warn(`[voice] hangUp on ${provider} call ${callSid} — closing the WebSocket only, no REST hangup wired up for this provider yet`);
     }
@@ -476,22 +482,23 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     await finalizeCall("completed");
   }
 
-  /** Redirects the live Twilio call out of the media stream into a real
-   * `<Dial>` to a human — the call keeps going, just no longer through the
-   * agent. Falls back to hanging up (rather than silently no-oping) if no
-   * transfer number is configured anywhere, since the agent already told
+  /** Redirects the live call out of the media stream into a real transfer to a human — the call
+   * keeps going, just no longer through the agent. Falls back to hanging up (rather than
+   * silently no-oping) if no transfer number is configured anywhere, since the agent already told
    * the caller it was transferring them.
    *
-   * Twilio-only — Plivo/Exotel both have different mid-call transfer APIs
-   * (Plivo: Call.transfer with a new aleg_url; Exotel: the Legs API's
-   * transfer action) that haven't been implemented yet. For those
-   * providers this falls back to a hang-up rather than silently pretending
-   * to transfer and then just dropping the call. */
+   * Twilio: redirects via a `<Dial>` TwiML update. Plivo (2026-07-17, closing the gap flagged in
+   * docs/india-telephony.md): redirects the A-leg to fetch `<Dial>` XML from this server's own
+   * `/transfer-xml/plivo` route (see plivo-client.ts's transferPlivoCall). Exotel has no
+   * confirmed equivalent REST API for an already-connected call in its public docs (its "Call
+   * Transfer" feature is dashboard/App-Bazaar-driven, not a documented mid-call REST action) —
+   * still falls back to hang-up rather than guessing at an unconfirmed endpoint, same "don't
+   * silently guess" discipline as the rest of this file's provider gaps. */
   async function performTransfer(ws: Sendable, reason: string) {
     console.log(`[voice] transferToHuman requested: ${reason}`);
     clearSilenceTimer();
 
-    if (provider !== "twilio") {
+    if (provider !== "twilio" && provider !== "plivo") {
       console.warn(`[voice] transferToHuman requested on ${provider} call — no transfer API wired up for this provider yet, hanging up instead`);
       await performHangUp(ws, `${reason} (transfer unsupported on ${provider})`);
       return;
@@ -507,13 +514,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
-    if (callSid) {
+    if (callSid && provider === "twilio") {
       const twiml = new VoiceResponse();
       twiml.dial(transferNumber);
       await (await getTwilioClientForOrg(humanNumberOrgId))
         .calls(callSid)
         .update({ twiml: twiml.toString() })
         .catch((err) => console.error("[voice] failed to redirect call for transfer", err));
+    } else if (callSid && provider === "plivo" && humanNumberOrgId) {
+      const alegUrl = `${getPublicUrl()}/api/voice/transfer-xml/plivo?to=${encodeURIComponent(transferNumber)}`;
+      const result = await transferPlivoCall(humanNumberOrgId, callSid, alegUrl);
+      if (!result.ok) console.error(`[voice] failed to redirect Plivo call for transfer: ${result.error}`);
     }
     await finalizeCall("transferred");
   }

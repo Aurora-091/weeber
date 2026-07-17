@@ -87,6 +87,77 @@ export function buildPlivoStreamXml(wsUrl: string): string {
 
 export type PlivoSmsResult = { ok: true; messageUuid: string } | { ok: false; error: string };
 
+export type PlivoActionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Hangs up an in-progress Plivo call — the Plivo analog of Twilio's
+ * `.calls(sid).update({status: "completed"})`, closing the gap flagged in
+ * docs/india-telephony.md ("Mid-call hang-up ... remain Twilio-only").
+ * Plivo's own docs: `DELETE /v1/Account/{auth_id}/Call/{call_uuid}/` ends
+ * an ongoing call or cancels a queued outbound one — same endpoint either
+ * way, no separate "cancel vs hangup" distinction to make here.
+ */
+export async function hangupPlivoCall(orgId: string, callUuid: string): Promise<PlivoActionResult> {
+  const creds = await getPlivoCredsForOrg(orgId);
+  if (!creds) return { ok: false, error: "No Plivo credentials configured for this org" };
+
+  try {
+    const res = await fetch(`https://api.plivo.com/v1/Account/${encodeURIComponent(creds.authId)}/Call/${encodeURIComponent(callUuid)}/`, {
+      method: "DELETE",
+      headers: { Authorization: `Basic ${Buffer.from(`${creds.authId}:${creds.authToken}`).toString("base64")}` },
+    });
+    // Plivo returns 204 No Content on success; a non-2xx body (when present) carries an error field.
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: data.error ?? `Plivo hangup failed (status ${res.status})` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: `Failed to reach Plivo: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Transfers an in-progress Plivo call by redirecting its A-leg to fetch new
+ * XML from `alegUrl` — the Plivo analog of Twilio's mid-call `.update({twiml})`
+ * redirect (see stream.ts's performTransfer). Plivo's own docs: `POST
+ * /v1/Account/{auth_id}/Call/{call_uuid}/` with `legs=aleg` and `aleg_url`
+ * pointing to a URL that returns Plivo XML (same `<Dial>` shape
+ * buildPlivoTransferXml below returns) redirects that leg's call flow —
+ * "Transfer a call", not a queued action, takes effect immediately.
+ */
+export async function transferPlivoCall(orgId: string, callUuid: string, alegUrl: string): Promise<PlivoActionResult> {
+  const creds = await getPlivoCredsForOrg(orgId);
+  if (!creds) return { ok: false, error: "No Plivo credentials configured for this org" };
+
+  try {
+    const res = await fetch(`https://api.plivo.com/v1/Account/${encodeURIComponent(creds.authId)}/Call/${encodeURIComponent(callUuid)}/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${creds.authId}:${creds.authToken}`).toString("base64")}`,
+      },
+      body: JSON.stringify({ legs: "aleg", aleg_url: alegUrl, aleg_method: "GET" }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: data.error ?? `Plivo transfer failed (status ${res.status})` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: `Failed to reach Plivo: ${(err as Error).message}` };
+  }
+}
+
+/** Plivo XML for a transfer target — dials `transferNumber` and hangs up
+ * once that leg ends, same shape/intent as stream.ts's Twilio VoiceResponse
+ * `<Dial>` in performTransfer. Served by whatever route `alegUrl` points
+ * to (see voice/routes.ts's transfer-xml endpoint). */
+export function buildPlivoTransferXml(transferNumber: string): string {
+  return `<Response><Dial>${transferNumber}</Dial></Response>`;
+}
+
+
 /** Sends an SMS via Plivo's Message Create API — the SMS analog of
  * createPlivoOutboundCall. Added for Misc-4: Plivo/Exotel orgs previously
  * had no SMS path at all (workflows/engine.ts's sendSms action was

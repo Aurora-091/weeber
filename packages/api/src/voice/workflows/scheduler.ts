@@ -6,6 +6,7 @@ import { sessionStore } from "../session-store";
 import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@openvent/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
+import { checkFtsaAttemptCap } from "../compliance/attempt-cap";
 import { executeDueWorkflowRuns } from "./graph-engine";
 
 const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
@@ -37,7 +38,7 @@ async function checkCallingWindowForRow(orgId: string | null, toNumber: string):
 
 type DispatchResult =
   | { ok: true }
-  | { ok: false; reason: "dnc" | "calling_window" | "insurance_number_series" | "insurance_producer_licensing" | "place_failed"; detail: string };
+  | { ok: false; reason: "dnc" | "calling_window" | "attempt_cap" | "insurance_number_series" | "insurance_producer_licensing" | "place_failed"; detail: string };
 
 /**
  * The actual DNC-check -> calling-window-check -> place-call -> session-
@@ -58,6 +59,13 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
   const windowCheck = await checkCallingWindowForRow(row.orgId, row.toNumber);
   if (!windowCheck.allowed) {
     return { ok: false, reason: "calling_window", detail: windowCheck.reason };
+  }
+
+  // Florida FTSA max-3-attempts/24h cap (2026-07-17) — no-op for every non-Florida
+  // number, see compliance/attempt-cap.ts's doc comment for scope/reasoning.
+  const attemptCapCheck = await checkFtsaAttemptCap(row.toNumber);
+  if (!attemptCapCheck.allowed) {
+    return { ok: false, reason: "attempt_cap", detail: attemptCapCheck.reason };
   }
 
   // Insurance-vertical-only gates (no-op for every other org) — see
@@ -151,6 +159,22 @@ export async function executeDueScheduledCalls() {
         continue;
       }
 
+      if (!result.ok && result.reason === "attempt_cap") {
+        // Florida FTSA cap is a rolling 24h window, not a fixed reopening
+        // time like calling_window above — a 30min retry would just hit
+        // the same cap again and again until the oldest of the 3 counted
+        // calls ages out. Defer 6h instead (a coarser, less spammy retry
+        // cadence for a condition that resolves on its own as time passes,
+        // not one this codebase can compute an exact reopen time for
+        // without re-querying the same call history at retry time anyway).
+        console.warn(`[scheduler] deferring scheduled call id=${row.id} to ${row.toNumber} — ${result.detail}`);
+        await db
+          .update(scheduledCalls)
+          .set({ runAt: new Date(Date.now() + 6 * 60 * 60 * 1000), status: "pending" })
+          .where(eq(scheduledCalls.id, row.id));
+        continue;
+      }
+
       if (!result.ok) {
         console.error(`[scheduler] could not place scheduled call id=${row.id} to ${row.toNumber}: ${result.detail}`);
         await db.update(scheduledCalls).set({ status: "failed" }).where(eq(scheduledCalls.id, row.id));
@@ -168,7 +192,7 @@ export async function executeDueScheduledCalls() {
 
 export type CallNowResult =
   | { ok: true }
-  | { ok: false; statusCode: 403 | 409 | 502; error: string };
+  | { ok: false; statusCode: 403 | 409 | 429 | 502; error: string };
 
 /**
  * Manual "Call now" button (Orders page, 2026-07-16) — claims a pending
@@ -205,15 +229,16 @@ export async function callScheduledRowNow(orgId: string, rowId: number): Promise
     const result = await dispatchScheduledCall(row);
     if (!result.ok) {
       // DNC stays canceled permanently (never eligible again); a blocked
-      // calling-window or a failed placement both go back to "pending" so
-      // the normal sweep can still pick it up automatically later —
-      // the merchant tried to force it now and couldn't, that doesn't mean
-      // the trigger itself should be lost.
+      // calling-window, attempt-cap, or a failed placement all go back to
+      // "pending" so the normal sweep can still pick it up automatically
+      // later — the merchant tried to force it now and couldn't, that
+      // doesn't mean the trigger itself should be lost.
       await db
         .update(scheduledCalls)
         .set({ status: result.reason === "dnc" ? "canceled" : "pending" })
         .where(eq(scheduledCalls.id, rowId));
-      const statusCode = result.reason === "dnc" ? 403 : result.reason === "calling_window" ? 409 : 502;
+      const statusCode =
+        result.reason === "dnc" ? 403 : result.reason === "calling_window" ? 409 : result.reason === "attempt_cap" ? 429 : 502;
       return { ok: false, statusCode, error: result.detail };
     }
 

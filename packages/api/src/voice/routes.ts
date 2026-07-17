@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
 import { getTwilioClientForOrg, getWsUrl } from "./twilio-client";
-import { buildPlivoStreamXml } from "./plivo-client";
+import { buildPlivoStreamXml, buildPlivoTransferXml } from "./plivo-client";
 import { placeOutboundCall } from "./place-outbound-call";
 import { requirePlivoSignature } from "./middleware/plivo-signature";
 import { sessionStore } from "./session-store";
@@ -168,6 +168,18 @@ export const voice = new Hono()
     }
 
     return c.text(buildPlivoStreamXml(`${getWsUrl()}/api/voice/stream/plivo`), 200, { "Content-Type": "text/xml" });
+  })
+
+  // Fetched by Plivo itself when transferPlivoCall (plivo-client.ts) redirects a live call's
+  // A-leg — the "aleg_url" Plivo's Transfer API fetches new XML from mid-call (see stream.ts's
+  // performTransfer). No signature check: this only ever returns a static <Dial> instruction for
+  // a number we ourselves already resolved server-side (resolveHumanTransferNumber/
+  // HUMAN_TRANSFER_NUMBER) before building the URL — nothing here is caller-influenced, same
+  // trust boundary as buildPlivoStreamXml above.
+  .get("/transfer-xml/plivo", (c) => {
+    const to = c.req.query("to") ?? "";
+    const safeTo = to.replace(/[<>&"']/g, ""); // defensive XML-escaping; a real E.164 number never contains these anyway
+    return c.text(buildPlivoTransferXml(safeTo), 200, { "Content-Type": "text/xml" });
   })
 
   // Trigger an outbound call. Body: { to, persona?, webhookUrl? }

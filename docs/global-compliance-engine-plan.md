@@ -35,7 +35,7 @@ depend on how many customers you have — the risk exists at customer #1.
 | 2 | Store disclosure text + version per call | S | Med | ✅ Done | Cheap audit-trail improvement; you can't prove what was said without it, and it costs almost nothing to add now vs. retrofitting after calls have already happened without it. |
 | 3 | Localize disclosure text per call language (Hindi draft already written last round) | S | Med | ✅ Done (Hindi draft still needs human sign-off before real calls) | Same file, same change window as #2 — bundling these is nearly free. |
 | 4 | Refactor `calling-window.ts`'s hardcoded India/NANP branch into the jurisdiction-pack shape | M | **High (structural)** | ✅ Done | This is the fork in the road: every day you don't do this, calling-window logic and any future EU/US addition gets bolted on as another if/else instead of a pack. Structural only — no new legal surface, just makes items below additive instead of compounding complexity. Do this *before* Tier 1's US/EU work, not after. |
-| 5 | Enforce mini-TCPA per-state variance (FL/OK/WA: 8pm cutoff not 9pm; max-3-attempts/24h cap) | M | **High** | ⚠️ Partial — window-hours done, attempt-cap NOT done (see report) | This is a real, current gap independent of any "global" ambition — if you ever place a single US call today, this is already wrong. Not gated by customer count at all. |
+| 5 | Enforce mini-TCPA per-state variance (FL/OK/WA: 8pm cutoff not 9pm; max-3-attempts/24h cap) | M | **High** | ✅ Done 2026-07-17 — window-hours + Florida FTSA attempt-cap both enforced (see `voice/compliance/attempt-cap.ts`, wired into `workflows/scheduler.ts`'s `dispatchScheduledCall`) | This is a real, current gap independent of any "global" ambition — if you ever place a single US call today, this is already wrong. Not gated by customer count at all. |
 | 6 | Consent ledger, Phase 1 from the India plan (`consent_records` table, purpose-scoped, withdrawal wiring) | L | **High** | ✅ Foundation done — not yet wired into any real dial-time route (see report) | Foundational for every other jurisdiction too — DPDP purpose-limitation, TCPA's "prior express consent," and GDPR's consent-as-one-of-6-lawful-bases all need a real per-purpose consent record, not a single boolean. Building it once, generically, now avoids building an India-only version and reworking it for US/EU later. |
 
 **Tier 0 total effort estimate: ~6-10 dev-days.** Recommended order: 1 → 2+3 (same sitting) → 4 → 5 → 6. Items 1-3 are the "afternoon" work already scoped as India Plan Phase 0 — doing them generically (not India-only) costs nothing extra since the code paths are shared.
@@ -193,9 +193,13 @@ for org-a never satisfies org-b's check).
 
 ### Deliberately not done (Tier 1-shaped, not skipped by accident)
 
-- **Attempt-cap enforcement** (part of #5) — needs scheduler.ts wiring against call history, a
-  stateful check that doesn't belong in the stateless calling-window packs. Next step if picked up:
-  add a per-recipient rolling-24h dial count check in `workflows/scheduler.ts`'s dispatch path.
+- **Attempt-cap enforcement** (part of #5) — **DONE 2026-07-17.** `voice/compliance/attempt-cap.ts`'s
+  `checkFtsaAttemptCap` counts real dial attempts to a recipient (from `calls.startedAt`, across
+  every workflow/trigger, not just one) in the last rolling 24h and blocks a 4th for a Florida
+  number, wired into `dispatchScheduledCall` alongside the existing DNC/calling-window/insurance
+  gates — covers both the automatic sweep and the manual "call now" button (they share this one
+  function). A blocked attempt defers 6h rather than failing permanently, since the cap resolves
+  on its own as the 24h window rolls forward. 7 new tests (`attempt-cap.test.ts`).
 - **Wiring the consent ledger into any real dial-time route** (part of #6) — the ledger, adapter,
   and the opt-in check in `checkOutboundCallCompliance` all exist and are tested, but no existing
   Shopify/COD/cart-recovery route passes a `consentCheck` yet. Doing that requires deciding which
