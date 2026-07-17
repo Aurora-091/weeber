@@ -14,10 +14,13 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
+import { ProviderFallbackOrder, ModelFallbackList } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   TTS_COST_TIERS, STT_COST_TIERS,
+  STT_PROVIDERS, TTS_PROVIDERS, STT_PROVIDER_LABELS, TTS_PROVIDER_LABELS,
+  DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -373,6 +376,40 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                 <label htmlFor={`llmm-${row.templateKey}`} className={labelCls}>Model</label>
                 <input id={`llmm-${row.templateKey}`} value={form.llmModel} onChange={(e) => set("llmModel", e.target.value)} placeholder="leave blank for default" list={`models-${row.templateKey}`} className={fieldCls} />
                 <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
+              </div>
+            </div>
+
+            <SectionDivider>Cross-provider failover</SectionDivider>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <span className={labelCls}>STT failover order</span>
+                <ProviderFallbackOrder
+                  primary={form.sttProvider}
+                  allProviders={STT_PROVIDERS}
+                  labels={STT_PROVIDER_LABELS}
+                  value={form.sttFallbackOrder}
+                  onChange={(next) => set("sttFallbackOrder", next)}
+                  defaultOrder={DEFAULT_STT_FALLBACK_ORDER}
+                />
+              </div>
+              <div>
+                <span className={labelCls}>Voice (TTS) failover order</span>
+                <ProviderFallbackOrder
+                  primary={form.voiceProvider}
+                  allProviders={TTS_PROVIDERS}
+                  labels={TTS_PROVIDER_LABELS}
+                  value={form.ttsFallbackOrder}
+                  onChange={(next) => set("ttsFallbackOrder", next)}
+                  defaultOrder={DEFAULT_TTS_FALLBACK_ORDER}
+                />
+              </div>
+              <div>
+                <span className={labelCls}>LLM failover models <span className="text-muted-foreground/60">(gateway only)</span></span>
+                <ModelFallbackList
+                  value={form.llmFallbackModels}
+                  onChange={(next) => set("llmFallbackModels", next)}
+                  suggestions={RECOMMENDED_LLM_MODELS.map((m) => m.model)}
+                />
               </div>
             </div>
             {(() => {

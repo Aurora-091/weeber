@@ -91,6 +91,20 @@ export const STT_COST_TIERS: Record<string, { tier: "$"; note: string }> = {
   elevenlabs: { tier: "$", note: "~$0.004-0.007/min (sourced) — similar bracket to the others" },
 };
 
+/**
+ * Cross-provider failover config (2026-07-17, Phase 1 of the Agents UI/UX audit's P0 finding —
+ * docs/agents-ux-audit-and-cogs-2026-07-17.md). Mirrors voice/failover.ts's own provider lists
+ * and default chains — same deliberate duplication discipline as AVAILABLE_TOOL_NAMES above,
+ * since packages/web and packages/api don't share a common package today.
+ */
+export const STT_PROVIDERS = ["deepgram", "sarvam", "elevenlabs"] as const;
+export const TTS_PROVIDERS = ["cartesia", "elevenlabs", "sarvam"] as const;
+export const STT_PROVIDER_LABELS: Record<string, string> = { deepgram: "Deepgram", sarvam: "Sarvam", elevenlabs: "ElevenLabs Scribe" };
+export const TTS_PROVIDER_LABELS: Record<string, string> = { cartesia: "Cartesia", elevenlabs: "ElevenLabs", sarvam: "Sarvam" };
+/** Mirrors voice/failover.ts's DEFAULT_STT_FALLBACK_ORDER/DEFAULT_TTS_FALLBACK_ORDER exactly. */
+export const DEFAULT_STT_FALLBACK_ORDER = ["deepgram", "elevenlabs", "sarvam"] as const;
+export const DEFAULT_TTS_FALLBACK_ORDER = ["cartesia", "elevenlabs", "sarvam"] as const;
+
 export type AgentConfigRow = {
   templateKey: string;
   templateName: string;
@@ -108,6 +122,9 @@ export type AgentConfigRow = {
     sttProvider: string | null;
     llmProvider: string | null;
     llmModel: string | null;
+    sttFallbackOrder: string[] | null;
+    ttsFallbackOrder: string[] | null;
+    llmFallbackModels: string[] | null;
     toolsEnabled: string[] | null;
     guardrails: {
       topicBoundaryStrictness?: string;
@@ -134,6 +151,9 @@ export type FormState = {
   sttProvider: string;
   llmProvider: string;
   llmModel: string;
+  sttFallbackOrder: string[];
+  ttsFallbackOrder: string[];
+  llmFallbackModels: string[];
   toolsEnabled: string[];
   topicBoundaryStrictness: string;
   injectionSensitivity: string;
@@ -158,6 +178,9 @@ export function toFormState(row: AgentConfigRow): FormState {
     sttProvider: c?.sttProvider ?? "deepgram",
     llmProvider: c?.llmProvider ?? "gateway",
     llmModel: c?.llmModel ?? "",
+    sttFallbackOrder: c?.sttFallbackOrder ?? [],
+    ttsFallbackOrder: c?.ttsFallbackOrder ?? [],
+    llmFallbackModels: c?.llmFallbackModels ?? [],
     toolsEnabled: c?.toolsEnabled ?? [...AVAILABLE_TOOL_NAMES],
     topicBoundaryStrictness: c?.guardrails?.topicBoundaryStrictness ?? "medium",
     injectionSensitivity: c?.guardrails?.injectionSensitivity ?? "medium",
@@ -182,6 +205,12 @@ export function formToAgentFrame(form: FormState) {
     sttProvider: form.sttProvider,
     llmProvider: form.llmProvider,
     llmModel: form.llmModel || undefined,
+    // Empty array and undefined are handled identically by the backend's
+    // resolveSttFailoverChain/resolveTtsFailoverChain (voice/failover.ts) — both mean
+    // "use the platform default chain" — so sending [] when nothing's customized is safe.
+    sttFallbackOrder: form.sttFallbackOrder.length > 0 ? form.sttFallbackOrder : undefined,
+    ttsFallbackOrder: form.ttsFallbackOrder.length > 0 ? form.ttsFallbackOrder : undefined,
+    llmFallbackModels: form.llmFallbackModels.length > 0 ? form.llmFallbackModels : undefined,
     toolsEnabled: form.toolsEnabled,
     guardrails: {
       topicBoundaryStrictness: form.topicBoundaryStrictness,

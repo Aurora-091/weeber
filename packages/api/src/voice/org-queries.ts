@@ -143,6 +143,15 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     sttProvider: frame.sttProvider,
     llmProvider: frame.llmProvider,
     llmModel: frame.llmModel,
+    // Cross-provider failover (2026-07-17) — these three were added to AgentFrameSchema and
+    // org_agent_configs' schema back when the failover feature shipped, but this explicit
+    // field-by-field mapping was never updated to actually include them: every save through
+    // either agent UI (once one existed) would have silently dropped them, no matter what the
+    // frontend sent. Found while wiring the first real UI for these fields (Phase 1 of
+    // docs/agents-ux-audit-and-cogs-2026-07-17.md's P0 finding) — fixed here, not just in the UI.
+    sttFallbackOrder: frame.sttFallbackOrder,
+    ttsFallbackOrder: frame.ttsFallbackOrder,
+    llmFallbackModels: frame.llmFallbackModels,
     toolsEnabled: frame.toolsEnabled,
     guardrails: frame.guardrails,
     firstCallDelayMinutes: frame.firstCallDelayMinutes,

@@ -17,10 +17,13 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
+import { ProviderFallbackOrder, ModelFallbackList } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   TTS_COST_TIERS, STT_COST_TIERS,
+  STT_PROVIDERS, TTS_PROVIDERS, STT_PROVIDER_LABELS, TTS_PROVIDER_LABELS,
+  DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -213,6 +216,17 @@ function VoiceTab({ row, form, set }: TabProps) {
           <datalist id={`langs-${row.templateKey}`}>{RECOMMENDED_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</datalist>
         </div>
       </div>
+      <div>
+        <span className={labelCls}>Voice failover order <span className="text-muted-foreground/60">(if the voice provider above fails mid-call)</span></span>
+        <ProviderFallbackOrder
+          primary={form.voiceProvider}
+          allProviders={TTS_PROVIDERS}
+          labels={TTS_PROVIDER_LABELS}
+          value={form.ttsFallbackOrder}
+          onChange={(next) => set("ttsFallbackOrder", next)}
+          defaultOrder={DEFAULT_TTS_FALLBACK_ORDER}
+        />
+      </div>
       {recommended && !matchesRecommended && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
           <p className="text-foreground">
@@ -258,6 +272,17 @@ function VoiceTab({ row, form, set }: TabProps) {
         <p className="mt-1 text-xs text-muted-foreground">
           {STT_COST_TIERS[form.sttProvider]?.note ?? ""} — STT cost is similar across all three providers, unlike voice/TTS.
         </p>
+      </div>
+      <div>
+        <span className={labelCls}>Speech-to-text failover order <span className="text-muted-foreground/60">(if the STT provider above fails mid-call)</span></span>
+        <ProviderFallbackOrder
+          primary={form.sttProvider}
+          allProviders={STT_PROVIDERS}
+          labels={STT_PROVIDER_LABELS}
+          value={form.sttFallbackOrder}
+          onChange={(next) => set("sttFallbackOrder", next)}
+          defaultOrder={DEFAULT_STT_FALLBACK_ORDER}
+        />
       </div>
     </div>
   );
@@ -355,6 +380,18 @@ function CallingModelTab({ row, form, set }: TabProps) {
             <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
           </div>
         </div>
+      </div>
+
+      <div className="border-t border-border pt-5">
+        <span className={labelCls}>LLM failover models <span className="text-muted-foreground/60">(only active when LLM provider is AI Gateway, not Groq)</span></span>
+        <p className="mb-2 text-xs text-muted-foreground">
+          If the model above fails, the AI Gateway tries these next, in order — its own native failover, not a custom retry.
+        </p>
+        <ModelFallbackList
+          value={form.llmFallbackModels}
+          onChange={(next) => set("llmFallbackModels", next)}
+          suggestions={RECOMMENDED_LLM_MODELS.map((m) => m.model)}
+        />
       </div>
     </div>
   );
