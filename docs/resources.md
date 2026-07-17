@@ -9,11 +9,11 @@ against a source (an API query, a file, a doc) — nothing here is guessed.
 
 | Service | Provider | Specifics |
 |---|---|---|
-| Hosting | Railway (project `weeber-backend`, environment `production`) | Region: Singapore (`sin`). 1 service (`api`), `start:railway` runs `drizzle-kit migrate` then the server on every deploy — confirmed actually happening (Audit #7: local migration journal matches production's `__drizzle_migrations` table exactly, including columns added same-day). Deploys require manual approval (a safety gate on this project) before going live. |
-| Compute ceiling | Railway container limits | **8 vCPU, 8 GB memory, 1000 PID limit** (`serviceInstanceLimits` API, confirmed 2026-07-17). Vertical scaling within that ceiling is automatic — Railway bursts CPU/memory on its own as load increases, no config needed. |
+| Hosting | Railway (project `weeber-backend`, environment `production`) | Region: Singapore (`sin`). 1 service (`api`), `start:railway` runs `drizzle-kit migrate` then the server on every deploy — confirmed actually happening (Audit #7: local migration journal matches production's `__drizzle_migrations` table exactly, including columns added same-day). Deploys require manual approval (a safety gate on this project) before going live. **Plan: currently on-demand/Hobby-class limits (see below); a Pro-plan upgrade is planned, not yet applied — see "Railway Pro upgrade" section.** |
+| Compute ceiling | Railway container limits | **8 vCPU, 8 GB memory, 1000 PID limit** (`serviceInstanceLimits` API, confirmed 2026-07-17, pre-Pro-upgrade). Vertical scaling within that ceiling is automatic — Railway bursts CPU/memory on its own as load increases, no config needed. |
 | Replicas | Railway (`numReplicas`) | **1**, manually set (not auto-scaled — Railway's horizontal scaling is a manual dial, confirmed via their own docs: "Railway does not support sticky sessions" and replica count is a service-settings value, not traffic-driven). |
 | Database | Supabase-hosted Postgres, accessed via `DATABASE_URL` (pooled, transaction-mode, port 6543) | `max_connections = 60` on the underlying instance (confirmed via `SHOW max_connections`), ~15 active at idle baseline (mostly Supabase's own internal connections). 37 tables, exact match between `schema.ts` and the live DB (Audit #7). |
-| DB client pool (app-side) | `postgres-js` via `database/index.ts` | **No explicit `max` set — defaults to 10 connections** per client instance. With 1 replica, that's a hard ceiling of 10 concurrent DB connections from the whole API process. This is the most likely real bottleneck under concurrent call load, well before the DB's own 60-connection ceiling or the 8 vCPU/8GB container limit — see "Known bottlenecks" below. |
+| DB client pool (app-side) | `postgres-js` via `database/index.ts` | **Fixed 2026-07-17** — was unconfigured (postgres-js default of 10), now explicit via `DATABASE_POOL_MAX` (default 20 if unset). Important nuance: `DATABASE_URL` uses port 6543, Supavisor's transaction-mode pooler — this value is this ONE replica's client-side connection count *to the pooler*, not a direct 1:1 cap on real Postgres backend connections (the pooler multiplexes many client connections onto a smaller, separately-limited set of backend connections). The real cross-replica math once horizontal scaling is turned on: `(replica count) × DATABASE_POOL_MAX` must stay under Supavisor's own client-connection ceiling for the active Supabase compute tier — see "Supabase compute tier" below, that ceiling has NOT been directly queried (needs Supabase's management API/dashboard, not SQL). |
 | Session store | In-memory `Map` (`session-store.ts`) by default; Redis-backed if `REDIS_URL` is set (ADR-026) | `REDIS_URL` is **not set today** — confirmed in Audit #7's env-var cross-reference. This is fine at 1 replica; see "Scaling beyond one instance" below for why it matters the moment that changes. |
 | Auth | Supabase Auth | JWKS-based verification (`app/middleware/supabase-auth.ts`), cached 10 min. No shared-secret (`SUPABASE_JWT_SECRET`) needed or set — this is the modern/correct path, not a gap. |
 | File storage for knowledge-base docs | **None — corrected from a stale claim.** | `docs/product-infra-and-gtm-report.md`'s Part 2 table says "S3-compatible (`S3_ENDPOINT`/`S3_BUCKET`)" for KB uploads — checked directly against `knowledge-base.ts`: documents are chunked and embedded straight into Postgres (`knowledge_chunks`/`knowledge_documents`), no object storage client anywhere in that file. `SUPABASE_KB_BUCKET` was a dead env var from an earlier design (removed from Railway in Audit #7's follow-up). `S3_ENDPOINT`/`S3_BUCKET`/`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` in `.env.example` are similarly unused today. |
@@ -37,22 +37,46 @@ Pulled directly from Railway's metrics API for the 24h window ending 2026-07-17 
 service, not one that's ever handled concurrent voice traffic. Any capacity ceiling below this
 point is architectural reasoning, not a measured result — flagged as such, not asserted as fact.
 
+## Supabase compute tier — the real ceiling if Railway scales up alone
+
+Queried directly against the live Postgres instance (2026-07-17), since Supabase's actual
+plan/billing tier isn't visible from `DATABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` alone (that
+needs Supabase's own Management API with a separate personal access token, not obtained this
+round — noted as a real gap, not inferred around):
+
+| Setting | Value | What it implies |
+|---|---|---|
+| `max_connections` | 60 | Matches Supabase's smallest compute tier (their free/Micro-class sizing). |
+| `shared_buffers` | 256 MB | Consistent with a ~1 GB-class instance — again, the smallest tier, not a mid/large compute add-on. |
+| `effective_cache_size` | ~768 MB | Same story — small instance. |
+| Postgres version | 17.6 | Current, not a version concern. |
+| Database size | 14 MB | Trivially small — no storage pressure at all right now. |
+
+**Why this matters for the Railway Pro plan specifically:** Railway Pro offers up to 42 replicas at
+24 vCPU/24 GB each — real, substantial compute headroom. But every one of those replicas would
+still be sharing the *same* Supabase Postgres instance, currently sized for a single small app, not
+dozens of concurrent replicas. Raising Railway's replica count without also upgrading Supabase's
+compute add-on doesn't unlock real capacity — it just means more app instances contending for the
+same small database. **The two need to scale together, not independently.** Whatever real replica
+count is eventually decided, verify Supabase's own pooler client-connection ceiling for the target
+compute tier at the same time (via Supabase's dashboard/support — not derivable from SQL alone).
+
 ## Known bottlenecks, in the order they'd actually bite
 
-1. **DB connection pool (10, unconfigured)** — the first thing to hit a wall under real concurrent
-   load. Every call does several DB round-trips over its lifetime (call insert/update, transcript
-   insert per turn, `capturedState`/`providerFailoverCount` updates) — 10 shared connections across
-   every simultaneous call queues before CPU, memory, or the DB's own 60-connection ceiling would.
-   **Fix:** set an explicit `max` on the `postgres()` client in `database/index.ts`, sized with
-   real headroom against the DB's 60-connection limit. Not done yet — flagged, not fixed, since it
-   hasn't been asked for as a code change.
-2. **Single replica + in-memory session store** — not a bottleneck at 1 replica (today's reality),
+1. **DB connection pool — fixed 2026-07-17.** Was unconfigured (postgres-js default of 10); now
+   explicit via `DATABASE_POOL_MAX` (default 20), see the DB client pool row above for the
+   pooler-multiplexing nuance and the cross-replica math that still needs revisiting once real
+   replica counts are decided.
+2. **Supabase compute tier** — currently sized for a single small app (60 max_connections, ~1GB
+   instance class), not for the replica counts Railway's Pro plan would allow. Must scale together
+   with any Railway replica increase — see "Supabase compute tier" above. Not yet upgraded.
+3. **Single replica + in-memory session store** — not a bottleneck at 1 replica (today's reality),
    but a hard wall the moment anyone tries to scale horizontally without first setting `REDIS_URL`.
    See "Scaling beyond one instance" below.
-3. **Provider-side concurrency limits (unverified)** — Deepgram/ElevenLabs/Cartesia/Groq/AI Gateway
+4. **Provider-side concurrency limits (unverified)** — Deepgram/ElevenLabs/Cartesia/Groq/AI Gateway
    each have their own plan-tier concurrent-connection caps. Not checked this round — not
    inferable from an API key's presence, needs each provider's actual account/plan info.
-4. **Twilio's own concurrent-call ceiling (unverified)** — confirmed the account is "Full" (not
+5. **Twilio's own concurrent-call ceiling (unverified)** — confirmed the account is "Full" (not
    trial), but Twilio's API doesn't expose this account's actual concurrent-call/API-rate limit
    directly; would need to ask Twilio support or check their dashboard.
 
@@ -95,11 +119,49 @@ without a shared state layer.
    other reason (cost at real scale, a specific AWS service need, data-residency requirement) drives
    a platform move independently of this.
 
-**Bottom line:** there is no scaling problem to solve today (10 calls total, ~0.1% CPU). When
-there is, the order is: (1) tune the DB pool max, (2) set `REDIS_URL` and actually test it with 2
-replicas before trusting it, (3) get real concurrency limits directly from Twilio/each AI provider,
-(4) only then a real synthetic load test. EC2 is not on that path unless something unrelated to
-this specific issue pushes a platform migration.
+**Bottom line:** there is no scaling problem to solve today (10 calls total, ~0.1% CPU). The DB pool
+is now tuned (above). When real scale is needed, the order is: (1) set `REDIS_URL` and actually
+test it with 2+ replicas before trusting it, (2) upgrade Supabase's compute tier in tandem with any
+Railway replica increase — see "Supabase compute tier" above, (3) get real concurrency limits
+directly from Twilio/each AI provider, (4) only then a real synthetic load test. EC2 is not on that
+path unless something unrelated to this specific issue pushes a platform migration.
+
+## Railway Pro plan — planned upgrade, not yet applied (2026-07-17)
+
+Plan is to move from the current (Hobby-class) Railway plan to Pro. Real specs, as given:
+
+| Spec | Pro plan |
+|---|---|
+| Monthly usage credit | $20 included, pay-as-you-go beyond that |
+| Compute ceiling per service | Up to 1,000 vCPU / 1 TB RAM |
+| Replicas | Up to 42, at up to 24 vCPU / 24 GB RAM each |
+| Storage | Up to 1 TB |
+| Seats | Unlimited workspace seats |
+| Support | Railway Support included |
+| Availability target | 99.99% |
+| Log retention | 30 days |
+| Regions | Concurrent global regions (multi-region replicas) |
+
+**What this actually unlocks vs. what it doesn't, on its own:**
+- Real compute headroom and the option to run multiple replicas across regions — genuinely useful
+  once this project has real concurrent call volume to justify it (today: 10 calls total, ~0.1% of
+  the *current, smaller* container ceiling — nowhere close to needing this yet).
+- **Does NOT, by itself, fix the in-memory session-store problem** — going from 1 to N replicas
+  on Pro still needs `REDIS_URL` set first (see "Scaling beyond one instance"), or every replica
+  above the first is a real correctness risk (a call's session invisible to whichever replica a
+  later request lands on), not just a missed-optimization.
+- **Does NOT, by itself, fix the Supabase ceiling** — see "Supabase compute tier" above. Upgrading
+  only Railway while Supabase stays on its current ~60-connection, ~1GB-class tier means the new
+  replica/compute headroom can't actually be used before the database becomes the limiting factor.
+- **Multi-region replicas specifically** add a further wrinkle beyond same-region horizontal
+  scaling: cross-region requests to the same Supabase instance (which lives in one region) add
+  real network latency — worth confirming which region(s) any real deployment would use relative
+  to where Supabase's project actually lives before spreading replicas globally.
+
+**Recommended sequencing once the Pro upgrade happens:** don't just raise the replica dial. In
+order: (1) confirm/upgrade Supabase's compute tier to match the intended real concurrency, (2) set
+`REDIS_URL`, (3) raise replicas incrementally (e.g. 1 → 2 first) and actually verify session
+continuity holds under a real test call before going further, (4) only then consider multi-region.
 
 ## Sources
 - `audit/2026-07-17-audit-07-live-infra.md` — the original live-infra audit + same-day follow-ups
