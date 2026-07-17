@@ -44,6 +44,13 @@ warnings/errors, `bun run test` 382 pass / 0 fail, production build succeeds.
 
 ## Part 2 — Infra & product resource inventory
 
+**Superseded by `docs/resources.md`** (2026-07-17, written after Audit #7's real live-infra
+access) — that doc has the current, verified service inventory plus real capacity numbers and
+scaling reasoning. The table below is left as-is (historical record of what this report originally
+said), but note one correction: it lists "File storage: S3-compatible" for knowledge-base uploads —
+that was wrong even at the time, KB documents are chunked directly into Postgres, no object storage
+involved. See `docs/resources.md` for the corrected version.
+
 ### External services this product actually depends on (from `.env.example`, cross-checked against real usage)
 
 | Category | Provider(s) | Notes |
