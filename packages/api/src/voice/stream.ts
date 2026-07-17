@@ -232,16 +232,31 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * P90 distribution instead of only ever seeing each call's first turn.
    * `turnIndex` increments per speak() invocation for this call (greeting
    * counts as turn 0).
+   *
+   * `turnIndex` must be reserved synchronously, right as each turn's
+   * generate() resolves (see reserveTurnIndex below) — the 2026-07-17 fix
+   * that waits for `ttsDone` before actually persisting a turn's metrics
+   * means the DB insert itself can now happen well after the *next* turn
+   * has already started (a caller can start talking again the instant the
+   * agent's response is fully generated, even if it's still being spoken).
+   * If turnCounter were incremented inside this function instead, two
+   * concurrent delayed persists could grab indexes out of order.
    */
   let turnCounter = -1;
-  async function persistTurnLatency(metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number }) {
-    if (!dbCallId) return;
+  function reserveTurnIndex(): number {
     turnCounter += 1;
+    return turnCounter;
+  }
+  async function persistTurnLatency(
+    turnIndex: number,
+    metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number },
+  ) {
+    if (!dbCallId) return;
     await db
       .insert(turnLatency)
       .values({
         callId: dbCallId,
-        turnIndex: turnCounter,
+        turnIndex,
         llmTtftMs: metrics.llmTtftMs,
         ttsFirstByteMs: metrics.ttsFirstByteMs,
         voiceToVoiceMs: metrics.voiceToVoiceMs,
@@ -842,13 +857,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // Latency benchmark (§2): one row per turn, regardless of whether the
     // turn was interrupted/errored — a partial/aborted turn's latency up to
     // the point it got cut off is still real data, not something to discard.
-    void persistTurnLatency({
-      llmTtftMs: options?.turnLlmTtftRef?.value,
-      ttsFirstByteMs: turnTtsFirstByteMs,
-      voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
-        ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
-        : undefined,
-    });
+    //
+    // Bug fix (2026-07-17, found while investigating the "5-10s dead air on
+    // outbound calls" report): this used to read turnTtsFirstByteMs
+    // immediately after `generate()` resolved — but the LLM finishing its
+    // full response says nothing about whether TTS has produced its first
+    // audio byte yet (TTS lags behind LLM token generation, especially on a
+    // short reply where the LLM finishes almost instantly). Snapshotting
+    // this early meant turnTtsFirstByteMs (and therefore voiceToVoiceMs,
+    // which is derived from it) was silently null on effectively every
+    // turn — confirmed against real production turn_latency rows, where
+    // ttsFirstByteMs/voiceToVoiceMs were null on every single turn despite
+    // the call-level ttsFirstByteMs (captured live, inside the TTS callback
+    // itself, not snapshotted) showing real ~1.4s values. `turnIndex` is
+    // still reserved synchronously right here (see reserveTurnIndex's doc
+    // comment on why); only reading the metrics and inserting the row waits
+    // for `ttsDone` (bounded, same 8s cap used below for the hangup/
+    // transfer path) — still a fire-and-forget insert, nothing downstream
+    // awaits it.
+    const thisTurnIndex = reserveTurnIndex();
+    void (async () => {
+      await Promise.race([ttsDone, sleep(8000)]);
+      await persistTurnLatency(thisTurnIndex, {
+        llmTtftMs: options?.turnLlmTtftRef?.value,
+        ttsFirstByteMs: turnTtsFirstByteMs,
+        voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
+          ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
+          : undefined,
+      });
+    })();
 
     // Barge-in happened and we have real word-timing data: record only what
     // the caller actually heard, not the full (possibly much longer) reply
