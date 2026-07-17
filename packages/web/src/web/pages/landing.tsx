@@ -530,7 +530,9 @@ function LandingContent() {
 
       <MarketingFooter />
 
-      <EnterpriseDialog open={enterpriseOpen} onOpenChange={setEnterpriseOpen} />
+      {/* Only trigger today is the Insurance card's "Talk to us" button (i === 2 above) —
+          context="insurance" swaps the header/success copy accordingly. */}
+      <EnterpriseDialog open={enterpriseOpen} onOpenChange={setEnterpriseOpen} context="insurance" />
     </div>
   );
 }

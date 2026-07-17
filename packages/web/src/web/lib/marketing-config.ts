@@ -82,9 +82,9 @@ export const VERTICALS = [
     cta: { label: "Join the waitlist", href: "/#waitlist" },
   },
   {
-    // DRAFT — replaces the previous generic "Enterprise / regulated teams" slot. Needs your
-    // sign-off before this ships, same review bar as the underlying agent scripts: licensed-advisor
-    // routing and no-quote/no-underwrite language are load-bearing regulatory claims, not just copy.
+    // Approved 2026-07-17 — replaces the previous generic "Enterprise / regulated teams" slot.
+    // Licensed-advisor routing and no-quote/no-underwrite language are load-bearing regulatory
+    // claims, not just copy — reviewed at the same bar as the underlying agent scripts.
     // See docs/marketing-and-consent-ui-plan.md Part A #2.
     label: "Insurance",
     headline: "Agencies & brokers",

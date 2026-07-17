@@ -308,19 +308,24 @@ export async function getShopifyStatus(orgId: string) {
  * through its OAuth `state`/session across the Shopify redirect — neither
  * survives on its own past the Shopify consent screen.
  *
- * PUBLIC_MERCHANT_APP_URL (not PUBLIC_APP_URL) is the correct source here —
+ * PUBLIC_USER_APP_URL (not PUBLIC_APP_URL) is the correct source here —
  * audit finding: this used to read PUBLIC_APP_URL, which is the *backend's
  * own* Railway origin (used elsewhere for Twilio's public URL), not a
- * browser-facing page. That sent merchants' browsers to
+ * browser-facing page. That sent users' browsers to
  * https://api-production-....railway.app/app/shopify -- a URL with no
  * frontend behind it at all, and a stale path to boot (the real route is
- * /integrations, not /app/shopify). PUBLIC_MERCHANT_APP_URL is a distinct
+ * /integrations, not /app/shopify). PUBLIC_USER_APP_URL is a distinct
  * var (e.g. https://app.weeber.ai) specifically for "a browser-facing page
  * a human actually lands on" -- same category as PUBLIC_WEB_URL (marketing
- * site) but for the merchant app surface. Falls back to PUBLIC_APP_URL only
- * if the new var isn't set yet, so this doesn't regress into a dead link on
- * an unconfigured deploy -- but a real deployment should always set
- * PUBLIC_MERCHANT_APP_URL explicitly.
+ * site) but for the user app surface.
+ *
+ * Renamed from PUBLIC_MERCHANT_APP_URL (2026-07-17, ADR-052 Merchant→User
+ * follow-up — this var was missed in the original rename pass). Reads
+ * PUBLIC_USER_APP_URL first, then falls back to the old PUBLIC_MERCHANT_APP_URL
+ * name for one release (existing deploys that haven't renamed their env var
+ * yet keep working), then PUBLIC_APP_URL as the last-resort so this never
+ * regresses into a dead link on an unconfigured deploy -- but a real
+ * deployment should set PUBLIC_USER_APP_URL explicitly and drop the old name.
  */
 export function buildInstallUrl(orgId: string, shop?: string): string | null {
   const base = process.env.WEEBERSH_INSTALL_URL;
@@ -330,9 +335,9 @@ export function buildInstallUrl(orgId: string, shop?: string): string | null {
   if (shop) {
     url += `&shop=${encodeURIComponent(shop)}`;
   }
-  const merchantAppUrl = process.env.PUBLIC_MERCHANT_APP_URL || process.env.PUBLIC_APP_URL;
-  if (merchantAppUrl) {
-    const returnUrl = `${merchantAppUrl.replace(/\/$/, "")}/integrations?shopify_connected=1`;
+  const userAppUrl = process.env.PUBLIC_USER_APP_URL || process.env.PUBLIC_MERCHANT_APP_URL || process.env.PUBLIC_APP_URL;
+  if (userAppUrl) {
+    const returnUrl = `${userAppUrl.replace(/\/$/, "")}/integrations?shopify_connected=1`;
     url += `&return_url=${encodeURIComponent(returnUrl)}`;
   }
   return url;

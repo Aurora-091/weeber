@@ -245,6 +245,7 @@ describe("buildInstallUrl", () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
     delete process.env.WEEBERSH_INSTALL_URL;
+    delete process.env.PUBLIC_USER_APP_URL;
     delete process.env.PUBLIC_MERCHANT_APP_URL;
     delete process.env.PUBLIC_APP_URL;
   });
@@ -253,9 +254,9 @@ describe("buildInstallUrl", () => {
     expect(buildInstallUrl("org-1")).toBeNull();
   });
 
-  it("regression: return_url must be the merchant app origin + /integrations, never the API's own origin or the stale /app/shopify path", () => {
+  it("regression: return_url must be the user app origin + /integrations, never the API's own origin or the stale /app/shopify path", () => {
     process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
-    process.env.PUBLIC_MERCHANT_APP_URL = "https://app.weeber.ai";
+    process.env.PUBLIC_USER_APP_URL = "https://app.weeber.ai";
     // A real, live value this bug actually leaked in production -- included to make the
     // regression concrete, not just a synthetic string.
     process.env.PUBLIC_APP_URL = "https://api-production-c1bb.up.railway.app";
@@ -268,7 +269,16 @@ describe("buildInstallUrl", () => {
     expect(url).not.toContain(encodeURIComponent("/app/shopify"));
   });
 
-  it("falls back to PUBLIC_APP_URL only when PUBLIC_MERCHANT_APP_URL is unset (last-resort, not the primary path)", () => {
+  it("falls back to the old PUBLIC_MERCHANT_APP_URL name when PUBLIC_USER_APP_URL is unset (one-release back-compat for the ADR-052 rename)", () => {
+    process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
+    process.env.PUBLIC_MERCHANT_APP_URL = "https://app.weeber.ai";
+    process.env.PUBLIC_APP_URL = "https://api-production-c1bb.up.railway.app";
+
+    const url = buildInstallUrl("org-1");
+    expect(url).toContain(encodeURIComponent("https://app.weeber.ai/integrations?shopify_connected=1"));
+  });
+
+  it("falls back to PUBLIC_APP_URL only when neither PUBLIC_USER_APP_URL nor PUBLIC_MERCHANT_APP_URL is set (last-resort, not the primary path)", () => {
     process.env.WEEBERSH_INSTALL_URL = "https://weebersh.up.railway.app/auth/login";
     process.env.PUBLIC_APP_URL = "https://api-production-c1bb.up.railway.app";
 

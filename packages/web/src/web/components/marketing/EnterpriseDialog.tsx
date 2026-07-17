@@ -102,13 +102,25 @@ const textareaClass =
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Which vertical/surface opened this dialog — purely a copy switch (header
+   * label + success message), the form fields and submit endpoint are the
+   * same for every context. Undefined/"enterprise" keeps the original
+   * generic copy; add more contexts here as more verticals get their own
+   * "Talk to us" entry points. */
+  context?: "enterprise" | "insurance";
 }
+
+const CONTEXT_COPY: Record<"enterprise" | "insurance", { label: string; successBody: string }> = {
+  enterprise: { label: "Enterprise inquiry", successBody: "Our enterprise team reviews every inquiry personally." },
+  insurance: { label: "Insurance inquiry", successBody: "Our team reviews every insurance inquiry personally." },
+};
 
 /** Multi-step enterprise-inquiry form — ported from Vocalist's
  * EnterpriseDialog.tsx, wired to openvent's own POST /api/public/enterprise-inquiry
  * (routed through the existing support-tickets table) instead of a Supabase
  * edge function. */
-export function EnterpriseDialog({ open, onOpenChange }: Props) {
+export function EnterpriseDialog({ open, onOpenChange, context = "enterprise" }: Props) {
+  const copy = CONTEXT_COPY[context];
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [submitted, setSubmitted] = useState(false);
@@ -174,7 +186,7 @@ export function EnterpriseDialog({ open, onOpenChange }: Props) {
             <DialogHeader className="text-left">
               <DialogTitle className="font-display text-[26px] md:text-[30px] font-extrabold tracking-[-0.035em] leading-[1.1] text-[var(--m-text)]">We'll be in touch soon.</DialogTitle>
               <DialogDescription className="text-[var(--m-text-secondary)] mt-3 text-[15px] leading-relaxed">
-                Our enterprise team reviews every inquiry personally.
+                {copy.successBody}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-6 flex items-center gap-3 px-4 py-3.5 bg-[var(--m-surface)] border border-[var(--m-border)] rounded-lg">
@@ -194,7 +206,7 @@ export function EnterpriseDialog({ open, onOpenChange }: Props) {
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[var(--m-text-secondary)]" />
-                <span className="font-mono text-[11px] tracking-[.14em] uppercase text-[var(--m-text-secondary)]">Enterprise inquiry</span>
+                <span className="font-mono text-[11px] tracking-[.14em] uppercase text-[var(--m-text-secondary)]">{copy.label}</span>
               </div>
               <div className="flex items-center gap-1">
                 {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
