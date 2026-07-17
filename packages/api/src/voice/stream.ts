@@ -1,10 +1,11 @@
 import type { ModelMessage } from "ai";
 import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
-import { connectStt } from "./stt";
+import { connectStt, resolveSttProvider } from "./stt";
 import type { SttConnection } from "./stt";
 import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
+import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
@@ -112,6 +113,32 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let llmProviderOverride: "gateway" | "groq" | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
+  /** Cross-provider failover (2026-07-17) — per-agent override of the fallback
+   * chain (voice/failover.ts), undefined = platform default chain. Read once
+   * per call in the "start" handler alongside the other agentConfig overrides
+   * above, then used by connectSttForCall/the TTS connect block below to
+   * build the ordered list of providers to try if the primary one fails. */
+  let sttFallbackOrderOverride: string[] | undefined;
+  let ttsFallbackOrderOverride: string[] | undefined;
+  let llmFallbackModelsOverride: string[] | undefined;
+  // Tracks how many times THIS call has already failed over to a different
+  // provider — persisted to calls.providerFailoverCount so it's visible on
+  // the call record, same pattern as sttReconnectCount below.
+  let providerFailoverCount = 0;
+  // Remaining STT providers to try if the current one hard-fails, for THIS
+  // call — built lazily on the first fatal error (not upfront) since the
+  // overwhelming majority of calls never need it. null = "not computed yet",
+  // [] = "chain exhausted, next fatal error ends the call".
+  let sttFailoverQueue: ("deepgram" | "sarvam" | "elevenlabs")[] | null = null;
+
+  function recordProviderFailover() {
+    providerFailoverCount++;
+    if (!callSid) return;
+    void withRetry(
+      () => db.update(calls).set({ providerFailoverCount }).where(eq(calls.twilioCallSid, callSid!)),
+      { label: "update-provider-failover-count" },
+    );
+  }
   /** Per-agent frame overrides (see agent-frame.ts, agent.ts's resolveAgentConfig) — all
    * undefined unless the call's org+template has a configured agent config row. */
   let ttsVoiceIdOverride: string | undefined;
@@ -689,37 +716,75 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       agentIsSpeaking = false;
       resolveTtsDone?.();
     } else {
-      tts = connectTts(
-        (base64Audio) => {
-          if (ttsFirstByteMs === undefined) {
-            ttsFirstByteMs = Date.now() - ttsRequestedAt;
-            void persistLatency();
-          }
-          if (turnTtsFirstByteMs === undefined) {
-            turnTtsFirstByteMs = Date.now() - ttsRequestedAt;
-          }
-          options?.onAudioChunk?.(base64Audio);
-          if (!streamSid) return;
-          try {
-            ws.send(transport.buildOutboundMedia(streamSid, base64Audio));
-          } catch (err) {
-            console.error(`[voice] failed to forward TTS audio to ${provider}`, err);
-          }
-        },
-        () => {
-        agentIsSpeaking = false;
-        resolveTtsDone?.();
-      },
-      (err) => {
-        console.error("[voice] TTS turn failed", err);
-        agentIsSpeaking = false;
-        resolveTtsDone?.();
-      },
-      ttsProviderOverride,
-      ttsVoiceIdOverride,
-      languageOverride,
-      (word) => spokenWords.push(word),
-      );
+      // Cross-provider failover (2026-07-17, recommendation #1 of
+      // docs/product-infra-and-gtm-report.md Part 4): the TTS connection is
+      // per-turn (unlike STT's persistent per-call connection), so failover
+      // here is scoped to "this turn hasn't played any audio yet" — once
+      // even one chunk has reached the caller, swapping providers mid-turn
+      // would replay or skip words, which is worse than just ending the
+      // turn (existing behavior, unchanged for that case). `sentTextBuffer`
+      // captures every sendText call so far so it can be replayed to a
+      // fallback provider's connection if we do fail over before any audio
+      // played — nothing is lost by retrying at that point.
+      const ttsFailoverChain = resolveTtsFailoverChain(resolveTtsProvider(ttsProviderOverride), ttsFallbackOrderOverride);
+      const sentTextBuffer: string[] = [];
+
+      const attemptTts = (providerOverride: string | undefined, replayText: string[] = []): TtsConnection => {
+        const real = connectTts(
+          (base64Audio) => {
+            if (ttsFirstByteMs === undefined) {
+              ttsFirstByteMs = Date.now() - ttsRequestedAt;
+              void persistLatency();
+            }
+            if (turnTtsFirstByteMs === undefined) {
+              turnTtsFirstByteMs = Date.now() - ttsRequestedAt;
+            }
+            options?.onAudioChunk?.(base64Audio);
+            if (!streamSid) return;
+            try {
+              ws.send(transport.buildOutboundMedia(streamSid, base64Audio));
+            } catch (err) {
+              console.error(`[voice] failed to forward TTS audio to ${provider}`, err);
+            }
+          },
+          () => {
+            agentIsSpeaking = false;
+            resolveTtsDone?.();
+          },
+          (err) => {
+            const next = turnTtsFirstByteMs === undefined ? ttsFailoverChain.shift() : undefined;
+            if (!next) {
+              console.error("[voice] TTS turn failed", err);
+              agentIsSpeaking = false;
+              resolveTtsDone?.();
+              return;
+            }
+            console.warn(`[voice] TTS failover: switching to "${next}" for this turn after the previous provider failed before any audio played`, err);
+            recordProviderFailover();
+            // Replay whatever text was already sent to the dead connection
+            // straight to the new one's `real.sendText` — not through the
+            // wrapper below, since that text is already in sentTextBuffer
+            // and re-pushing it would duplicate the buffer on a second
+            // failover in the same turn.
+            tts = attemptTts(next, [...sentTextBuffer]);
+          },
+          providerOverride,
+          ttsVoiceIdOverride,
+          languageOverride,
+          (word) => spokenWords.push(word),
+        );
+        for (const text of replayText) real.sendText(text);
+        return {
+          sendText(text: string) {
+            sentTextBuffer.push(text);
+            real.sendText(text);
+          },
+          endTurn: () => real.endTurn(),
+          close: () => real.close(),
+        };
+      };
+
+      tts = attemptTts(ttsProviderOverride);
     }
 
     let fullText = "";
@@ -817,6 +882,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           },
           llmProvider: llmProviderOverride,
           llmModel: llmModelOverride,
+          llmFallbackModels: llmFallbackModelsOverride,
           enabledTools: enabledToolsOverride,
           capturedState,
           callerMemory: callerMemoryFacts,
@@ -855,6 +921,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           callerMemory: callerMemoryFacts,
           llmProvider: llmProviderOverride,
           llmModel: llmModelOverride,
+          llmFallbackModels: llmFallbackModelsOverride,
           enabledTools: enabledToolsOverride,
           orgId: humanNumberOrgId,
           onLatency: (ms, model) => {
@@ -881,7 +948,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * the (typically tens-of-ms) window between "start" and this connecting is
    * buffered in `pendingAudioChunks` and flushed right after, not dropped.
    */
-  function connectSttForCall(ws: Sendable) {
+  function connectSttForCall(ws: Sendable, failoverProvider?: "deepgram" | "sarvam" | "elevenlabs") {
     stt = connectStt(
       async ({ text, isFinal, speechFinal }) => {
         try {
@@ -941,10 +1008,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
       },
       (err) => {
-        // STT provider gave up (or hard-failed) — the call can no longer hear
-        // the caller. End the call rather than leaving it hanging silently.
-        console.error("[voice] fatal STT error, ending call", err);
-        endCallOnFatalError(ws);
+        // STT provider gave up (or hard-failed). Cross-provider failover
+        // (2026-07-17, recommendation #1 of
+        // docs/product-infra-and-gtm-report.md Part 4): try the next
+        // provider in this call's fallback chain before giving up — the
+        // call can no longer hear the caller on the dead provider, but a
+        // reconnect on a *different* provider is often still possible.
+        // Only end the call once the whole chain is exhausted.
+        console.error("[voice] fatal STT error", err);
+        if (sttFailoverQueue === null) {
+          const activeProvider = resolveSttProvider(failoverProvider ?? sttProviderOverride);
+          sttFailoverQueue = resolveSttFailoverChain(activeProvider, sttFallbackOrderOverride);
+        }
+        const next = sttFailoverQueue.shift();
+        if (!next) {
+          console.error("[voice] STT failover chain exhausted, ending call");
+          endCallOnFatalError(ws);
+          return;
+        }
+        console.warn(`[voice] STT failover: switching to "${next}" mid-call after the previous provider failed`);
+        recordProviderFailover();
+        stt?.close();
+        connectSttForCall(ws, next);
       },
       (stats) => {
         // Surface reconnect counts on the call record so a flaky call is
@@ -963,7 +1048,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         sttConnectMs = ms;
         void persistLatency();
       },
-      sttProviderOverride,
+      failoverProvider ?? sttProviderOverride,
       languageOverride,
     );
 
@@ -1125,6 +1210,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             ttsProviderOverride = agentConfig.ttsProvider ?? session?.ttsProvider ?? numberConfig.ttsProvider;
             llmProviderOverride = agentConfig.llmProvider ?? session?.llmProvider ?? numberConfig.llmProvider;
             sttProviderOverride = agentConfig.sttProvider ?? session?.sttProvider ?? numberConfig.sttProvider;
+            sttFallbackOrderOverride = agentConfig.sttFallbackOrder;
+            ttsFallbackOrderOverride = agentConfig.ttsFallbackOrder;
+            llmFallbackModelsOverride = agentConfig.llmFallbackModels;
             languageOverride = agentConfig.language ?? session?.language ?? numberConfig.language;
 
             // Control: optional hard cap on call length (per-call override or

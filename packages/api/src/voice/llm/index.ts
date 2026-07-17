@@ -33,6 +33,40 @@ export function resolveVoiceModel(override?: LlmProvider, modelOverride?: string
   return gateway(modelOverride || GATEWAY_MODEL);
 }
 
+/**
+ * Cross-provider LLM failover (2026-07-17, recommendation #1 of
+ * docs/product-infra-and-gtm-report.md Part 4). The AI Gateway (the `ai`
+ * SDK's `createGateway`) already has native multi-model failover support —
+ * https://vercel.com/docs/ai-gateway/models-and-providers/model-fallbacks —
+ * so this is a config-shape helper, not a custom retry wrapper: pass a
+ * `models` array via `providerOptions.gateway` and the gateway itself
+ * retries against the next model on a failure, automatically. Only
+ * meaningful when the resolved provider is "gateway" — Groq (this platform's
+ * low-latency alternative provider) has no equivalent built-in multi-model
+ * failover, so this is a no-op (empty providerOptions) for "groq" today.
+ *
+ * `override` here is the per-agent llmFallbackModels list (agent-frame.ts);
+ * undefined falls back to the AI_GATEWAY_FALLBACK_MODELS env var (comma-
+ * separated model ids), which is itself optional — with neither set, this
+ * returns an empty providerOptions object and streamText behaves exactly as
+ * it did before this feature existed (zero risk to the default path).
+ */
+export function buildGatewayProviderOptions(
+  provider?: LlmProvider,
+  override?: string[],
+): { gateway: { models: string[] } } | undefined {
+  if (resolveLlmProvider(provider) !== "gateway") return undefined;
+  const fallbackModels =
+    override && override.length > 0
+      ? override
+      : (process.env.AI_GATEWAY_FALLBACK_MODELS ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+  if (fallbackModels.length === 0) return undefined;
+  return { gateway: { models: fallbackModels } };
+}
+
 export function getActiveModelLabel(override?: LlmProvider, modelOverride?: string): string {
   const provider = resolveLlmProvider(override);
   const model = modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL);

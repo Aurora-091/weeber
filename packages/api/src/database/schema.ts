@@ -135,6 +135,15 @@ export const calls = pgTable("calls", {
    * "outcome, sentiment, next action" fields, sentiment was the missing one. */
   sentiment: text("sentiment"),
   sttReconnectCount: integer("stt_reconnect_count").default(0),
+  // Cross-provider failover (2026-07-17, recommendation #1 of
+  // docs/product-infra-and-gtm-report.md Part 4) — counts how many times
+  // THIS call fell over to a different STT or TTS provider mid-call because
+  // the active one hard-failed. 0 for the overwhelming majority of calls
+  // (no outage hit); a nonzero value means the failover layer masked a
+  // provider incident that would previously have ended the call outright.
+  // Separate from sttReconnectCount above, which counts same-provider
+  // reconnects (a transient network blip), not a provider swap.
+  providerFailoverCount: integer("provider_failover_count").default(0),
   capturedState: jsonb("captured_state").$type<Record<string, string>>().default({}),
   // Global Compliance Engine Tier 0 (2026-07-16, docs/global-compliance-engine-plan.md #2/#3):
   // the exact recording/AI disclosure text + version resolved and embedded into this call's
@@ -276,6 +285,24 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   sttProvider: text("stt_provider"),
   llmProvider: text("llm_provider"),
   llmModel: text("llm_model"),
+  // Cross-provider failover (2026-07-17, recommendation #1 of
+  // docs/product-infra-and-gtm-report.md Part 4) — per-agent override of the
+  // fallback order tried when the primary provider above hard-fails
+  // mid-call. Nullable: null means "use the platform default chain" (see
+  // DEFAULT_STT_FALLBACK_ORDER/DEFAULT_TTS_FALLBACK_ORDER in
+  // voice/failover.ts), so existing agents get sane behavior with zero
+  // config. When set, this is the *complete* ordered list of providers to
+  // try after the primary fails (the primary itself, sttProvider/
+  // voiceProvider above, is never included — resolveFailoverChain filters
+  // it out even if a caller accidentally lists it). Values outside the
+  // provider's real enum are dropped rather than erroring, same
+  // fail-open philosophy as the rest of this table's per-agent overrides.
+  sttFallbackOrder: jsonb("stt_fallback_order").$type<string[]>(),
+  ttsFallbackOrder: jsonb("tts_fallback_order").$type<string[]>(),
+  // Same idea for the LLM — a list of AI Gateway model ids to add to
+  // providerOptions.gateway.models alongside llmModel/GATEWAY_MODEL above.
+  // Null means "use AI_GATEWAY_FALLBACK_MODELS env var" (platform default).
+  llmFallbackModels: jsonb("llm_fallback_models").$type<string[]>(),
   toolsEnabled: jsonb("tools_enabled").$type<unknown[]>(),
   guardrails: jsonb("guardrails").$type<Record<string, unknown>>(),
   // Per-org retry cadence overrides (issue 3 feature) — nullable = "use the

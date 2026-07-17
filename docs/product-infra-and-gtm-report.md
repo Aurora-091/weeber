@@ -150,11 +150,33 @@ insurance-agency/clinic sales motion than a self-serve free trial, given the com
 1. **Cross-provider failover for STT/TTS/LLM** — the single most differentiating reliability claim
    in the competitive set, and the existing provider-abstraction layer makes this an incremental
    build, not a rearchitecture. Worth scoping next after the insurance compliance work stabilizes.
+   **RESOLVED 2026-07-17** — built on top of the existing STT/TTS provider-abstraction layer, no
+   rearchitecture needed. STT: `voice/failover.ts` computes an ordered fallback chain
+   (`resolveSttFailoverChain`/`resolveTtsFailoverChain`); `stream.ts`'s STT `onFatalError` now
+   tries the next provider in the chain (reconnecting via `connectSttForCall`) before ending the
+   call, and TTS failover retries the current turn on a fallback provider if the failure happens
+   before any audio has played (text-sent-so-far is replayed to the new connection). LLM failover
+   uses the AI Gateway's *native* model-fallback support (`providerOptions.gateway.models`) via the
+   new `buildGatewayProviderOptions` helper — no custom retry wrapper needed there. All three are
+   per-agent configurable (`org_agent_configs.sttFallbackOrder`/`ttsFallbackOrder`/
+   `llmFallbackModels`, migration `0033_chubby_nicolaos.sql`), default to a platform-wide chain when
+   unset (STT: deepgram → elevenlabs → sarvam; TTS: cartesia → elevenlabs → sarvam), and every
+   failover increments the new `calls.providerFailoverCount` column so it's visible on the call
+   record. 21 new unit tests (`voice/failover.test.ts`, `voice/llm/index.test.ts`).
 2. **Decide the pilot/trial model deliberately** before exiting waitlist mode — a scoped paid pilot
    fits the compliance-heavy verticals (insurance, clinic) better than a pure self-serve trial.
+   **DEFERRED 2026-07-17** — explicitly left undecided for now per founder call; revisit before
+   exiting waitlist mode. No copy changes made.
 3. **Use the real market pricing range** ($0.07–$0.24+/min) as a deliberate input when founder
    pricing is finalized, not set blind — there's real underpricing room given the existing COGS
-   target.
+   target. **DEFERRED 2026-07-17** — pricing page intentionally stays figure-free for now; this
+   research range is logged here as the input to use whenever founder pricing is actually set.
 4. **Keep onboarding claims honest** — "same day" is already competitive; don't chase "5 minutes"
-   marketing framing from more aspirational competitors.
+   marketing framing from more aspirational competitors. **VERIFIED 2026-07-17** — no "5 minutes"
+   (or similar) onboarding claim exists anywhere in `packages/web/src` today; the "same day" framing
+   already in the pricing FAQ/Shopify flow is unchanged. No action needed.
 5. **Fix the small naming items in Part 3** whenever convenient — none are urgent, all are cheap.
+   **RESOLVED 2026-07-17** — `PUBLIC_MERCHANT_APP_URL` renamed to `PUBLIC_USER_APP_URL` (old name
+   kept as a one-release fallback); Insurance vertical grid copy reviewed and approved as final;
+   `EnterpriseDialog` now takes a `context` prop so Insurance's "Talk to us" button shows
+   "Insurance inquiry" copy instead of the generic "Enterprise inquiry" text.

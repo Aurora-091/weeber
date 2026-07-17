@@ -13,7 +13,7 @@ import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
 import { confirmCodOrder } from "./tools/confirmCodOrder";
 import { offerCartRecoveryDiscount } from "./tools/offerCartRecoveryDiscount";
 import { withDisclosure, resolveDisclosure } from "@openvent/compliance";
-import { resolveVoiceModel, getActiveModelLabel } from "./llm";
+import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates } from "../database/schema";
 import { and, eq } from "drizzle-orm";
@@ -341,6 +341,12 @@ export type ResolvedAgentConfig = {
   /** STT provider override (agent-frame.ts's `sttProvider`) — undefined falls through to
    * number-config/session/global STT_PROVIDER default ("deepgram"). */
   sttProvider?: "deepgram" | "sarvam" | "elevenlabs";
+  /** Cross-provider failover (2026-07-17) — per-agent fallback order override,
+   * threaded straight through to voice/failover.ts's resolveSttFailoverChain/
+   * resolveTtsFailoverChain in stream.ts. Undefined = platform default chain. */
+  sttFallbackOrder?: string[];
+  ttsFallbackOrder?: string[];
+  llmFallbackModels?: string[];
   /** Drives both STT and TTS for the call (agent-frame.ts's `language`) — see RECOMMENDED_LANGUAGES. */
   language?: string;
   /** Per-org agent display name (agent-frame.ts's `name`, e.g. "Amit") — used to fill
@@ -427,6 +433,9 @@ export async function resolveAgentConfig(opts: {
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
+        sttFallbackOrder: (config.sttFallbackOrder as string[] | null) ?? undefined,
+        ttsFallbackOrder: (config.ttsFallbackOrder as string[] | null) ?? undefined,
+        llmFallbackModels: (config.llmFallbackModels as string[] | null) ?? undefined,
         language: config.language ?? undefined,
         agentName: config.name ?? undefined,
         disclosureText: disclosure.text,
@@ -510,6 +519,9 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
     llmModel: override.llmModel,
     enabledTools: override.toolsEnabled,
     sttProvider: override.sttProvider,
+    sttFallbackOrder: override.sttFallbackOrder,
+    ttsFallbackOrder: override.ttsFallbackOrder,
+    llmFallbackModels: override.llmFallbackModels,
     language: override.language,
     disclosureText: disclosure.text,
     disclosureVersion: disclosure.version,
@@ -689,6 +701,7 @@ export async function runVoiceAgentTurn({
   onLatency,
   llmProvider,
   llmModel,
+  llmFallbackModels,
   enabledTools,
   capturedState,
   callerMemory,
@@ -707,6 +720,13 @@ export async function runVoiceAgentTurn({
   /** Per-agent explicit model id override (agent-frame.ts's llmModel) — bypasses
    * the env-configured default for this provider while keeping the provider choice. */
   llmModel?: string;
+  /** Cross-provider failover (2026-07-17) — AI Gateway model ids to add as
+   * automatic fallbacks via providerOptions.gateway.models (native Vercel AI
+   * Gateway support — see llm/index.ts's buildGatewayProviderOptions). Only
+   * applies when the resolved provider is "gateway"; Groq has no equivalent
+   * multi-model failover today. Undefined = AI_GATEWAY_FALLBACK_MODELS env
+   * var (platform default), same fallback shape as every other override here. */
+  llmFallbackModels?: string[];
   /** Per-agent tool subset (agent-frame.ts's toolsEnabled) — undefined = every tool. */
   enabledTools?: AvailableToolName[];
   /** Structured facts captured so far this call — appended to the system
@@ -734,6 +754,7 @@ export async function runVoiceAgentTurn({
   try {
     const result = streamText({
       model: resolveVoiceModel(llmProvider, llmModel),
+      providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
       system:
         (persona ?? DEFAULT_PERSONA) +
         buildCallerMemoryBlock(callerMemory) +
@@ -828,6 +849,7 @@ export function runVoiceAgentGreeting({
   callerMemory,
   llmProvider,
   llmModel,
+  llmFallbackModels,
   enabledTools,
   orgId,
 }: {
@@ -845,6 +867,8 @@ export function runVoiceAgentGreeting({
   llmProvider?: "gateway" | "groq";
   /** Per-agent explicit model id override (agent-frame.ts's llmModel). */
   llmModel?: string;
+  /** Cross-provider failover (2026-07-17) — see runVoiceAgentTurn's doc comment. */
+  llmFallbackModels?: string[];
   /** Per-agent tool subset (agent-frame.ts's toolsEnabled) — undefined = every tool. */
   enabledTools?: AvailableToolName[];
   /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
@@ -865,6 +889,7 @@ export function runVoiceAgentGreeting({
     callerMemory,
     llmProvider,
     llmModel,
+    llmFallbackModels,
     enabledTools,
     orgId,
   });

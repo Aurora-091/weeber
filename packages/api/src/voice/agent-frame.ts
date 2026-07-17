@@ -100,6 +100,18 @@ export const AgentFrameSchema = z.object({
   sttProvider: z.enum(["deepgram", "sarvam", "elevenlabs"]).optional(),
   llmProvider: z.enum(["gateway", "groq"]).optional(),
   llmModel: z.string().min(1).max(200).optional(),
+  /** Cross-provider failover (2026-07-17) — per-agent override of the
+   * ordered list of providers tried after sttProvider/voiceProvider above
+   * hard-fails mid-call. Unset = platform default chain (see
+   * voice/failover.ts). Not a closed enum here (validated/filtered at
+   * resolve time in failover.ts) so an unrecognized value fails open
+   * instead of rejecting the whole config save. */
+  sttFallbackOrder: z.array(z.string()).max(3).optional(),
+  ttsFallbackOrder: z.array(z.string()).max(3).optional(),
+  /** AI Gateway model ids to add as fallbacks alongside llmModel above
+   * (fed into providerOptions.gateway.models — see voice/llm/index.ts).
+   * Unset = AI_GATEWAY_FALLBACK_MODELS env var (platform default). */
+  llmFallbackModels: z.array(z.string()).max(5).optional(),
   toolsEnabled: z.array(z.enum(AVAILABLE_TOOL_NAMES)).optional(),
   guardrails: GuardrailSettingsSchema.optional(),
   enabled: z.boolean().optional(),
