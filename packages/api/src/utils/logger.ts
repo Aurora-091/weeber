@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { captureError } from "./sentry";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
 
@@ -124,10 +125,15 @@ export const logger = {
     if (LEVEL_SEVERITY.error >= LEVEL_SEVERITY[getMinLevel()]) {
       writeLog("error", msg, meta);
     }
+    // Sentry capture happens regardless of LOG_LEVEL filtering — a suppressed
+    // console line shouldn't also suppress the one place this error is
+    // actually monitored/alerted on.
+    captureError(meta instanceof Error ? meta : new Error(msg), { loggedMessage: msg });
   },
   fatal(msg: string, meta?: any) {
     if (LEVEL_SEVERITY.fatal >= LEVEL_SEVERITY[getMinLevel()]) {
       writeLog("fatal", msg, meta);
     }
+    captureError(meta instanceof Error ? meta : new Error(msg), { loggedMessage: msg, fatal: true });
   },
 };

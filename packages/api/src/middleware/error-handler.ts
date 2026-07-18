@@ -18,6 +18,9 @@ export const errorHandler = (): ErrorHandler => {
           err.statusCode as any
         );
       } else {
+        // logger.error()'s Sentry hook (utils/logger.ts) already captures this
+        // exception — not calling captureError separately here to avoid
+        // double-reporting the same error as two Sentry events.
         logger.error(`Non-operational AppError: ${err.message}`, err);
         return c.json(
           {
@@ -41,7 +44,8 @@ export const errorHandler = (): ErrorHandler => {
       );
     }
 
-    // Unexpected general exception
+    // Unexpected general exception — logger.error()'s Sentry hook already
+    // captures this, same reasoning as above.
     logger.error(`Unhandled system exception: ${err.message}`, err);
     return c.json(
       {

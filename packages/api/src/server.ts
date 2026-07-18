@@ -5,15 +5,23 @@ import { assertHipaaPreflight, startRetentionSweep } from "@openvent/compliance"
 import { callLogAdapter } from "./voice/compliance/adapters";
 import { assertVoiceConfig } from "./voice/config-check";
 import { startScheduledCallSweep } from "./voice/workflows/scheduler";
+import { initSentry, captureError } from "./utils/sentry";
+
+// Error monitoring (2026-07-18) — no-op if SENTRY_DSN is unset, same
+// convention as RESEND_API_KEY elsewhere. Must run before anything else has
+// a chance to throw.
+initSentry();
 
 // Surface any otherwise-silent crash (e.g. an unawaited rejection deep in the
 // voice pipeline) in the process logs instead of letting PM2 restart the
 // server with no explanation.
 process.on("unhandledRejection", (reason) => {
   console.error("[server] Unhandled rejection:", reason);
+  captureError(reason, { source: "unhandledRejection" });
 });
 process.on("uncaughtException", (err) => {
   console.error("[server] Uncaught exception:", err);
+  captureError(err, { source: "uncaughtException" });
 });
 
 // Compliance boot checks — fail fast and loud rather than silently running

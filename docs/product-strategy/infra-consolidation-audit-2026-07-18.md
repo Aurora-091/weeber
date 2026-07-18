@@ -49,7 +49,9 @@ first:
 - Vercel Observability — already on Pro, but only sees the *frontend*, not the Railway Hono API
   where the voice pipeline actually lives — not a substitute
 - **Verdict: add Sentry free.** The only genuinely new vendor worth introducing, and it's $0.
-  **Not yet done.**
+  **Done (2026-07-18, see `changelog/2026-07.md`)** — wired at the logger/error-handler/process-
+  handler chokepoints, no-op until `SENTRY_DSN` is actually set on Railway (that last step —
+  creating the free Sentry.io project and setting the env var — is still outstanding).
 
 **3. Vercel Pro $20 — keep it, deliberately.** The Bun server already serves the frontend in
 single-deploy mode, so technically Railway alone could serve everything and Vercel Pro could be
@@ -87,5 +89,5 @@ FDWs let you query an external service (Stripe, S3, another Postgres) as if it w
 ## Net
 
 Not overpaying anyone. The only money question (Vercel Pro) is justified. The only *capability* gap
-is error monitoring (fix: free Sentry, not yet done). The only *free upgrade sitting unused* is
-Supabase Realtime (decision made, see `ADR-058`; not yet built).
+was error monitoring — fixed 2026-07-18 (free Sentry, code shipped, DSN not yet set on Railway). The
+only *free upgrade sitting unused* is Supabase Realtime (decision made, see `ADR-058`; not yet built).
