@@ -54,6 +54,15 @@ scripts/
 .git-push.env
 task.md
 
+# Repo is Bun-only (bun.lock is the source of truth) — npm/yarn lockfiles keep getting
+# reintroduced by editor tooling/IDE auto-install (removed 4x already: a9c037f, 39bd706, b09b778,
+# 9471e62) and break Railway's Nixpacks build (it detects both lockfiles and runs `npm ci`, which
+# aborts if package-lock.json is out of sync with package.json — exactly what happened 2026-07-18
+# after adding Sentry). Never commit these again.
+package-lock.json
+yarn.lock
+
+
 # Cloudflare named-tunnel credential (per ADR-013) — never commit
 .cloudflare-tunnel-token
 
