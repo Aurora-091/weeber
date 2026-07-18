@@ -64,6 +64,8 @@ updated: 2026-07-18
 
 ## Closed recently (so this file doesn't look like it's ignoring them)
 
+- In-app `VoiceOrb` rebuilt (3-blob morph + glow) to match marketing `DemoOrb`; app/admin overlap
+  scan came back clean (static-analysis-only, no live backend to confirm against) — 2026-07-18.
 - Theme portal-scoping, agent full-window layout, 2 Dependabot vulns — fixed 2026-07-13.
 - DB connection pool + Supabase compute tier — fixed/upgraded 2026-07-17.
 - The "38 pre-existing test failures" baseline — was a false signal, not real bugs (ADR-056).

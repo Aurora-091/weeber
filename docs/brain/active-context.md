@@ -12,6 +12,14 @@ updated: 2026-07-18
 
 ## Current focus
 
+- **VoiceOrb enhancement + app/admin overlap scan (done, 2026-07-18):** in-app `VoiceOrb` rebuilt
+  as a 3-blob morph cluster + glow to match marketing `DemoOrb` (same-product visual consistency).
+  Typecheck/lint clean, visually confirmed live, committed as `dcb19e8` and pushed to `main`. App/
+  admin (`components/shell`, `components/dashboard`, `pages/app`, `pages/dashboard`) scanned for the
+  same fixed-percentage/z-index/position anti-patterns that caused the marketing hero overlap bug —
+  came back clean. **Static-analysis-only** — no backend/DB in this sandbox, so authenticated
+  `/app/*`/`/dashboard/*` pages couldn't be live-rendered to visually confirm; flag this to whoever
+  picks this up next if a live overlap bug is later reported in the app/admin panel.
 - **Infra consolidation review (done, 2026-07-18):** confirmed the stack is already tightly
   consolidated on Supabase + Vercel + Railway. No external app pile to cancel. Sentry error
   monitoring is now wired (`ADR` — see `changelog/2026-07.md`) but still no-op until `SENTRY_DSN` is
@@ -59,4 +67,4 @@ language switching — the thing that differentiates Weeber from horizontal buil
   merchant canvas editor now exists, so this is the last remaining piece of the v4 plan.
 - Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
 
-_Last updated by: workflow-canvas v4 planning session, 2026-07-18._
+_Last updated by: VoiceOrb enhancement + app/admin overlap scan session, 2026-07-18._
