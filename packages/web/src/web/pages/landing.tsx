@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Lock, Shield, SlidersHorizontal, ArrowRight } from "lucide-react";
+import { Lock, Shield, SlidersHorizontal, ArrowRight, PhoneOff, ShieldCheck, FileCheck } from "lucide-react";
 import { Toaster } from "../components/ui/sonner";
 import { usePageMeta } from "../lib/usePageMeta";
 import { useWaitlistCount } from "../lib/useWaitlistCount";
@@ -250,14 +250,25 @@ function LandingContent() {
               </h2>
             </div>
             <div className="grid md:grid-cols-3 gap-px bg-[var(--m-border)] border border-[var(--m-border)] overflow-hidden" data-reveal>
-              {HOW_IT_WORKS.map((step, i) => (
-                <div key={step.step} className={`p-8 bg-[var(--m-bg)] ${i < HOW_IT_WORKS.length - 1 ? "border-b md:border-b-0 md:border-r border-[var(--m-border)]" : ""}`}>
-                  <div className="font-mono text-xs text-[var(--m-text-muted)] mb-5">{step.step}</div>
-                  <h3 className="font-display font-bold text-[var(--m-text)] mb-3 text-[17px]">{step.title}</h3>
-                  <p className="text-sm text-[var(--m-text-secondary)] leading-relaxed">{step.body}</p>
-                </div>
-              ))}
+              {HOW_IT_WORKS.map((step, i) => {
+                const Icon = [PhoneOff, ShieldCheck, FileCheck][i]!;
+                return (
+                  <div key={step.step} className={`p-8 bg-[var(--m-bg)] ${i < HOW_IT_WORKS.length - 1 ? "border-b md:border-b-0 md:border-r border-[var(--m-border)]" : ""}`}>
+                    <div className="flex items-center justify-between mb-5">
+                      <Icon className="w-5 h-5 text-[var(--m-text)]" strokeWidth={1.7} aria-hidden />
+                      <span className="font-mono text-xs text-[var(--m-text-muted)]">{step.step}</span>
+                    </div>
+                    <h3 className="font-display font-bold text-[var(--m-text)] mb-3 text-[17px]">{step.title}</h3>
+                    <p className="text-sm text-[var(--m-text-secondary)] leading-relaxed">{step.body}</p>
+                  </div>
+                );
+              })}
             </div>
+            <p className="mt-6 text-[14px] text-[var(--m-text-secondary)]" data-reveal>
+              <a href="/compliance" className="link-grow font-semibold text-[var(--m-text)]">
+                See the full compliance breakdown (India + US/EU) →
+              </a>
+            </p>
           </div>
         </section>
 

@@ -1,12 +1,17 @@
+import type { LucideIcon } from "lucide-react";
+import { ShieldCheck, PhoneOff, FileCheck, UserCheck, Languages, AlertTriangle } from "lucide-react";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { MarketingPageShell } from "../../components/marketing/MarketingPageShell";
 import { Breadcrumbs } from "../../components/marketing/Breadcrumbs";
 import { WaitlistForm } from "../../components/marketing/WaitlistForm";
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
     <section className="max-w-[760px] mx-auto px-6 py-10 border-b border-[var(--m-border)]" data-reveal>
-      <h2 className="font-display text-[22px] font-bold text-[var(--m-text)] mb-4">{title}</h2>
+      <div className="flex items-center gap-2.5 mb-4">
+        <Icon className="w-5 h-5 text-[var(--m-text)] flex-none" strokeWidth={1.7} aria-hidden />
+        <h2 className="font-display text-[22px] font-bold text-[var(--m-text)]">{title}</h2>
+      </div>
       <div className="space-y-4 text-[15px] text-[var(--m-text-secondary)] leading-relaxed">{children}</div>
     </section>
   );
@@ -46,7 +51,7 @@ export function ComplianceIndiaPage() {
         </div>
       </section>
 
-      <Section title="Digital Personal Data Protection (DPDP) Act, 2023">
+      <Section title="Digital Personal Data Protection (DPDP) Act, 2023" icon={ShieldCheck}>
         <p>
           India's DPDP Act governs how personal data — including a phone number, a call recording,
           and anything captured during a call — is collected, used, and retained. We process only
@@ -61,7 +66,7 @@ export function ComplianceIndiaPage() {
         </p>
       </Section>
 
-      <Section title="TRAI TCCCPR — calling windows & Do-Not-Disturb">
+      <Section title="TRAI TCCCPR — calling windows & Do-Not-Disturb" icon={PhoneOff}>
         <p>
           TRAI's Telecom Commercial Communications Customer Preference Regulations set calling
           windows and a Do-Not-Disturb (DND) registry for commercial calls in India. Weeber enforces
@@ -71,7 +76,7 @@ export function ComplianceIndiaPage() {
         </p>
       </Section>
 
-      <Section title="DLT registration for commercial calling">
+      <Section title="DLT registration for commercial calling" icon={FileCheck}>
         <p>
           Commercial voice calls and SMS in India require registration through the Distributed
           Ledger Technology (DLT) platform operated by telecom carriers — this identifies the
@@ -81,7 +86,7 @@ export function ComplianceIndiaPage() {
         </p>
       </Section>
 
-      <Section title="Consent, scoped to purpose">
+      <Section title="Consent, scoped to purpose" icon={UserCheck}>
         <p>
           For call types that require it (marketing/promotional outreach in particular), consent is
           tracked per purpose — consent for order-status calls doesn't authorize a marketing call,
@@ -91,7 +96,7 @@ export function ComplianceIndiaPage() {
         </p>
       </Section>
 
-      <Section title="Hindi & Hinglish calling">
+      <Section title="Hindi & Hinglish calling" icon={Languages}>
         <p>
           Indian merchants can run bilingual English/Hindi agents, including natural code-mixed
           conversation — this is a real, shipped capability, not a roadmap item, and the same
@@ -99,7 +104,7 @@ export function ComplianceIndiaPage() {
         </p>
       </Section>
 
-      <Section title="Not a substitute for legal review">
+      <Section title="Not a substitute for legal review" icon={AlertTriangle}>
         <p>
           This page describes what the platform enforces today, grounded in the actual code path —
           it's a good-faith, accurate description, not a certified legal document. Indian
