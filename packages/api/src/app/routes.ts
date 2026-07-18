@@ -126,6 +126,14 @@ const KB_INGEST_MAX_PER_WINDOW = Number(process.env.KB_INGEST_RATE_LIMIT ?? 5);
 const knowledgeBaseIngestRateLimited = makeFixedWindowLimiter(KB_INGEST_WINDOW_MS, KB_INGEST_MAX_PER_WINDOW);
 const KB_MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB
 
+// Workflow Canvas v4 Phase 2 (2026-07-18) — AI-assisted graph drafting is a
+// real, billed LLM call (one-shot generateObject), and drafting a workflow
+// is naturally an infrequent, human-paced action (unlike test-chat's
+// multi-turn nature) — a tight limiter, same shape as KB ingest.
+const WORKFLOW_AI_DRAFT_WINDOW_MS = 60_000;
+const WORKFLOW_AI_DRAFT_MAX_PER_WINDOW = Number(process.env.WORKFLOW_AI_DRAFT_RATE_LIMIT ?? 5);
+const workflowAiDraftRateLimited = makeFixedWindowLimiter(WORKFLOW_AI_DRAFT_WINDOW_MS, WORKFLOW_AI_DRAFT_MAX_PER_WINDOW);
+
 // Misc-1: real PSTN test call — separate, tighter limiter than the free web
 // test call (testCallRateLimited) since this one has real per-call COGS,
 // not just abuse-prevention concerns.
@@ -1069,6 +1077,27 @@ export const userApp = new Hono<UserEnv>()
   // same time never collide.
   .get("/workflow-configs/blank-scaffold", async (c) => {
     return c.json({ graph: buildBlankWorkflowScaffold() }, 200);
+  })
+
+  // Workflow Canvas v4 (2026-07-18, Phase 2) — plain-language -> draft graph.
+  // The draft is validated with the exact same locked-node guard as a real
+  // save before it's ever returned — a rule-violating draft is a generation
+  // error, never silently handed to the merchant. Doesn't persist anything;
+  // the merchant reviews/edits the returned graph and saves it separately
+  // via the existing PUT above.
+  .post("/workflow-configs/:templateKey/ai-draft", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    if (workflowAiDraftRateLimited(orgId)) {
+      return c.json({ error: "Too many draft requests — wait a minute and try again." }, 429);
+    }
+    const body = await c.req.json().catch(() => null);
+    const prompt = (body as { prompt?: string } | null)?.prompt?.trim();
+    if (!prompt) return c.json({ error: "prompt is required" }, 400);
+
+    const { draftWorkflowGraph } = await import("../voice/workflows/ai-draft");
+    const result = await draftWorkflowGraph(prompt);
+    if (!result.ok) return c.json({ error: result.error }, 422);
+    return c.json({ graph: result.graph }, 200);
   })
 
   // User support submission — same underlying table as the public
