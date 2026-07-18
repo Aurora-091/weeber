@@ -138,13 +138,6 @@ export const PLATFORM_FEATURES = [
   },
 ] as const;
 
-export const READY_FLOWS = [
-  "Abandoned cart recovery",
-  "Appointment booking",
-  "Order & shipping updates",
-  "Review & feedback calls",
-] as const;
-
 export const UPCOMING_VERTICALS = [
   {
     title: "Clinics & local services",
