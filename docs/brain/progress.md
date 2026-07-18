@@ -25,6 +25,10 @@ updated: 2026-07-18
 - All 5 agent personas written (not placeholders).
 - Infra: Railway Pro + Supabase Small + Vercel Pro, all confirmed live (Audit #7, 2026-07-17).
 - Hindi/Hinglish STT/TTS foundation, live-verified (2026-07-16).
+- Sentry error monitoring wired (2026-07-18) — no-op until `SENTRY_DSN` is set on Railway (still
+  outstanding: creating the free Sentry.io project + setting the env var, not a code task).
+- Dead deps/config removed (2026-07-18): `@aws-sdk/client-s3`, `cloudflare` (root `package.json`),
+  and the dead S3/`SUPABASE_KB_BUCKET` env vars from `.env.example`.
 
 ## In progress
 
@@ -41,9 +45,9 @@ updated: 2026-07-18
 
 ## Recommended, not yet decided (from 2026-07-18 infra review)
 
-- Add **Sentry** free tier — error monitoring is the one real infra gap.
-- Adopt **Supabase Realtime** for the dashboard (replace 4–5s polling; already paid for).
-- Cleanup: remove dead deps (`@aws-sdk/client-s3`, `cloudflare`) and dead S3 env vars.
+- Adopt **Supabase Realtime** for the dashboard (replace 4–5s polling; already paid for) — decision
+  made (`ADR-058`), implementation not started.
+- Actually set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the project + env var).
 
 ## Known issues / debt (open)
 
