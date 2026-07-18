@@ -1,4 +1,4 @@
-import { Phone, UserCheck, CalendarClock, MessageSquareHeart, ShieldCheck, Repeat } from "lucide-react";
+import { Phone, UserCheck, CalendarClock, MessageSquareHeart, ShieldCheck, Repeat, Lock } from "lucide-react";
 import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SectionHeading } from "../components/marketing/SectionHeading";
@@ -126,6 +126,30 @@ export function InsuranceSolutionPage() {
             reminding the policyholder on time, and getting the right person on the line when it
             matters. Not replacing them.
           </p>
+        </div>
+      </section>
+
+      {/* Data protection — DPDP-first, not a HIPAA-first pitch bolted on */}
+      <section className="border-b border-[var(--m-border)] bg-[var(--m-bg)]">
+        <div className="max-w-[760px] mx-auto px-6 py-24 md:py-28 text-center">
+          <SectionHeading
+            eyebrow="Data protection"
+            title="Built to India's DPDP Act, not a US framework wearing local branding."
+            align="center"
+          />
+          <p className="mt-6 text-[15px] text-[var(--m-text-secondary)] leading-relaxed" data-reveal>
+            Policyholder data — a phone number, a call recording, anything captured during a
+            renewal or claims call — is governed here by India's Digital Personal Data Protection
+            Act, 2023, not HIPAA. We collect only what a specific workflow needs, disclose the AI
+            and recording up front on every call, and honor deletion/access requests per the DPDP
+            Act's actual mechanism. See the full{" "}
+            <a href="/compliance/india" className="underline">India compliance page</a> for what's
+            enforced today versus on the roadmap.
+          </p>
+          <div className="mt-6 flex items-center justify-center gap-2 text-[13px] text-[var(--m-text-muted)]" data-reveal>
+            <Lock className="w-4 h-4" aria-hidden />
+            DPDP-first — HIPAA only applies if and when we serve a US health-adjacent workflow.
+          </div>
         </div>
       </section>
 

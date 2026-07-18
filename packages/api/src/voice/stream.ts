@@ -1320,6 +1320,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                     calledNumber: row?.toNumber,
                     orgId: session?.orgId ?? row?.orgId ?? undefined,
                     templateKey: session?.workflowName ?? undefined,
+                    direction: (row?.direction ?? session?.direction) === "outbound" ? "outbound" : "inbound",
                   }),
               humanNumberOrgId ? getEffectiveFlags(humanNumberOrgId).catch(() => ({})) : Promise.resolve({}),
               // Only needed to fill {{merchant_name}}/{{company_name}} in a

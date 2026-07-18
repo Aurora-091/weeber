@@ -70,9 +70,15 @@ export function ComplianceIndiaPage() {
         <p>
           TRAI's Telecom Commercial Communications Customer Preference Regulations set calling
           windows and a Do-Not-Disturb (DND) registry for commercial calls in India. Weeber enforces
-          both automatically: calls are only placed between 9am and 9pm IST, and every outbound
-          number is checked against the Do-Not-Call list before dialing — with no exceptions or
-          manual override available to any user.
+          the calling window automatically: calls are only placed between 9am and 9pm IST, with no
+          exceptions or manual override available to any user.
+        </p>
+        <p>
+          For opt-outs, Weeber maintains and checks its own do-not-call list before every dial —
+          any number that asks to stop, or that a merchant marks opted-out, is blocked from future
+          calls with no override. Real-time scrubbing against the carrier-operated NCPR/DND
+          registry itself (not just our own opt-out list) is on our roadmap, not live today — we'd
+          rather say that plainly than round up to a compliance claim we can't yet back with code.
         </p>
       </Section>
 

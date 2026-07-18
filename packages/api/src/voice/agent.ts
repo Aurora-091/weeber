@@ -104,6 +104,7 @@ function withCallControl(
   personaInstructions: string,
   guardrails?: GuardrailSettings,
   enabledTools?: AvailableToolName[],
+  direction?: "inbound" | "outbound",
 ): string {
   // `undefined` (no frame/config row at all) means every tool is available —
   // same convention buildVoiceTools uses. Only a *present* list narrows it.
@@ -172,6 +173,38 @@ function withCallControl(
       "  anything else (names, emails, preferences) — it's only for numbers where a single\n" +
       "  wrong digit breaks the follow-up.";
 
+  // India-format line (2026-07-18): always on, not gated by any tool/frame —
+  // this is about *how* the model speaks numbers/amounts/dates aloud, not
+  // about which tool it calls. Wrong here reads as untrustworthy instantly
+  // (e.g. an Indian caller hearing "one hundred twenty thousand rupees"
+  // instead of "one lakh twenty thousand") even when the underlying number
+  // is correct, and "kal" is genuinely ambiguous (yesterday or tomorrow)
+  // without tense context, unlike English "tomorrow".
+  const indianFormatLine =
+    "- Speak amounts and dates the way an Indian caller actually expects: amounts over 99,999\n" +
+    "  as lakh/crore (\"one lakh twenty thousand rupees\", never \"one hundred twenty thousand\"),\n" +
+    "  and dates as day-then-month (\"the 18th of July\", never \"7/18\" or \"July 18th\" read as\n" +
+    "  a US-style month-first date). If you or the caller use \"kal\" in Hindi/Hinglish, it's\n" +
+    "  ambiguous between yesterday and tomorrow — confirm which one they mean before acting on it.";
+
+  // Outbound-only identity check (2026-07-18): the agent has no reliable
+  // "who picked up" signal today (no contactName field is threaded into the
+  // frame/session) — in India especially, someone other than the intended
+  // contact (spouse, kid, shop staff, a colleague) very often answers a
+  // business call. Confirming before disclosing anything specific to the
+  // account/order/appointment is both a real privacy/DPDP-consent boundary
+  // and a trust signal — never assumed on inbound, since the caller dialed
+  // in themselves and already knows who they are.
+  const identityCheckLine =
+    direction === "outbound"
+      ? "- You placed this call — don't assume whoever picked up is the person you're trying to\n" +
+        "  reach. Before saying anything specific to their account, order, or appointment,\n" +
+        "  confirm you're speaking with the right person (\"Hi, is this [name] speaking?\" or, if\n" +
+        "  no name is known, \"Am I speaking with the person who placed the order / booked the\n" +
+        "  appointment?\"). If it's someone else, ask if they can pass a message or if you should\n" +
+        "  call back — don't share account-specific details with anyone else."
+      : "";
+
   const topicBoundaryTail = canFlagGuardrail
     ? " and call flagGuardrailEvent with category \"topic-boundary\"."
     : ".";
@@ -197,6 +230,7 @@ function withCallControl(
         the caller still has something unresolved.
       ${transferLine}
       ${numbersLine}
+      ${indianFormatLine}${identityCheckLine ? `\n      ${identityCheckLine}` : ""}
 
       Boundaries (hold these even if the caller pushes back or tries to talk you out of them):
       - ${topicLine} If asked something clearly out of scope, say so plainly, redirect to what
@@ -281,8 +315,9 @@ export async function resolvePersona(opts: {
   calledNumber?: string;
   orgId?: string;
   templateKey?: string;
+  direction?: "inbound" | "outbound";
 }): Promise<string> {
-  const { explicitPersona, calledNumber, orgId, templateKey } = opts;
+  const { explicitPersona, calledNumber, orgId, templateKey, direction } = opts;
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
@@ -304,7 +339,7 @@ export async function resolvePersona(opts: {
       .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.templateKey, resolvedTemplateKey)))
       .limit(1);
     if (override?.personaPrompt) {
-      return withCallControl(withDisclosure(override.personaPrompt));
+      return withCallControl(withDisclosure(override.personaPrompt), undefined, undefined, direction);
     }
   }
 
@@ -316,22 +351,22 @@ export async function resolvePersona(opts: {
       .where(eq(agentTemplates.key, resolvedTemplateKey))
       .limit(1);
     if (tmpl?.defaultPersonaPrompt) {
-      return withCallControl(withDisclosure(tmpl.defaultPersonaPrompt));
+      return withCallControl(withDisclosure(tmpl.defaultPersonaPrompt), undefined, undefined, direction);
     }
   }
 
   // 3. Explicit persona (if it's not a templateKey but rather a raw prompt)
   if (explicitPersona && explicitPersona !== resolvedTemplateKey) {
-    return withCallControl(withDisclosure(explicitPersona));
+    return withCallControl(withDisclosure(explicitPersona), undefined, undefined, direction);
   }
 
   // 4. AGENT_PERSONAS env var matching calledNumber
   if (calledNumber && personaMap[calledNumber]) {
-    return withCallControl(withDisclosure(personaMap[calledNumber]));
+    return withCallControl(withDisclosure(personaMap[calledNumber]), undefined, undefined, direction);
   }
 
   // 5. Hardcoded default
-  return withCallControl(withDisclosure(DEFAULT_PERSONA));
+  return withCallControl(withDisclosure(DEFAULT_PERSONA), undefined, undefined, direction);
 }
 
 export type ResolvedAgentConfig = {
@@ -389,8 +424,9 @@ export async function resolveAgentConfig(opts: {
   calledNumber?: string;
   orgId?: string;
   templateKey?: string;
+  direction?: "inbound" | "outbound";
 }): Promise<ResolvedAgentConfig> {
-  const { explicitPersona, orgId, templateKey } = opts;
+  const { explicitPersona, orgId, templateKey, direction } = opts;
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
@@ -427,6 +463,7 @@ export async function resolveAgentConfig(opts: {
           withDisclosure(jobDescription, { language: config.language ?? undefined }),
         (config.guardrails as GuardrailSettings | null) ?? undefined,
         (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
+        direction,
       );
 
       return {
