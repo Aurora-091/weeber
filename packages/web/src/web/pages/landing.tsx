@@ -91,7 +91,7 @@ function HeroBgWaveform() {
   });
 
   return (
-    <div className="hero-bg" aria-hidden="true" style={{ top: "auto", bottom: 0, height: "60%", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "5px", padding: "0 3%" }}>
+    <div className="hero-bg hero-bg--wave" aria-hidden="true">
       {bars.map((h, i) => (
         <span key={i} className="hero-wave-bar" style={{ height: `${h}%`, animationDelay: `${i * 0.1}s` }} />
       ))}

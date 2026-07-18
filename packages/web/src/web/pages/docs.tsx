@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { CodeBlock } from "../components/code-block";
+import { usePageMeta } from "../lib/usePageMeta";
 
 const sections = [
   { id: "overview", label: "Overview", icon: Zap },
@@ -30,6 +31,17 @@ const sections = [
 function DocsPage() {
   const [active, setActive] = useState("overview");
 
+  // Fixed 2026-07-18 (UI audit) — this page never called usePageMeta, so its
+  // title/description/canonical/og tags silently kept whatever the previously
+  // visited page had set (or the index.html defaults) instead of describing
+  // this page. Every other marketing page already does this; docs.tsx was
+  // the one gap.
+  usePageMeta({
+    title: "Documentation",
+    description: "Voice Agent Infra documentation — architecture, environment variables, inbound/outbound call flows, webhooks, API reference, database schema, and agent tools.",
+    path: "/docs",
+  });
+
   const scrollTo = (id: string) => {
     setActive(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -39,8 +51,12 @@ function DocsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border sticky top-0 bg-background/95 backdrop-blur z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-3">
-          <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="size-5" />
+          <Link
+            to="/"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Back to home"
+          >
+            <ArrowLeft className="size-5" aria-hidden="true" />
           </Link>
           <h1 className="text-lg font-semibold">Voice Agent Infra — Documentation</h1>
         </div>

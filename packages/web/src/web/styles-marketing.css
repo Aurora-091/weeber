@@ -161,6 +161,36 @@
   pointer-events: none;
 }
 
+/* Hero waveform overlap fix (2026-07-18) — was a fixed 60% inline height
+   regardless of viewport. On mobile the hero heading wraps to 3 lines (vs
+   2 on desktop), the subheading wraps to 2, and the email/name fields
+   stack vertically instead of sitting side by side — the vertically-
+   centered content block ends up much taller and its lower portion (the
+   form + "founder pricing" line) lands right on top of the tallest part
+   of the wave instead of clearing it, confirmed directly with a rendered
+   375px-wide screenshot (the form was barely legible). Shrinking the
+   decorative zone at narrow widths keeps it clear of the taller content
+   without changing anything on desktop, where this never overlapped. */
+.marketing .hero-bg--wave {
+  top: auto;
+  bottom: 0;
+  height: 60%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 3%;
+}
+
+@media (max-width: 640px) {
+  .marketing .hero-bg--wave {
+    height: 28%;
+  }
+  .marketing .hero-fade {
+    height: 38%;
+  }
+}
+
 .marketing .hero-fade {
   position: absolute;
   left: 0;
