@@ -384,8 +384,15 @@
 }
 
 .theme-weeber.dark::before {
-  opacity: 0.04;
-  mix-blend-mode: overlay;
+  /* Readability/paper-texture fix (2026-07-18) — `overlay` against an
+     L≈0.13-0.14 base compresses the noise texture to near-invisible
+     (confirmed via computed styles + a rendered screenshot: opacity/blend
+     were applied correctly, the *result* just wasn't perceptible at that
+     base lightness). `screen` only ever lightens, so the fractal noise
+     shows as faint light grain flecks on the dark paper instead of
+     vanishing into it — the standard technique for grain-on-dark. */
+  opacity: 0.05;
+  mix-blend-mode: screen;
 }
 
 .theme-weeber > * {
@@ -538,11 +545,21 @@
 }
 
 .theme-weeber.dark {
-  --weeber-paper: oklch(0.13 0.003 240);   /* very dark blue-black for warmth in dark */
-  --weeber-paper-2: oklch(0.185 0.003 240); /* card surface — lifted above bg */
+  /* Readability/paper-texture fix (2026-07-18) — the previous values were
+     near-desaturated blue-black (chroma 0.003, hue 240) with only a 0.055
+     lightness gap between page background and card surface. That read as
+     flat/steel, not "paper," and gave the grain overlay below almost no
+     depth to work with (overlay blend on an L=0.13 base compresses to a
+     near-invisible effect — confirmed directly via computed styles, not
+     guessed). Fix: warm the hue to match light mode's paper family (80,
+     not 240), widen the paper/paper-2 gap so cards visibly lift off the
+     page, and lighten muted text enough to read clearly while staying
+     visually secondary to full-strength ink. */
+  --weeber-paper: oklch(0.14 0.006 80);    /* warm near-black, not steel-blue */
+  --weeber-paper-2: oklch(0.225 0.007 80); /* card surface — clearly lifted, not just +0.055 */
   --weeber-ink: oklch(0.93 0 0);
-  --weeber-ink-soft: oklch(0.62 0 0);
-  --weeber-border: oklch(0.27 0.002 240);
+  --weeber-ink-soft: oklch(0.71 0.004 80); /* was 0.62 — too dim against near-black; still secondary vs 0.93 */
+  --weeber-border: oklch(0.32 0.006 80);   /* was 0.27 — clearer card/section edges */
 
   --weeber-accent: oklch(0.93 0 0);
   --weeber-accent-soft: oklch(0.22 0.003 240);
