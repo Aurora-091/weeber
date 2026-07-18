@@ -17,7 +17,10 @@ updated: 2026-07-18
 - Multi-tenant telephony: Twilio (platform + BYO sub-accounts) + Plivo/Exotel (BYO).
 - Shopify vertical: cart recovery, COD confirmation, feedback agents; revenue attribution.
 - Per-org retry cadence via `scheduledCalls` + the in-process sweep; webhook outbox with backoff.
-- Workflow Canvas (React Flow automation builder).
+- Workflow Canvas (React Flow automation builder) — admin template editor, plus (2026-07-18)
+  merchant-facing custom graph editing: locked compliance scaffold (`customGraph`,
+  `dncCheck`/`callingWindowCheck` nodes), AI-assisted drafting, full merchant canvas editor.
+  Flow preview via web call (v4 Phase 3) not yet built.
 - Compliance scaffolding: DNC (no bypass), TCPA/TRAI calling-window, HIPAA guardrail, GDPR
   retention/erasure, audit-trail export (`packages/openvent-compliance`).
 - Auth: Supabase (JWKS), email OTP sign-in, waitlist + referral system.

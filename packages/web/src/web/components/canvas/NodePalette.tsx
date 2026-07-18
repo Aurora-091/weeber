@@ -40,9 +40,17 @@ const NODE_TYPES: WorkflowNodeType[] = [
 
 type NodePaletteProps = {
   onAddNode?: (nodeType: WorkflowNodeType) => void;
+  // Workflow Canvas v4 (2026-07-18) — the merchant canvas hides
+  // dncCheck/callingWindowCheck from the addable palette (those are
+  // seeded automatically by the locked scaffold, not something a merchant
+  // manually inserts more of); admin's template editor leaves this unset
+  // and sees the full list.
+  excludeTypes?: WorkflowNodeType[];
 };
 
-export function NodePalette({ onAddNode }: NodePaletteProps) {
+export function NodePalette({ onAddNode, excludeTypes }: NodePaletteProps) {
+  const visibleTypes = excludeTypes ? NODE_TYPES.filter((t) => !excludeTypes.includes(t)) : NODE_TYPES;
+
   function onDragStart(event: React.DragEvent, nodeType: WorkflowNodeType) {
     event.dataTransfer.setData("application/workflow-node-type", nodeType);
     event.dataTransfer.effectAllowed = "move";
@@ -64,7 +72,7 @@ export function NodePalette({ onAddNode }: NodePaletteProps) {
       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
         Nodes
       </span>
-      {NODE_TYPES.map((nodeType) => {
+      {visibleTypes.map((nodeType) => {
         const style = NODE_STYLES[nodeType];
         const Icon = ICON_MAP[style.icon as keyof typeof ICON_MAP];
         return (
