@@ -134,6 +134,13 @@ export const calls = pgTable("calls", {
    * setDisposition tool call alongside disposition — teardown's recommended
    * "outcome, sentiment, next action" fields, sentiment was the missing one. */
   sentiment: text("sentiment"),
+  /** Intent detection (2026-07-18) — WHY the caller called / what they want, distinct from
+   * `disposition` (how the call ENDED). Captured by the setIntent tool, callable early once the
+   * caller's purpose is clear, unlike setDisposition which the agent calls near the end. Flat,
+   * vertical-agnostic taxonomy (see voice/tools/setIntent.ts's zod enum for the actual values) —
+   * deliberately not a per-vertical enum to keep this simple; revisit only if the flat taxonomy
+   * stops being descriptive enough for a real vertical's calls. */
+  intent: text("intent"),
   sttReconnectCount: integer("stt_reconnect_count").default(0),
   // Cross-provider failover (2026-07-17, recommendation #1 of
   // docs/product-infra-and-gtm-report.md Part 4) — counts how many times

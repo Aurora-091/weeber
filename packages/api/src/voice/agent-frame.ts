@@ -17,6 +17,7 @@ export const AVAILABLE_TOOL_NAMES = [
   "lookupInfo",
   "bookAppointment",
   "setDisposition",
+  "setIntent",
   "crmSync",
   "captureField",
   "hangUp",

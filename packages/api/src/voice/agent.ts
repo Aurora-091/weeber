@@ -3,6 +3,7 @@ import dedent from "dedent";
 import { createLookupInfoTool } from "./tools/lookupInfo";
 import { createBookAppointmentTool } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
+import { setIntent } from "./tools/setIntent";
 import { createCrmSyncTool } from "./tools/crmSync";
 import { captureField } from "./tools/captureField";
 import { sendSms } from "./tools/sendSms";
@@ -538,6 +539,7 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
 export const voiceTools = {
   bookAppointment: createBookAppointmentTool(undefined),
   setDisposition,
+  setIntent,
   crmSync: createCrmSyncTool(undefined),
   captureField,
   hangUp,

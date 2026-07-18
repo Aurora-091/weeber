@@ -151,6 +151,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
+  let capturedIntent: string | undefined;
   let history: ModelMessage[] = [];
   /**
    * §3b: adaptive noise filter — created once per call, only when the
@@ -408,6 +409,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       const sentimentInput = (input as { sentiment?: unknown }).sentiment;
       if (typeof sentimentInput === "string") capturedSentiment = sentimentInput;
     }
+
+    // Intent detection — captured whenever the agent calls setIntent, independent of
+    // disposition (a call can have an intent recorded well before its final outcome is known).
+    if (name === "setIntent" && input && typeof input === "object" && "intent" in input) {
+      capturedIntent = String((input as { intent: unknown }).intent);
+    }
   }
 
   async function finalizeCall(status: string) {
@@ -434,6 +441,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               endedAt: new Date(),
               ...(capturedDisposition ? { disposition: capturedDisposition } : {}),
               ...(capturedSentiment ? { sentiment: capturedSentiment } : {}),
+              ...(capturedIntent ? { intent: capturedIntent } : {}),
             })
             .where(eq(calls.twilioCallSid, callSid!)),
         { label: "finalize-call" },

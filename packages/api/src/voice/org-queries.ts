@@ -425,6 +425,15 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     dispositionBreakdown[key] = (dispositionBreakdown[key] ?? 0) + 1;
   }
 
+  // Intent detection (2026-07-18) — WHY the caller called, distinct from dispositionBreakdown's
+  // "how it ended". Same "no-X" bucket convention as disposition above for calls where the agent
+  // never got a clear enough signal to call setIntent.
+  const intentBreakdown: Record<string, number> = {};
+  for (const call of orgCalls) {
+    const key = call.intent ?? "no-intent";
+    intentBreakdown[key] = (intentBreakdown[key] ?? 0) + 1;
+  }
+
   const callIds = orgCalls.map((call) => call.id);
 
   const latencyRows =
@@ -509,6 +518,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     totalCalls,
     totalMinutes: Math.round(totalMinutes * 10) / 10,
     dispositionBreakdown,
+    intentBreakdown,
     avgLatency,
     toolUsageCounts,
     guardrailEventCounts,

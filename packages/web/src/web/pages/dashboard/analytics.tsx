@@ -62,6 +62,12 @@ export function AnalyticsPage() {
       )
     : [];
 
+  const intentPieData = data
+    ? Object.entries((data.intentBreakdown ?? {}) as Record<string, number>).map(
+        ([name, value]) => ({ name, value }),
+      )
+    : [];
+
   const latencyBarData = data?.avgLatency
     ? [
         { name: "STT connect", ms: data.avgLatency.sttConnectMs ?? 0 },
@@ -153,7 +159,7 @@ export function AnalyticsPage() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {outcomePieData.length > 0 && (
               <div className="card-weeber p-5">
                 <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
@@ -180,6 +186,49 @@ export function AnalyticsPage() {
                       labelLine={false}
                     >
                       {outcomePieData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        background: "var(--color-card)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {intentPieData.length > 0 && (
+              <div className="card-weeber p-5">
+                <h3 className="text-sm font-medium mb-4">Call intent</h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={intentPieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      label={({
+                        name,
+                        percent,
+                      }: {
+                        name?: string;
+                        percent?: number;
+                      }) =>
+                        `${name ?? ""} (${((percent ?? 0) * 100).toFixed(0)}%)`
+                      }
+                      labelLine={false}
+                    >
+                      {intentPieData.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
                     </Pie>
