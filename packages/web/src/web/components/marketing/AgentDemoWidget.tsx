@@ -171,10 +171,30 @@ export function AgentDemoWidget() {
         setProgress(0);
       }
       ensureAnalyser();
-      audioCtxRef.current?.resume();
-      audio.play();
-      setStatus("playing");
-      rafRef.current = requestAnimationFrame(updateProgress);
+      // Fix (2026-07-18, "play button doesn't work / looks stuck" report):
+      // both AudioContext.resume() and HTMLMediaElement.play() return
+      // Promises that can reject (suspended context, autoplay policy,
+      // decode failure) — this previously called both fire-and-forget and
+      // set status to "playing" unconditionally right after, regardless of
+      // whether playback actually started. On a rejection, the button
+      // still flipped to the Stop icon and the "AI calling..." label
+      // appeared, but nothing ever played and the progress loop's own
+      // `audio.paused` guard silently no-oped forever — from the outside
+      // this looks exactly like "the button reacts but doesn't work."
+      // Now: only flip to "playing" once play() actually resolves; on
+      // rejection, log it and leave status alone so the button falls back
+      // to its idle/replay state instead of getting stuck mid-lie.
+      const ctx = audioCtxRef.current;
+      const resumeThenPlay = ctx ? ctx.resume().catch(() => {}) : Promise.resolve();
+      resumeThenPlay
+        .then(() => audio.play())
+        .then(() => {
+          setStatus("playing");
+          rafRef.current = requestAnimationFrame(updateProgress);
+        })
+        .catch((err) => {
+          console.error("[demo-widget] playback failed to start", err);
+        });
     }
   }
 
