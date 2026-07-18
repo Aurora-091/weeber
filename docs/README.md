@@ -5,10 +5,30 @@ Reference material, plans, and research for Weeber/openvent, organized by topic.
 flows end to end — this folder is everything else: how to configure/operate it, and the reasoning
 behind product/compliance/voice-quality decisions.
 
-**New here?** Read in this order: `../architecture/README.md` → `reference/getting-started.md` →
-`reference/configuration.md` → whichever topic folder below matches what you're working on.
+**New here?** The fastest path is the agent brain, not this folder: read
+[`../AGENTS.md`](../AGENTS.md) (canonical entry point) → [`brain/project-brief.md`](./brain/project-brief.md)
+→ [`brain/00-index.md`](./brain/00-index.md) (task → which docs to open). For setting up the code
+locally: `../architecture/README.md` → `reference/getting-started.md` → `reference/configuration.md`.
 
 ## Structure
+
+### [`brain/`](./brain/)
+The agent brain — small, always-current files an AI (or human) reads first to orient without loading
+170KB of history. `project-brief.md` (what Weeber is, non-negotiables, glossary), `active-context.md`
+(what's being worked on right now — read every session), `progress.md` (done / next / known issues),
+`00-index.md` (task → files router). The repo-root [`../AGENTS.md`](../AGENTS.md) is the entry point
+into all of this.
+
+### [`decisions/`](./decisions/)
+The decision log (ADRs), one file per decision — `adr-NNN-slug.md` with frontmatter, indexed in
+[`decisions/README.md`](./decisions/README.md). Split from the former monolithic `DECISIONS.md`
+(2026-07-18). This is the *why* behind consequential architecture/compliance/data-model/UX choices,
+including reversed ones. Never rewrite a shipped ADR — supersede it.
+
+### [`changelog/`](./changelog/)
+Running log of routine feature work (new tables/columns, endpoint params, wiring already-decided
+patterns), one file per month, indexed in [`changelog/README.md`](./changelog/README.md). Split from
+the former monolithic `changelog.md` (2026-07-18). For a real *decision*, use `decisions/` instead.
 
 ### [`reference/`](./reference/)
 Evergreen docs describing how the system works *today*. These get updated in place as the system
@@ -86,6 +106,7 @@ each entry was archived. If you're looking for current truth, this is the wrong 
   to tell if a plan doc is still aspirational or already shipped — check those before assuming a plan
   doc describes the current state.
 - For the actual decision log (what was decided and why, including reversed decisions), see
-  [`../DECISIONS.md`](../DECISIONS.md). For a running log of what shipped when, see
-  [`../changelog.md`](../changelog.md). This folder holds the reasoning/reference material those two
-  logs point back to — it is not a replacement for either.
+  [`decisions/README.md`](./decisions/README.md) — one file per ADR. For a running log of what shipped
+  when, see [`changelog/README.md`](./changelog/README.md) — one file per month. (The old root-level
+  `DECISIONS.md` and `changelog.md` are now thin stubs that redirect here.) The topic folders above
+  hold the reasoning/reference material those two logs point back to — not a replacement for either.
