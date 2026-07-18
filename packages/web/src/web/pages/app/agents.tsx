@@ -248,6 +248,12 @@ function VoiceTab({ row, form, set }: TabProps) {
                 mid-sentence instead of transliterating them, and to avoid a known Deepgram issue misdetecting
                 Hindi as Spanish.
               </p>
+              <p className="mt-1.5 text-foreground/80">
+                <span className="font-medium text-weeber-warning">Cost note:</span> ElevenLabs is the {TTS_COST_TIERS.elevenlabs.tier} voice
+                tier — roughly 3-4x the per-minute cost of Cartesia/Sarvam ({TTS_COST_TIERS.elevenlabs.note}). This can
+                use up a plan's included minutes noticeably faster; worth confirming it's accounted for before turning
+                it on for a high-volume agent.
+              </p>
               <button
                 type="button"
                 onClick={() => {

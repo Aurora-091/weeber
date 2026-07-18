@@ -437,6 +437,11 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                     ElevenLabs (voice) — live-tested to keep English words in Latin script mid-sentence instead of
                     transliterating them, and to avoid a known Deepgram issue misdetecting Hindi as Spanish.
                   </p>
+                  <p className="mt-1 text-foreground/80">
+                    <span className="font-medium text-weeber-warning">Cost note:</span> ElevenLabs is the {TTS_COST_TIERS.elevenlabs.tier} voice
+                    tier — roughly 3-4x the per-minute cost of Cartesia/Sarvam ({TTS_COST_TIERS.elevenlabs.note}). Confirm
+                    this org's plan accounts for it before enabling on a high-volume agent.
+                  </p>
                   <button
                     type="button"
                     onClick={() => {
