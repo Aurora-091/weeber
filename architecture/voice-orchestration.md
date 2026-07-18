@@ -56,7 +56,7 @@ sequenceDiagram
 **Note on memory:** the "known facts" / "caller memory" blocks injected into the LLM prompt
 (`buildKnownFactsBlock`, `buildCallerMemoryBlock` in `voice/agent.ts`, backed by `voice/caller-memory.ts`)
 are a **structured, deterministic** memory system — not a RAG/vector-search layer. This solves a
-different problem than a knowledge base (see `docs/state-engine.md` for why raw-transcript/lossy-summary
+different problem than a knowledge base (see `docs/reference/state-engine.md` for why raw-transcript/lossy-summary
 memory causes agents to re-ask or contradict themselves). **Separately, a real per-vertical PDF-upload
 knowledge base is referenced by the persona prompts (`docs/agent-prompts/01`, `04`) but does not exist in
 the schema/backend yet** — see `WEEBER-PLAN.md`'s Phase A tracking for this gap.
@@ -87,7 +87,7 @@ behavior (detect language mid-call, switch TTS voice, debounce noisy short-utter
 tracked as **Phase B2** in `WEEBER-PLAN.md` — that part is still not built.
 
 The STT/TTS *quality* half of the Hindi/Hinglish story, however, was live-verified 2026-07-16
-(`docs/hindi-hinglish-voice-support.md`, not duplicated here): `stt/elevenlabs.ts` (new — ElevenLabs
+(`docs/voice-quality/hindi-hinglish-voice-support.md`, not duplicated here): `stt/elevenlabs.ts` (new — ElevenLabs
 Scribe v2 Realtime, confirmed with real audio to keep English words in Latin script mid-sentence
 instead of transliterating them) and `stt/sarvam.ts` (fixed from `mode: "transcribe"` to `"codemix"`,
 same live-verification approach) are both real, tested options for Hindi today — the agents-tab UI

@@ -102,7 +102,7 @@ This needs a new, browser-native call transport — mic in, agent voice out, no 
   toggle (lower priority — you don't have a public embeddable widget product surface today, so this may
   not apply at all unless that's coming).
 - Variable/merge-tag preview (a "Vars" button, screenshot 2) — only relevant once the workflow-canvas
-  variable system (`docs/workflow-canvas-architecture.md` §4) actually exists; until then there's nothing
+  variable system (`docs/workflow-canvas/architecture.md` §4) actually exists; until then there's nothing
   to inject besides the fixed preview sentence already in use. Don't build this ahead of that.
 
 ---

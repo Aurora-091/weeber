@@ -85,7 +85,7 @@ export async function sendBroadcast(id: number) {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(
           recipients.map((to) => ({
-            from: process.env.BROADCAST_FROM_EMAIL || "weeber@weeber.ai",
+            from: process.env.BROADCAST_FROM_EMAIL || "hello@weeber.ai",
             to,
             subject: broadcast.title,
             html: broadcast.body,

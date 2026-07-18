@@ -1,4 +1,4 @@
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SITE } from "../lib/marketing-config";
 
@@ -25,7 +25,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function PrivacyPage() {
-  usePageTitle(`Privacy Policy — ${SITE.name}`);
+  usePageMeta({
+    title: `Privacy Policy — ${SITE.name}`,
+    description: `How ${SITE.name} collects, uses, and retains data — consent, calling-window enforcement, data residency, and your rights, described plainly and grounded in what the platform actually does.`,
+    path: "/privacy",
+  });
 
   return (
     <MarketingPageShell>

@@ -45,6 +45,7 @@ import {
 } from "@openvent/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter } from "./compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
+import { checkIndiaNumberSeriesCompliance } from "./compliance/number-series-gate";
 import { runWorkflowForOutcome } from "./workflows/engine";
 import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
@@ -94,7 +95,19 @@ export const voice = new Hono()
     const webhookUrl = resolveWebhookUrl(session?.webhookUrl);
 
     if (callSid) {
-      await db
+      // Latency fix (2026-07-17, pickup-to-first-word investigation): this
+      // used to be awaited, blocking the TwiML response — and therefore
+      // Twilio's own <Connect><Stream> handshake — on a full DB round-trip
+      // that exists purely for call-history bookkeeping, not anything
+      // Twilio needs to proceed. Made fire-and-forget like dispatchWebhook
+      // just below. Safe to do now (previously wasn't): the WS "start"
+      // handler's fallback-insert-if-missing path (stream.ts) now covers
+      // Twilio too and is enriched from the same in-memory `session` this
+      // handler already has — so a call whose media stream connects before
+      // this insert lands still resolves org/persona context correctly,
+      // it just runs the insert itself a beat later (onConflictDoNothing
+      // on both sides makes the eventual duplicate a no-op either way).
+      void db
         .insert(calls)
         .values({
           twilioCallSid: callSid,
@@ -111,7 +124,7 @@ export const voice = new Hono()
           orgId: session?.orgId ?? null,
         })
         .onConflictDoNothing()
-        .catch(() => undefined as unknown);
+        .catch((err) => console.error("[voice] failed to insert call row from /incoming", err));
 
       void dispatchWebhook(webhookUrl, "call.started", {
         callSid,
@@ -239,6 +252,13 @@ export const voice = new Hono()
       const producerLicensingCheck = await checkInsuranceProducerLicensing(orgId, to);
       if (!producerLicensingCheck.allowed) {
         return c.json({ error: producerLicensingCheck.reason }, 403);
+      }
+      // General (non-insurance) India DLT number-series gate (2026-07-17) —
+      // no-op unless INDIA_NUMBER_SERIES_FLAG is on for this org, see
+      // compliance/number-series-gate.ts's doc comment for why it defaults off.
+      const generalNumberSeriesCheck = await checkIndiaNumberSeriesCompliance(orgId, to);
+      if (!generalNumberSeriesCheck.allowed) {
+        return c.json({ error: generalNumberSeriesCheck.reason }, 403);
       }
     }
 
@@ -713,7 +733,8 @@ export const voice = new Hono()
       }
       configOverride = parsedOverride.data;
     }
-    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}` });
+    const simulateFailover = body && typeof body === "object" && "simulateFailover" in body && body.simulateFailover === true;
+    const token = issueTestCallToken({ orgId, templateKey, configOverride, actor: `admin:${orgId}`, simulateFailover });
     return c.json({ token }, 201);
   })
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { PhoneIncoming, PhoneOutgoing, Search } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, Search, RefreshCw } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { useUser } from "../../components/app/user-shell";
@@ -18,6 +18,7 @@ type CallRow = {
   disposition: string | null;
   startedAt: string;
   capturedState: Record<string, unknown> | null;
+  providerFailoverCount: number | null;
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -230,6 +231,15 @@ export function UserCallsPage() {
                       <span className="opacity-70">{relativeTime(call.startedAt)}</span>
                     </div>
                   </div>
+                  {(call.providerFailoverCount ?? 0) > 0 && (
+                    <span
+                      className="flex shrink-0 items-center gap-1 text-xs text-weeber-warning"
+                      title="This call switched providers mid-call"
+                    >
+                      <RefreshCw className="size-3.5" aria-hidden />
+                      <span aria-hidden>{call.providerFailoverCount}</span>
+                    </span>
+                  )}
                   <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                     <span className={`inline-block size-2 rounded-full ${STATUS_DOT[call.status] ?? "bg-muted-foreground/50"}`} />
                     {call.status}

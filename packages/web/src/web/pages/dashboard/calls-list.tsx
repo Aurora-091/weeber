@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { PhoneIncoming, PhoneOutgoing, Sparkles, Clock } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, Sparkles, Clock, RefreshCw } from "lucide-react";
 import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
@@ -97,6 +97,16 @@ export function CallsListPage() {
                 <div className="flex items-center gap-1 text-xs text-success shrink-0" aria-label={`${factCount} facts captured`}>
                   <Sparkles className="size-3.5" aria-hidden />
                   <span aria-hidden>{factCount}</span>
+                </div>
+              )}
+              {"providerFailoverCount" in call && (call.providerFailoverCount ?? 0) > 0 && (
+                <div
+                  className="flex items-center gap-1 text-xs text-warning shrink-0"
+                  aria-label={`Failed over ${call.providerFailoverCount} time(s)`}
+                  title="This call switched providers mid-call"
+                >
+                  <RefreshCw className="size-3.5" aria-hidden />
+                  <span aria-hidden>{call.providerFailoverCount}</span>
                 </div>
               )}
               <span

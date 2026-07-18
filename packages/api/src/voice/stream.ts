@@ -24,6 +24,9 @@ import { getEffectiveFlags } from "./org-queries";
 import { renderTemplate } from "./workflows/variables";
 import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
 import type { NoiseFilter } from "./audio-noise-filter";
+import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } from "./wind-noise-filter";
+import type { HighPassFilter } from "./wind-noise-filter";
+import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
@@ -148,6 +151,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
+  let capturedIntent: string | undefined;
   let history: ModelMessage[] = [];
   /**
    * §3b: adaptive noise filter — created once per call, only when the
@@ -157,6 +161,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * existing calls/deployments see byte-for-byte unchanged behavior.
    */
   let noiseFilter: NoiseFilter | null = null;
+  /**
+   * Wind-noise high-pass filter (2026-07-17, see wind-noise-filter.ts) —
+   * same "created once per call, only when its flag is on, null = no-op"
+   * pattern as noiseFilter above, but independently toggleable: the two
+   * filters solve different noise types (steady hum vs bursty wind), and
+   * an org may want either, both, or neither. Applied *before* noiseFilter
+   * in the media handler when both are on — see that handler for why the
+   * order matters.
+   */
+  let windFilter: HighPassFilter | null = null;
+  /** Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) —
+   * EXPRESSIVE_DELIVERY_FLAG, resolved once alongside noiseFilter/
+   * windFilter above. Gates only the tts?.setTone?.() call in
+   * sendTtsTextWithTone below; the tone tag itself is always stripped
+   * before reaching TTS regardless of this flag. */
+  let expressiveDeliveryEnabled = false;
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -184,6 +204,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let sttConnectMs: number | undefined;
   let llmTtftMs: number | undefined;
   let ttsFirstByteMs: number | undefined;
+  /** Set the instant the media stream's "start" event arrives (see the
+   * "start" handler below) — as close as this codebase gets to "the call
+   * was answered". Paired with ttsFirstByteMs's own first-set instant
+   * below to compute pickupToFirstAudioMs, the actual caller-perceived
+   * "dead air before the agent speaks" number (schema.ts's callLatency
+   * doc comment has the full reasoning). */
+  let callAnsweredAt: number | undefined;
+  let pickupToFirstAudioMs: number | undefined;
 
   /**
    * Upserts whichever of the three metrics are currently set. Safe to call multiple times per call
@@ -192,13 +220,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   async function persistLatency() {
     if (!dbCallId) return;
-    if (sttConnectMs === undefined && llmTtftMs === undefined && ttsFirstByteMs === undefined) return;
+    if (
+      sttConnectMs === undefined &&
+      llmTtftMs === undefined &&
+      ttsFirstByteMs === undefined &&
+      pickupToFirstAudioMs === undefined
+    ) {
+      return;
+    }
     await db
       .insert(callLatency)
-      .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs })
+      .values({ callId: dbCallId, sttConnectMs, llmTtftMs, ttsFirstByteMs, pickupToFirstAudioMs })
       .onConflictDoUpdate({
         target: callLatency.callId,
-        set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, capturedAt: new Date() },
+        set: { sttConnectMs, llmTtftMs, ttsFirstByteMs, pickupToFirstAudioMs, capturedAt: new Date() },
       })
       .catch((err) => console.error("[voice] failed to persist call latency", err));
   }
@@ -217,16 +252,31 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * P90 distribution instead of only ever seeing each call's first turn.
    * `turnIndex` increments per speak() invocation for this call (greeting
    * counts as turn 0).
+   *
+   * `turnIndex` must be reserved synchronously, right as each turn's
+   * generate() resolves (see reserveTurnIndex below) — the 2026-07-17 fix
+   * that waits for `ttsDone` before actually persisting a turn's metrics
+   * means the DB insert itself can now happen well after the *next* turn
+   * has already started (a caller can start talking again the instant the
+   * agent's response is fully generated, even if it's still being spoken).
+   * If turnCounter were incremented inside this function instead, two
+   * concurrent delayed persists could grab indexes out of order.
    */
   let turnCounter = -1;
-  async function persistTurnLatency(metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number }) {
-    if (!dbCallId) return;
+  function reserveTurnIndex(): number {
     turnCounter += 1;
+    return turnCounter;
+  }
+  async function persistTurnLatency(
+    turnIndex: number,
+    metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number },
+  ) {
+    if (!dbCallId) return;
     await db
       .insert(turnLatency)
       .values({
         callId: dbCallId,
-        turnIndex: turnCounter,
+        turnIndex,
         llmTtftMs: metrics.llmTtftMs,
         ttsFirstByteMs: metrics.ttsFirstByteMs,
         voiceToVoiceMs: metrics.voiceToVoiceMs,
@@ -359,6 +409,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       const sentimentInput = (input as { sentiment?: unknown }).sentiment;
       if (typeof sentimentInput === "string") capturedSentiment = sentimentInput;
     }
+
+    // Intent detection — captured whenever the agent calls setIntent, independent of
+    // disposition (a call can have an intent recorded well before its final outcome is known).
+    if (name === "setIntent" && input && typeof input === "object" && "intent" in input) {
+      capturedIntent = String((input as { intent: unknown }).intent);
+    }
   }
 
   async function finalizeCall(status: string) {
@@ -385,6 +441,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               endedAt: new Date(),
               ...(capturedDisposition ? { disposition: capturedDisposition } : {}),
               ...(capturedSentiment ? { sentiment: capturedSentiment } : {}),
+              ...(capturedIntent ? { intent: capturedIntent } : {}),
             })
             .where(eq(calls.twilioCallSid, callSid!)),
         { label: "finalize-call" },
@@ -663,6 +720,49 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
+  /**
+   * Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) — per-turn
+   * state for extracting the LLM's leading `[[tone:value]]` tag out of the
+   * streamed text before any of it ever reaches TTS or the transcript.
+   * Reset at the top of every `speak()` call (a fresh turn). Always runs
+   * (the prompt instruction in agent.ts is unconditional) regardless of
+   * `expressiveDeliveryEnabled` — that flag only gates whether the parsed
+   * tone actually gets applied to Cartesia via `setTone`; the tag itself is
+   * stripped either way, so a caller never hears it spoken.
+   *
+   * Bounded latency cost, by design: this holds back at most
+   * TONE_TAG_MAX_BUFFER_CHARS (24) worth of streamed text before flushing —
+   * in the normal case (the model actually emits the ~20-char tag as
+   * instructed) this resolves almost immediately once the tag closes, not
+   * at the 24-char cap; the cap only matters as a fallback if the model
+   * ever omits the tag entirely, so a turn is never held back indefinitely
+   * waiting for a tag that isn't coming.
+   */
+  let toneTagBuffer = "";
+  let toneTagResolved = false;
+
+  function sendTtsTextWithTone(text: string) {
+    if (toneTagResolved) {
+      tts?.sendText(text);
+      return;
+    }
+    toneTagBuffer += text;
+    const { tone, text: stripped } = stripToneTag(toneTagBuffer);
+    const looksLikeClosedTag = /\]\]/.test(toneTagBuffer);
+    if (tone !== null || looksLikeClosedTag || toneTagBuffer.length >= TONE_TAG_MAX_BUFFER_CHARS) {
+      toneTagResolved = true;
+      if (tone !== null && expressiveDeliveryEnabled) {
+        const emotion = CARTESIA_EMOTION_BY_TONE[tone];
+        if (emotion) tts?.setTone?.(emotion);
+      }
+      if (stripped) tts?.sendText(stripped);
+      toneTagBuffer = "";
+      return;
+    }
+    // Still might be a tag forming (no closing "]]" seen yet, under the
+    // buffer cap) — hold this chunk back until the next delta resolves it.
+  }
+
   /** Shared turn runner — used for both the opening greeting and normal replies. */
   async function speak(
     ws: Sendable,
@@ -691,6 +791,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   ) {
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
+    // Expressive delivery (2026-07-17) — fresh tone-tag state for this turn.
+    toneTagBuffer = "";
+    toneTagResolved = false;
 
     const ttsRequestedAt = Date.now();
     let turnTtsFirstByteMs: number | undefined;
@@ -718,6 +821,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       tts = null;
       if (ttsFirstByteMs === undefined) {
         ttsFirstByteMs = 0;
+        if (pickupToFirstAudioMs === undefined && callAnsweredAt !== undefined) {
+          pickupToFirstAudioMs = Date.now() - callAnsweredAt;
+          console.log(`[voice] pickup-to-first-audio (cache hit): ${pickupToFirstAudioMs}ms`);
+        }
         void persistLatency();
       }
       turnTtsFirstByteMs = 0;
@@ -749,6 +856,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
               ttsFirstByteMs = Date.now() - ttsRequestedAt;
+              if (pickupToFirstAudioMs === undefined && callAnsweredAt !== undefined) {
+                pickupToFirstAudioMs = Date.now() - callAnsweredAt;
+                console.log(`[voice] pickup-to-first-audio: ${pickupToFirstAudioMs}ms`);
+              }
               void persistLatency();
             }
             if (turnTtsFirstByteMs === undefined) {
@@ -806,6 +917,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let wasInterrupted = false;
     try {
       fullText = await generate(turnAbortController.signal);
+      // Expressive delivery (2026-07-17) — `fullText` is generate()'s own
+      // complete return value, entirely separate from the streamed deltas
+      // sendTtsTextWithTone already stripped above. Stripped here too so the
+      // tag never lands in conversation history, the transcript, or the
+      // barge-in "what did the caller actually hear" reconstruction below —
+      // none of which should ever show `[[tone:calm]]` as if it were
+      // something the agent said out loud.
+      fullText = stripToneTag(fullText).text;
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         console.error("[voice] agent turn failed", err);
@@ -819,13 +938,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // Latency benchmark (§2): one row per turn, regardless of whether the
     // turn was interrupted/errored — a partial/aborted turn's latency up to
     // the point it got cut off is still real data, not something to discard.
-    void persistTurnLatency({
-      llmTtftMs: options?.turnLlmTtftRef?.value,
-      ttsFirstByteMs: turnTtsFirstByteMs,
-      voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
-        ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
-        : undefined,
-    });
+    //
+    // Bug fix (2026-07-17, found while investigating the "5-10s dead air on
+    // outbound calls" report): this used to read turnTtsFirstByteMs
+    // immediately after `generate()` resolved — but the LLM finishing its
+    // full response says nothing about whether TTS has produced its first
+    // audio byte yet (TTS lags behind LLM token generation, especially on a
+    // short reply where the LLM finishes almost instantly). Snapshotting
+    // this early meant turnTtsFirstByteMs (and therefore voiceToVoiceMs,
+    // which is derived from it) was silently null on effectively every
+    // turn — confirmed against real production turn_latency rows, where
+    // ttsFirstByteMs/voiceToVoiceMs were null on every single turn despite
+    // the call-level ttsFirstByteMs (captured live, inside the TTS callback
+    // itself, not snapshotted) showing real ~1.4s values. `turnIndex` is
+    // still reserved synchronously right here (see reserveTurnIndex's doc
+    // comment on why); only reading the metrics and inserting the row waits
+    // for `ttsDone` (bounded, same 8s cap used below for the hangup/
+    // transfer path) — still a fire-and-forget insert, nothing downstream
+    // awaits it.
+    const thisTurnIndex = reserveTurnIndex();
+    void (async () => {
+      await Promise.race([ttsDone, sleep(8000)]);
+      await persistTurnLatency(thisTurnIndex, {
+        llmTtftMs: options?.turnLlmTtftRef?.value,
+        ttsFirstByteMs: turnTtsFirstByteMs,
+        voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
+          ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
+          : undefined,
+      });
+    })();
 
     // Barge-in happened and we have real word-timing data: record only what
     // the caller actually heard, not the full (possibly much longer) reply
@@ -888,7 +1029,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           history,
           persona,
           signal,
-          onTextDelta: (delta) => tts?.sendText(delta),
+          onTextDelta: (delta) => sendTtsTextWithTone(delta),
           onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
           onLatency: (ms, model) => {
             console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
@@ -931,7 +1072,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         runVoiceAgentGreeting({
           persona,
           signal,
-          onTextDelta: (delta) => tts?.sendText(delta),
+          onTextDelta: (delta) => sendTtsTextWithTone(delta),
           capturedState,
           callerMemory: callerMemoryFacts,
           llmProvider: llmProviderOverride,
@@ -1084,6 +1225,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
       try {
         if (event.type === "start") {
+          // Captured before anything else in this handler runs — every DB
+          // round-trip, provider connect, and greeting-generation step that
+          // follows counts against pickupToFirstAudioMs from this instant.
+          callAnsweredAt = Date.now();
           streamSid = event.streamId;
           callSid = event.callId;
           const session = callSid ? await sessionStore.get(callSid) : undefined;
@@ -1099,19 +1244,36 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // `calls` row) before the WS ever opens — Exotel's WS-only
             // AgentStream has no such step (see voice/routes.ts), so if
             // nothing was pre-created, insert a minimal row now from
-            // whatever the start event itself carried. Best-effort: this
-            // call won't have org/persona/session context an outbound
-            // trigger would have set, only what the wire protocol told us.
-            if (!row && provider !== "twilio" && event.from && event.to) {
+            // whatever the start event itself carried.
+            //
+            // Latency fix (2026-07-17): this used to explicitly exclude
+            // Twilio (`provider !== "twilio"`) on the theory that Twilio's
+            // own answer webhook always finishes its insert first — true
+            // when that insert was awaited, but it's now fire-and-forget
+            // (routes.ts's /incoming) specifically so it stops blocking the
+            // TwiML response, which means the media stream can legitimately
+            // connect and reach here before that insert lands. Now covers
+            // Twilio too, and — since `session` (outbound calls: set at
+            // placement time, well before ringing) already carries the real
+            // org/persona/direction context that a bare Exotel fallback
+            // never has — enriched from it instead of the placeholder
+            // "inbound" direction with no persona/org this branch used to
+            // fall back to for Twilio never has. onConflictDoNothing means
+            // whichever insert (this one, or the webhook's) lands second is
+            // a harmless no-op.
+            if (!row && event.from && event.to) {
               const [inserted] = await db
                 .insert(calls)
                 .values({
                   provider,
                   twilioCallSid: callSid,
-                  direction: "inbound",
+                  direction: session?.direction ?? "inbound",
                   fromNumber: event.from,
                   toNumber: event.to,
                   status: "in-progress",
+                  agentPersona: session?.persona ?? null,
+                  webhookUrl: session?.webhookUrl ?? null,
+                  orgId: session?.orgId ?? null,
                 })
                 .onConflictDoNothing()
                 .returning();
@@ -1253,6 +1415,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (noiseFilterFlags[ADAPTIVE_NOISE_FILTER_FLAG] === true) {
               noiseFilter = createRollingNoiseFilter();
             }
+            if (noiseFilterFlags[WIND_NOISE_FILTER_FLAG] === true) {
+              windFilter = createHighPassFilter();
+            }
+            expressiveDeliveryEnabled = noiseFilterFlags[EXPRESSIVE_DELIVERY_FLAG] === true;
           }
 
           connectSttForCall(ws);
@@ -1263,9 +1429,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
         if (event.type === "media") {
           let audio = Buffer.from(event.mulawBase64, "base64");
-          // §3b: only runs when ADAPTIVE_NOISE_FILTER_FLAG resolved true for
-          // this call — noiseFilter stays null otherwise, so this is a
-          // zero-cost no-op for every call that hasn't opted in.
+          // Wind-noise filter runs *before* the adaptive noise filter on
+          // purpose (2026-07-17, wind-noise-filter.ts) — stripping out
+          // wind's low-frequency rumble first means noiseFilter's RMS gate
+          // (below) is judging genuine remaining loudness, not a signal
+          // still inflated by a wind gust it can't otherwise tell apart
+          // from speech. Both independently flag-gated; either, both, or
+          // neither can be null, and each is a zero-cost no-op when off.
+          if (windFilter) {
+            audio = Buffer.from(applyHighPassToMulaw(audio, windFilter));
+          }
           if (noiseFilter) {
             audio = Buffer.from(applyNoiseFilterToMulaw(audio, noiseFilter));
           }

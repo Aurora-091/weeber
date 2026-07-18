@@ -122,6 +122,12 @@ export async function placeOutboundCall(input: {
     if (!orgId) {
       return { ok: false, error: "`orgId` is required for Exotel calls (credentials are per-org)", statusCode: 400 };
     }
+    // Exotel stream auth (2026-07-17, middleware/exotel-auth.ts): the WSS
+    // URL itself carries this org's credentials (Basic Auth, per Exotel's
+    // own documented model for this integration) — createExotelOutboundCall
+    // embeds them since it's the one that already fetches this org's real
+    // Exotel creds; a bare, unauthenticated URL would be rejected by
+    // ws-route.ts's verifyExotelStreamAuth on connect.
     const result = await createExotelOutboundCall({
       orgId,
       to,

@@ -132,7 +132,7 @@ US blended total to **~$0.13–0.14/min** — roughly **2.5–3x more expensive*
 today looks cosmetic (just a dropdown) but is a real, meaningful unit-economics decision.
 
 ### What this means for pricing (cross-reference to the earlier GTM research)
-`docs/product-infra-and-gtm-report.md` Part 4 already researched the market's pricing range
+`docs/product-strategy/product-infra-and-gtm-report.md` Part 4 already researched the market's pricing range
 ($0.07–$0.24+/min charged to customers) against an assumed ~$0.06/min COGS target. This session's
 actual measured COGS (~$0.05/min default stack, ~$0.02/min India-optimized stack) is **at or below**
 that original target — real headroom, not just an assumption anymore, *provided* the ElevenLabs TTS

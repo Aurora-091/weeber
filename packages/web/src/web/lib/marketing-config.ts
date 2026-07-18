@@ -13,8 +13,8 @@ export const SITE = {
 };
 
 export const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/shopify", label: "Shopify" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/compliance", label: "Compliance" },
   { href: "/about", label: "About" },
   { href: "/faq", label: "FAQ" },
 ];
@@ -24,8 +24,18 @@ export const FOOTER_COLUMNS = [
     title: "Product",
     links: [
       { label: "Shopify solution", href: "/shopify" },
+      { label: "Insurance solution", href: "/insurance" },
       { label: "Pricing", href: "/pricing" },
+      { label: "Roadmap", href: "/roadmap" },
       { label: "FAQ", href: "/faq" },
+    ],
+  },
+  {
+    title: "Compliance",
+    links: [
+      { label: "How it works", href: "/compliance" },
+      { label: "India (DPDP & TRAI)", href: "/compliance/india" },
+      { label: "US, EU & global", href: "/compliance/global" },
     ],
   },
   {
@@ -40,7 +50,6 @@ export const FOOTER_COLUMNS = [
     links: [
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Terms of Service", href: "/terms" },
-      { label: "TCPA Compliance", href: "/terms#tcpa" },
     ],
   },
   {
@@ -60,40 +69,31 @@ export const STATS = [
   { value: "21×", label: "more likely to win a lead if you reply within 5 minutes" },
 ] as const;
 
-export const VERTICALS = [
+/** The two verticals with real, built-out agent flows behind them today — used by the landing
+ * page's tabbed vertical explorer. Local/service & clinics has real interest too but isn't a
+ * built-out flow set yet the way these two are — see UPCOMING_VERTICALS. */
+export const VERTICAL_TABS = [
   {
-    label: "Local & service",
-    headline: "Clinics, plumbers, salons & repair shops",
-    problem: "You're with a customer or closed for the night, so the phone rings out. Six of ten callers never reach you — and book the next name on Google.",
-    solution: "Weeber picks up every call on the first ring, qualifies the job, books into your calendar, and texts the confirmation.",
-    demoLabel: "Appointment booking",
-    demoAccent: "English \u00b7 warm",
-    demoDuration: "0:22",
-    cta: { label: "Join the waitlist", href: "/#waitlist" },
-  },
-  {
-    label: "D2C & e-commerce",
-    headline: "Shopify, WordPress & custom stores",
-    problem: "Seven of ten carts get abandoned and ad leads go cold in minutes. Every step — order, shipping, delivery, review — leaks revenue.",
-    solution: "Weeber calls at every step automatically, then follows up on WhatsApp if the call's missed. Built by clicking, not coding.",
+    key: "shopify",
+    label: "Shopify & e-commerce",
+    headline: "Shopify, WooCommerce & custom stores",
+    problem: "Seven of ten carts get abandoned and every step after checkout — shipping, delivery, review — leaks revenue nobody's calling about.",
+    solution: "Weeber calls at every step automatically: recovers the cart, confirms COD orders, sends shipping updates, and collects feedback after delivery. Built by clicking, not coding.",
     demoLabel: "Shopify cart recovery",
     demoAccent: "English \u00b7 friendly",
     demoDuration: "0:25",
-    cta: { label: "Join the waitlist", href: "/#waitlist" },
+    cta: { label: "Explore Shopify", href: "/shopify" },
   },
   {
-    // Approved 2026-07-17 — replaces the previous generic "Enterprise / regulated teams" slot.
-    // Licensed-advisor routing and no-quote/no-underwrite language are load-bearing regulatory
-    // claims, not just copy — reviewed at the same bar as the underlying agent scripts.
-    // See docs/marketing-and-consent-ui-plan.md Part A #2.
+    key: "insurance",
     label: "Insurance",
     headline: "Agencies & brokers",
-    problem: "Warm leads go cold waiting on a callback, new policyholders cancel from buyer's remorse nobody caught in time, and every script needs a licensed human for the parts that actually matter.",
-    solution: "Weeber qualifies, live-transfers to your licensed advisors, and welcomes new policyholders — never quoting, advising, or underwriting. It knows exactly where its job ends.",
+    problem: "Warm leads go cold waiting on a callback, renewals get missed, and every script needs a licensed human for the parts that actually matter.",
+    solution: "Weeber follows up leads within minutes, reminds policyholders before renewal, and live-transfers to your licensed advisors — never quoting, advising, or underwriting. It knows exactly where its job ends.",
     demoLabel: "Warm lead transfer",
     demoAccent: "English \u00b7 professional",
     demoDuration: "0:24",
-    cta: { label: "Talk to our team", href: "mailto:hello@weeber.ai" },
+    cta: { label: "Explore Insurance", href: "/insurance" },
   },
 ] as const;
 
@@ -129,8 +129,8 @@ export const PLATFORM_FEATURES = [
     body: "Recorded and transcribed, with full audit trail.",
   },
   {
-    title: "Shopify + WhatsApp sync",
-    body: "Orders, carts, and messages stay connected automatically.",
+    title: "Shopify sync",
+    body: "Orders, carts, and customers stay connected automatically — no manual data entry.",
   },
   {
     title: "Resilient by default",
@@ -138,21 +138,14 @@ export const PLATFORM_FEATURES = [
   },
 ] as const;
 
-export const READY_FLOWS = [
-  "Abandoned cart recovery",
-  "Appointment booking",
-  "Order & shipping updates",
-  "Review & feedback calls",
-] as const;
-
 export const UPCOMING_VERTICALS = [
+  {
+    title: "Clinics & local services",
+    body: "Appointment booking, no-show recovery, and reminders for salons, repair shops & clinics.",
+  },
   {
     title: "Hotels & hospitality",
     body: "Booking confirmations, pre-arrival concierge, and review calls.",
-  },
-  {
-    title: "Hospitals & healthcare",
-    body: "Appointment reminders, no-show recovery, and follow-ups at scale.",
   },
   {
     title: "Real estate",
@@ -179,35 +172,8 @@ export const SECURITY_FEATURES = [
   },
 ] as const;
 
-export const FAQ = [
-  {
-    q: "Will it actually sound human?",
-    a: "Yes — natural AI voices with real back-and-forth, not a phone-tree robot. Most callers don't realize it's AI.",
-  },
-  {
-    q: "Do I need a developer?",
-    a: "No. You configure your agent with simple rules and prompts. Most setups take under an hour.",
-  },
-  {
-    q: "Which platforms does it work with?",
-    a: "Launching with Shopify and WhatsApp. WordPress, WooCommerce, and more connectors follow based on waitlist demand.",
-  },
-  {
-    q: "What will it cost?",
-    a: "The first waitlist customers lock in founder pricing for life. Full pricing is set at launch.",
-  },
-  {
-    q: "Is my customers' data safe?",
-    a: "Encrypted end to end, used only to run the flows you build, never sold or shared.",
-  },
-  {
-    q: "When does the beta open?",
-    a: "We're onboarding in small batches soon. Join the list and we'll reach out by industry.",
-  },
-] as const;
-
-/** Expanded, grouped FAQ for the dedicated /faq page — Home keeps the
- * condensed 6-question version above. Same tone/directness, more coverage. */
+/** Grouped FAQ for the dedicated /faq page. Home no longer duplicates a condensed version of
+ * this — it links straight to /faq instead, so there's exactly one place this content lives. */
 export const FAQ_GROUPS = [
   {
     title: "Product",
@@ -249,8 +215,8 @@ export const FAQ_GROUPS = [
   {
     title: "Platforms",
     items: [
-      { q: "Which integrations exist at launch?", a: "Shopify and WhatsApp." },
-      { q: "What's on the roadmap?", a: "WooCommerce, WordPress, and clinic/hospital booking systems — sequenced by waitlist demand." },
+      { q: "Which integrations exist at launch?", a: "Shopify, self-serve via one-click OAuth. CRM sync into HubSpot, Salesforce, or GoHighLevel is also built and working today — set up with our team rather than a self-serve toggle." },
+      { q: "What's on the roadmap?", a: "WhatsApp follow-up, WooCommerce, WordPress, Google Calendar, and clinic/hospital booking systems — sequenced by waitlist demand." },
       { q: "Can I request a connector?", a: "Yes — tell us on the waitlist form or email hello@weeber.ai and it goes straight into the roadmap conversation." },
     ],
   },
@@ -328,14 +294,14 @@ export const PRICING_TIERS = [
     name: "Starter",
     audience: "Single-store owners",
     description: "Everything you need to stop missing calls and start recovering carts.",
-    features: ["Capped calls/minutes", "Core flows (cart recovery, order updates)", "Shopify + WhatsApp sync", "Transcripts & recordings"],
+    features: ["Capped calls/minutes", "Core flows (cart recovery, order updates)", "Shopify integration", "Transcripts & recordings"],
     cta: "Join the waitlist",
   },
   {
     name: "Growth",
     audience: "Scaling stores",
     description: "More volume, every flow, and the analytics to prove what's working.",
-    features: ["Higher minutes/call volume", "All flows (COD confirmation, feedback, booking)", "Outbound campaigns", "Full analytics dashboard"],
+    features: ["Higher minutes/call volume", "All flows (COD confirmation, feedback, booking)", "CRM sync (HubSpot, Salesforce, GoHighLevel)", "Full analytics dashboard"],
     cta: "Join the waitlist",
     highlighted: true,
   },

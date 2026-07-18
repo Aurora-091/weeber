@@ -11,6 +11,15 @@ export type TtsConnection = {
   endTurn(): void;
   /** Hard-abort — used on barge-in to stop audio generation immediately. */
   close(): void;
+  /** Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) — sets the
+   * delivery/emotion for this turn's *remaining* generation, called once
+   * per turn as soon as stream.ts has parsed the LLM's leading tone tag out
+   * of the text (before any of it is sent via sendText). Optional: a
+   * provider with no real emotion control (Sarvam, ElevenLabs today) simply
+   * omits this method entirely — callers always invoke it as
+   * `tts?.setTone?.(...)`, so an unimplemented provider is a silent no-op,
+   * same fail-open convention as onWordTimestamp above. */
+  setTone?(tone: string): void;
 };
 
 export type TtsProvider = "elevenlabs" | "cartesia" | "sarvam";

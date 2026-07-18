@@ -1,0 +1,1 @@
+ALTER TABLE "call_latency" ADD COLUMN "pickup_to_first_audio_ms" integer;

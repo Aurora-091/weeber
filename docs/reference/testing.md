@@ -48,7 +48,7 @@ the moment anyone adds a test.
 - **The live call pipeline itself** (`stream.ts`'s WebSocket state machine, actual Twilio/Plivo/Exotel Media
   Stream handling, STT/TTS provider connections) — this needs a real phone call to exercise meaningfully;
   it's verified via manual curl-based regression checks and, where a real provider account was available,
-  live-tested end-to-end (see `DECISIONS.md`'s hardening-round ADRs and `docs/hindi-hinglish-voice-support.md`
+  live-tested end-to-end (see `DECISIONS.md`'s hardening-round ADRs and `docs/voice-quality/hindi-hinglish-voice-support.md`
   for specific examples) rather than unit tests. A proper integration-test harness for this is open
   territory.
 - **OAuth flows** for Salesforce/Google Calendar — these integrations assume you already have a valid
@@ -56,7 +56,7 @@ the moment anyone adds a test.
   tested here.
 - **Plivo/Exotel against a real account** — the request shapes (hangup/transfer/outbound call) match each
   provider's own documented API, but no live call has been placed through either in this codebase's own
-  testing — see `docs/india-telephony.md`'s status notes for exactly what's confirmed vs. unconfirmed.
+  testing — see `docs/voice-quality/india-telephony.md`'s status notes for exactly what's confirmed vs. unconfirmed.
 
 ## Writing new tests
 

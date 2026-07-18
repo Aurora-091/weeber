@@ -62,15 +62,20 @@ service businesses.
 
 ## Compliance Framework
 
-Weeber's compliance is not a feature — it's infrastructure-level enforcement:
+Weeber's compliance is not a feature — it's infrastructure-level enforcement, documented in full
+per jurisdiction at https://www.weeber.ai/compliance/india (India) and
+https://www.weeber.ai/compliance/global (US/EU):
 
-- **TCPA**: Calling windows enforced per-timezone. No calls before 8am or after 9pm
-  in the callee's local time. Consent gate blocks dialing without verified consent.
-- **DNC (Do Not Call)**: Internal DNC list checked before every outbound attempt.
-  Any verbal opt-out during a call immediately adds the number. National DNC
-  registry integration planned.
-- **GDPR**: Data retention policies, right-to-erasure support, audit trail export.
-  Edge function for automated redaction after retention period.
+- **TCPA (US)**: Calling windows enforced per-timezone — 8am-9pm federal baseline, narrower in
+  Florida/Oklahoma/Washington (8pm cap). Consent gate blocks dialing without verified consent for
+  purposes that require it.
+- **TRAI TCCCPR + DLT (India)**: 9am-9pm IST calling window, DND registry checks, and DLT
+  registration for commercial calling — enforced automatically, not left to merchant configuration.
+- **DNC (Do Not Call)**: Internal DNC list checked before every outbound attempt, no exceptions or
+  overrides. Any verbal opt-out during a call immediately adds the number.
+- **DPDP Act (India)**: Data minimization, spoken AI-call disclosure before any conversation
+  happens, and data subject rights (access/deletion) honored across every system holding the data.
+- **GDPR (EU)**: Data retention policies, right-to-erasure support, audit trail export.
 - **HIPAA**: Guardrails for healthcare vertical — PHI detection and redaction in
   transcripts, BAA-ready infrastructure design.
 - **Audit trail**: Every call produces an exportable compliance record: consent

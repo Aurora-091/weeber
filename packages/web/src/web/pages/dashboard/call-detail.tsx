@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { motion } from "motion/react";
-import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge } from "lucide-react";
+import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge, RefreshCw } from "lucide-react";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
@@ -105,6 +105,15 @@ export function CallDetailPage() {
             {row.disposition ? ` · ${row.disposition}` : ""}
             {"sentiment" in row && row.sentiment ? ` · ${row.sentiment}` : ""}
           </p>
+          {"providerFailoverCount" in row && (row.providerFailoverCount ?? 0) > 0 && (
+            <span
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning"
+              title="This call switched providers mid-call due to an error or timeout on the primary provider."
+            >
+              <RefreshCw className="size-3" aria-hidden />
+              Failed over {row.providerFailoverCount}×
+            </span>
+          )}
           <div className="flex items-center gap-4 mt-3">
             {row.recordingUrl && (
               <a
@@ -175,6 +184,7 @@ export function CallDetailPage() {
             Latency breakdown
           </h2>
           <div className="rounded-lg border border-border bg-card p-4 mb-6">
+            <LatencyRow label="Pickup to first word (caller-perceived)" ms={latencyRow?.pickupToFirstAudioMs ?? null} />
             <LatencyRow label="STT connect" ms={latencyRow?.sttConnectMs ?? null} />
             <LatencyRow label="LLM time-to-first-token" ms={latencyRow?.llmTtftMs ?? null} />
             <LatencyRow label="TTS first byte" ms={latencyRow?.ttsFirstByteMs ?? null} />

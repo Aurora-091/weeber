@@ -21,6 +21,11 @@
   --m-input-border: #B7B6B1;
   --m-input-shadow: 0 1px 2px rgba(11, 11, 12, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
   --m-input-focus-ring: rgba(11, 11, 12, 0.12);
+  /* Contained accent — light blue, used ONLY for animated borders/SVG/interactive-state accents
+   * (agent demo waveform, vertical-explorer active state) — deliberately not a recolor of the
+   * monochrome off-white/near-black theme itself. */
+  --m-accent-blue: #4E9FE8;
+  --m-accent-blue-soft: rgba(78, 159, 232, 0.18);
   background-color: var(--m-bg);
   color: var(--m-text);
 }
@@ -38,6 +43,8 @@
   --m-input-border: rgba(255, 255, 255, 0.16);
   --m-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --m-input-focus-ring: rgba(255, 255, 255, 0.14);
+  --m-accent-blue: #6DB4F2;
+  --m-accent-blue-soft: rgba(109, 180, 242, 0.16);
 }
 
 .marketing .font-display {
@@ -583,4 +590,99 @@
   .marketing .demo-bubble {
     animation: none !important;
   }
+}
+
+/* ─── Live waveform — audio-reactive bars (AgentDemoWidget), light-blue accent ────────────────── */
+.marketing .demo-live-wave {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2.5px;
+  height: 28px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.marketing .demo-live-wave-bar {
+  flex: 1;
+  max-width: 4px;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--m-border);
+  transition: height 0.1s ease-out, background-color 0.3s ease;
+}
+
+.marketing .demo-live-wave--active .demo-live-wave-bar {
+  background: var(--m-accent-blue);
+}
+
+/* ─── Vertical explorer — tabbed Shopify/Insurance chooser on the landing page ─────────────────── */
+.marketing .vertical-tab-active {
+  animation: verticalTabIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes verticalTabIn {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.marketing .vertical-panel-enter {
+  animation: verticalPanelIn 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes verticalPanelIn {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.marketing .vertical-panel-glow {
+  position: relative;
+}
+
+.marketing .vertical-panel-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, var(--m-accent-blue-soft), transparent 40%, transparent 60%, var(--m-accent-blue-soft));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: verticalGlowSweep 5s linear infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes verticalGlowSweep {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 200%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing .vertical-tab-active,
+  .marketing .vertical-panel-enter,
+  .marketing .vertical-panel-glow::before,
+  .marketing .demo-live-wave-bar {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ─── Brand logos — real logo SVGs rendered monochrome via mask-image (BrandLogos.tsx) ────────── */
+.marketing .brand-mono {
+  display: inline-block;
+  background-color: var(--m-text);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+
+.marketing .card-lift:hover .brand-mono {
+  opacity: 1;
 }

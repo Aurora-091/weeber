@@ -26,7 +26,7 @@ export const AGENT_TEMPLATES = [
       description: "Recovers abandoned checkouts by calling customers after they abandon their cart.",
       fileName: "01-cart-recovery-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{merchant_name}}. Do you have a quick minute?",
-      defaultTools: ["offerCartRecoveryDiscount", "captureField", "setDisposition"],
+      defaultTools: ["offerCartRecoveryDiscount", "captureField", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -36,7 +36,7 @@ export const AGENT_TEMPLATES = [
       description: "Confirms Cash on Delivery orders to reduce RTO (Return to Origin) rates.",
       fileName: "02-cod-confirmation-agent.md",
       literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{merchant_name}}. Can I have two minutes of your time?",
-      defaultTools: ["confirmCodOrder", "captureField", "setDisposition"],
+      defaultTools: ["confirmCodOrder", "captureField", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -46,7 +46,7 @@ export const AGENT_TEMPLATES = [
       description: "Calls customers after order fulfillment to collect post-delivery feedback.",
       fileName: "03-feedback-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your {{product_name}} was delivered recently — do you have a minute to share how it went?",
-      defaultTools: ["captureField", "setDisposition"],
+      defaultTools: ["captureField", "setDisposition", "setIntent"],
       active: false,
     },
     {
@@ -60,7 +60,7 @@ export const AGENT_TEMPLATES = [
       // now explicitly calls it on the new "replacement" refusal (see
       // docs/agent-prompts/00-insurance-regulatory-reference.md); would otherwise repeat the
       // confirmCodOrder/offerCartRecoveryDiscount silent-drop bug seed.test.ts guards against.
-      defaultTools: ["captureField", "setDisposition", "transferToHuman", "flagGuardrailEvent", "crmSync"],
+      defaultTools: ["captureField", "setDisposition", "setIntent", "transferToHuman", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {
@@ -71,7 +71,7 @@ export const AGENT_TEMPLATES = [
       fileName: "05-insurance-lead-followup-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{company_name}} — you'd recently shown interest in {{interest_area}}. Do you have a couple of minutes?",
       // flagGuardrailEvent added 2026-07-16 — same reasoning as insurance-policy-renewal above.
-      defaultTools: ["captureField", "bookAppointment", "setDisposition", "flagGuardrailEvent", "crmSync"],
+      defaultTools: ["captureField", "bookAppointment", "setDisposition", "setIntent", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {
@@ -81,7 +81,7 @@ export const AGENT_TEMPLATES = [
       description: "Confirms continued interest from an already-warm lead and live-transfers to a licensed advisor, or books a specific callback if no advisor is available.",
       fileName: "06-insurance-appointment-setter-agent.md",
       literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently shown interest in {{interest_area}}, and I'd love to connect you with one of our licensed advisors. Is now a good time?",
-      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "crmSync"],
+      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
     {
@@ -91,7 +91,7 @@ export const AGENT_TEMPLATES = [
       description: "Welcomes a new policyholder after a policy is issued, confirms documents arrived, and routes any coverage/claims/change/cancel request to a licensed advisor.",
       fileName: "07-insurance-post-sale-welcome-agent.md",
       literalGreetingTemplate: "Hello, is this {{policyholder_name}}? This is {{agent_name}} calling on behalf of {{company_name}} — a quick welcome call now that your new policy is in place. Do you have a moment?",
-      defaultTools: ["captureField", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "crmSync"],
+      defaultTools: ["captureField", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
     {
@@ -101,7 +101,7 @@ export const AGENT_TEMPLATES = [
       description: "Collects a 1-5 satisfaction rating and one open comment after a servicing interaction or claim, routing any complaint to a licensed human without engaging on its merits.",
       fileName: "08-insurance-feedback-nps-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{company_name}}. I'm following up on {{interaction_type}} — do you have a minute to share how it went?",
-      defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "crmSync"],
+      defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
   ];

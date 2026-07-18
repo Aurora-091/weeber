@@ -143,6 +143,15 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
     sttProvider: frame.sttProvider,
     llmProvider: frame.llmProvider,
     llmModel: frame.llmModel,
+    // Cross-provider failover (2026-07-17) — these three were added to AgentFrameSchema and
+    // org_agent_configs' schema back when the failover feature shipped, but this explicit
+    // field-by-field mapping was never updated to actually include them: every save through
+    // either agent UI (once one existed) would have silently dropped them, no matter what the
+    // frontend sent. Found while wiring the first real UI for these fields (Phase 1 of
+    // docs/agents-ux-audit-and-cogs-2026-07-17.md's P0 finding) — fixed here, not just in the UI.
+    sttFallbackOrder: frame.sttFallbackOrder,
+    ttsFallbackOrder: frame.ttsFallbackOrder,
+    llmFallbackModels: frame.llmFallbackModels,
     toolsEnabled: frame.toolsEnabled,
     guardrails: frame.guardrails,
     firstCallDelayMinutes: frame.firstCallDelayMinutes,
@@ -416,6 +425,15 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     dispositionBreakdown[key] = (dispositionBreakdown[key] ?? 0) + 1;
   }
 
+  // Intent detection (2026-07-18) — WHY the caller called, distinct from dispositionBreakdown's
+  // "how it ended". Same "no-X" bucket convention as disposition above for calls where the agent
+  // never got a clear enough signal to call setIntent.
+  const intentBreakdown: Record<string, number> = {};
+  for (const call of orgCalls) {
+    const key = call.intent ?? "no-intent";
+    intentBreakdown[key] = (intentBreakdown[key] ?? 0) + 1;
+  }
+
   const callIds = orgCalls.map((call) => call.id);
 
   const latencyRows =
@@ -471,6 +489,19 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
   const org = await getOrg(orgId);
   const kpis = await computeKpis(orgId, since, orgCalls, toolRows);
 
+  // Provider reliability — how often a call had to fall back off its
+  // configured primary STT/TTS provider (see voice/failover.ts + the
+  // agents-ux-audit-and-cogs doc, "written to DB but shown nowhere"). A call
+  // counts here the moment providerFailoverCount > 0, regardless of how many
+  // times it fell back within that one call.
+  const callsWithFailover = orgCalls.filter((call) => (call.providerFailoverCount ?? 0) > 0).length;
+  const totalFailoverEvents = orgCalls.reduce((sum, call) => sum + (call.providerFailoverCount ?? 0), 0);
+  const reliability = {
+    callsWithFailover,
+    totalFailoverEvents,
+    failoverRate: totalCalls > 0 ? callsWithFailover / totalCalls : null,
+  };
+
   const dailyVolume: { date: string; count: number }[] = [];
   const dayCounts: Record<string, number> = {};
   for (const call of orgCalls) {
@@ -487,6 +518,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     totalCalls,
     totalMinutes: Math.round(totalMinutes * 10) / 10,
     dispositionBreakdown,
+    intentBreakdown,
     avgLatency,
     toolUsageCounts,
     guardrailEventCounts,
@@ -494,6 +526,7 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     currency: org?.currency ?? null,
     kpis,
     turnLatencyPercentiles,
+    reliability,
   };
 }
 

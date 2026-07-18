@@ -127,63 +127,10 @@
 			}
 		</script>
 
-		<!-- FAQPage Schema -->
-		<script type="application/ld+json">
-			{
-				"@context": "https://schema.org",
-				"@type": "FAQPage",
-				"mainEntity": [
-					{
-						"@type": "Question",
-						"name": "Will it actually sound human?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "Yes — natural AI voices with real back-and-forth, not a phone-tree robot. Most callers don't realize it's AI."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "Do I need a developer?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "No. You configure your agent with simple rules and prompts. Most setups take under an hour."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "Which platforms does it work with?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "Launching with Shopify and WhatsApp. WordPress, WooCommerce, and more connectors follow based on waitlist demand."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "What will it cost?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "The first waitlist customers lock in founder pricing for life. Full pricing is set at launch."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "Is my customers' data safe?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "Encrypted end to end, used only to run the flows you build, never sold or shared."
-						}
-					},
-					{
-						"@type": "Question",
-						"name": "When does the beta open?",
-						"acceptedAnswer": {
-							"@type": "Answer",
-							"text": "We're onboarding in small batches soon. Join the list and we'll reach out by industry."
-						}
-					}
-				]
-			}
-		</script>
+		<!-- FAQPage schema lives on /faq itself now (injected dynamically, matches the full
+		     question set actually rendered there via useJsonLd) — removed the static duplicate
+		     that used to live here since the home page no longer renders an inline FAQ block,
+		     and mismatched schema/content is exactly what structured-data guidelines warn against. -->
 
 		<!-- GTM/GA4 scripts are injected dynamically via /dashboard/settings -->
 	</head>

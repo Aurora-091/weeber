@@ -91,7 +91,7 @@ normalized by telephony-transport.ts)
         |  caller audio chunks
         v
 STT  (Deepgram nova-3, Sarvam Saaras, or ElevenLabs Scribe v2 Realtime for Indic —
-     stt/deepgram.ts / stt/sarvam.ts / stt/elevenlabs.ts, see docs/hindi-hinglish-voice-support.md)
+     stt/deepgram.ts / stt/sarvam.ts / stt/elevenlabs.ts, see docs/voice-quality/hindi-hinglish-voice-support.md)
         |  finalized transcript
         v
 LLM Agent (AI Gateway or Groq — voice/llm/, streamed, tool-calling, latency telemetry)
@@ -131,7 +131,7 @@ Several in-process components rely on this:
 **If you need horizontal scaling:** set `REDIS_URL` (any Redis-compatible service) — the session store
 automatically switches to a Redis-backed implementation (same interface, shared across instances). The
 scheduler's CAS claim pattern (`scheduler.ts`) is already safe across multiple instances. See
-[`../docs/configuration.md`](../docs/configuration.md) for details.
+[`../docs/reference/configuration.md`](../docs/reference/configuration.md) for details.
 
 ## Where to go next
 

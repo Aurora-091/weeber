@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Play, Loader as Loader2, Sparkles, Phone, PhoneOff, Mic, PhoneCall } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Play, Loader as Loader2, Sparkles, Phone, PhoneOff, Mic, PhoneCall, RefreshCw } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { AgentTestChat } from "../agent-test-chat";
@@ -12,10 +12,14 @@ type PreviewDrawerProps = {
   templateName: string;
   /** POSTs { messages, configOverride } — same contract on both admin/user routes. */
   chatFetchFn: (messages: { role: string; content: string }[]) => Promise<Response>;
-  /** POSTs { configOverride } to the test-call-token route (same override
-   * contract as chatFetchFn) — issues the short-lived token useVoiceTestCall
-   * needs to open the live voice WS. See voice/test-call-tokens.ts. */
-  testCallTokenFetchFn: () => Promise<Response>;
+  /** POSTs { configOverride, simulateFailover } to the test-call-token route
+   * (same override contract as chatFetchFn) — issues the short-lived token
+   * useVoiceTestCall needs to open the live voice WS. See
+   * voice/test-call-tokens.ts. `simulateFailover` is Phase 3's "Simulate
+   * provider failure" toggle, rendered/owned inside this drawer — the
+   * caller just needs to forward whatever boolean it's given onto the POST
+   * body. */
+  testCallTokenFetchFn: (simulateFailover?: boolean) => Promise<Response>;
   /** Reuses each page's existing playPreview()/previewState/previewUrl (the
    * one-shot TTS "Hear it" logic) rather than duplicating fetch/auth here —
    * the drawer just presents it inside the Voice tab as a quick line-level
@@ -55,7 +59,12 @@ export function PreviewDrawer({
   onPlayPreview,
   testCallPhoneFetchFn,
 }: PreviewDrawerProps) {
-  const call = useVoiceTestCall(testCallTokenFetchFn);
+  const [simulateFailover, setSimulateFailover] = useState(false);
+  const tokenFetchWithFailoverFlag = useCallback(
+    () => testCallTokenFetchFn(simulateFailover),
+    [testCallTokenFetchFn, simulateFailover],
+  );
+  const call = useVoiceTestCall(tokenFetchWithFailoverFlag);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phoneCallState, setPhoneCallState] = useState<"idle" | "loading" | "error" | "sent">("idle");
   const [phoneCallError, setPhoneCallError] = useState<string | null>(null);
@@ -135,6 +144,22 @@ export function PreviewDrawer({
               </button>
             )}
 
+            {!callActive && (
+              <label className="flex items-start gap-2 text-xs text-muted-foreground max-w-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={simulateFailover}
+                  onChange={(e) => setSimulateFailover(e.target.checked)}
+                  className="mt-0.5 size-3.5 accent-primary"
+                />
+                <span>
+                  Simulate provider failure — start this call already failed over to the next
+                  provider in this agent's configured fallback order, so you can see it happen
+                  without waiting for a real outage.
+                </span>
+              </label>
+            )}
+
             <p className="text-xs text-muted-foreground text-center max-w-xs">
               {call.status === "connecting" && "Connecting — allow microphone access if prompted…"}
               {call.status === "listening" && "Listening — talk to the agent like a real call."}
@@ -143,6 +168,17 @@ export function PreviewDrawer({
               {call.status === "ended" && "Call ended."}
               {call.status === "error" && (call.errorMessage ?? "Test call failed.")}
             </p>
+
+            {call.failoverEvents.length > 0 && (
+              <div className="w-full rounded-md border border-weeber-warning/30 bg-weeber-warning/10 p-2.5 text-xs text-weeber-warning space-y-1">
+                {call.failoverEvents.map((evt, i) => (
+                  <p key={i} className="flex items-center gap-1.5">
+                    <RefreshCw className="size-3 shrink-0" aria-hidden />
+                    Simulated {evt.channel.toUpperCase()} failover: {evt.from} → {evt.to}
+                  </p>
+                ))}
+              </div>
+            )}
 
             {call.transcripts.length > 0 && (
               <div className="w-full max-h-40 overflow-y-auto rounded-md border border-border bg-background/60 p-2 text-xs space-y-1">

@@ -30,7 +30,7 @@ with revenue attribution, a real Workflow Canvas, real compliance scaffolding. W
 thing that actually differentiates Weeber from the horizontal builders and from BiteSpeed (the direct
 Shopify-vertical competitor): true dual-language-in-one-call. Phase A and most of Phase B are done;
 the STT/TTS quality foundation B2 needs is now solid and live-verified as of 2026-07-16 (see
-`docs/hindi-hinglish-voice-support.md`), but B2's actual dynamic mid-call switching is still the one
+`docs/voice-quality/hindi-hinglish-voice-support.md`), but B2's actual dynamic mid-call switching is still the one
 open item that matters most before a serious pitch or pilot; Phase C is
 started-but-partial and not currently blocking anything; Phase D is correctly untouched, though D1
 (Kokoro TTS pilot) and D4 (join NVIDIA Inception) are both cheap enough to start opportunistically.
@@ -112,7 +112,7 @@ because the pipeline itself works.
 - [ ] **B2 — Dual-language-in-one-call.** **Partially built as of 2026-07-16 — the STT/TTS
   foundation for this is now solid and live-verified; the actual dynamic mid-call switching (B2.3/
   B2.4/B2.5 below) is still not built. Don't mark this closed.** Full research + live-verification
-  detail in `docs/hindi-hinglish-voice-support.md` (separate doc, not duplicated here) — summary:
+  detail in `docs/voice-quality/hindi-hinglish-voice-support.md` (separate doc, not duplicated here) — summary:
   found and fixed 2 real silent bugs in a new ElevenLabs Scribe v2 Realtime STT adapter via live
   testing with a real account (wrong audio-format query param caused garbled/nonsense transcripts
   with zero errors; `close()` raced the server's final-transcript response), live-verified
@@ -141,7 +141,7 @@ because the pipeline itself works.
   - [ ] **B2.1** — One shared multilingual system-prompt instruction ("detect the caller's language,
     respond naturally, handle Hinglish mixing") — prompt-only change, `voice/agent.ts` persona
     assembly. Still not a systemic/shared instruction — `buildLanguageInstructionBlock` (added
-    2026-07-12, see `docs/voice-quality-and-india-status-2026-07-12.md`) tells the LLM to *stay* in
+    2026-07-12, see `docs/voice-quality/voice-quality-and-india-status-2026-07-12.md`) tells the LLM to *stay* in
     whichever language it opened with, which is a mitigation for the TTS-can't-switch-voice problem
     below, not the same thing as an explicit "detect and switch" instruction B2.1 describes.
   - [x] **B2.2 (revised)** — STT now correctly handles code-mixed Hindi/English for the Indic call
@@ -174,7 +174,7 @@ because the pipeline itself works.
     as open until confirmed, not code work.
 
 **Phase B: mostly done. B2's foundation (STT/TTS quality for Hindi/Hinglish, live-verified
-2026-07-16 — see `docs/hindi-hinglish-voice-support.md`) is now solid, but true dynamic
+2026-07-16 — see `docs/voice-quality/hindi-hinglish-voice-support.md`) is now solid, but true dynamic
 mid-call language switching (B2.3/B2.4/B2.5) is still the real gap and the priority.**
 
 ---

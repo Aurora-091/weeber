@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Clock, Wrench, ShieldAlert } from "lucide-react";
+import { Phone, Clock, Wrench, ShieldAlert, RefreshCw } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
@@ -58,6 +58,12 @@ export function AnalyticsPage() {
 
   const outcomePieData = data
     ? Object.entries(data.dispositionBreakdown as Record<string, number>).map(
+        ([name, value]) => ({ name, value }),
+      )
+    : [];
+
+  const intentPieData = data
+    ? Object.entries((data.intentBreakdown ?? {}) as Record<string, number>).map(
         ([name, value]) => ({ name, value }),
       )
     : [];
@@ -153,7 +159,7 @@ export function AnalyticsPage() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {outcomePieData.length > 0 && (
               <div className="card-weeber p-5">
                 <h3 className="text-sm font-medium mb-4">Call outcomes</h3>
@@ -180,6 +186,49 @@ export function AnalyticsPage() {
                       labelLine={false}
                     >
                       {outcomePieData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        background: "var(--color-card)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {intentPieData.length > 0 && (
+              <div className="card-weeber p-5">
+                <h3 className="text-sm font-medium mb-4">Call intent</h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={intentPieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      label={({
+                        name,
+                        percent,
+                      }: {
+                        name?: string;
+                        percent?: number;
+                      }) =>
+                        `${name ?? ""} (${((percent ?? 0) * 100).toFixed(0)}%)`
+                      }
+                      labelLine={false}
+                    >
+                      {intentPieData.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
                     </Pie>
@@ -282,6 +331,40 @@ export function AnalyticsPage() {
               <BreakdownList counts={data.guardrailEventCounts} />
             </div>
           </div>
+
+          {data.reliability && (
+            <div className="card-weeber p-5">
+              <div className="flex items-center gap-1.5 text-sm font-medium mb-1">
+                <RefreshCw className="size-3.5" aria-hidden />
+                Provider reliability
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                How often a call had to fall back off its configured primary STT/TTS provider —
+                the failover chain set on each agent's Voice tab.
+              </p>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <StatCard
+                  label="Calls with failover"
+                  value={String(data.reliability.callsWithFailover)}
+                  icon={RefreshCw}
+                />
+                <StatCard
+                  label="Failover rate"
+                  value={
+                    data.reliability.failoverRate == null
+                      ? "—"
+                      : `${(data.reliability.failoverRate * 100).toFixed(1)}%`
+                  }
+                  icon={RefreshCw}
+                />
+                <StatCard
+                  label="Total failover events"
+                  value={String(data.reliability.totalFailoverEvents)}
+                  icon={RefreshCw}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

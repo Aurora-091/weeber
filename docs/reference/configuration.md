@@ -55,7 +55,7 @@ entirely for a cooldown window and returns a clear "temporarily skipped" result 
 | Google Calendar | `GOOGLE_CALENDAR_ACCESS_TOKEN`, `GOOGLE_CALENDAR_ID` (optional, defaults to `primary`) | `bookAppointment` |
 
 Salesforce and Google Calendar expect an already-valid access token — OAuth/token-refresh is your own
-app's responsibility, not something OpenVent handles for you (see [`docs/testing.md`](./testing.md) for
+app's responsibility, not something OpenVent handles for you (see [`docs/reference/testing.md`](./testing.md) for
 what is and isn't covered by tests here).
 
 ## Personas

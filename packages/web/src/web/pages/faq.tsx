@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
+import { useJsonLd } from "../lib/useJsonLd";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
 import { FAQ_GROUPS } from "../lib/marketing-config";
@@ -23,8 +24,31 @@ function FaqItem({ q, a, open, onToggle }: { q: string; a: string; open: boolean
 }
 
 export function FaqPage() {
-  usePageTitle("FAQ — Voice AI for SMBs, Answered");
+  usePageMeta({
+    title: "FAQ — Voice AI for SMBs, Answered",
+    description:
+      "Short, direct answers on Weeber setup, pricing, compliance (consent, DNC, calling windows), languages, and integrations — no marketing fluff.",
+    path: "/faq",
+  });
   const [openKey, setOpenKey] = useState<string | null>(null);
+
+  const allFaqItems: { q: string; a: string }[] = [];
+  for (const group of FAQ_GROUPS) {
+    for (const item of group.items) allFaqItems.push(item);
+  }
+
+  useJsonLd(
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: allFaqItems.map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: { "@type": "Answer", text: item.a },
+      })),
+    },
+    "faq-page",
+  );
 
   return (
     <MarketingPageShell>

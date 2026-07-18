@@ -23,15 +23,33 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
+let lastInsertValues: Record<string, unknown> | undefined;
+
 mock.module("../database", () => ({
   db: {
     select: () => ({
       from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
     }),
+    insert: () => ({
+      values: (v: Record<string, unknown>) => {
+        lastInsertValues = v;
+        return {
+          onConflictDoNothing: () => ({ returning: () => Promise.resolve([v]) }),
+          onConflictDoUpdate: () => ({ returning: () => Promise.resolve([v]) }),
+          returning: () => Promise.resolve([v]),
+        };
+      },
+    }),
   },
 }));
 
-import { computeOrgAnalytics, getEffectiveFlags, getShopifyStatus, buildInstallUrl } from "./org-queries";
+import {
+  computeOrgAnalytics,
+  getEffectiveFlags,
+  getShopifyStatus,
+  buildInstallUrl,
+  upsertAgentConfig,
+} from "./org-queries";
 
 const now = Date.now();
 const call = (overrides: Record<string, unknown> = {}) => ({
@@ -305,5 +323,34 @@ describe("getEffectiveFlags", () => {
     };
     const flags = await getEffectiveFlags("org-1");
     expect(flags).toEqual({ "new-analytics": false, "beta-voices": true, "org-only": true });
+  });
+});
+
+describe("upsertAgentConfig", () => {
+  beforeEach(() => {
+    lastInsertValues = undefined;
+  });
+
+  it("regression: sttFallbackOrder/ttsFallbackOrder/llmFallbackModels must reach the insert values, not be silently dropped", async () => {
+    await upsertAgentConfig("org-1", "template-a", {
+      personaPrompt: "You are a helpful agent.",
+      sttFallbackOrder: ["deepgram", "elevenlabs"],
+      ttsFallbackOrder: ["cartesia", "sarvam"],
+      llmFallbackModels: ["openai/gpt-4o-mini", "groq/llama-3.1-70b"],
+    });
+
+    expect(lastInsertValues).toBeDefined();
+    expect(lastInsertValues?.sttFallbackOrder).toEqual(["deepgram", "elevenlabs"]);
+    expect(lastInsertValues?.ttsFallbackOrder).toEqual(["cartesia", "sarvam"]);
+    expect(lastInsertValues?.llmFallbackModels).toEqual(["openai/gpt-4o-mini", "groq/llama-3.1-70b"]);
+  });
+
+  it("passes through undefined (not fabricated defaults) when a frame omits the failover fields", async () => {
+    await upsertAgentConfig("org-1", "template-a", { personaPrompt: "Hello." });
+
+    expect(lastInsertValues).toBeDefined();
+    expect(lastInsertValues?.sttFallbackOrder).toBeUndefined();
+    expect(lastInsertValues?.ttsFallbackOrder).toBeUndefined();
+    expect(lastInsertValues?.llmFallbackModels).toBeUndefined();
   });
 });

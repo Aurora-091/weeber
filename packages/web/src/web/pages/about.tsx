@@ -1,11 +1,16 @@
-import { usePageTitle } from "../lib/usePageTitle";
+import { usePageMeta } from "../lib/usePageMeta";
 import { MarketingPageShell } from "../components/marketing/MarketingPageShell";
 import { SectionHeading } from "../components/marketing/SectionHeading";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
 import { THESIS_PRINCIPLES, TEAM, UPCOMING_VERTICALS } from "../lib/marketing-config";
 
 export function AboutPage() {
-  usePageTitle("About Weeber — Compliance-First Voice AI for Small Businesses");
+  usePageMeta({
+    title: "About Weeber — Compliance-First Voice AI for Small Businesses",
+    description:
+      "Why Weeber exists: a $12,000 TCPA lawsuit from a cart-recovery campaign nobody checked consent on. Meet the founders and the thesis behind vertical, compliance-first voice AI.",
+    path: "/about",
+  });
 
   return (
     <MarketingPageShell>

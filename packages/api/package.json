@@ -28,7 +28,6 @@
     "pdf-parse": "^2.4.5",
     "postgres": "^3.4.7",
     "twilio": "^6.0.2",
-    "ws": "^8.21.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

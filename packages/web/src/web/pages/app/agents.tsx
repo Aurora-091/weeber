@@ -17,10 +17,13 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
+import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   TTS_COST_TIERS, STT_COST_TIERS,
+  STT_PROVIDERS, TTS_PROVIDERS, STT_PROVIDER_LABELS, TTS_PROVIDER_LABELS,
+  DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
 } from "../../lib/agent-config";
@@ -222,6 +225,18 @@ function VoiceTab({ row, form, set }: TabProps) {
           <datalist id={`langs-${row.templateKey}`}>{RECOMMENDED_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</datalist>
         </div>
       </div>
+      <FailoverGuidanceBanner />
+      <div>
+        <span className={labelCls}>Voice failover order <span className="text-muted-foreground/60">(if the voice provider above fails mid-call)</span></span>
+        <ProviderFallbackOrder
+          primary={form.voiceProvider}
+          allProviders={TTS_PROVIDERS}
+          labels={TTS_PROVIDER_LABELS}
+          value={form.ttsFallbackOrder}
+          onChange={(next) => set("ttsFallbackOrder", next)}
+          defaultOrder={DEFAULT_TTS_FALLBACK_ORDER}
+        />
+      </div>
       {recommended && !matchesRecommended && (
         <div className="rounded-lg border border-primary/20 border-l-2 border-l-primary bg-primary/5 px-4 py-3 text-xs">
           <div className="flex items-start gap-2.5">
@@ -272,6 +287,17 @@ function VoiceTab({ row, form, set }: TabProps) {
         <p className="mt-1.5 text-xs text-muted-foreground">
           {STT_COST_TIERS[form.sttProvider]?.note ?? ""} — STT cost is similar across all three providers, unlike voice/TTS.
         </p>
+      </div>
+      <div>
+        <span className={labelCls}>Speech-to-text failover order <span className="text-muted-foreground/60">(if the STT provider above fails mid-call)</span></span>
+        <ProviderFallbackOrder
+          primary={form.sttProvider}
+          allProviders={STT_PROVIDERS}
+          labels={STT_PROVIDER_LABELS}
+          value={form.sttFallbackOrder}
+          onChange={(next) => set("sttFallbackOrder", next)}
+          defaultOrder={DEFAULT_STT_FALLBACK_ORDER}
+        />
       </div>
     </div>
   );
@@ -395,6 +421,32 @@ function CallingModelTab({ row, form, set }: TabProps) {
             <datalist id={`models-${row.templateKey}`}>{RECOMMENDED_LLM_MODELS.filter((m) => m.provider === form.llmProvider).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}</datalist>
           </div>
         </div>
+        {form.llmProvider === "groq" && form.language.trim().toLowerCase() === "hi" && (
+          <div className="mt-3 rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
+            <p className="text-foreground">
+              <span className="font-medium">Groq + Hindi — not yet live-verified for this platform.</span>{" "}
+              Groq's fastest model (Llama 3.3 70B) officially supports Hindi, but that's tested on
+              formal-language benchmarks, not the Hindi/English code-switching (Hinglish) real callers
+              actually use — the exact gap that made Deepgram's "multi" STT mode unreliable for Hindi
+              despite being marketed for code-switching (see the Voice tab's own recommendation). AI
+              Gateway (Gemini) is the safer choice for a Hindi/Hinglish agent until Groq's conversational
+              quality here has been tested the same way — Groq is a strong pick for English-language
+              agents specifically, where this risk doesn't apply.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-border pt-5">
+        <span className={labelCls}>LLM failover models <span className="text-muted-foreground/60">(only active when LLM provider is AI Gateway, not Groq)</span></span>
+        <p className="mb-2 text-xs text-muted-foreground">
+          If the model above fails, the AI Gateway tries these next, in order — its own native failover, not a custom retry.
+        </p>
+        <ModelFallbackList
+          value={form.llmFallbackModels}
+          onChange={(next) => set("llmFallbackModels", next)}
+          suggestions={RECOMMENDED_LLM_MODELS.map((m) => m.model)}
+        />
       </div>
     </div>
   );
@@ -455,11 +507,11 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       body: JSON.stringify({ messages, configOverride: formToAgentFrame(form) }),
     });
 
-  const testCallTokenFetchFn = () =>
+  const testCallTokenFetchFn = (simulateFailover?: boolean) =>
     appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/test-call-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+      body: JSON.stringify({ configOverride: formToAgentFrame(form), simulateFailover }),
     });
 
   const testCallPhoneFetchFn = (phone: string) =>

@@ -3,6 +3,7 @@ import { Play, Square, ChevronLeft, ChevronRight, RotateCcw, MessageSquareText }
 import { DEMOS } from "../../lib/marketing-config";
 
 type Status = "idle" | "playing" | "done";
+const BAR_COUNT = 20;
 
 function DemoOrb({ color, status }: { color: string; status: Status }) {
   return (
@@ -20,6 +21,20 @@ function DemoOrb({ color, status }: { color: string; status: Status }) {
   );
 }
 
+/** Real audio-reactive bars — actually driven by the playing audio's frequency data (Web Audio
+ * API AnalyserNode), not a canned CSS loop, so it genuinely tracks the call's energy instead of
+ * just looking busy. Renders nothing while idle/done so it doesn't imply a call is happening
+ * when it isn't. */
+function LiveWaveform({ levels, active }: { levels: number[]; active: boolean }) {
+  return (
+    <div className={`demo-live-wave ${active ? "demo-live-wave--active" : ""}`} aria-hidden>
+      {levels.map((v, i) => (
+        <span key={i} className="demo-live-wave-bar" style={{ height: `${active ? Math.max(8, v * 100) : 8}%` }} />
+      ))}
+    </div>
+  );
+}
+
 /** Ported verbatim from Vocalist's AgentDemoWidget.tsx (github.com/Aurora-091/Vocalist) —
  * real recorded demo call audio + synced transcript. */
 export function AgentDemoWidget() {
@@ -30,9 +45,37 @@ export function AgentDemoWidget() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const rafRef = useRef<number>(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const [waveLevels, setWaveLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(0.1));
 
   const demo = DEMOS[activeIdx];
   const isTranscriptOnly = demo.transcriptOnly;
+
+  /** Lazily wires the currently-playing <audio> into an AnalyserNode — once per element (a new
+   * <audio> mounts per demo via `key={demo.id}` below, so this is safe to call again per demo). */
+  function ensureAnalyser() {
+    const audio = audioRef.current;
+    if (!audio || sourceRef.current) return;
+    try {
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = audioCtxRef.current ?? new Ctx();
+      audioCtxRef.current = ctx;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      const source = ctx.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      analyserRef.current = analyser;
+      sourceRef.current = source;
+      freqDataRef.current = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+    } catch {
+      // Web Audio unavailable/blocked (e.g. very old browser) — playback still works, the
+      // waveform just stays flat. Not worth failing the whole demo over.
+    }
+  }
 
   const updateProgress = useCallback(() => {
     const audio = audioRef.current;
@@ -46,12 +89,28 @@ export function AgentDemoWidget() {
     }
     setVisibleLines(count);
 
+    const analyser = analyserRef.current;
+    const freqData = freqDataRef.current;
+    if (analyser && freqData) {
+      analyser.getByteFrequencyData(freqData);
+      const bins = freqData.length;
+      const perBar = Math.max(1, Math.floor(bins / BAR_COUNT));
+      const next: number[] = [];
+      for (let i = 0; i < BAR_COUNT; i++) {
+        let sum = 0;
+        for (let j = 0; j < perBar; j++) sum += freqData[i * perBar + j] ?? 0;
+        next.push(Math.min(1, sum / perBar / 255));
+      }
+      setWaveLevels(next);
+    }
+
     rafRef.current = requestAnimationFrame(updateProgress);
   }, [demo.transcript]);
 
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      audioCtxRef.current?.close().catch(() => {});
     };
   }, []);
 
@@ -67,6 +126,11 @@ export function AgentDemoWidget() {
       setProgress(100);
       setStatus("done");
     }
+    // New demo -> new <audio> element (key={demo.id} below) -> analyser must be rebuilt, not reused.
+    sourceRef.current = null;
+    analyserRef.current = null;
+    freqDataRef.current = null;
+    setWaveLevels(Array(BAR_COUNT).fill(0.1));
   }, [activeIdx, isTranscriptOnly, demo.transcript.length]);
 
   function stopPlayback() {
@@ -106,6 +170,8 @@ export function AgentDemoWidget() {
         setVisibleLines(0);
         setProgress(0);
       }
+      ensureAnalyser();
+      audioCtxRef.current?.resume();
       audio.play();
       setStatus("playing");
       rafRef.current = requestAnimationFrame(updateProgress);
@@ -206,9 +272,12 @@ export function AgentDemoWidget() {
           </div>
 
           {!isTranscriptOnly && (
-            <div className="demo-progress-track">
-              <div className="demo-progress-fill" style={{ width: `${progress}%`, background: demo.orbColor }} />
-            </div>
+            <>
+              <LiveWaveform levels={waveLevels} active={status === "playing"} />
+              <div className="demo-progress-track">
+                <div className="demo-progress-fill" style={{ width: `${progress}%`, background: demo.orbColor }} />
+              </div>
+            </>
           )}
         </div>
 

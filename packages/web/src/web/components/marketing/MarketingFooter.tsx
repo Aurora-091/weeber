@@ -7,8 +7,8 @@ export function MarketingFooter() {
   return (
     <footer aria-label="Site footer" className="bg-[#000000] text-white">
       <div className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
-          <div className="col-span-2 md:col-span-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-x-8 gap-y-10">
+          <div className="col-span-2 lg:col-span-2">
             <WeeberLogo size="md" inverted />
             <p className="mt-3 text-sm text-white leading-relaxed max-w-[240px]">{SITE.description}</p>
           </div>

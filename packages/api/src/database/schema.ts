@@ -134,6 +134,13 @@ export const calls = pgTable("calls", {
    * setDisposition tool call alongside disposition — teardown's recommended
    * "outcome, sentiment, next action" fields, sentiment was the missing one. */
   sentiment: text("sentiment"),
+  /** Intent detection (2026-07-18) — WHY the caller called / what they want, distinct from
+   * `disposition` (how the call ENDED). Captured by the setIntent tool, callable early once the
+   * caller's purpose is clear, unlike setDisposition which the agent calls near the end. Flat,
+   * vertical-agnostic taxonomy (see voice/tools/setIntent.ts's zod enum for the actual values) —
+   * deliberately not a per-vertical enum to keep this simple; revisit only if the flat taxonomy
+   * stops being descriptive enough for a real vertical's calls. */
+  intent: text("intent"),
   sttReconnectCount: integer("stt_reconnect_count").default(0),
   // Cross-provider failover (2026-07-17, recommendation #1 of
   // docs/product-infra-and-gtm-report.md Part 4) — counts how many times
@@ -165,6 +172,16 @@ export const callLatency = pgTable("call_latency", {
   sttConnectMs: integer("stt_connect_ms"),
   llmTtftMs: integer("llm_ttft_ms"),
   ttsFirstByteMs: integer("tts_first_byte_ms"),
+  /** Caller-perceived "pickup to first word" latency (2026-07-17 follow-up
+   * to audit #01's D7 finding: this exact gap — session setup + the
+   * greeting's own STT/LLM/TTS work combined — was previously unmeasured).
+   * Measured from the moment the media stream's "start" event arrives
+   * (as close as this codebase gets to "call answered") to the greeting's
+   * first TTS audio byte. Unlike sttConnectMs/llmTtftMs/ttsFirstByteMs
+   * (each one pipeline stage), this is the actual end-to-end number a
+   * caller experiences as "dead air before the agent speaks" — the metric
+   * the "why is there a 5-10s pause on outbound calls" complaint is about. */
+  pickupToFirstAudioMs: integer("pickup_to_first_audio_ms"),
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 

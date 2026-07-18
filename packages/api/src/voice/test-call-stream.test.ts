@@ -36,6 +36,11 @@ mock.module("./stt", () => ({
       },
     };
   },
+  // Phase 3 (2026-07-17) "Simulate provider failure" resolves the primary
+  // via this same-named real helper (see stt/index.ts) — mirrored here
+  // (override ?? "deepgram", same default) so importing it doesn't crash
+  // this fully-mocked module.
+  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
 }));
 
 mock.module("./tts", () => ({
@@ -54,6 +59,8 @@ mock.module("./tts", () => ({
       },
     };
   },
+  // Same reasoning as resolveSttProvider above (see tts/index.ts).
+  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
 }));
 
 mock.module("./agent", () => ({
@@ -142,6 +149,47 @@ describe("test-call-stream", () => {
     const transcriptEvent = ws.sent.find((m: any) => m.type === "transcript") as any;
     expect(transcriptEvent.role).toBe("agent");
     expect(transcriptEvent.text).toBe(agentReplyText);
+  });
+
+  it("Phase 3: simulateFailover sends a 'failover' event per channel, before the greeting, using the real default chains", async () => {
+    const ws = makeFakeWs();
+    // Mocked resolveAgentConfig above returns sttProvider "deepgram" (no
+    // sttFallbackOrder) and ttsProvider "elevenlabs" (no ttsFallbackOrder) —
+    // so this exercises the real DEFAULT_STT_FALLBACK_ORDER/
+    // DEFAULT_TTS_FALLBACK_ORDER from voice/failover.ts, unmocked.
+    const handlers = createTestCallStreamHandlers({
+      orgId: "org_failover",
+      templateKey: "shopify-support",
+      actor: "org_failover",
+      simulateFailover: true,
+    });
+
+    await handlers.onOpen(ws);
+
+    const failoverEvents = ws.sent.filter((m: any) => m.type === "failover") as any[];
+    expect(failoverEvents).toEqual([
+      { type: "failover", simulated: true, channel: "stt", from: "deepgram", to: "elevenlabs" },
+      { type: "failover", simulated: true, channel: "tts", from: "elevenlabs", to: "cartesia" },
+    ]);
+
+    // Ordering: both failover events land after "ready" and before the
+    // greeting's transcript event — the drawer needs to show the banner
+    // before/alongside the agent starting to speak, not after.
+    const types = ws.sent.map((m: any) => m.type);
+    const readyIdx = types.indexOf("ready");
+    const firstFailoverIdx = types.indexOf("failover");
+    const transcriptIdx = types.indexOf("transcript");
+    expect(readyIdx).toBeLessThan(firstFailoverIdx);
+    expect(firstFailoverIdx).toBeLessThan(transcriptIdx);
+  });
+
+  it("does not send any 'failover' event when simulateFailover is omitted (unchanged default behavior)", async () => {
+    const ws = makeFakeWs();
+    const handlers = createTestCallStreamHandlers({ orgId: "org_no_failover", templateKey: "shopify-support", actor: "org_no_failover" });
+
+    await handlers.onOpen(ws);
+
+    expect(ws.sent.some((m: any) => m.type === "failover")).toBe(false);
   });
 
   it("uses buildPreviewAgentConfig instead when a configOverride is present", async () => {
