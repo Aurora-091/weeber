@@ -57,7 +57,12 @@ function graphToFlow(graph: WorkflowGraph) {
     id: n.id,
     type: "workflow",
     position: n.position,
-    data: { nodeType: n.type, config: n.config, label: n.id },
+    data: { nodeType: n.type, config: n.config, label: n.id, locked: n.locked },
+    // Workflow Canvas v4 (2026-07-18) — React Flow's own draggable/deletable
+    // props, so a locked node can't be dragged off/deleted via React Flow's
+    // built-in keyboard delete either, not just via this page's Delete button.
+    draggable: !n.locked,
+    deletable: !n.locked,
   }));
   const edges: Edge[] = graph.edges.map((e) => ({
     id: e.id,
@@ -77,6 +82,7 @@ function flowToGraph(nodes: Node[], edges: Edge[]): WorkflowGraph {
       type: n.data.nodeType as WorkflowNodeType,
       position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
       config: n.data.config as Record<string, unknown>,
+      ...(n.data.locked ? { locked: true } : {}),
     })) as WorkflowGraph["nodes"],
     edges: edges.map((e) => ({
       id: e.id,
@@ -189,6 +195,8 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         sms: { template: "" },
         addToDnc: { reason: "" },
         webhook: { url: "" },
+        dncCheck: {},
+        callingWindowCheck: {},
       };
       const viewport = reactFlowInstance?.getViewport();
       const centerX = viewport ? (-viewport.x + 400) / (viewport.zoom || 1) : 250;
@@ -225,6 +233,8 @@ function EditorInner({ template }: { template: TemplateResponse }) {
         sms: { template: "" },
         addToDnc: { reason: "" },
         webhook: { url: "" },
+        dncCheck: {},
+        callingWindowCheck: {},
       };
 
       nodeCounter++;
@@ -269,6 +279,15 @@ function EditorInner({ template }: { template: TemplateResponse }) {
 
   const deleteSelected = useCallback(() => {
     if (selectedNodeId) {
+      // Workflow Canvas v4 (2026-07-18) — this button does its own manual
+      // filter rather than going through React Flow's delete machinery, so
+      // the nodes' own `deletable: false` prop (set in graphToFlow) doesn't
+      // cover it — guard explicitly here too, same rule either way.
+      const target = nodes.find((n) => n.id === selectedNodeId);
+      if (target?.data?.locked) {
+        setSelectedNodeId(null);
+        return;
+      }
       setDirty(true);
       setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
       setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
@@ -279,7 +298,7 @@ function EditorInner({ template }: { template: TemplateResponse }) {
       setEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
       setSelectedEdgeId(null);
     }
-  }, [selectedNodeId, selectedEdgeId, setNodes, setEdges]);
+  }, [selectedNodeId, selectedEdgeId, nodes, setNodes, setEdges]);
 
   const updateNodeConfig = useCallback(
     (nodeId: string, config: Record<string, unknown>) => {

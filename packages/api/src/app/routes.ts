@@ -50,6 +50,8 @@ import {
 } from "../voice/org-queries";
 import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
 import { callScheduledRowNow } from "../voice/workflows/scheduler";
+import { buildBlankWorkflowScaffold, validateLockedNodesEnforced } from "../voice/workflows/scaffold";
+import type { WorkflowGraph } from "../voice/workflows/graph-types";
 import {
   getTwilioStatus,
   createSubaccountForOrg,
@@ -1016,22 +1018,57 @@ export const userApp = new Hono<UserEnv>()
     const templateKey = c.req.param("templateKey");
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid body" }, 400);
-    const { enabled, overrides } = body as { enabled?: boolean; overrides?: Record<string, Record<string, unknown>> };
+    const { enabled, overrides, customGraph } = body as {
+      enabled?: boolean;
+      overrides?: Record<string, Record<string, unknown>>;
+      // Workflow Canvas v4 (2026-07-18, Phase 1) — an org's own graph, forked
+      // from a template or built from the locked scaffold. Optional: only
+      // orgs actually using the merchant canvas send this; everyone else's
+      // save behaves exactly as before.
+      customGraph?: WorkflowGraph;
+    };
+
+    if (customGraph !== undefined) {
+      const validation = validateLockedNodesEnforced(customGraph);
+      if (!validation.valid) {
+        return c.json({ error: `Invalid workflow graph: ${validation.error}` }, 400);
+      }
+    }
+
     const values = {
       orgId,
       templateKey,
       enabled: enabled ?? true,
       overrides: overrides ?? null,
+      customGraph: customGraph ?? null,
     };
     const [config] = await db
       .insert(orgWorkflowConfigs)
       .values(values)
       .onConflictDoUpdate({
         target: [orgWorkflowConfigs.orgId, orgWorkflowConfigs.templateKey],
-        set: { enabled: values.enabled, overrides: values.overrides },
+        // Deliberately NOT resetting customGraph to null on a value-only save
+        // (enabled/overrides toggled without customGraph in the body) — a
+        // merchant flipping their workflow on/off shouldn't silently wipe out
+        // a graph they built. Only overwrite customGraph when this request
+        // actually included it.
+        set: {
+          enabled: values.enabled,
+          overrides: values.overrides,
+          ...(customGraph !== undefined ? { customGraph: values.customGraph } : {}),
+        },
       })
       .returning();
     return c.json({ config }, 200);
+  })
+
+  // Workflow Canvas v4 (2026-07-18, Phase 1) — the starting graph for
+  // "build from blank" (as opposed to forking an existing template). Pure
+  // function, no DB read — every call gets a fresh graph with newly
+  // generated node/edge IDs so two orgs building blank flows around the
+  // same time never collide.
+  .get("/workflow-configs/blank-scaffold", async (c) => {
+    return c.json({ graph: buildBlankWorkflowScaffold() }, 200);
   })
 
   // User support submission — same underlying table as the public

@@ -3,6 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../database";
 import { workflowTemplates, orgWorkflowConfigs, workflowRuns } from "../../database/schema";
 import type { WorkflowGraph } from "./graph-types";
+import { validateLockedNodesEnforced } from "./scaffold";
 import { requireAdminKey, type AdminAuthVariables } from "../middleware/admin-auth";
 import { adminSessionAuth } from "../middleware/admin-session";
 
@@ -167,13 +168,28 @@ workflowAdminRoutes.get("/orgs/:orgId/workflow-configs", async (c) => {
 workflowAdminRoutes.put("/orgs/:orgId/workflow-configs/:templateKey", async (c) => {
   const orgId = c.req.param("orgId");
   const templateKey = c.req.param("templateKey");
-  const body = await c.req.json<{ enabled?: boolean; overrides?: Record<string, Record<string, unknown>> }>();
+  const body = await c.req.json<{
+    enabled?: boolean;
+    overrides?: Record<string, Record<string, unknown>>;
+    // Workflow Canvas v4 (2026-07-18, Phase 1) — mirrors the merchant-side
+    // endpoint's same field/validation; admin can also set/inspect an org's
+    // custom graph on their behalf.
+    customGraph?: WorkflowGraph;
+  }>();
+
+  if (body.customGraph !== undefined) {
+    const validation = validateLockedNodesEnforced(body.customGraph);
+    if (!validation.valid) {
+      return c.json({ error: `Invalid workflow graph: ${validation.error}` }, 400);
+    }
+  }
 
   const values: typeof orgWorkflowConfigs.$inferInsert = {
     orgId,
     templateKey,
     enabled: body.enabled ?? true,
     overrides: body.overrides ?? null,
+    customGraph: body.customGraph ?? null,
   };
 
   const [config] = await db
@@ -181,7 +197,13 @@ workflowAdminRoutes.put("/orgs/:orgId/workflow-configs/:templateKey", async (c) 
     .values(values)
     .onConflictDoUpdate({
       target: [orgWorkflowConfigs.orgId, orgWorkflowConfigs.templateKey],
-      set: { enabled: values.enabled, overrides: values.overrides },
+      // Same non-clobbering rule as the merchant-side endpoint — don't wipe
+      // an existing customGraph just because this particular save omitted it.
+      set: {
+        enabled: values.enabled,
+        overrides: values.overrides,
+        ...(body.customGraph !== undefined ? { customGraph: values.customGraph } : {}),
+      },
     })
     .returning();
 

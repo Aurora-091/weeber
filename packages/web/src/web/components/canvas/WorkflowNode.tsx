@@ -2,11 +2,14 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   Zap,
   Clock,
+  Clock3,
   Phone,
   GitBranch,
   MessageSquare,
   ShieldBan,
+  ShieldCheck,
   Globe,
+  Lock,
 } from "lucide-react";
 import { NODE_STYLES } from "./node-styles";
 import type {
@@ -24,16 +27,22 @@ import type {
 const ICON_MAP = {
   Zap,
   Clock,
+  Clock3,
   Phone,
   GitBranch,
   MessageSquare,
   ShieldBan,
+  ShieldCheck,
   Globe,
 } as const;
 
 type WorkflowNodeData = {
   nodeType: WorkflowNodeType;
   config: NodeConfig;
+  // Workflow Canvas v4 (2026-07-18) — true for system-seeded compliance
+  // nodes; rendered with a lock icon and no delete affordance (delete itself
+  // is gated in the parent editor page, this is just the visual signal).
+  locked?: boolean;
   analytics?: {
     entryCount: number;
     avgDurationMs: number | null;
@@ -85,16 +94,23 @@ function getNodeSummary(nodeType: WorkflowNodeType, config: NodeConfig): string 
       const url = (config as WebhookConfig).url;
       return url.length > 30 ? url.slice(0, 30) + "…" : url;
     }
+    case "dncCheck":
+      return "Consent/DNC checked before any contact";
+    case "callingWindowCheck":
+      return "Calling-window checked before any contact";
   }
 }
 
 export function WorkflowNode({ data }: NodeProps) {
-  const { nodeType, config, analytics } = data as unknown as WorkflowNodeData;
+  const { nodeType, config, analytics, locked } = data as unknown as WorkflowNodeData;
   const style = NODE_STYLES[nodeType];
   const Icon = ICON_MAP[style.icon as keyof typeof ICON_MAP];
 
   return (
-    <div className={`card-weeber w-[200px] border-l-[3px] ${style.color} p-3`}>
+    <div
+      className={`card-weeber w-[200px] border-l-[3px] ${style.color} p-3 ${locked ? "bg-muted/30" : ""}`}
+      title={locked ? "Required compliance step — can't be removed or reconfigured" : undefined}
+    >
       {nodeType !== "trigger" && (
         <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
       )}
@@ -104,6 +120,7 @@ export function WorkflowNode({ data }: NodeProps) {
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {style.label}
         </span>
+        {locked && <Lock className="h-3 w-3 text-muted-foreground/70 ml-auto" aria-label="Locked" />}
       </div>
 
       <p className="text-xs font-medium leading-tight truncate">

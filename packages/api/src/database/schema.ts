@@ -630,6 +630,17 @@ export const orgWorkflowConfigs = pgTable("org_workflow_configs", {
   templateKey: text("template_key").notNull(),
   enabled: boolean("enabled").notNull().default(true),
   overrides: jsonb("overrides").$type<Record<string, Record<string, unknown>>>(),
+  // Workflow Canvas v4 (2026-07-18, Phase 1) — an org's own fully-owned graph,
+  // either forked from the template or built from the locked-scaffold blank
+  // starting point (see voice/workflows/scaffold.ts). Null (the common case
+  // today) means the org runs the template's graph unchanged, exactly as
+  // before this column existed. Set means the engine reads this graph
+  // instead of the template's — see graph-engine.ts's resolution order.
+  // Every save is validated server-side (scaffold.ts's
+  // validateLockedNodesEnforced) before being written here — a merchant
+  // can't save a graph that routes any call/sms action around the
+  // locked DNC/calling-window nodes, even via a direct API call.
+  customGraph: jsonb("custom_graph").$type<import("../voice/workflows/graph-types").WorkflowGraph>(),
 }, (table) => [
   primaryKey({ columns: [table.orgId, table.templateKey] }),
 ]);

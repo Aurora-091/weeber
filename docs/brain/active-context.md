@@ -22,11 +22,12 @@ updated: 2026-07-18
 - **Pricing locked (2026-07-18, not deployed):** India + Global tiers, split by voice-provider cost
   tier, minutes not calls. `docs/product-strategy/pricing-lock-2026-07-18.md` / `ADR-057`. Decided
   for grant/investor use — explicitly not on the live site or wired into checkout yet.
-- **Workflow Canvas v4 planned (2026-07-18, not started):** `workflow-canvas/v4-locked-scaffold-ai-
-  draft-and-flow-preview-plan.md` — supersedes v3's frontend section. Never-blank locked compliance
-  scaffold (DNC/calling-window nodes a merchant can't delete), AI-assisted graph drafting from a
-  plain-language prompt, and a flow-preview live web call (extends the existing single-agent
-  Preview drawer/`test-call-stream.ts`, ADR-051). 3 phases, not yet built.
+- **Workflow Canvas v4 (2026-07-18):** `workflow-canvas/v4-locked-scaffold-ai-draft-and-flow-
+  preview-plan.md` — supersedes v3's frontend section. **Phase 1 done** (see
+  `changelog/2026-07.md`): `customGraph` column, `locked` flag + `dncCheck`/`callingWindowCheck`
+  pass-through node types, `scaffold.ts`'s blank-scaffold builder + save-time
+  `validateLockedNodesEnforced` (wired into both the merchant and admin save endpoints). **Phase 2
+  (AI-assisted drafting) and Phase 3 (flow preview via web call) not started.**
 - **Docs → agent brain (in progress, 2026-07-18):** restructured docs into this `brain/` folder,
   added `AGENTS.md` as the cross-tool entry point, split `DECISIONS.md` → `docs/decisions/` (per-ADR)
   and `changelog.md` → `docs/changelog/` (per-month).
@@ -50,8 +51,11 @@ language switching — the thing that differentiates Weeber from horizontal buil
 
 - Feedback agent persona `03` — confirm as final.
 - Supabase Realtime on the dashboard: decided (`ADR-058`), just needs someone to actually build it.
-- Workflow Canvas v4: plan written, awaiting go-ahead to start Phase 1 (locked scaffold + data
-  model) — see the plan doc above for the 3-phase breakdown.
+- Workflow Canvas v4 Phase 2 (AI-assisted drafting): awaiting go-ahead to start.
+- Workflow Canvas v4 Phase 3 (flow preview via web call): awaiting go-ahead to start.
+- The actual merchant-facing full-canvas-editing frontend (today's `app/workflows.tsx` is still
+  read-only-graph + override-panel) — not scoped as its own phase yet, needed before Phase 2/3's
+  frontend pieces have somewhere to live.
 - Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
 
 _Last updated by: workflow-canvas v4 planning session, 2026-07-18._

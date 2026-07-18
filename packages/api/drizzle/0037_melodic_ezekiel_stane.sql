@@ -1,0 +1,1 @@
+ALTER TABLE "org_workflow_configs" ADD COLUMN "custom_graph" jsonb;

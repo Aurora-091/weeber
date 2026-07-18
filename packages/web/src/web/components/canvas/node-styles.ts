@@ -14,4 +14,7 @@ export const NODE_STYLES: Record<WorkflowNodeType, NodeStyle> = {
   sms: { icon: "MessageSquare", color: "border-l-pink-500", label: "SMS" },
   addToDnc: { icon: "ShieldBan", color: "border-l-red-500", label: "Add to DNC" },
   webhook: { icon: "Globe", color: "border-l-slate-500", label: "Webhook" },
+  // Workflow Canvas v4 (2026-07-18) — locked, pass-through compliance markers.
+  dncCheck: { icon: "ShieldCheck", color: "border-l-red-500", label: "DNC Check" },
+  callingWindowCheck: { icon: "Clock3", color: "border-l-red-500", label: "Calling Window Check" },
 };

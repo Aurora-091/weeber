@@ -1,10 +1,12 @@
 import {
   Zap,
   Clock,
+  Clock3,
   Phone,
   GitBranch,
   MessageSquare,
   ShieldBan,
+  ShieldCheck,
   Globe,
 } from "lucide-react";
 import { NODE_STYLES } from "./node-styles";
@@ -13,10 +15,12 @@ import type { WorkflowNodeType } from "./types";
 const ICON_MAP = {
   Zap,
   Clock,
+  Clock3,
   Phone,
   GitBranch,
   MessageSquare,
   ShieldBan,
+  ShieldCheck,
   Globe,
 } as const;
 
@@ -28,6 +32,10 @@ const NODE_TYPES: WorkflowNodeType[] = [
   "sms",
   "addToDnc",
   "webhook",
+  // Workflow Canvas v4 (2026-07-18) — available for an admin to place
+  // explicitly in a template graph too, not just the merchant blank-scaffold.
+  "dncCheck",
+  "callingWindowCheck",
 ];
 
 type NodePaletteProps = {

@@ -19,7 +19,12 @@ function mergeNodeConfig(
 ): WorkflowNode {
   if (!overrides || !overrides[node.id]) return node;
   const nodeOverride = overrides[node.id];
-  return { ...node, config: { ...node.config, ...nodeOverride } };
+  // Cast needed: NodeConfig's union now includes ComplianceCheckConfig
+  // (Record<string, never>, 2026-07-18) which makes a plain object spread's
+  // inferred type not cleanly match any single union member — this function
+  // never validates the merged shape against node.type at runtime either
+  // way, so the cast doesn't change actual behavior.
+  return { ...node, config: { ...node.config, ...nodeOverride } as WorkflowNode["config"] };
 }
 
 function getOutgoingEdges(graph: WorkflowGraph, nodeId: string): WorkflowEdge[] {
@@ -28,6 +33,29 @@ function getOutgoingEdges(graph: WorkflowGraph, nodeId: string): WorkflowEdge[] 
 
 function getNodeById(graph: WorkflowGraph, nodeId: string): WorkflowNode | undefined {
   return graph.nodes.find((n) => n.id === nodeId);
+}
+
+/**
+ * Resolves the graph a run actually executes: an org's own `customGraph`
+ * (Workflow Canvas v4, 2026-07-18 — a merchant-built or merchant-forked
+ * graph, already save-time-validated by scaffold.ts) if one is set, else
+ * the template's shared graph — unchanged behavior for every org that
+ * hasn't built its own graph. Single chokepoint so `advanceWorkflow` and
+ * `resumeWorkflowAfterCall` can't drift into resolving this two different
+ * ways.
+ */
+async function resolveWorkflowGraph(
+  templateGraph: WorkflowGraph,
+  orgId: string | null,
+  templateKey: string,
+): Promise<WorkflowGraph> {
+  if (!orgId) return templateGraph;
+  const [config] = await db
+    .select({ customGraph: orgWorkflowConfigs.customGraph })
+    .from(orgWorkflowConfigs)
+    .where(and(eq(orgWorkflowConfigs.orgId, orgId), eq(orgWorkflowConfigs.templateKey, templateKey)))
+    .limit(1);
+  return (config?.customGraph as WorkflowGraph | null) ?? templateGraph;
 }
 
 /**
@@ -60,8 +88,9 @@ export async function advanceWorkflow(
   }
 
   let overrides: Record<string, Record<string, unknown>> | null = null;
+  let orgConfig: { overrides: unknown; customGraph: unknown } | undefined;
   if (run.orgId) {
-    const [config] = await db
+    [orgConfig] = await db
       .select()
       .from(orgWorkflowConfigs)
       .where(
@@ -71,10 +100,10 @@ export async function advanceWorkflow(
         ),
       )
       .limit(1);
-    overrides = (config?.overrides as Record<string, Record<string, unknown>>) ?? null;
+    overrides = (orgConfig?.overrides as Record<string, Record<string, unknown>>) ?? null;
   }
 
-  const graph = template.graph as WorkflowGraph;
+  const graph = (orgConfig?.customGraph as WorkflowGraph | null) ?? (template.graph as WorkflowGraph);
   let currentNodeId = run.currentNodeId;
   let context = { ...(run.context as Record<string, string | number>) };
   let iterations = 0;
@@ -91,7 +120,15 @@ export async function advanceWorkflow(
     const outgoing = getOutgoingEdges(graph, currentNodeId);
 
     switch (node.type) {
-      case "trigger": {
+      // dncCheck/callingWindowCheck (Workflow Canvas v4, 2026-07-18) advance
+      // exactly like a trigger node — they're pass-through visual markers,
+      // not a second enforcement point. The real DNC/calling-window check
+      // already happens unconditionally in scheduler.ts's
+      // dispatchScheduledCall for every call/sms action, regardless of
+      // whether these nodes are present in a given graph.
+      case "trigger":
+      case "dncCheck":
+      case "callingWindowCheck": {
         if (outgoing.length === 0) {
           await markRunCompleted(runId, currentNodeId, context);
           return;
@@ -322,7 +359,7 @@ export async function resumeWorkflowAfterCall(
     .limit(1);
   if (!template) return;
 
-  const graph = template.graph as WorkflowGraph;
+  const graph = await resolveWorkflowGraph(template.graph as WorkflowGraph, run.orgId, run.templateKey);
   const outgoing = getOutgoingEdges(graph, run.currentNodeId);
   if (outgoing.length === 0) {
     await markRunCompleted(workflowRunId, run.currentNodeId, context);

@@ -8,13 +8,24 @@ export type WorkflowNodeType =
   | "conditionalSplit"
   | "sms"
   | "addToDnc"
-  | "webhook";
+  | "webhook"
+  // Workflow Canvas v4 (2026-07-18) — pass-through nodes that make the
+  // always-enforced-underneath DNC/calling-window checks visible in the
+  // authoring UI. See packages/api/src/voice/workflows/graph-types.ts's
+  // matching comment for the full reasoning.
+  | "dncCheck"
+  | "callingWindowCheck";
 
 export type WorkflowNode = {
   id: string;
   type: WorkflowNodeType;
   position: { x: number; y: number };
   config: NodeConfig;
+  // Workflow Canvas v4 (2026-07-18) — true for system-seeded compliance
+  // nodes a merchant can see but not delete/reconfigure. UI-level only; the
+  // real guarantee is server-side (scaffold.ts's validateLockedNodesEnforced
+  // on save, and scheduler.ts's dispatchScheduledCall at execution time).
+  locked?: boolean;
 };
 
 export type WorkflowEdge = {
@@ -60,6 +71,10 @@ export type WebhookConfig = {
   payloadTemplate?: Record<string, string>;
 };
 
+/** Empty on purpose — dncCheck/callingWindowCheck carry no merchant-editable
+ * config, they're pass-through visual/compliance markers. */
+export type ComplianceCheckConfig = Record<string, never>;
+
 export type NodeConfig =
   | TriggerConfig
   | WaitConfig
@@ -67,7 +82,8 @@ export type NodeConfig =
   | ConditionalSplitConfig
   | SmsConfig
   | AddToDncConfig
-  | WebhookConfig;
+  | WebhookConfig
+  | ComplianceCheckConfig;
 
 export const WORKFLOW_OUTCOMES = [
   "answered",

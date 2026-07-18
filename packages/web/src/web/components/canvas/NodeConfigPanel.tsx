@@ -41,6 +41,12 @@ export function NodeConfigPanel({ nodeId, nodeType, config, onUpdate }: Props) {
       {nodeType === "sms" && <SmsFields config={config} set={set} />}
       {nodeType === "addToDnc" && <DncFields config={config} set={set} />}
       {nodeType === "webhook" && <WebhookFields config={config} set={set} />}
+      {(nodeType === "dncCheck" || nodeType === "callingWindowCheck") && (
+        <p className="text-xs text-muted-foreground">
+          No configuration — this check runs automatically before any call or SMS reaches the
+          customer, regardless of how the rest of the flow is wired.
+        </p>
+      )}
     </div>
   );
 }
