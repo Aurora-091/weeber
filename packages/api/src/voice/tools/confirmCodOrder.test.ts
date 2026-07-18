@@ -67,7 +67,13 @@ describe("confirmCodOrder tool", () => {
       confirmed: false,
       notes: "customer said no, cancel it",
     });
-    expect(result).toEqual({ recorded: true, confirmed: false, notes: "customer said no, cancel it", canceled: true });
+    expect(result).toEqual({
+      recorded: true,
+      confirmed: false,
+      notes: "customer said no, cancel it",
+      canceled: true,
+      tagged: true,
+    });
     expect(cancelCalls).toEqual([
       {
         shop: "teststore.myshopify.com",
@@ -78,13 +84,30 @@ describe("confirmCodOrder tool", () => {
         staffNote: "customer said no, cancel it",
       },
     ]);
-    expect(annotateCalls).toEqual([]);
   });
 
-  it("confirmed=false with no notes still cancels, using a sensible default staff note", async () => {
+  it("confirmed=false also tags the order cod-declined via annotateOrder (same visibility as the confirmed path)", async () => {
+    // @ts-expect-error
+    await confirmCodOrder.execute({
+      shop: "teststore.myshopify.com",
+      orderId: 456,
+      confirmed: false,
+      notes: "customer said no, cancel it",
+    });
+    expect(annotateCalls).toEqual([
+      {
+        shop: "teststore.myshopify.com",
+        orderId: 456,
+        tagsAdd: ["cod-declined"],
+        note: "customer said no, cancel it",
+      },
+    ]);
+  });
+
+  it("confirmed=false with no notes still cancels and tags, using a sensible default staff note", async () => {
     // @ts-expect-error
     const result = await confirmCodOrder.execute({ shop: "x.myshopify.com", orderId: 7, confirmed: false });
-    expect(result).toMatchObject({ canceled: true });
+    expect(result).toMatchObject({ canceled: true, tagged: true });
     expect(cancelCalls).toEqual([
       {
         shop: "x.myshopify.com",
@@ -95,13 +118,28 @@ describe("confirmCodOrder tool", () => {
         staffNote: "Customer explicitly declined COD order during confirmation call",
       },
     ]);
+    expect(annotateCalls).toEqual([
+      {
+        shop: "x.myshopify.com",
+        orderId: 7,
+        tagsAdd: ["cod-declined"],
+        note: "Customer explicitly declined COD order during confirmation call",
+      },
+    ]);
   });
 
-  it("confirmed=false still reports recorded when cancelOrder throws, but canceled: false — visible failure, not a silent no-op", async () => {
+  it("confirmed=false still reports recorded when cancelOrder throws, but canceled: false — visible failure, not a silent no-op (tagging still attempted independently)", async () => {
     cancelShouldThrow = true;
     // @ts-expect-error
     const result = await confirmCodOrder.execute({ shop: "x.myshopify.com", orderId: 9, confirmed: false });
-    expect(result).toEqual({ recorded: true, confirmed: false, notes: null, canceled: false });
+    expect(result).toEqual({ recorded: true, confirmed: false, notes: null, canceled: false, tagged: true });
+  });
+
+  it("confirmed=false still reports canceled: true when annotateOrder (tagging) throws — tagging failure never blocks the cancel", async () => {
+    annotateShouldThrow = true;
+    // @ts-expect-error
+    const result = await confirmCodOrder.execute({ shop: "x.myshopify.com", orderId: 10, confirmed: false });
+    expect(result).toEqual({ recorded: true, confirmed: false, notes: null, canceled: true, tagged: false });
   });
 
   it("confirmed=false with a 200 (already_cancelled) response still reports canceled: true", async () => {
