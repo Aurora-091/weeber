@@ -63,9 +63,9 @@ Companion repo: **`weebersh`** (Shopify OAuth/webhook bridge). The wire contract
    channel; never hardcode or invent placeholders.
 3. **Entry-condition branching / trigger-split** (ADR-033) — config-driven vs visual-canvas is still
    open; ask before starting.
-4. **Feedback agent persona (`03-feedback-agent.md`)** — drafted without a reference sample; confirm
-   before treating as final (cart-recovery `01` and COD `02` are adapted from real references, closer
-   to final).
+4. ~~**Feedback agent persona (`03-feedback-agent.md`)**~~ — **resolved 2026-07-18**: confirmed final
+   by the user. `seed.ts`'s `active` flag flipped to `true` (was the only inactive persona of the 5) —
+   now live/selectable same as cart-recovery `01` and COD `02`.
 5. **Final brand assets** (logo, exact hex beyond `UI-DESIGN-BRIEF.md`'s starting proposal) — placeholder,
    not committed.
 

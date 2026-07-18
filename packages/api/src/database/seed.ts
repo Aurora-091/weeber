@@ -47,7 +47,12 @@ export const AGENT_TEMPLATES = [
       fileName: "03-feedback-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your {{product_name}} was delivered recently — do you have a minute to share how it went?",
       defaultTools: ["captureField", "setDisposition", "setIntent"],
-      active: false,
+      // Confirmed final by the user 2026-07-18 (was drafted without a Bolna reference sample,
+      // unlike 01/02 — held inactive pending explicit confirmation per WEEBER-PLAN.md's
+      // STOP-AND-ASK gate #4 / project-brief.md item 4). Flipping to active makes it selectable
+      // by merchants and eligible for AI-draft (org-queries.ts:118, ai-draft.ts:78 both filter on
+      // `active = true`) — takes effect on next boot's seed upsert.
+      active: true,
     },
     {
       key: "insurance-policy-renewal",

@@ -12,6 +12,10 @@ updated: 2026-07-18
 
 ## Current focus
 
+- **Feedback agent persona confirmed + live (2026-07-18):** user confirmed `03-feedback-agent.md`
+  as final. `seed.ts`'s `active` flag flipped `false → true` — was the only inactive persona of the
+  5, now selectable by merchants and eligible for AI-draft on next boot's seed upsert (no manual DB
+  fix needed, self-heals like the templates-path bug fix did). STOP-AND-ASK gate #4 closed.
 - **VoiceOrb enhancement + app/admin overlap scan (done, 2026-07-18):** in-app `VoiceOrb` rebuilt
   as a 3-blob morph cluster + glow to match marketing `DemoOrb` (same-product visual consistency).
   Typecheck/lint clean, visually confirmed live, committed as `dcb19e8` and pushed to `main`. App/
@@ -61,7 +65,6 @@ language switching — the thing that differentiates Weeber from horizontal buil
 
 ## Open decisions waiting on the user (STOP-AND-ASK)
 
-- Feedback agent persona `03` — confirm as final.
 - Supabase Realtime on the dashboard: decided (`ADR-058`), just needs someone to actually build it.
 - Workflow Canvas v4 Phase 3 (flow preview via web call): awaiting go-ahead to start — the
   merchant canvas editor now exists, so this is the last remaining piece of the v4 plan.

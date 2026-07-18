@@ -345,11 +345,12 @@ stay parked until volume/revenue actually demands them.**
 ## Personas / prompt copy — status
 
 All 5 personas are written, not placeholders: `docs/agent-prompts/01-cart-recovery-agent.md`,
-`02-cod-confirmation-agent.md`, `03-feedback-agent.md` (drafted fresh, no reference sample — flagged
-in `CLAUDE.md`'s STOP-AND-ASK list as needing your confirmation before treating it as final, unlike
-01/02 which are adapted from real reference prompts), `04-insurance-policy-renewal-agent.md`,
-`05-insurance-lead-followup-agent.md`. The feedback agent (03) deliberately reuses the generic
-`captureField` tool rather than a dedicated feedback tool — no new tool was needed for that persona.
+`02-cod-confirmation-agent.md`, `03-feedback-agent.md` (drafted fresh, no reference sample —
+**confirmed final by the user 2026-07-18**, gate closed; `seed.ts`'s `active` flag flipped
+`false → true` so it's now selectable by merchants and eligible for AI-draft, same as 01/02),
+`04-insurance-policy-renewal-agent.md`, `05-insurance-lead-followup-agent.md`. The feedback agent
+(03) deliberately reuses the generic `captureField` tool rather than a dedicated feedback tool — no
+new tool was needed for that persona.
 
 ## Config storage — resolved
 
