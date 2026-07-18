@@ -331,6 +331,32 @@
   justify-content: center;
 }
 
+/* The orb itself is now the click target (2026-07-18 fix) — it renders as a <button>, so reset
+   native button chrome and give the whole circle a hover/active feel instead of just the small
+   icon overlay. */
+button.marketing .demo-orb-wrapper--clickable,
+.marketing button.demo-orb-wrapper--clickable {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.marketing .demo-orb-wrapper--clickable:hover {
+  transform: scale(1.03);
+}
+
+.marketing .demo-orb-wrapper--clickable:active {
+  transform: scale(0.97);
+}
+
+.marketing .demo-orb-wrapper--clickable:focus-visible {
+  outline: 2px solid var(--orb-color, currentColor);
+  outline-offset: 4px;
+}
+
 @media (min-width: 768px) {
   .marketing .demo-orb-wrapper {
     width: 180px;
@@ -457,6 +483,10 @@
   50% { opacity: 0.25; transform: scale(1.05); }
 }
 
+/* Visual-only icon overlay now (2026-07-18) — the orb wrapper is the real <button>, this div no
+   longer needs its own click handling, hover/active transform, or pointer-events; it just sits
+   centered on top and shows the current state icon. Its own hover/active transforms were removed
+   so it can't drift independently of the button underneath it. */
 .marketing .demo-orb-play {
   position: absolute;
   top: 50%;
@@ -471,9 +501,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  pointer-events: none;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15), 0 1px 4px rgba(0,0,0,0.1);
-  transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease;
   z-index: 2;
 }
 
@@ -481,15 +510,6 @@
   background: rgba(20, 20, 20, 0.9);
   color: #FAFAFA;
   box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1);
-}
-
-.marketing .demo-orb-play:hover {
-  transform: translate(-50%, -50%) scale(1.1);
-  box-shadow: 0 6px 28px rgba(0,0,0,0.2), 0 2px 8px rgba(0,0,0,0.12);
-}
-
-.marketing .demo-orb-play:active {
-  transform: translate(-50%, -50%) scale(0.95);
 }
 
 .marketing .demo-orb-play--active {

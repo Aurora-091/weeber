@@ -244,18 +244,28 @@ export function AgentDemoWidget() {
 
       <div className="demo-body">
         <div className="demo-orb-side">
-          <div className="demo-orb-wrapper">
-            <DemoOrb color={demo.orbColor} status={isTranscriptOnly ? "done" : status} />
-            {isTranscriptOnly ? (
+          {isTranscriptOnly ? (
+            <div className="demo-orb-wrapper">
+              <DemoOrb color={demo.orbColor} status="done" />
               <div className="demo-orb-play demo-orb-play--transcript-only">
                 <MessageSquareText className="w-5 h-5" />
               </div>
-            ) : (
-              <button
-                onClick={handlePlayToggle}
-                className={`demo-orb-play ${status === "playing" ? "demo-orb-play--active" : ""}`}
-                aria-label={status === "playing" ? "Stop" : "Play"}
-              >
+            </div>
+          ) : (
+            // Fix (2026-07-18, "play button just shifts, no playback" report): the small
+            // absolutely-positioned play button was a separate click target layered on top of
+            // the orb — on some pointer/CSS-transform combos its hit area drifted from where it
+            // visually rendered, so clicks landed on the orb behind it instead of the button
+            // (looked like "the button just moves, nothing happens"). Fix: the whole orb *is*
+            // the button now — one click target, no separate overlay to misalign.
+            <button
+              type="button"
+              onClick={handlePlayToggle}
+              className="demo-orb-wrapper demo-orb-wrapper--clickable"
+              aria-label={status === "playing" ? "Stop demo playback" : status === "done" ? "Replay demo" : "Play demo"}
+            >
+              <DemoOrb color={demo.orbColor} status={status} />
+              <div className={`demo-orb-play ${status === "playing" ? "demo-orb-play--active" : ""}`}>
                 {status === "playing" ? (
                   <Square className="w-5 h-5 fill-current" />
                 ) : status === "done" ? (
@@ -263,9 +273,9 @@ export function AgentDemoWidget() {
                 ) : (
                   <Play className="w-5 h-5 fill-current translate-x-[2px]" />
                 )}
-              </button>
-            )}
-          </div>
+              </div>
+            </button>
+          )}
 
           <div className="demo-orb-status">
             {isTranscriptOnly ? (
