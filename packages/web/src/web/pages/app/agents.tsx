@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
-import { Loader as Loader2, ChevronLeft } from "lucide-react";
+import { Loader as Loader2, ChevronLeft, User, Mic, Shield, PhoneCall, Info, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
@@ -155,8 +155,11 @@ type TabProps = {
 
 function IdentityTab({ row, form, set }: TabProps) {
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
+        <User className="size-4 text-muted-foreground" /> Agent Identity
+      </div>
+      <div className="grid gap-6 sm:grid-cols-2">
         <div>
           <label htmlFor={`name-${row.templateKey}`} className={labelCls}>Agent name</label>
           <input id={`name-${row.templateKey}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Aria" className={fieldCls} />
@@ -169,7 +172,7 @@ function IdentityTab({ row, form, set }: TabProps) {
           </select>
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2">
         <div>
           <label htmlFor={`greeting-${row.templateKey}`} className={labelCls}>Greeting line</label>
           <input id={`greeting-${row.templateKey}`} value={form.greetingLine} onChange={(e) => set("greetingLine", e.target.value)} placeholder="Hi, how can I help?" className={fieldCls} />
@@ -179,7 +182,10 @@ function IdentityTab({ row, form, set }: TabProps) {
           <input id={`closing-${row.templateKey}`} value={form.closingLine} onChange={(e) => set("closingLine", e.target.value)} placeholder="Thanks, have a great day!" className={fieldCls} />
         </div>
       </div>
-      <div>
+      <div className="border-t border-border/50 pt-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-3">
+          <Settings className="size-4 text-muted-foreground" /> Persona Prompt
+        </div>
         <label htmlFor={`persona-${row.templateKey}`} className={labelCls}>
           What should this agent say and do? <span className="text-muted-foreground/60">(leave blank for the recommended script)</span>
         </label>
@@ -194,8 +200,11 @@ function VoiceTab({ row, form, set }: TabProps) {
   const matchesRecommended = recommended && form.sttProvider === recommended.sttProvider && form.voiceProvider === recommended.voiceProvider;
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
+        <Mic className="size-4 text-muted-foreground" /> Voice Provider & Language
+      </div>
+      <div className="grid gap-6 sm:grid-cols-2">
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Voice provider</label>
           <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
@@ -203,7 +212,7 @@ function VoiceTab({ row, form, set }: TabProps) {
             <option value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</option>
             <option value="sarvam">Sarvam — Indian-language ({TTS_COST_TIERS.sarvam.tier})</option>
           </select>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1.5 text-xs text-muted-foreground">
             {TTS_COST_TIERS[form.voiceProvider]?.note ?? ""}
           </p>
         </div>
@@ -214,26 +223,31 @@ function VoiceTab({ row, form, set }: TabProps) {
         </div>
       </div>
       {recommended && !matchesRecommended && (
-        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
-          <p className="text-foreground">
-            <span className="font-medium">Recommended for Hindi/Hinglish:</span> ElevenLabs Scribe (speech-to-text) +
-            ElevenLabs (voice) — live-tested to keep English words like "flight" or "order" in Latin script
-            mid-sentence instead of transliterating them, and to avoid a known Deepgram issue misdetecting
-            Hindi as Spanish.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              set("sttProvider", recommended.sttProvider);
-              set("voiceProvider", recommended.voiceProvider);
-            }}
-            className="mt-1.5 inline-flex items-center rounded-md border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-          >
-            Use recommended (ElevenLabs)
-          </button>
+        <div className="rounded-lg border border-primary/20 border-l-2 border-l-primary bg-primary/5 px-4 py-3 text-xs">
+          <div className="flex items-start gap-2.5">
+            <Info className="size-4 mt-0.5 shrink-0 text-primary" />
+            <div>
+              <p className="text-foreground">
+                <span className="font-medium">Recommended for Hindi/Hinglish:</span> ElevenLabs Scribe (speech-to-text) +
+                ElevenLabs (voice) — live-tested to keep English words like "flight" or "order" in Latin script
+                mid-sentence instead of transliterating them, and to avoid a known Deepgram issue misdetecting
+                Hindi as Spanish.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  set("sttProvider", recommended.sttProvider);
+                  set("voiceProvider", recommended.voiceProvider);
+                }}
+                className="mt-2 inline-flex items-center rounded-lg border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors duration-150"
+              >
+                Use recommended (ElevenLabs)
+              </button>
+            </div>
+          </div>
         </div>
       )}
-      <div>
+      <div className="border-t border-border/50 pt-6">
         <label className={labelCls}>Voice</label>
         <VoicePicker
           provider={form.voiceProvider}
@@ -248,14 +262,14 @@ function VoiceTab({ row, form, set }: TabProps) {
           the Preview button next to the field above always replays whichever voice is currently selected.
         </p>
       </div>
-      <div>
+      <div className="border-t border-border/50 pt-6">
         <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>Speech-to-text</label>
         <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
           <option value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</option>
           <option value="sarvam">Sarvam — Indian-language STT ({STT_COST_TIERS.sarvam.tier})</option>
           <option value="elevenlabs">ElevenLabs Scribe — Hindi/Hinglish code-switching ({STT_COST_TIERS.elevenlabs.tier})</option>
         </select>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1.5 text-xs text-muted-foreground">
           {STT_COST_TIERS[form.sttProvider]?.note ?? ""} — STT cost is similar across all three providers, unlike voice/TTS.
         </p>
       </div>
@@ -274,25 +288,42 @@ function ToolsGuardrailsTab({ row, form, set }: TabProps) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
-        <span className={labelCls}>Abilities <span className="text-muted-foreground/60">(hangUp always stays on)</span></span>
-        <p className="mb-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-2">
+          <Settings className="size-4 text-muted-foreground" /> Abilities
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
           Only tools checked here are available to this agent — the instructions it's given never reference
           a tool that isn't checked, so unchecking one doesn't cause a broken turn mid-call.
+          <span className="text-muted-foreground/60"> (hangUp always stays on)</span>
         </p>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {AVAILABLE_TOOL_NAMES.map((name) => (
-            <label key={name} className="flex items-center gap-1.5 text-sm">
-              <input type="checkbox" aria-label={name} checked={name === "hangUp" || form.toolsEnabled.includes(name)} disabled={name === "hangUp"} onChange={() => toggleTool(name)} className="accent-primary" />
-              <span className="font-mono text-xs">{name}</span>
-            </label>
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {AVAILABLE_TOOL_NAMES.map((name) => {
+            const checked = name === "hangUp" || form.toolsEnabled.includes(name);
+            const disabled = name === "hangUp";
+            return (
+              <label
+                key={name}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-mono cursor-pointer transition-all duration-150 select-none ${
+                  checked
+                    ? "border-primary/50 bg-primary/15 text-foreground"
+                    : "border-border bg-muted/40 text-muted-foreground hover:border-primary/30 hover:bg-muted/60"
+                } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                <input type="checkbox" aria-label={name} checked={checked} disabled={disabled} onChange={() => toggleTool(name)} className="sr-only" />
+                {name}
+              </label>
+            );
+          })}
         </div>
       </div>
 
-      <div className="border-t border-border pt-5">
-        <div className="grid gap-4 sm:grid-cols-3">
+      <div className="border-t border-border/50 pt-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-4">
+          <Shield className="size-4 text-muted-foreground" /> Guardrails
+        </div>
+        <div className="grid gap-6 sm:grid-cols-3">
           <div>
             <label htmlFor={`ts-${row.templateKey}`} className={labelCls}>Stay-on-topic strictness</label>
             <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={fieldCls}>
@@ -319,12 +350,18 @@ function ToolsGuardrailsTab({ row, form, set }: TabProps) {
 
 function CallingModelTab({ row, form, set }: TabProps) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-2">
+        <PhoneCall className="size-4 text-muted-foreground" /> Caller ID
+      </div>
       <NumberAssignment row={row} />
 
-      <div className="border-t border-border pt-5">
-        <p className="mb-3 text-xs text-muted-foreground">Retry cadence — leave blank to use the platform default. Max attempts capped at 20.</p>
-        <div className="grid gap-4 sm:grid-cols-3">
+      <div className="border-t border-border/50 pt-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-3">
+          <Settings className="size-4 text-muted-foreground" /> Retry Cadence
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">Leave blank to use the platform default. Max attempts capped at 20.</p>
+        <div className="grid gap-6 sm:grid-cols-3">
           <div>
             <label htmlFor={`fd-${row.templateKey}`} className={labelCls}>Delay before first call (min)</label>
             <input id={`fd-${row.templateKey}`} type="number" min={0} max={43200} value={form.firstCallDelayMinutes} onChange={(e) => set("firstCallDelayMinutes", e.target.value)} placeholder="Platform default" className={fieldCls} />
@@ -340,8 +377,11 @@ function CallingModelTab({ row, form, set }: TabProps) {
         </div>
       </div>
 
-      <div className="border-t border-border pt-5">
-        <div className="grid gap-4 sm:grid-cols-2">
+      <div className="border-t border-border/50 pt-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-4">
+          <Settings className="size-4 text-muted-foreground" /> LLM Provider
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2">
           <div>
             <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>
             <select id={`llmp-${row.templateKey}`} value={form.llmProvider} onChange={(e) => set("llmProvider", e.target.value)} className={fieldCls}>
@@ -365,10 +405,10 @@ function CallingModelTab({ row, form, set }: TabProps) {
 // save, preview) + tabs. Replaces the old single accordion card.
 // ---------------------------------------------------------------------------
 const TABS = [
-  { key: "identity", label: "Identity & Behavior" },
-  { key: "voice", label: "Voice" },
-  { key: "tools", label: "Tools & Guardrails" },
-  { key: "calling", label: "Calling & Model" },
+  { key: "identity", label: "Identity & Behavior", icon: User },
+  { key: "voice", label: "Voice", icon: Mic },
+  { key: "tools", label: "Tools & Guardrails", icon: Shield },
+  { key: "calling", label: "Calling & Model", icon: PhoneCall },
 ] as const;
 
 function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConfigRow[] }) {
@@ -437,27 +477,34 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
   const tabProps: TabProps = { row, form, set };
 
   return (
-    <div className="page-enter space-y-5">
+    <div className="page-enter space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-5">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href={appPath("/agents")} className="text-muted-foreground hover:text-foreground" aria-label="Back to agents">
-            <ChevronLeft className="size-4" />
+          <Link href={appPath("/agents")} className="text-muted-foreground hover:text-foreground transition-colors duration-150" aria-label="Back to agents">
+            <ChevronLeft className="size-5" />
           </Link>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold leading-tight">{row.config?.name || row.templateName}</h1>
-            <p className="truncate text-xs text-muted-foreground">{row.templateDescription}</p>
+            <h1 className="truncate text-xl font-bold leading-snug">{row.config?.name || row.templateName}</h1>
+            <p className="truncate text-xs text-muted-foreground leading-relaxed">{row.templateDescription}</p>
           </div>
           <label className="ml-2 flex shrink-0 items-center gap-2 text-sm font-medium">
             <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} aria-label="Agent enabled" />
-            {form.enabled ? "Live" : "Paused"}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ${
+              form.enabled
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-zinc-500/15 text-zinc-400"
+            }`}>
+              <span className={`size-1.5 rounded-full ${form.enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
+              {form.enabled ? "Live" : "Paused"}
+            </span>
           </label>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {allRows.length > 1 && (
             <Select value={row.templateKey} onValueChange={(key) => setLocation(appPath(`/agents/${key}`))}>
-              <SelectTrigger className="w-[220px]" aria-label="Switch agent">
+              <SelectTrigger className="h-9 w-[220px] rounded-lg" aria-label="Switch agent">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -473,7 +520,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
             </Select>
           )}
           <PreviewButton onClick={() => setDrawerOpen(true)} />
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-all duration-150">
             {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
             {!dirty && save.isSuccess ? "Saved" : "Save changes"}
           </Button>
@@ -491,13 +538,16 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
 
       {/* Tabs — everything reachable by one click, nothing behind "Advanced" */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 rounded-full bg-muted/40 p-1 h-auto">
           {TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+            <TabsTrigger key={t.key} value={t.key} className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all duration-200">
+              <t.icon className="size-3.5" />
+              {t.label}
+            </TabsTrigger>
           ))}
         </TabsList>
 
-        <div className="card-weeber mt-4 p-6">
+        <div className="card-weeber card-weeber--editor mt-6 p-6 md:p-8">
           <TabsContent value="identity"><IdentityTab {...tabProps} /></TabsContent>
           <TabsContent value="voice"><VoiceTab {...tabProps} /></TabsContent>
           <TabsContent value="tools"><ToolsGuardrailsTab {...tabProps} /></TabsContent>
@@ -507,8 +557,8 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
 
       {/* Bottom save, mirrored for long tab content so you don't have to
        * scroll back up — same mutation/state as the header's button. */}
-      <div className="flex items-center justify-end border-t border-border pt-4">
-        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm">
+      <div className="flex items-center justify-end border-t border-border/60 pt-6">
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-all duration-150">
           {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
           {!dirty && save.isSuccess ? "Saved" : "Save changes"}
         </Button>

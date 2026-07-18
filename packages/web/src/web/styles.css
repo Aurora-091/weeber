@@ -446,6 +446,18 @@
   border-color: oklch(0.38 0.002 240);
 }
 
+/* Agent editor content card — glass-depth above dark background */
+.theme-weeber.dark .card-weeber--editor {
+  background: oklch(0.16 0.003 240 / 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 32px oklch(0 0 0 / 0.3), 0 2px 8px oklch(0 0 0 / 0.2);
+}
+.theme-weeber .card-weeber--editor {
+  border-radius: var(--radius-xl);
+}
+
 /* ─── Toast redesign ─────────────────────────────────────────────────────── */
 .theme-weeber [data-sonner-toaster] [data-sonner-toast] {
   --normal-bg: var(--weeber-paper-2);
