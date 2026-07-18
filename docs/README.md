@@ -71,6 +71,8 @@ reasoning, not a source of current truth (check `DECISIONS.md` for what actually
 - `agents-ux-audit-and-cogs-2026-07-17.md` — Agents UI framework audit + COGS/unit-economics
 - `pricing-lock-2026-07-18.md` — **final locked pricing** (India + Global tiers, split by voice cost
   tier, full unit economics) — decided, not yet deployed to the live site/checkout; see `ADR-057`
+- `infra-consolidation-audit-2026-07-18.md` — Supabase/Vercel/Railway consolidation audit — what's
+  already optimal, the 3 real moves, and what to turn on that's already paid for; see `ADR-058`
 - `marketing-and-consent-ui-plan.md` — marketing pages + consent/compliance settings UI plan (built)
 - `morning-update-2026-07-16.pdf` — daily update snapshot
 
