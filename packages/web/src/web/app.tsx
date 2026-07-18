@@ -24,6 +24,7 @@ const LandingPage = lazy(() => import("./pages/landing"));
 const DocsPage = lazy(() => import("./pages/docs"));
 const ShopifySolutionPage = lazy(() => import("./pages/shopify").then((m) => ({ default: m.ShopifySolutionPage })));
 const InsuranceSolutionPage = lazy(() => import("./pages/insurance").then((m) => ({ default: m.InsuranceSolutionPage })));
+const RoadmapPage = lazy(() => import("./pages/roadmap").then((m) => ({ default: m.RoadmapPage })));
 const PricingPage = lazy(() => import("./pages/pricing").then((m) => ({ default: m.PricingPage })));
 const AboutPage = lazy(() => import("./pages/about").then((m) => ({ default: m.AboutPage })));
 const FaqPage = lazy(() => import("./pages/faq").then((m) => ({ default: m.FaqPage })));
@@ -178,6 +179,7 @@ function App() {
           {showPublic && <Route path="/docs" component={DocsPage} />}
           {showPublic && <Route path="/shopify" component={ShopifySolutionPage} />}
           {showPublic && <Route path="/insurance" component={InsuranceSolutionPage} />}
+          {showPublic && <Route path="/roadmap" component={RoadmapPage} />}
           {showPublic && <Route path="/pricing" component={PricingPage} />}
           {showPublic && <Route path="/about" component={AboutPage} />}
           {showPublic && <Route path="/faq" component={FaqPage} />}

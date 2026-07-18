@@ -26,6 +26,7 @@ export const FOOTER_COLUMNS = [
       { label: "Shopify solution", href: "/shopify" },
       { label: "Insurance solution", href: "/insurance" },
       { label: "Pricing", href: "/pricing" },
+      { label: "Roadmap", href: "/roadmap" },
       { label: "FAQ", href: "/faq" },
     ],
   },

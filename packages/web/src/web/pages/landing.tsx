@@ -7,9 +7,10 @@ import { useReveal } from "../lib/useReveal";
 import { MarketingNav } from "../components/marketing/MarketingNav";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 import { AgentDemoWidget } from "../components/marketing/AgentDemoWidget";
+import { BrandTile } from "../components/marketing/BrandLogos";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
 import { GrainOverlay } from "../components/marketing/GrainOverlay";
-import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, READY_FLOWS, UPCOMING_VERTICALS, SECURITY_FEATURES, VERTICAL_TABS } from "../lib/marketing-config";
+import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, SECURITY_FEATURES, VERTICAL_TABS } from "../lib/marketing-config";
 
 /**
  * Weeber public waitlist/marketing page — faithfully ported from Vocalist's
@@ -109,56 +110,37 @@ function HeroBadge() {
   );
 }
 
+/** Simple 1-row, 2-column vertical picker — Shopify and Insurance side by side, each with its
+ * own Explore CTA. No tab-switching; both are visible and scannable at once. */
 function VerticalExplorer() {
-  const [active, setActive] = useState(0);
-  const tab = VERTICAL_TABS[active]!;
-
   return (
-    <div>
-      <div className="inline-flex flex-wrap justify-center gap-1 p-1 rounded-full bg-[var(--m-bg)] border border-[var(--m-border)] mb-8" role="tablist" aria-label="Choose a vertical">
-        {VERTICAL_TABS.map((v, i) => (
-          <button
-            key={v.key}
-            role="tab"
-            aria-selected={i === active}
-            onClick={() => setActive(i)}
-            className={`relative px-5 py-2.5 rounded-full text-[14px] font-semibold transition-colors ${
-              i === active ? "text-[var(--m-bg)]" : "text-[var(--m-text-secondary)] hover:text-[var(--m-text)]"
-            }`}
-          >
-            {i === active && <span className="absolute inset-0 rounded-full bg-[var(--m-text)] vertical-tab-active" aria-hidden />}
-            <span className="relative z-10">{v.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div key={tab.key} className="p-6 md:p-10 bg-[var(--m-bg)] border border-[var(--m-border)] rounded-2xl vertical-panel-enter vertical-panel-glow">
-        <div className="grid md:grid-cols-[1.3fr_1fr] gap-8 items-start">
-          <div>
-            <div className="font-mono text-[11px] tracking-[.12em] uppercase text-[var(--m-text-muted)] mb-3">{tab.label}</div>
-            <h3 className="font-display font-bold text-[var(--m-text)] text-[22px] md:text-[26px] leading-snug mb-4">{tab.headline}</h3>
-            <p className="text-sm text-[var(--m-text-secondary)] leading-relaxed mb-3">{tab.problem}</p>
-            <p className="text-sm text-[var(--m-text)] leading-relaxed mb-6">{tab.solution}</p>
-            <a
-              href={tab.cta.href}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[var(--m-text)] text-[var(--m-bg)] text-[14px] font-semibold hover:opacity-90 transition-opacity"
-            >
-              {tab.cta.label} <ArrowRight className="w-4 h-4" aria-hidden />
-            </a>
-          </div>
-          <div className="flex items-center justify-between pt-4 md:pt-0 border-t md:border-t-0 border-[var(--m-border)] md:pl-6 md:border-l">
+    <div className="grid md:grid-cols-2 gap-4">
+      {VERTICAL_TABS.map((tab) => (
+        <div key={tab.key} className="p-6 md:p-8 bg-[var(--m-bg)] border border-[var(--m-border)] rounded-2xl vertical-panel-glow card-lift flex flex-col">
+          <div className="font-mono text-[11px] tracking-[.12em] uppercase text-[var(--m-text-muted)] mb-3">{tab.label}</div>
+          <h3 className="font-display font-bold text-[var(--m-text)] text-[20px] md:text-[22px] leading-snug mb-4">{tab.headline}</h3>
+          <p className="text-sm text-[var(--m-text-secondary)] leading-relaxed mb-3">{tab.problem}</p>
+          <p className="text-sm text-[var(--m-text)] leading-relaxed mb-6 flex-1">{tab.solution}</p>
+          <div className="flex items-center justify-between pt-4 border-t border-[var(--m-border)]">
             <div>
               <div className="text-xs font-medium text-[var(--m-text)]">{tab.demoLabel}</div>
               <div className="text-[11px] text-[var(--m-text-muted)]">
                 {tab.demoAccent} &middot; {tab.demoDuration}
               </div>
             </div>
+            <a
+              href={tab.cta.href}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[var(--m-text)] text-[var(--m-bg)] text-[13px] font-semibold hover:opacity-90 transition-opacity"
+            >
+              {tab.cta.label} <ArrowRight className="w-3.5 h-3.5" aria-hidden />
+            </a>
           </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
+
 
 function LandingContent() {
   usePageMeta({
@@ -283,17 +265,11 @@ function LandingContent() {
         <section className="border-b border-[var(--m-border)] bg-[var(--m-bg)]">
           <div className="max-w-[1100px] mx-auto px-6 py-24 md:py-28">
             <div data-reveal>
-              <div className="mb-3 inline-flex items-center gap-2 border border-[var(--m-text)] rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold">
-                <span className="w-[7px] h-[7px] rounded-full bg-[var(--m-text)] animate-pulse" />
-                Beta testing soon — waitlist customers go first
-              </div>
-              <div className="mt-3">
-                <span className="font-mono text-[11px] tracking-[.16em] uppercase text-[var(--m-text-muted)]">What we're shipping</span>
-              </div>
+              <span className="font-mono text-[11px] tracking-[.16em] uppercase text-[var(--m-text-muted)]">What we're shipping</span>
               <h2 className="mt-3 font-display text-[clamp(28px,3.8vw,46px)] font-extrabold tracking-[-0.03em] leading-[1.04] text-[var(--m-text)] max-w-2xl">
                 A no-code voice platform that fits the tools you already run.
               </h2>
-              <p className="mt-4 text-[17.5px] text-[var(--m-text-secondary)] max-w-xl">Here is what we are building for our first cohort. No engineers, no scripts to record.</p>
+              <p className="mt-4 text-[17.5px] text-[var(--m-text-secondary)] max-w-xl">No engineers, no scripts to record.</p>
             </div>
 
             <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-x-7 gap-y-5 mb-14" data-reveal>
@@ -333,12 +309,10 @@ function LandingContent() {
                   </span>
                   Self-serve today
                 </div>
-                <div className="flex flex-col items-center gap-2 text-center">
-                  <span className="w-12 h-12 rounded-[13px] border flex items-center justify-center font-display text-[15px] font-extrabold bg-[var(--m-accent-bg)] text-[var(--m-accent-fg)] border-[var(--m-accent-bg)]">
-                    S
-                  </span>
-                  <span className="text-[11px] text-[var(--m-text-secondary)]">Shopify — one-click OAuth</span>
+                <div className="flex justify-center">
+                  <BrandTile brand="shopify" />
                 </div>
+                <p className="mt-3 text-center text-[11px] text-[var(--m-text-muted)]">One-click OAuth</p>
               </div>
 
               <div className="border border-[var(--m-border)] rounded-[16px] p-6 bg-[var(--m-bg)] card-lift">
@@ -351,18 +325,9 @@ function LandingContent() {
                   Built &amp; live, assisted setup
                 </div>
                 <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "HubSpot", letter: "H" },
-                    { label: "Salesforce", letter: "SF" },
-                    { label: "GoHighLevel", letter: "GHL" },
-                  ].map((t) => (
-                    <div key={t.label} className="flex flex-col items-center gap-2 text-center">
-                      <span className="w-11 h-11 rounded-[13px] border flex items-center justify-center font-display text-[12px] font-extrabold bg-[var(--m-surface)] text-[var(--m-text)] border-[var(--m-border)]">
-                        {t.letter}
-                      </span>
-                      <span className="text-[10.5px] text-[var(--m-text-secondary)] leading-tight">{t.label}</span>
-                    </div>
-                  ))}
+                  <BrandTile brand="hubspot" size="sm" />
+                  <BrandTile brand="salesforce" size="sm" />
+                  <BrandTile brand="gohighlevel" size="sm" />
                 </div>
               </div>
 
@@ -376,38 +341,10 @@ function LandingContent() {
                   On the roadmap
                 </div>
                 <div className="grid grid-cols-4 gap-3">
-                  {[
-                    { label: "WhatsApp", letter: "WA" },
-                    { label: "WordPress", letter: "W" },
-                    { label: "Google Cal", letter: "G" },
-                    { label: "Meta", letter: "M" },
-                  ].map((t) => (
-                    <div key={t.label} className="flex flex-col items-center gap-2 text-center">
-                      <span className="w-11 h-11 rounded-[13px] border flex items-center justify-center font-display text-[12px] font-extrabold bg-[var(--m-surface)] text-[var(--m-text)] border-[var(--m-border)]">
-                        {t.letter}
-                      </span>
-                      <span className="text-[10.5px] text-[var(--m-text-secondary)] leading-tight">{t.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border border-[var(--m-border)] rounded-[16px] p-6 bg-[var(--m-bg)] md:col-span-3 card-lift">
-                <div className="flex items-center gap-2.5 font-semibold text-[14px] mb-5">
-                  <span className="w-7 h-7 rounded-[8px] border border-[var(--m-border)] flex items-center justify-center text-[var(--m-text)]">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M5 12l4 4 10-10" />
-                    </svg>
-                  </span>
-                  Use cases we are building for
-                </div>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {READY_FLOWS.map((f) => (
-                    <div key={f} className="flex items-center gap-2.5 bg-[var(--m-bg-alt)] border border-[var(--m-border)] rounded-[11px] px-4 py-3.5 text-[14.5px] font-semibold text-[var(--m-text)] hover:bg-[var(--m-surface)] hover:border-[var(--m-text)] transition-colors cursor-default">
-                      <span className="w-[6px] h-[6px] rounded-full bg-[var(--m-text)] flex-none" />
-                      {f}
-                    </div>
-                  ))}
+                  <BrandTile brand="whatsapp" size="sm" />
+                  <BrandTile brand="wordpress" size="sm" />
+                  <BrandTile brand="googlecalendar" size="sm" />
+                  <BrandTile brand="meta" size="sm" />
                 </div>
               </div>
             </div>
@@ -416,25 +353,11 @@ function LandingContent() {
               <strong className="text-[var(--m-text)]">Shopify self-serve, CRM sync assisted, more connectors on the way.</strong> Don't see the one you need?{" "}
               <a href="mailto:hello@weeber.ai" className="link-grow font-semibold text-[var(--m-text)]">
                 Request a connector →
+              </a>{" "}
+              <a href="/roadmap" className="link-grow font-semibold text-[var(--m-text)]">
+                See the full roadmap →
               </a>
             </p>
-          </div>
-        </section>
-
-        {/* Upcoming — condensed to a chip row, not full cards (this used to repeat the vertical
-            pitch a 3rd time on the page; the tabbed explorer above is the real vertical content now) */}
-        <section className="border-b border-[var(--m-border)] bg-[var(--m-bg-alt)]">
-          <div className="max-w-[1100px] mx-auto px-6 py-14 md:py-16">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 flex-wrap" data-reveal>
-              <span className="font-mono text-[11px] tracking-[.16em] uppercase text-[var(--m-text-muted)] flex-none">What's next</span>
-              <div className="flex flex-wrap gap-2">
-                {UPCOMING_VERTICALS.map((v) => (
-                  <span key={v.title} title={v.body} className="border border-[var(--m-border)] rounded-full px-4 py-1.5 text-[13px] font-medium text-[var(--m-text-secondary)] hover:border-[var(--m-text-muted)] hover:text-[var(--m-text)] transition-colors cursor-default">
-                    {v.title}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
         </section>
 
