@@ -219,6 +219,88 @@
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
+/* ─── Voice orb (agent-preview/VoiceOrb.tsx) — 3-blob morph + glow ─────────
+   2026-07-18: matches the marketing site's demo-widget orb aesthetic
+   (AgentDemoWidget.tsx's DemoOrb) so the in-app preview and public demo feel
+   like the same product. Blobs always breathe gently at rest; switch to a
+   faster organic morph once `state` is listening/speaking/thinking — the
+   live audio `level` scales the whole cluster on top via an inline
+   transform on the wrapper in VoiceOrb.tsx, not these keyframes, so real
+   reactivity and the always-on idle motion never fight over one transform. */
+.voice-orb-container {
+  filter: blur(0px);
+  transition: filter 0.4s ease, transform 100ms ease-out;
+}
+.voice-orb-container--active {
+  filter: blur(1px);
+}
+
+.voice-orb-blob {
+  position: absolute;
+  border-radius: 50%;
+  transition: background-color 0.3s ease, opacity 0.3s ease;
+}
+.voice-orb-blob--1 {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  animation: voiceOrbBreathe 4s ease-in-out infinite;
+}
+.voice-orb-blob--2 {
+  width: 78%;
+  height: 78%;
+  top: 8%;
+  left: 18%;
+  animation: voiceOrbBreathe 4s ease-in-out infinite 0.8s;
+}
+.voice-orb-blob--3 {
+  width: 58%;
+  height: 58%;
+  top: 24%;
+  left: 14%;
+  animation: voiceOrbBreathe 4s ease-in-out infinite 1.6s;
+}
+@keyframes voiceOrbBreathe {
+  0%, 100% { transform: scale(0.96) rotate(0deg); }
+  50% { transform: scale(1.04) rotate(4deg); }
+}
+
+.voice-orb-blob--active.voice-orb-blob--1 {
+  animation: voiceOrbMorph1 1.6s ease-in-out infinite;
+}
+.voice-orb-blob--active.voice-orb-blob--2 {
+  animation: voiceOrbMorph2 2s ease-in-out infinite;
+}
+.voice-orb-blob--active.voice-orb-blob--3 {
+  animation: voiceOrbMorph3 2.4s ease-in-out infinite;
+}
+@keyframes voiceOrbMorph1 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  25% { transform: scale(1.12) translate(4%, -3%) rotate(6deg); }
+  50% { transform: scale(0.94) translate(-3%, 4%) rotate(-4deg); }
+  75% { transform: scale(1.06) translate(3%, 2%) rotate(3deg); }
+}
+@keyframes voiceOrbMorph2 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  33% { transform: scale(1.16) translate(-4%, 3%) rotate(-5deg); }
+  66% { transform: scale(0.9) translate(3%, -3%) rotate(5deg); }
+}
+@keyframes voiceOrbMorph3 {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  25% { transform: scale(0.86) translate(5%, 4%) rotate(-4deg); }
+  50% { transform: scale(1.18) translate(-4%, -3%) rotate(4deg); }
+  75% { transform: scale(0.94) translate(2%, 3%) rotate(-2deg); }
+}
+
+.voice-orb-glow--pulse {
+  animation: voiceOrbGlowPulse 1.8s ease-in-out infinite;
+}
+@keyframes voiceOrbGlowPulse {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.32; }
+}
+
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(12px); }
   to { opacity: 1; transform: none; }
