@@ -668,3 +668,21 @@
     transition: none !important;
   }
 }
+
+/* ─── Brand logos — real logo SVGs rendered monochrome via mask-image (BrandLogos.tsx) ────────── */
+.marketing .brand-mono {
+  display: inline-block;
+  background-color: var(--m-text);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+
+.marketing .card-lift:hover .brand-mono {
+  opacity: 1;
+}

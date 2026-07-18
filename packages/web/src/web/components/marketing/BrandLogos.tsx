@@ -1,99 +1,67 @@
 /**
- * Real brand marks for the integrations/roadmap grids — sourced from Simple Icons (CC0-licensed
- * SVG glyphs, simpleicons.org), not letter-in-a-box placeholders. Salesforce and GoHighLevel
- * aren't in Simple Icons (Salesforce opts out of most icon sets over trademark policy), so those
- * two fall back to a clean brand-colored wordmark badge instead of a generic letter.
+ * Real brand logos/wordmarks, rendered monochrome — sourced from Wikimedia Commons (Shopify,
+ * Salesforce, HubSpot, WordPress, Meta official logo SVGs; WhatsApp's icon mark, no separate
+ * wordmark exists for it). Files live in /public/logos/*.svg, referenced here as CSS mask-images
+ * so the ORIGINAL logo shape/lettering (each brand's real wordmark typography, not a font we
+ * picked) renders as a flat silhouette tinted to the site's ink color (--m-text) — monochrome,
+ * matching the theme, in light or dark mode automatically.
  *
- * These are icon marks, not the companies' full custom-lettered wordmarks — recreating a brand's
- * proprietary wordmark font would need a licensed font file we don't have. Pairing the real icon
- * with the brand name set in our own type (Inter Tight, same as the rest of the site) is the
- * standard, safe pattern for third-party integration credit strips.
+ * Google Calendar (no distinct wordmark, only an icon) and GoHighLevel (no freely available
+ * brand SVG) don't have a logo asset here — shown as a plain text label in the site's own type
+ * instead of faking a logo we don't have.
  */
-import type { SVGProps } from "react";
-
-function ShopifyIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#7AB55C" {...props}>
-      <path d="M15.337 23.979l7.216-1.561s-2.604-17.613-2.625-17.73c-.018-.116-.114-.192-.211-.192s-1.929-.136-1.929-.136-1.275-1.274-1.439-1.411c-.045-.037-.075-.057-.121-.074l-.914 21.104h.023zM11.71 11.305s-.81-.424-1.774-.424c-1.447 0-1.504.906-1.504 1.141 0 1.232 3.24 1.715 3.24 4.629 0 2.295-1.44 3.76-3.406 3.76-2.354 0-3.54-1.465-3.54-1.465l.646-2.086s1.245 1.066 2.28 1.066c.675 0 .975-.545.975-.932 0-1.619-2.654-1.694-2.654-4.359-.034-2.237 1.571-4.416 4.827-4.416 1.257 0 1.875.361 1.875.361l-.945 2.715-.02.01zM11.17.83c.136 0 .271.038.405.135-.984.465-2.064 1.639-2.508 3.992-.656.213-1.293.405-1.889.578C7.697 3.75 8.951.84 11.17.84V.83zm1.235 2.949v.135c-.754.232-1.583.484-2.394.736.466-1.777 1.333-2.645 2.085-2.971.193.501.309 1.176.309 2.1zm.539-2.234c.694.074 1.141.867 1.429 1.755-.349.114-.735.231-1.158.366v-.252c0-.752-.096-1.371-.271-1.871v.002zm2.992 1.289c-.02 0-.06.021-.078.021s-.289.075-.714.21c-.423-1.233-1.176-2.37-2.508-2.37h-.115C12.135.209 11.669 0 11.265 0 8.159 0 6.675 3.877 6.21 5.846c-1.194.365-2.063.636-2.16.674-.675.213-.694.232-.772.87-.075.462-1.83 14.063-1.83 14.063L15.009 24l.927-21.166z" />
-    </svg>
-  );
-}
-
-function HubSpotIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#FF7A59" {...props}>
-      <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z" />
-    </svg>
-  );
-}
-
-function WhatsAppIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#25D366" {...props}>
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-    </svg>
-  );
-}
-
-function WordPressIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#21759B" {...props}>
-      <path d="M21.469 6.825c.84 1.537 1.318 3.3 1.318 5.175 0 3.979-2.156 7.456-5.363 9.325l3.295-9.527c.615-1.54.82-2.771.82-3.864 0-.405-.026-.78-.07-1.11m-7.981.105c.647-.03 1.232-.105 1.232-.105.582-.075.514-.93-.067-.899 0 0-1.755.135-2.88.135-1.064 0-2.85-.15-2.85-.15-.585-.03-.661.855-.075.885 0 0 .54.061 1.125.09l1.68 4.605-2.37 7.08L5.354 6.9c.649-.03 1.234-.1 1.234-.1.585-.075.516-.93-.065-.896 0 0-1.746.138-2.874.138-.2 0-.438-.008-.69-.015C4.911 3.15 8.235 1.215 12 1.215c2.809 0 5.365 1.072 7.286 2.833-.046-.003-.091-.009-.141-.009-1.06 0-1.812.923-1.812 1.914 0 .89.513 1.643 1.06 2.531.411.72.89 1.643.89 2.977 0 .915-.354 1.994-.821 3.479l-1.075 3.585-3.9-11.61.001.014zM12 22.784c-1.059 0-2.081-.153-3.048-.437l3.237-9.406 3.315 9.087c.024.053.05.101.078.149-1.12.393-2.325.609-3.582.609M1.211 12c0-1.564.336-3.05.935-4.39L7.29 21.709C3.694 19.96 1.212 16.271 1.211 12M12 0C5.385 0 0 5.385 0 12s5.385 12 12 12 12-5.385 12-12S18.615 0 12 0" />
-    </svg>
-  );
-}
-
-function GoogleCalendarIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#4285F4" {...props}>
-      <path d="M18.316 5.684H24v12.632h-5.684V5.684zM5.684 24h12.632v-5.684H5.684V24zM18.316 5.684V0H1.895A1.894 1.894 0 0 0 0 1.895v16.421h5.684V5.684h12.632zm-7.207 6.25v-.065c.272-.144.5-.349.687-.617s.279-.595.279-.982c0-.379-.099-.72-.3-1.025a2.05 2.05 0 0 0-.832-.714 2.703 2.703 0 0 0-1.197-.257c-.6 0-1.094.156-1.481.467-.386.311-.65.671-.793 1.078l1.085.452c.086-.249.224-.461.413-.633.189-.172.445-.257.767-.257.33 0 .602.088.816.264a.86.86 0 0 1 .322.703c0 .33-.12.589-.36.778-.24.19-.535.284-.886.284h-.567v1.085h.633c.407 0 .748.109 1.02.327.272.218.407.499.407.843 0 .336-.129.614-.387.832s-.565.327-.924.327c-.351 0-.651-.103-.897-.311-.248-.208-.422-.502-.521-.881l-1.096.452c.178.616.505 1.082.977 1.401.472.319.984.478 1.538.477a2.84 2.84 0 0 0 1.293-.291c.382-.193.684-.458.902-.794.218-.336.327-.72.327-1.149 0-.429-.115-.797-.344-1.105a2.067 2.067 0 0 0-.881-.689zm2.093-1.931l.602.913L15 10.045v5.744h1.187V8.446h-.827l-2.158 1.557zM22.105 0h-3.289v5.184H24V1.895A1.894 1.894 0 0 0 22.105 0zm-3.289 23.5l4.684-4.684h-4.684V23.5zM0 22.105C0 23.152.848 24 1.895 24h3.289v-5.184H0v3.289z" />
-    </svg>
-  );
-}
-
-function MetaIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="#0467DF" {...props}>
-      <path d="M6.915 4.03c-1.968 0-3.683 1.28-4.871 3.113C.704 9.208 0 11.883 0 14.449c0 .706.07 1.369.21 1.973a6.624 6.624 0 0 0 .265.86 5.297 5.297 0 0 0 .371.761c.696 1.159 1.818 1.927 3.593 1.927 1.497 0 2.633-.671 3.965-2.444.76-1.012 1.144-1.626 2.663-4.32l.756-1.339.186-.325c.061.1.121.196.183.3l2.152 3.595c.724 1.21 1.665 2.556 2.47 3.314 1.046.987 1.992 1.22 3.06 1.22 1.075 0 1.876-.355 2.455-.843a3.743 3.743 0 0 0 .81-.973c.542-.939.861-2.127.861-3.745 0-2.72-.681-5.357-2.084-7.45-1.282-1.912-2.957-2.93-4.716-2.93-1.047 0-2.088.467-3.053 1.308-.652.57-1.257 1.29-1.82 2.05-.69-.875-1.335-1.547-1.958-2.056-1.182-.966-2.315-1.303-3.454-1.303zm10.16 2.053c1.147 0 2.188.758 2.992 1.999 1.132 1.748 1.647 4.195 1.647 6.4 0 1.548-.368 2.9-1.839 2.9-.58 0-1.027-.23-1.664-1.004-.496-.601-1.343-1.878-2.832-4.358l-.617-1.028a44.908 44.908 0 0 0-1.255-1.98c.07-.109.141-.224.211-.327 1.12-1.667 2.118-2.602 3.358-2.602zm-10.201.553c1.265 0 2.058.791 2.675 1.446.307.327.737.871 1.234 1.579l-1.02 1.566c-.757 1.163-1.882 3.017-2.837 4.338-1.191 1.649-1.81 1.817-2.486 1.817-.524 0-1.038-.237-1.383-.794-.263-.426-.464-1.13-.464-2.046 0-2.221.63-4.535 1.66-6.088.454-.687.964-1.226 1.533-1.533a2.264 2.264 0 0 1 1.088-.285z" />
-    </svg>
-  );
-}
-
-/** Text-badge fallbacks for brands not in Simple Icons (Salesforce opts out; GoHighLevel isn't
- * indexed) — brand-colored initials rather than a generic gray box, at least. */
-function TextBadge({ text, color }: { text: string; color: string }) {
-  return (
-    <span
-      className="flex items-center justify-center font-bold w-full h-full rounded-[8px]"
-      style={{ color, fontSize: text.length > 2 ? "9px" : "13px" }}
-    >
-      {text}
-    </span>
-  );
-}
 
 export type BrandKey = "shopify" | "hubspot" | "salesforce" | "gohighlevel" | "whatsapp" | "wordpress" | "googlecalendar" | "meta";
 
-export const BRANDS: Record<BrandKey, { label: string; render: () => React.ReactNode }> = {
-  shopify: { label: "Shopify", render: () => <ShopifyIcon className="w-full h-full" /> },
-  hubspot: { label: "HubSpot", render: () => <HubSpotIcon className="w-full h-full" /> },
-  salesforce: { label: "Salesforce", render: () => <TextBadge text="SF" color="#00A1E0" /> },
-  gohighlevel: { label: "GoHighLevel", render: () => <TextBadge text="GHL" color="#3B82A0" /> },
-  whatsapp: { label: "WhatsApp", render: () => <WhatsAppIcon className="w-full h-full" /> },
-  wordpress: { label: "WordPress", render: () => <WordPressIcon className="w-full h-full" /> },
-  googlecalendar: { label: "Google Calendar", render: () => <GoogleCalendarIcon className="w-full h-full" /> },
-  meta: { label: "Meta", render: () => <MetaIcon className="w-full h-full" /> },
+/** width:height aspect ratio of each source SVG, so the mask box doesn't distort the mark.
+ * `hasWordmark` = the SVG itself already spells out the brand name (so we don't add a redundant
+ * text caption underneath) — false for WhatsApp and Salesforce, whose available marks are
+ * icon-only (no freely available Salesforce wordmark SVG exists; they're notably protective of
+ * their logo). Those two get a small text caption below the icon instead. */
+const BRAND_LOGO: Partial<Record<BrandKey, { file: string; ratio: number; hasWordmark: boolean }>> = {
+  shopify: { file: "shopify.svg", ratio: 612 / 192, hasWordmark: true },
+  salesforce: { file: "salesforce.svg", ratio: 273 / 191, hasWordmark: false },
+  hubspot: { file: "hubspot.svg", ratio: 106 / 31, hasWordmark: true },
+  wordpress: { file: "wordpress.svg", ratio: 1800 / 250, hasWordmark: true },
+  meta: { file: "meta.svg", ratio: 948 / 191, hasWordmark: true },
+  whatsapp: { file: "whatsapp.svg", ratio: 1, hasWordmark: false },
+};
+
+const BRAND_LABEL: Record<BrandKey, string> = {
+  shopify: "Shopify",
+  hubspot: "HubSpot",
+  salesforce: "Salesforce",
+  gohighlevel: "GoHighLevel",
+  whatsapp: "WhatsApp",
+  wordpress: "WordPress",
+  googlecalendar: "Google Calendar",
+  meta: "Meta",
 };
 
 export function BrandTile({ brand, size = "md" }: { brand: BrandKey; size?: "sm" | "md" }) {
-  const b = BRANDS[brand];
-  const boxSize = size === "sm" ? "w-10 h-10" : "w-12 h-12";
+  const logo = BRAND_LOGO[brand];
+  const height = size === "sm" ? 20 : 24;
+
   return (
-    <div className="flex flex-col items-center gap-2 text-center">
-      <span className={`${boxSize} rounded-[13px] border border-[var(--m-border)] bg-[var(--m-surface)] flex items-center justify-center p-2`}>
-        {b.render()}
-      </span>
-      <span className="text-[11px] text-[var(--m-text-secondary)] leading-tight">{b.label}</span>
+    <div className="flex flex-col items-center gap-2.5 text-center">
+      <div className="flex items-center justify-center h-8">
+        {logo ? (
+          <span
+            role="img"
+            aria-label={BRAND_LABEL[brand]}
+            className="brand-mono"
+            style={{
+              height,
+              width: height * logo.ratio,
+              maskImage: `url(/logos/${logo.file})`,
+              WebkitMaskImage: `url(/logos/${logo.file})`,
+            }}
+          />
+        ) : (
+          <span className="font-display font-extrabold text-[13px] tracking-tight text-[var(--m-text)]">{BRAND_LABEL[brand]}</span>
+        )}
+      </div>
+      {logo && !logo.hasWordmark && <span className="text-[10.5px] text-[var(--m-text-muted)] leading-tight">{BRAND_LABEL[brand]}</span>}
     </div>
   );
 }
