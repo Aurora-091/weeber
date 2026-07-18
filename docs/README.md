@@ -49,6 +49,8 @@ reasoning, not a source of current truth (check `DECISIONS.md` for what actually
 - `product-infra-and-gtm-report.md` — one-time recap report (shipped work + infra + GTM)
 - `weeber-status-qa-2026-07-17.md` — due-diligence-style Q&A on stack/agents/compliance
 - `agents-ux-audit-and-cogs-2026-07-17.md` — Agents UI framework audit + COGS/unit-economics
+- `pricing-lock-2026-07-18.md` — **final locked pricing** (India + Global tiers, split by voice cost
+  tier, full unit economics) — decided, not yet deployed to the live site/checkout; see `ADR-057`
 - `marketing-and-consent-ui-plan.md` — marketing pages + consent/compliance settings UI plan (built)
 - `morning-update-2026-07-16.pdf` — daily update snapshot
 
