@@ -13,11 +13,20 @@ updated: 2026-07-18
 ## Current focus
 
 - **Infra consolidation review (done, 2026-07-18):** confirmed the stack is already tightly
-  consolidated on Supabase + Vercel + Railway. No external app pile to cancel. Two follow-ups surfaced,
-  not yet actioned: (1) add error monitoring (Sentry free tier — the one real gap, errors currently
-  only hit Railway logs), (2) adopt **Supabase Realtime** for the dashboard (it currently polls via
-  `refetchInterval` every 4–5s on call-detail/calls-list/workflow-runs). See
-  `../reference/resources.md`.
+  consolidated on Supabase + Vercel + Railway. No external app pile to cancel. Sentry error
+  monitoring is now wired (`ADR` — see `changelog/2026-07.md`) but still no-op until `SENTRY_DSN` is
+  actually set on Railway (a deploy-config step, not code). Dead `@aws-sdk/client-s3`/`cloudflare`
+  deps + dead S3 env vars removed. Still open: adopt **Supabase Realtime** for the dashboard
+  (decision made, `ADR-058`, not yet built — currently polls via `refetchInterval` every 4-5s on
+  call-detail/calls-list/workflow-runs).
+- **Pricing locked (2026-07-18, not deployed):** India + Global tiers, split by voice-provider cost
+  tier, minutes not calls. `docs/product-strategy/pricing-lock-2026-07-18.md` / `ADR-057`. Decided
+  for grant/investor use — explicitly not on the live site or wired into checkout yet.
+- **Workflow Canvas v4 planned (2026-07-18, not started):** `workflow-canvas/v4-locked-scaffold-ai-
+  draft-and-flow-preview-plan.md` — supersedes v3's frontend section. Never-blank locked compliance
+  scaffold (DNC/calling-window nodes a merchant can't delete), AI-assisted graph drafting from a
+  plain-language prompt, and a flow-preview live web call (extends the existing single-agent
+  Preview drawer/`test-call-stream.ts`, ADR-051). 3 phases, not yet built.
 - **Docs → agent brain (in progress, 2026-07-18):** restructured docs into this `brain/` folder,
   added `AGENTS.md` as the cross-tool entry point, split `DECISIONS.md` → `docs/decisions/` (per-ADR)
   and `changelog.md` → `docs/changelog/` (per-month).
@@ -39,9 +48,10 @@ language switching — the thing that differentiates Weeber from horizontal buil
 
 ## Open decisions waiting on the user (STOP-AND-ASK)
 
-- Trigger-split: config-driven vs visual canvas (ADR-033).
 - Feedback agent persona `03` — confirm as final.
-- Error monitoring: adopt Sentry free tier? (recommended)
-- Supabase Realtime on the dashboard: adopt? (recommended, already paid for)
+- Supabase Realtime on the dashboard: decided (`ADR-058`), just needs someone to actually build it.
+- Workflow Canvas v4: plan written, awaiting go-ahead to start Phase 1 (locked scaffold + data
+  model) — see the plan doc above for the 3-phase breakdown.
+- Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
 
-_Last updated by: infra + docs-brain session, 2026-07-18._
+_Last updated by: workflow-canvas v4 planning session, 2026-07-18._

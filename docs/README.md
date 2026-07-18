@@ -87,7 +87,11 @@ The Workflow Canvas feature (React Flow-based automation builder), across its bu
 - `architecture.md` — original architecture/build spec (built; the Bolt scaffolding prompt itself is
   archived, see `archive/README.md`)
 - `v2-and-multivoice-research.md` — v2 research (ElevenLabs/Bolna-informed) + multi-voice feature gap
-- `v3-user-builder-plan.md` — v3 plan for user-buildable automations (n8n-style); not started
+- `v3-user-builder-plan.md` — v3 plan for user-buildable automations (n8n-style); not started —
+  data model/trigger-catalog/permission-model sections still current, see `v4` for the frontend
+- `v4-locked-scaffold-ai-draft-and-flow-preview-plan.md` — **current forward plan**: never-blank
+  locked compliance scaffold, AI-assisted graph drafting, flow preview via a live web call; not
+  started
 
 ### [`agent-prompts/`](./agent-prompts/)
 Per-vertical, per-agent system prompts (cart recovery, COD confirmation, insurance, etc.). **Do not
