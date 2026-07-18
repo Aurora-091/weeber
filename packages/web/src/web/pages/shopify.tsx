@@ -15,7 +15,7 @@ const FLOWS = [
   {
     icon: RotateCcw,
     title: "Abandoned cart recovery",
-    body: "Weeber calls every abandoned cart automatically, offers a discount code, and can send the checkout link straight to WhatsApp.",
+    body: "Weeber calls every abandoned cart automatically and offers a discount code to bring the checkout back to life. WhatsApp checkout links are on the roadmap.",
   },
   {
     icon: PackageCheck,
@@ -44,7 +44,7 @@ export function ShopifySolutionPage() {
   usePageMeta({
     title: "AI Voice Agent for Shopify — Abandoned Cart Recovery & COD Confirmation",
     description:
-      "Weeber calls every abandoned Shopify cart, confirms COD orders, and sends the checkout link to WhatsApp — automatically, compliance-checked, live in an afternoon.",
+      "Weeber calls every abandoned Shopify cart, confirms COD orders, and sends order/shipping updates — automatically, compliance-checked, live in an afternoon.",
     path: "/shopify",
   });
 
@@ -62,7 +62,7 @@ export function ShopifySolutionPage() {
             <br /> your emails can't.
           </h1>
           <p data-reveal className="mt-6 text-[1.1rem] font-medium text-[var(--m-text-secondary)] max-w-[560px] mx-auto leading-[1.6]">
-            Weeber calls every abandoned cart, confirms COD orders, and follows up on WhatsApp — automatically,
+            Weeber calls every abandoned cart, confirms COD orders, and sends shipping updates — automatically,
             for your Shopify store. No code, live in an afternoon.
           </p>
           <div data-reveal className="mt-10">

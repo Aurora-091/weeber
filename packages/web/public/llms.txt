@@ -4,13 +4,13 @@
 
 ## What is Weeber?
 
-Weeber is a vertical voice AI platform that gives Shopify stores, clinics, and local service businesses an AI agent on a real phone number. The agent recovers abandoned carts, confirms COD orders, books appointments, and handles inbound calls — 24/7, no code required.
+Weeber is a vertical voice AI platform that gives Shopify stores and insurance agencies/brokers an AI agent on a real phone number. For Shopify: recovers abandoned carts, confirms COD orders, and handles inbound calls. For insurance: follows up leads within minutes, reminds policyholders before renewal, and live-transfers to licensed advisors — never quoting, advising, or underwriting.
 
 ## Who is it for?
 
 - Shopify and e-commerce stores losing revenue to abandoned carts and missed calls
-- Clinics and healthcare practices that need automated appointment booking
-- Local service businesses (salons, restaurants, repair shops) that can't staff phones full-time
+- Insurance agencies and brokers whose warm leads go cold waiting on a callback
+- Clinics, healthcare practices, and local service businesses (roadmap vertical, not yet built out)
 
 ## Key capabilities
 
@@ -37,9 +37,9 @@ Mechanisms enforced today:
 
 ## Integrations
 
-- Shopify (live)
-- WhatsApp (live)
-- WordPress, Google Calendar, HubSpot, Meta (roadmap)
+- Shopify — live, self-serve one-click OAuth
+- HubSpot, Salesforce, GoHighLevel — CRM sync, built and working, assisted setup (not self-serve)
+- WhatsApp, WordPress, Google Calendar, Meta — roadmap
 
 ## Links
 
