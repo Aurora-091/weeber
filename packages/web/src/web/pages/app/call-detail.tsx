@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench, RefreshCw } from "lucide-react";
+import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench, RefreshCw, CircleDollarSign } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -18,6 +18,7 @@ type CallRow = {
   recordingUrl: string | null;
   capturedState: Record<string, unknown> | null;
   providerFailoverCount: number | null;
+  estimatedCostUsdCents: number | null;
 };
 
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
@@ -51,6 +52,25 @@ function FailoverBadge({ count }: { count: number }) {
     >
       <RefreshCw className="size-3" aria-hidden />
       Failed over {count}×
+    </span>
+  );
+}
+
+/** Estimated per-call cost (2026-07-18) — see voice/cost-estimate.ts. Always
+ * prefixed "~" and always labeled "estimated" in the title tooltip since
+ * this is a directional figure (public per-minute rates × call duration),
+ * never a reconciled invoice line — cents-only below a dollar so a typical
+ * short call doesn't render as a misleadingly precise-looking "$0.01". */
+function CostBadge({ cents }: { cents: number }) {
+  const dollars = cents / 100;
+  const label = dollars < 1 ? `~¢${cents.toFixed(1)}` : `~${dollars.toFixed(2)}`;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 font-mono text-xs font-medium text-muted-foreground shadow-weeber-card"
+      title="Estimated cost for this call — telephony + STT + TTS + LLM, based on public per-minute rates. Not a reconciled invoice line."
+    >
+      <CircleDollarSign className="size-3" aria-hidden />
+      {label} est.
     </span>
   );
 }
@@ -145,6 +165,9 @@ export function UserCallDetailPage() {
               <StatusBadge status={row.status} />
               {(row.providerFailoverCount ?? 0) > 0 && (
                 <FailoverBadge count={row.providerFailoverCount as number} />
+              )}
+              {row.estimatedCostUsdCents !== null && row.estimatedCostUsdCents !== undefined && (
+                <CostBadge cents={row.estimatedCostUsdCents} />
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">

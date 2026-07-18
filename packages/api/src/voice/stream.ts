@@ -28,6 +28,7 @@ import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } fr
 import type { HighPassFilter } from "./wind-noise-filter";
 import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
+import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs } from "../database/schema";
@@ -432,6 +433,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       const priorCheckoutToken = priorSession?.checkoutToken;
       const priorWorkflowMetadata = priorSession?.workflowMetadata;
 
+      // Per-call cost estimate (2026-07-18) — needs the row's startedAt to
+      // compute duration; a small extra read at call-end, not the hot path.
+      // Best-effort: a lookup failure here shouldn't block the call from
+      // finalizing, it just means this one call has no cost estimate.
+      let estimatedCostUsdCents: number | null = null;
+      try {
+        const [row] = await db
+          .select({ startedAt: calls.startedAt })
+          .from(calls)
+          .where(eq(calls.twilioCallSid, callSid))
+          .limit(1);
+        if (row?.startedAt) {
+          const durationSeconds = (Date.now() - row.startedAt.getTime()) / 1000;
+          estimatedCostUsdCents = estimateCallCostCents({
+            telephonyProvider: provider,
+            sttProvider: sttProviderOverride,
+            ttsProvider: ttsProviderOverride,
+            durationSeconds,
+          });
+        }
+      } catch (err) {
+        console.error("[voice] failed to compute per-call cost estimate", err);
+      }
+
       await withRetry(
         () =>
           db
@@ -442,6 +467,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               ...(capturedDisposition ? { disposition: capturedDisposition } : {}),
               ...(capturedSentiment ? { sentiment: capturedSentiment } : {}),
               ...(capturedIntent ? { intent: capturedIntent } : {}),
+              sttProviderUsed: sttProviderOverride ?? null,
+              ttsProviderUsed: ttsProviderOverride ?? null,
+              llmProviderUsed: llmProviderOverride ?? null,
+              estimatedCostUsdCents,
             })
             .where(eq(calls.twilioCallSid, callSid!)),
         { label: "finalize-call" },

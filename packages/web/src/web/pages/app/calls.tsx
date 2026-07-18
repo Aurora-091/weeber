@@ -19,6 +19,7 @@ type CallRow = {
   startedAt: string;
   capturedState: Record<string, unknown> | null;
   providerFailoverCount: number | null;
+  estimatedCostUsdCents: number | null;
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -39,6 +40,21 @@ type StatusFilter = "all" | "in-progress" | "completed" | "failed";
 function formatWhen(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Estimated per-call cost (2026-07-18) — stored as US cents (a float) in
+ * estimatedCostUsdCents; null means no estimate (e.g. call never connected
+ * long enough, or providers weren't resolved) — shown as nothing, never as
+ * "$0.00" which would misleadingly imply a free call. Always prefixed "~"
+ * since this is an estimate, not a reconciled invoice line (see
+ * voice/cost-estimate.ts). Cents-only ("¢12") below a dollar keeps the
+ * common case (short calls) from rendering as "$0.01" and looking like
+ * rounding noise. */
+function formatEstimatedCost(cents: number | null): string | null {
+  if (cents === null || cents === undefined) return null;
+  const dollars = cents / 100;
+  if (dollars < 1) return `~¢${cents.toFixed(1)}`;
+  return `~${dollars.toFixed(2)}`;
 }
 
 function relativeTime(iso: string | null): string {
@@ -238,6 +254,14 @@ export function UserCallsPage() {
                     >
                       <RefreshCw className="size-3.5" aria-hidden />
                       <span aria-hidden>{call.providerFailoverCount}</span>
+                    </span>
+                  )}
+                  {formatEstimatedCost(call.estimatedCostUsdCents) && (
+                    <span
+                      className="flex shrink-0 items-center font-mono text-xs text-muted-foreground"
+                      title="Estimated cost for this call — telephony + STT + TTS + LLM, based on public per-minute rates, not a reconciled invoice line"
+                    >
+                      {formatEstimatedCost(call.estimatedCostUsdCents)}
                     </span>
                   )}
                   <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">

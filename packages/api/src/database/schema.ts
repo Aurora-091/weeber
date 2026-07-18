@@ -3,6 +3,7 @@ import {
   text,
   integer,
   numeric,
+  real,
   boolean,
   timestamp,
   jsonb,
@@ -161,6 +162,27 @@ export const calls = pgTable("calls", {
   // string "custom" (an explicit override / env var was used instead — see resolveDisclosure).
   disclosureText: text("disclosure_text"),
   disclosureVersion: text("disclosure_version"),
+  // Per-call cost visibility (2026-07-18, India feature-gap analysis Phase 3):
+  // the STT/TTS/LLM providers *actually used* for this specific call, snapshotted
+  // at call time — not looked up from current org config, which can change after
+  // the call happened and would misattribute cost to whatever's configured today.
+  // Nullable: a call finalized before this column existed, or a test/preview
+  // call with no provider ever resolved, simply has no record here.
+  sttProviderUsed: text("stt_provider_used"),
+  ttsProviderUsed: text("tts_provider_used"),
+  llmProviderUsed: text("llm_provider_used"),
+  // Estimated cost in US cents (a float — e.g. 12.34 means ~$0.1234) for this
+  // call, computed once at finalizeCall from durationSeconds (endedAt -
+  // startedAt) and the providers above — see voice/cost-estimate.ts.
+  // Explicitly an ESTIMATE, not a reconciled bill: real per-minute rates vary
+  // by plan/volume, and LLM cost in particular is a flat per-minute
+  // approximation since actual token usage isn't tracked per real call yet
+  // (only in the test-chat preview endpoint) — surfaced to merchants as
+  // "~$X" for exactly that reason, never as an exact invoice line. Null
+  // until the call is finalized, or if duration/providers are unknown
+  // (never silently defaults to 0, which would look like a genuinely free
+  // call).
+  estimatedCostUsdCents: real("estimated_cost_usd_cents"),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
 }, (table) => [
