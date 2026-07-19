@@ -40,6 +40,12 @@ mock.module("../../database", () => ({
   },
 }));
 
+// Vault-first read (audit 2026-07-19 finding #1) — defaults to empty so these existing tests
+// exercise the legacy plaintext `orgIntegrations.credentials` fallback path unchanged.
+mock.module("../../database/credential-vault", () => ({
+  readOrgIntegrationCredentials: async () => ({}) as Record<string, string>,
+}));
+
 mock.module("../integrations/gohighlevel", () => ({
   syncToGoHighLevel: async (...args: unknown[]) => {
     lastGoHighLevelArgs = args;

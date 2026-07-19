@@ -10,10 +10,18 @@
  * Priority order is deliberate and fixed: gohighlevel → salesforce → hubspot.
  * The first enabled row with credentials wins; an org is expected to connect
  * at most one CRM.
+ *
+ * Credential source (audit 2026-07-19 finding #1): vault-first, plaintext
+ * `orgIntegrations.credentials` jsonb as a fallback for any row that predates
+ * the vault (same transition pattern `twilio-provisioning.ts` uses for
+ * telephony tokens). The `orgIntegrations` row itself is still the source of
+ * truth for *whether* a provider is connected/enabled — only the credential
+ * values themselves are vault-first.
  */
 import { and, eq } from "drizzle-orm";
 import { db } from "../../database";
 import { orgIntegrations } from "../../database/schema";
+import { readOrgIntegrationCredentials } from "../../database/credential-vault";
 
 export type CrmProvider = "gohighlevel" | "salesforce" | "hubspot";
 
@@ -38,7 +46,15 @@ export async function getOrgCrmCredentials(orgId: string): Promise<OrgCrmCredent
         ),
       )
       .limit(1);
-    if (row && row.credentials) {
+    if (!row) continue;
+    const vaulted = await readOrgIntegrationCredentials(orgId, provider);
+    if (Object.keys(vaulted).length > 0) {
+      return { provider, credentials: vaulted };
+    }
+    // Legacy fallback — a row provisioned before the vault existed, or a
+    // connector that hasn't been cut over to storeOrgIntegrationCredentials yet.
+    if (row.credentials && Object.keys(row.credentials).length > 0) {
+      console.warn(`[resolve-crm] org ${orgId} provider ${provider} is on legacy plaintext credentials — not yet vaulted`);
       return { provider, credentials: row.credentials as Record<string, string> };
     }
   }
