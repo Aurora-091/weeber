@@ -17,6 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowLeft, Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus2, Play } from "lucide-react";
+import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
@@ -24,6 +25,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
+import { Switch } from "../../components/ui/switch";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
@@ -683,6 +685,7 @@ function UserWorkflowCanvasEditor({
 }
 
 export function UserWorkflowsListPage() {
+  const queryClient = useQueryClient();
   const workflows = useQuery<{ workflows: WorkflowResponse[] }>({
     queryKey: ["user-workflows"],
     queryFn: async () => {
@@ -692,13 +695,34 @@ export function UserWorkflowsListPage() {
     },
   });
 
+  // List-level enable/disable without opening the canvas. Passes the current
+  // overrides back so the value-only save doesn't wipe them (the PUT resets
+  // overrides to null when the field is omitted); customGraph is preserved
+  // server-side when not included in the body.
+  const toggle = useMutation({
+    mutationFn: async (w: WorkflowResponse) => {
+      const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(w.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !w.orgConfig.enabled, overrides: w.orgConfig.overrides }),
+      });
+      if (!res.ok) throw new Error(`toggle failed (${res.status})`);
+      return res.json();
+    },
+    onSuccess: (_data, w) => {
+      queryClient.invalidateQueries({ queryKey: ["user-workflows"] });
+      toast.success(w.orgConfig.enabled ? `${w.name} paused` : `${w.name} activated`);
+    },
+    onError: (err: Error) => toast.error("Couldn't update workflow", { description: err.message }),
+  });
+
   const rows = workflows.data?.workflows ?? [];
 
   return (
     <div className="page-enter">
       <PageHeader
         title="Workflows"
-        description="Call automation flows for your store. Click a workflow to customize timings and messages."
+        description="Call automation flows for your store. Toggle a workflow on or off here, or click it to customize timings and messages."
       />
 
       {workflows.isLoading && <SkeletonCards count={2} lines={2} />}
@@ -718,21 +742,43 @@ export function UserWorkflowsListPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {rows.map((w) => (
-          <Link key={w.id} href={appPath(`/workflows/${encodeURIComponent(w.id)}`)}>
-            <div className="card-action p-5 h-full">
-              <div className="flex items-center gap-2 mb-2">
-                <GitBranch className="size-4 text-primary" aria-hidden />
-                <span className="font-medium text-sm">{w.name}</span>
-                {w.orgConfig.customGraph && <Badge variant="secondary" className="text-[10px]">Custom</Badge>}
+        {rows.map((w) => {
+          const active = w.orgConfig.enabled;
+          return (
+            <div key={w.id} className="card-action p-5 h-full flex flex-col">
+              <div className="flex items-start justify-between gap-3">
+                <Link href={appPath(`/workflows/${encodeURIComponent(w.id)}`)} className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <GitBranch className="size-4 text-primary shrink-0" aria-hidden />
+                    <span className="font-medium text-sm">{w.name}</span>
+                    {w.orgConfig.customGraph && <Badge variant="secondary" className="text-[10px]">Custom</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      active ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-500/15 text-zinc-400"
+                    }`}>
+                      <span className={`size-1.5 rounded-full ${active ? "bg-emerald-400" : "bg-zinc-500"}`} />
+                      {active ? "Active" : "Paused"}
+                    </span>
+                    <Badge variant="secondary" className="text-[10px]">{w.vertical}</Badge>
+                    <span>{(w.orgConfig.customGraph ?? w.graph).nodes.length} steps</span>
+                  </div>
+                </Link>
+                <Switch
+                  checked={active}
+                  disabled={toggle.isPending}
+                  onCheckedChange={() => toggle.mutate(w)}
+                  aria-label={active ? `Pause ${w.name}` : `Activate ${w.name}`}
+                />
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="secondary" className="text-[10px]">{w.vertical}</Badge>
-                <span>{(w.orgConfig.customGraph ?? w.graph).nodes.length} steps</span>
-              </div>
+              {!active && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                  Paused — this workflow won't place any automated calls until you turn it back on.
+                </p>
+              )}
             </div>
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight, Phone, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -333,6 +333,9 @@ export function SetupModal({
   const { me } = useUser();
   const [manualStep, setManualStep] = useState<number | null>(null);
   const [pickedVertical, setPickedVertical] = useState(me.org.vertical);
+  // Guards the one-shot default provisioning so it fires at most once per open
+  // session even as the agents step re-renders.
+  const provisionedRef = useRef(false);
 
   useEffect(() => {
     setPickedVertical(me.org.vertical);
@@ -432,6 +435,24 @@ export function SetupModal({
     },
   });
 
+  // One-shot auto-provisioning of the vertical's recommended default agents +
+  // workflow (2026-07-19). Fired once when the merchant first reaches the
+  // "Pick agents" step so the recommended toggles are already ON instead of
+  // every agent shipping off (the old behavior let a merchant finish setup
+  // with nothing that would ever place a call). Idempotent + non-destructive
+  // server-side, so re-firing never re-enables something they turned off.
+  const provisionDefaults = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/provision-defaults", { method: "POST" });
+      if (!res.ok) throw new Error(`provision failed (${res.status})`);
+      return (await res.json()) as { vertical: string; agentsEnabled: string[]; workflowsEnabled: string[] };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["app-shopify-status"] });
+    },
+  });
+
   const rows = configs.data?.agentConfigs ?? [];
   const enabledRows = rows.filter((r) => r.config?.enabled);
   const hasShop = status.data?.hasShop ?? false;
@@ -494,6 +515,24 @@ export function SetupModal({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, hasShop, enabledRows.length, vertical.hasLiveIntegration, verticalConfirmed, numberStepDone]);
+
+  // Reset the provisioning guard whenever the modal closes so a later reopen
+  // can re-run the (idempotent) provisioning for the current vertical.
+  useEffect(() => {
+    if (!open) provisionedRef.current = false;
+  }, [open]);
+
+  // Auto-provision the recommended default agents + workflow the moment the
+  // merchant first lands on the "Pick agents" step, so the recommended
+  // toggles render already ON. Waits until the configs query has loaded so we
+  // don't race the invalidation, and only fires once per open session.
+  useEffect(() => {
+    if (!open || currentKey !== "agents" || provisionedRef.current) return;
+    if (configs.isLoading || provisionDefaults.isPending) return;
+    provisionedRef.current = true;
+    provisionDefaults.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, currentKey, configs.isLoading]);
 
   const isLoading = onboarding.isLoading || configs.isLoading || (vertical.hasLiveIntegration && status.isLoading);
 
@@ -601,10 +640,11 @@ export function SetupModal({
                 <div className="flex items-start gap-3">
                   <Bot className="mt-0.5 size-5 text-primary" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-lg font-medium">Pick your agents</h2>
+                    <h2 className="text-lg font-medium">Your agents</h2>
                     <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                      Turn on the agents you want. Each comes ready to work with sensible defaults — you can
-                      fine-tune voice, tone, and script on the Agents page any time.
+                      We've already turned on the recommended agents for your business — each comes ready to
+                      work with sensible defaults. Toggle any off, or turn on the rest, and fine-tune voice,
+                      tone, and script on the Agents page any time.
                     </p>
                     <div className="mt-5 space-y-3">
                       {rows.length === 0 && (

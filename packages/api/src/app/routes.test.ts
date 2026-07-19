@@ -35,7 +35,13 @@ mock.module("../database", () => {
         // Make bootstrap inserts visible to the re-select that follows them.
         (rowsByTable[name] ??= []).push(data);
         return {
-          onConflictDoNothing: () => Promise.resolve(),
+          // Awaitable (existing callers just await it) AND chainable with
+          // .returning() (provisionVerticalDefaults reads back what it wrote).
+          onConflictDoNothing: () => {
+            const p = Promise.resolve([]) as Promise<unknown[]> & Record<string, unknown>;
+            p.returning = () => Promise.resolve([{ id: 1, ...data }]);
+            return p;
+          },
           onConflictDoUpdate: () => ({ returning: () => Promise.resolve([data]) }),
           returning: () => Promise.resolve([{ id: 1, ...data }]),
         };
@@ -188,5 +194,52 @@ describe("POST /agent-configs/:templateKey/test-chat — Preview drawer's live-e
       }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /provision-defaults — setup wizard auto-provisioning (HTTP-level)", () => {
+  beforeEach(() => {
+    rowsByTable = {
+      org_members: [{ supabaseUserId: "user-1", orgId: "org-1", role: "owner" }],
+      orgs: [{ id: "org-1", name: "Shop", vertical: "shopify" }],
+      calls: [],
+      feature_flags: [],
+      agent_templates: [
+        { key: "shopify-cart-recovery", vertical: "shopify", active: true },
+        { key: "shopify-cod-confirmation", vertical: "shopify", active: true },
+        { key: "shopify-feedback", vertical: "shopify", active: true },
+      ],
+      workflow_templates: [{ id: "shopify-cart-recovery-v1", vertical: "shopify", active: true }],
+      org_agent_configs: [],
+      org_workflow_configs: [],
+    };
+    insertsByTable = {};
+  });
+
+  it("enables the shopify vertical's recommended agents + workflow through the real route + org gate", async () => {
+    const res = await userApp.request("/provision-defaults", {
+      method: "POST",
+      headers: await bearer("user-1"),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { vertical: string; agentsEnabled: string[]; workflowsEnabled: string[] };
+    expect(body.vertical).toBe("shopify");
+    // Curated money agents on; feedback intentionally NOT auto-enabled.
+    expect(body.agentsEnabled).toContain("shopify-cart-recovery");
+    expect(body.agentsEnabled).toContain("shopify-cod-confirmation");
+    expect(body.agentsEnabled).not.toContain("shopify-feedback");
+    expect(body.workflowsEnabled).toEqual(["shopify-cart-recovery-v1"]);
+    // Actually wrote enabled rows.
+    expect(insertsByTable.org_agent_configs).toHaveLength(2);
+    expect((insertsByTable.org_agent_configs as { enabled: boolean }[]).every((r) => r.enabled)).toBe(true);
+  });
+
+  it("403s without a membership (org gate applies)", async () => {
+    rowsByTable.org_members = [];
+    const res = await userApp.request("/provision-defaults", {
+      method: "POST",
+      headers: await bearer("user-orphan"),
+    });
+    expect(res.status).toBe(403);
   });
 });

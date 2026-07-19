@@ -532,6 +532,22 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
     setForm((f) => ({ ...f, [key]: value }));
   };
 
+  // Readiness: "enabled" (the dispatch gate) is necessary but not sufficient —
+  // an enabled agent with no caller ID to dial from still can't place a call.
+  // Surface that gap here so "Live" never silently means "does nothing".
+  const telephony = useQuery<{ telephony: { outboundNumber: string | null } }>({
+    queryKey: ["app-telephony-status"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/telephony/status");
+      if (!res.ok) throw new Error(`telephony failed (${res.status})`);
+      return res.json();
+    },
+  });
+  const hasCallerId = row.config?.phoneNumberId != null || Boolean(telephony.data?.telephony?.outboundNumber);
+  // Only trust the "no caller ID" state once telephony has actually loaded, so
+  // we don't flash a false warning before the query resolves.
+  const missingCallerId = form.enabled && telephony.isSuccess && !hasCallerId;
+
   const tabProps: TabProps = { row, form, set };
 
   return (
@@ -584,6 +600,26 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
           </Button>
         </div>
       </div>
+
+      {/* Readiness — why an agent may not actually be running even when toggled on. */}
+      {!form.enabled ? (
+        <div className="flex items-start gap-2.5 rounded-lg border border-zinc-500/20 bg-zinc-500/5 px-4 py-3 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden />
+          <p>
+            <span className="font-medium text-foreground/80">Paused.</span> This agent won't place or receive any
+            calls until you turn it on with the toggle above.
+          </p>
+        </div>
+      ) : missingCallerId ? (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs">
+          <PhoneCall className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden />
+          <p className="text-amber-200/90">
+            <span className="font-medium text-amber-300">Live, but no phone number to call from.</span> Assign a
+            caller ID on the <button type="button" onClick={() => setTab("calling")} className="underline underline-offset-2 hover:text-amber-100">Calling &amp; Model</button> tab
+            (or buy one on the Phone Numbers page) — until then this agent can't actually place calls.
+          </p>
+        </div>
+      ) : null}
 
       <PreviewDrawer
         open={drawerOpen}
