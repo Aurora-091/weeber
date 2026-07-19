@@ -21,6 +21,17 @@ describe("resolveDisclosure — Global Compliance Engine Tier 0 (#2/#3)", () => 
     expect(result.version).toBe(DISCLOSURE_VERSION);
   });
 
+  it("resolves a distinct romanized Hinglish line for language 'hinglish'", () => {
+    const result = resolveDisclosure({ language: "hinglish" });
+    expect(result.text).toContain("call record");
+    expect(result.text).toContain("AI assistant");
+    // romanized, not the Devanagari 'hi' line and not the English fallback
+    expect(result.text).toContain("Shuru karne se pehle");
+    expect(result.text).not.toBe(resolveDisclosure({ language: "hi" }).text);
+    expect(result.text).not.toBe(resolveDisclosure({}).text);
+    expect(result.version).toBe(DISCLOSURE_VERSION);
+  });
+
   it("normalizes a region-suffixed tag ('hi-IN') to the same 'hi' line", () => {
     const plain = resolveDisclosure({ language: "hi" });
     const regioned = resolveDisclosure({ language: "hi-IN" });

@@ -35,7 +35,7 @@ export type ConsentOptions = {
  * says exactly which version of the disclosure was spoken on a given call, not
  * just "some disclosure was spoken." Independent per explicit-override text
  * (an override has no version of its own — see resolveDisclosure below). */
-export const DISCLOSURE_VERSION = "v1-2026-07-16";
+export const DISCLOSURE_VERSION = "v2-2026-07-19";
 
 const DEFAULT_DISCLOSURE_TEXT =
   "Quick heads up before we start — this call may be recorded, and you're speaking with an AI assistant.";
@@ -44,15 +44,22 @@ const DEFAULT_DISCLOSURE_TEXT =
  * Localized disclosure lines, keyed by a normalized language tag (lowercased,
  * region suffix stripped — "hi-IN" and "hi" both resolve to "hi"). Hindi/Hinglish
  * wording follows this codebase's existing convention (see docs/agent-prompts/):
- * Devanagari script, English loanwords ("call", "AI assistant") kept in Latin
- * script rather than transliterated — matches the Sarvam STT `codemix` fix
+ * the "hi" line is Devanagari with English loanwords ("call", "AI assistant") kept
+ * in Latin script rather than transliterated — matches the Sarvam STT `codemix` fix
  * (transliterating loanwords into Devanagari was a real, fixed bug elsewhere in
- * this pipeline). This Hindi line is a draft pending human review before it's
- * ever spoken on a real call — see docs/global-compliance-engine-plan.md.
+ * this pipeline). The "hinglish" line is the same meaning fully romanized (Latin
+ * script), matching how the insurance agent prompts render their Hinglish audited
+ * wording — a "hinglish" agent's TTS voice speaks Hindi (Sarvam maps hinglish ->
+ * hi-IN) but from romanized text, so the disclosure must match that surface form
+ * rather than falling back to the English sentence. Both non-English lines are
+ * drafts pending human review before they're spoken on a real call — see
+ * docs/global-compliance-engine-plan.md.
  */
 const DISCLOSURE_TEXT_BY_LANGUAGE: Record<string, string> = {
   en: DEFAULT_DISCLOSURE_TEXT,
   hi: "शुरू करने से पहले एक छोटी सी बात — यह call record हो सकती है, और आप एक AI assistant से बात कर रहे हैं।",
+  hinglish:
+    "Shuru karne se pehle ek chhoti si baat — yeh call record ho sakti hai, aur aap ek AI assistant se baat kar rahe hain.",
 };
 
 function normalizeLanguageTag(language: string): string {
