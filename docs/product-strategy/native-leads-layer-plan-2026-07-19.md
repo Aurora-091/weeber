@@ -1,6 +1,14 @@
 # Native Leads / Records Layer — Design & Roadmap
 
-**Date:** 2026-07-19 · **Status:** plan for review (build after sign-off) · **Trigger:** insurance agents collect many details per call — where do those live, how do leads get in, and how do they get out (Excel / CRM)? Own our layer before bolting on external CRMs.
+**Date:** 2026-07-19 · **Status:** ✅ **BUILT & SHIPPED (Phases 1–3, minus the deferred Orders migration)** — see the build-status box below · **Trigger:** insurance agents collect many details per call — where do those live, how do leads get in, and how do they get out (Excel / CRM)? Own our layer before bolting on external CRMs.
+
+> ### Build status (updated 2026-07-19, post-build)
+> The full flow shipped in one pass. Scope call from the user: **"make it leaner"** = the lean owned core is Phase 1; the `ingest` endpoint + per-org API keys were **re-labelled from Phase 1 → Phase 2** (they're still built — nothing was removed — they're just conceptually an edge, not the core). See ADR-061.
+>
+> - **Phase 1 (lean core) — DONE:** `leads` + `leadIntakeSchemas` + `leadApiKeys` tables (migration `0040_mushy_arclight.sql`), `calls.leadId`, insurance default intake schema, promote `capturedState` → `leads.fields` at `finalizeCall`, Leads page (list/search, detail w/ aggregated calls, pipeline status, assign advisor, call-now, Excel export, manual add/edit).
+> - **Phase 2 — DONE:** `POST /api/leads/ingest` (validated, deduped, idempotent, source-tagged, per-org `wlk_` key) + api-key CRUD; per-org / per-agent intake-schema **editor** UI ("Configure fields" dialog) with server-side regulated-field blocklist; Pipedream inbound recipe + ingest-API docs (`docs/integrations/`).
+> - **Phase 3 — DONE (except item 11):** public hosted/embeddable intake form (`/f/:orgId`, orgId is the form token — ADR-061); outbound CRM mirror ("Sync to CRM" on the lead detail sheet, reusing the same native adapters as the in-call crmSync tool — HubSpot / Salesforce / GoHighLevel — via shared getOrgCrmCredentials). **Item 11 (migrate Shopify Orders onto the layer) is DEFERRED** — risky refactor of working Shopify code, not requested; kept documented-only.
+> - **Verified:** `typecheck --force` clean · `test --force` 621 pass / 0 fail · `lint` 0/0 · `build` clean.
 
 **TL;DR** — Build a **native, person-centric Leads layer** as the hub. Everything flows through **one inbound contract (`POST /api/leads/ingest`)** into a `leads` table, projected per-vertical (insurance "Leads", Shopify "Orders" migrates on later), and flows out via **Excel export (own it)** + native CRM adapters + Pipedream (long-tail edges). Own the data-of-record; use Pipedream only on the *inbound edge* for breadth, never as the store.
 
@@ -143,22 +151,23 @@ A documented, ready-to-activate template — not core code:
 
 ## 10. Phased roadmap
 
-**Phase 1 — the owned core (build first):**
-1. `leads` + `leadIntakeSchemas` tables (+ migration), `calls.leadId`.
-2. Insurance default intake schema (§5) in `verticals.ts`-style config.
-3. `POST /api/leads/ingest` — validated, deduped, idempotent, source-tagged, per-org key. Full tests.
-4. Promote `capturedState` → `leads.fields` on call completion; associate calls by `(orgId, phone)`.
-5. Leads page projection: list/search, detail, pipeline, assign, call-now, Excel export, manual add/edit.
+> **Re-scoped 2026-07-19 (ADR-061):** the lean owned core is Phase 1; `ingest` + api-keys moved to Phase 2 (edge, not core). Status markers reflect what actually shipped.
 
-**Phase 2 — edges & config polish:**
-6. Pipedream inbound recipe template + docs (activate against a real source).
-7. Per-org / per-agent intake schema **editor** UI (Phase 1 ships the config; this makes it merchant-editable) with compliance blocklist.
-8. Inbound webhook-in docs (client's own system → `ingest`).
+**Phase 1 — the owned core ✅ DONE:**
+1. ✅ `leads` + `leadIntakeSchemas` (+ `leadApiKeys`) tables (+ migration `0040`), `calls.leadId` (plain indexed int, no DB FK — mirrors `scheduledCalls.orgId`, avoids forward-ref).
+2. ✅ Insurance default intake schema (§5) — `defaultIntakeSchema(vertical)` in `voice/leads/intake-schema.ts`.
+3. ✅ Promote `capturedState` → `leads.fields` at `finalizeCall`; associate calls by `(orgId, phone)`.
+4. ✅ Leads page projection: list/search, detail, pipeline, assign advisor, call-now, Excel export, manual add/edit.
 
-**Phase 3 — reach:**
-9. Native hosted/embeddable intake **form** (thin client of `ingest`, zero backend change).
-10. **Outbound** CRM mirror: push `leads` → Pipedrive/HubSpot/etc via existing native adapters (the earlier integrations-roadmap doc). Leads table is source of truth; CRM is the mirror.
-11. Migrate Shopify Orders onto the generic leads layer (Orders becomes a projection).
+**Phase 2 — edges & config polish ✅ DONE:**
+5. ✅ `POST /api/leads/ingest` — validated, deduped, idempotent (phone-upsert; `externalId` echoed, not stored in v1), source-tagged, per-org `wlk_` key + api-key CRUD. Full tests. *(Re-labelled from Phase 1.)*
+6. ✅ Per-org / per-agent intake-schema **editor** UI ("Configure fields" dialog) with server-side regulated-field blocklist (`schema-store.ts`).
+7. ✅ Pipedream inbound recipe template + ingest-API / webhook-in docs → `docs/integrations/leads-ingest-api.md`, `docs/integrations/pipedream-inbound-recipe.md`.
+
+**Phase 3 — reach ✅ DONE (item 11 deferred):**
+8. ✅ Native hosted/embeddable intake **form** — public `/f/:orgId` (thin client of ingest; `orgId` is the form token, ADR-061), rate-limited public submit endpoint.
+9. ✅ **Outbound** CRM mirror: "Sync to CRM" pushes `leads` → CRM via the same native adapters as the in-call crmSync tool (HubSpot / Salesforce / GoHighLevel), resolved through shared `getOrgCrmCredentials`. Leads table is source of truth; CRM is the mirror.
+10. ⏸️ **DEFERRED — Migrate Shopify Orders onto the generic leads layer.** Risky refactor of working, live Shopify code; not requested; no pilot need. Kept documented-only until there's a concrete reason — the layer is already a superset, so this is a later consolidation, not a blocker.
 
 ---
 
@@ -172,9 +181,9 @@ A documented, ready-to-activate template — not core code:
 
 ---
 
-## 12. Open questions to resolve during build
+## 12. Open questions — RESOLVED during build
 
-- Advisor model: is `assignedAdvisorId` a real user/team-member record, or a free-text name for now? (Affects whether we need a team/advisor table.)
-- Pipeline stages: are the 5 (new/contacted/qualified/booked/closed + lost) fixed, or per-org configurable later?
-- Do we auto-advance status from call dispositions (e.g. booked disposition → `booked`), or leave status fully manual in v1?
-- Does `ingest` triggering a call need to respect the same compliance dial-gates (DNC/TCPA/quiet hours) as agent-initiated calls? (Answer is almost certainly yes — flag to wire it through the existing gate.)
+- **Advisor model:** ✅ real record — `assignedAdvisorId` → `insuranceAdvisors.id` (nullable). No free-text name.
+- **Pipeline stages:** ✅ fixed enum in v1 — `new/contacted/qualified/booked/closed/lost`. Per-org configurable stages **deferred to a later phase** (not built; not needed yet).
+- **Auto-advance status from dispositions:** ✅ **no** — status is fully manual in v1. Auto-advance is a rules engine in disguise; deferred deliberately.
+- **`ingest`-triggered calls must respect dial-gates (DNC/TCPA/quiet-hours):** ✅ answer is yes — so `triggerWorkflow` is **accepted in the ingest contract but NOT wired in v1**. It returns a `note` explaining it's coming once the dial-gates are enforced on this path, rather than silently dialing ungated. Tracked as the next real piece of ingest work.

@@ -3,27 +3,7 @@ import { tool } from "ai";
 import { syncToGoHighLevel } from "../integrations/gohighlevel";
 import { syncToSalesforce } from "../integrations/salesforce";
 import { syncToHubspot } from "../integrations/hubspot";
-import { db } from "../../database";
-import { orgIntegrations } from "../../database/schema";
-import { eq, and } from "drizzle-orm";
-
-async function getOrgCrmCredentials(orgId: string): Promise<{
-  provider: "gohighlevel" | "salesforce" | "hubspot";
-  credentials: Record<string, string>;
-} | null> {
-  const providers = ["gohighlevel", "salesforce", "hubspot"] as const;
-  for (const provider of providers) {
-    const [row] = await db
-      .select()
-      .from(orgIntegrations)
-      .where(and(eq(orgIntegrations.orgId, orgId), eq(orgIntegrations.provider, provider), eq(orgIntegrations.enabled, true)))
-      .limit(1);
-    if (row && row.credentials) {
-      return { provider, credentials: row.credentials as Record<string, string> };
-    }
-  }
-  return null;
-}
+import { getOrgCrmCredentials } from "../integrations/resolve-crm";
 
 export function createCrmSyncTool(orgId: string | undefined) {
   return tool({

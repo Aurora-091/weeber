@@ -21,7 +21,8 @@
 import { Hono } from "hono";
 import { getOrg } from "../org-queries";
 import { resolveLeadApiKey } from "./api-keys";
-import { defaultIntakeSchema, validateFields } from "./intake-schema";
+import { validateFields } from "./intake-schema";
+import { resolveIntakeSchema } from "./schema-store";
 import { upsertLead, type LeadSource } from "./leads";
 
 const INGEST_SOURCES: LeadSource[] = ["form", "webhook", "pipedream", "crm", "manual"];
@@ -69,7 +70,10 @@ export const leadsIngest = new Hono()
       typeof source === "string" && (INGEST_SOURCES as string[]).includes(source) ? (source as LeadSource) : "webhook";
 
     const org = await getOrg(orgId);
-    const schema = defaultIntakeSchema(org?.vertical);
+    // Per-org override if the merchant configured one (Phase 2), else the
+    // vertical default. Same resolver the Leads page + promotion + export use,
+    // so a custom schema takes effect on every ingest immediately.
+    const schema = await resolveIntakeSchema(orgId, org?.vertical);
     const { accepted, rejectedRegulated, droppedUnknown } = validateFields(
       fields as Record<string, unknown> | null | undefined,
       schema,

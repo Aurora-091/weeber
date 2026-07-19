@@ -10,7 +10,7 @@ import ExcelJS from "exceljs";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "../database";
 import { calls, callLatency, scheduledCalls, transcripts, leads } from "../database/schema";
-import { defaultIntakeSchema } from "../voice/leads/intake-schema";
+import { resolveIntakeSchema } from "../voice/leads/schema-store";
 
 function durationSeconds(startedAt: Date, endedAt: Date | null): number | null {
   if (!endedAt) return null;
@@ -141,7 +141,7 @@ export async function buildLeadsWorkbook(
     .where(eq(leads.orgId, orgId))
     .orderBy(desc(leads.lastActivityAt));
 
-  const schema = defaultIntakeSchema(vertical);
+  const schema = await resolveIntakeSchema(orgId, vertical);
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Leads");

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound } from "lucide-react";
+import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound, SlidersHorizontal, Trash2, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
@@ -108,6 +108,7 @@ export function UserLeadsPage() {
   const [query, setQuery] = useState("");
   const [openLeadId, setOpenLeadId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [schemaOpen, setSchemaOpen] = useState(false);
 
   const leads = useQuery<{ leads: LeadRow[] }>({
     queryKey: ["app-leads", query.trim()],
@@ -119,7 +120,7 @@ export function UserLeadsPage() {
     refetchInterval: 20000,
   });
 
-  const schema = useQuery<{ fields: FieldDef[] }>({
+  const schema = useQuery<{ fields: FieldDef[]; isCustom: boolean }>({
     queryKey: ["app-leads-schema"],
     queryFn: async () => {
       const res = await appFetch("/api/app/leads/intake-schema");
@@ -170,6 +171,15 @@ export function UserLeadsPage() {
         description="Every person who's entered your pipeline — from agent calls, forms, or your CRM. One record per contact, deduped by phone. Assign an advisor, move them through the pipeline, or call them right now."
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setSchemaOpen(true)}
+            >
+              <SlidersHorizontal className="size-3.5" aria-hidden />
+              Configure fields
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -254,6 +264,17 @@ export function UserLeadsPage() {
         fields={fields}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ["app-leads"] })}
       />
+
+      <SchemaEditorDialog
+        open={schemaOpen}
+        onOpenChange={setSchemaOpen}
+        fields={fields}
+        isCustom={schema.data?.isCustom ?? false}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["app-leads-schema"] });
+          queryClient.invalidateQueries({ queryKey: ["app-leads"] });
+        }}
+      />
     </div>
   );
 }
@@ -310,6 +331,17 @@ function LeadDetailSheet({
     onError: (err: Error) => toast.error("Couldn't place the call", { description: err.message }),
   });
 
+  const syncCrm = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch(`/api/app/leads/${leadId}/sync-crm`, { method: "POST" });
+      const data = await res.json().catch(() => ({ error: "Failed to sync to CRM" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to sync to CRM");
+      return data as { crm?: string; message?: string };
+    },
+    onSuccess: (data) => toast.success(data.message || `Synced to ${data.crm ?? "CRM"}`),
+    onError: (err: Error) => toast.error("Couldn't sync to CRM", { description: err.message }),
+  });
+
   const lead = detail.data?.lead;
   const calls = detail.data?.calls ?? [];
 
@@ -333,6 +365,10 @@ function LeadDetailSheet({
               <Button size="sm" className="gap-1.5" disabled={callNow.isPending} onClick={() => callNow.mutate()}>
                 {callNow.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Phone className="size-3.5" aria-hidden />}
                 Call now
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={syncCrm.isPending} onClick={() => syncCrm.mutate()}>
+                {syncCrm.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Share2 className="size-3.5" aria-hidden />}
+                Sync to CRM
               </Button>
               <Badge variant="outline">{SOURCE_LABEL[lead.source]}</Badge>
             </div>
@@ -571,6 +607,192 @@ function AddLeadDialog({
             {create.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
             Add lead
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const FIELD_TYPES: FieldDef["type"][] = ["text", "number", "enum", "boolean", "date"];
+
+// Per-org intake-schema editor (Phase 2). Edits the field definitions the whole
+// leads layer reads — Leads columns, add/edit forms, ingest, export, hosted
+// form. Regulated fields are rejected server-side and surfaced back as a
+// warning; an empty list resets to the vertical default.
+function SchemaEditorDialog({
+  open,
+  onOpenChange,
+  fields,
+  isCustom,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  fields: FieldDef[];
+  isCustom: boolean;
+  onSaved: () => void;
+}) {
+  const [draft, setDraft] = useState<FieldDef[]>(fields);
+
+  // Re-seed the draft each time the dialog opens so it reflects the latest
+  // saved schema (and any server-side normalization from the last save).
+  const [seededFor, setSeededFor] = useState(false);
+  if (open && !seededFor) {
+    setDraft(fields);
+    setSeededFor(true);
+  }
+  if (!open && seededFor) setSeededFor(false);
+
+  const save = useMutation({
+    mutationFn: async (payload: FieldDef[]) => {
+      const res = await appFetch("/api/app/leads/intake-schema", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: payload }),
+      });
+      const data = await res.json().catch(() => ({ error: "Failed to save" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      return data as { fields: FieldDef[]; rejectedRegulated: string[]; reset: boolean };
+    },
+    onSuccess: (data) => {
+      if (data.reset) toast.success("Reset to the default fields");
+      else toast.success("Field configuration saved");
+      if (data.rejectedRegulated?.length) {
+        toast.warning("Some fields were rejected as regulated", { description: data.rejectedRegulated.join(", ") });
+      }
+      onSaved();
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error("Couldn't save fields", { description: err.message }),
+  });
+
+  const reset = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/leads/intake-schema", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to reset");
+    },
+    onSuccess: () => {
+      toast.success("Reset to the default fields");
+      onSaved();
+      onOpenChange(false);
+    },
+    onError: () => toast.error("Couldn't reset fields"),
+  });
+
+  function updateField(i: number, patch: Partial<FieldDef>) {
+    setDraft((d) => d.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+  }
+  function removeField(i: number) {
+    setDraft((d) => d.filter((_, idx) => idx !== i));
+  }
+  function addField() {
+    setDraft((d) => [...d, { key: "", label: "", type: "text" }]);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Configure lead fields</DialogTitle>
+          <DialogDescription>
+            These fields become the columns on this page, the questions on your add/edit forms, and what your agents and
+            hosted form capture. Regulated identifiers (SSN, PAN, Aadhaar, bank, full DOB, health) can't be added — they're
+            rejected on save. {isCustom ? "You're using a custom set." : "You're using the default set for your vertical."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {draft.length === 0 && (
+            <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+              No fields — saving an empty list resets to your vertical's default.
+            </p>
+          )}
+          {draft.map((f, i) => (
+            <div key={i} className="rounded-md border border-border p-3">
+              <div className="flex items-start gap-2">
+                <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Label</Label>
+                    <Input
+                      value={f.label}
+                      onChange={(e) => updateField(i, { label: e.target.value })}
+                      placeholder="e.g. Policy interest"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Type</Label>
+                    <Select value={f.type} onValueChange={(v) => updateField(i, { type: v as FieldDef["type"] })}>
+                      <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FIELD_TYPES.map((t) => (
+                          <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="mt-5 size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeField(i)}
+                  aria-label="Remove field"
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                </Button>
+              </div>
+              {f.type === "enum" && (
+                <div className="mt-2 space-y-1">
+                  <Label className="text-xs text-muted-foreground">Options (comma-separated)</Label>
+                  <Input
+                    value={(f.options ?? []).join(", ")}
+                    onChange={(e) =>
+                      updateField(i, {
+                        options: e.target.value.split(",").map((o) => o.trim()).filter(Boolean),
+                      })
+                    }
+                    placeholder="e.g. Auto, Home, Life"
+                    className="h-9"
+                  />
+                </div>
+              )}
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={!!f.required}
+                  onChange={(e) => updateField(i, { required: e.target.checked })}
+                  className="size-3.5"
+                />
+                Required
+              </label>
+            </div>
+          ))}
+
+          <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={addField}>
+            <Plus className="size-3.5" aria-hidden />
+            Add field
+          </Button>
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={!isCustom || reset.isPending}
+            onClick={() => reset.mutate()}
+          >
+            {reset.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+            Reset to default
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button disabled={save.isPending} onClick={() => save.mutate(draft)} className="gap-1.5">
+              {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+              Save fields
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

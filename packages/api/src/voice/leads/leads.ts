@@ -13,7 +13,8 @@ import { and, desc, eq, or, ilike } from "drizzle-orm";
 import { db } from "../../database";
 import { leads, calls, orgs } from "../../database/schema";
 import { withRetry } from "../../database/with-retry";
-import { defaultIntakeSchema, validateFields, type LeadFieldDef } from "./intake-schema";
+import { validateFields, type LeadFieldDef } from "./intake-schema";
+import { resolveIntakeSchema } from "./schema-store";
 
 /** Local org-vertical lookup — kept here (not imported from org-queries) so the
  * leads module has no cross-module dependency for a single-column read. */
@@ -133,7 +134,10 @@ export async function promoteLeadFromCall(args: {
   // Resolve the vertical (for the default intake schema) if the caller didn't
   // pass it — lets stream.ts call this without threading vertical through.
   const vertical = args.vertical ?? (await resolveVertical(orgId));
-  const schema = args.schema ?? defaultIntakeSchema(vertical);
+  // Resolve the effective schema (per-agent → org override → vertical default)
+  // so a merchant's custom intake fields take effect on call promotion too,
+  // not just manual/form adds. stream.ts may still pass a pre-resolved schema.
+  const schema = args.schema ?? (await resolveIntakeSchema(orgId, vertical));
   const { accepted } = validateFields(capturedState, schema);
 
   // Derive a display name from common capture keys if the schema didn't define
@@ -267,7 +271,7 @@ export async function createLeadManual(args: {
   fields?: Record<string, unknown>;
   vertical: string | null | undefined;
 }): Promise<{ id: number; created: boolean; rejectedRegulated: string[] }> {
-  const schema = defaultIntakeSchema(args.vertical);
+  const schema = await resolveIntakeSchema(args.orgId, args.vertical);
   const { accepted, rejectedRegulated } = validateFields(args.fields, schema);
   const { id, created } = await upsertLead({
     orgId: args.orgId,

@@ -2,6 +2,12 @@
 
 Plan: `native-leads-layer-plan-2026-07-19.md` (approved 2026-07-19, doc committed c079b3d).
 
+> ✅ **COMPLETE.** **Re-label note (ADR-061, 2026-07-19):** items 4 & 5 below (per-org API keys +
+> `POST /api/leads/ingest`) were **re-labelled to Phase 2** after the "make it leaner" scope call —
+> they're an inbound *edge*, not the owned core. Nothing was removed; the code stayed. The lean
+> Phase 1 core = tables + promotion + Leads page + Excel export. Phase 2 + 3 also shipped — see
+> `leads-phase2-3-build-task.md`, changelog 2026-07-19, and ADR-061.
+
 ## Phase 1 checklist
 - [x] 1. Schema: `leads`, `leadIntakeSchemas`, `leadApiKeys` tables + `calls.leadId` column
 - [x] 2. Migration generated (drizzle-kit generate)

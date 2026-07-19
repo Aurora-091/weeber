@@ -13,6 +13,16 @@ import { broadcastWaitlistCount } from "./waitlist-ws";
 import { submitSupportTicket } from "./support";
 import { sendTransactionalEmail } from "./email";
 import { enterpriseInquiryReceiptHtml, supportTicketReceiptHtml } from "./email-templates";
+import { getOrg } from "../voice/org-queries";
+import { resolveIntakeSchema } from "../voice/leads/schema-store";
+import { validateFields } from "../voice/leads/intake-schema";
+import { upsertLead } from "../voice/leads/leads";
+import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
+
+// Per-(ip+org) submit limiter for the hosted intake form — a public,
+// unauthenticated surface, so it needs its own abuse gate independent of the
+// key-authed ingest path. Process-local, same tradeoff as the other limiters.
+const hostedFormLimiter = makeFixedWindowLimiter(60_000, 10);
 
 function unsubscribePageHtml(message: string, isError = false): string {
   const color = isError ? "#dc2626" : "#0a0a0a";
@@ -144,6 +154,70 @@ export const publicRoutes = new Hono()
       tags: [{ name: "category", value: "enterprise-inquiry-receipt" }],
     });
     return c.json({ submitted: true }, 201);
+  })
+
+  // ── Hosted intake form (Phase 3, native leads layer §10) ──────────────────
+  // A public, embeddable form an org can share so anyone can submit a lead
+  // without a login. The org's UUID (`orgId`) is the public form token — it's
+  // non-secret (already exposed in the app), grants ONLY "submit a lead to this
+  // org", and needs no migration. A thin client of the same ingest core:
+  // resolve the org's schema, validate (regulated fields dropped), upsert by
+  // (orgId, phone). No API key — abuse is bounded by a honeypot + rate limit.
+
+  // Public schema for rendering the form. Returns only field definitions +
+  // a display name — nothing org-sensitive.
+  .get("/leads/:orgId/form", async (c) => {
+    const orgId = c.req.param("orgId");
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "Form not found." }, 404);
+    const fields = await resolveIntakeSchema(orgId, org.vertical);
+    c.header("Cache-Control", "public, max-age=60");
+    return c.json({ orgName: org.name ?? null, fields }, 200);
+  })
+
+  // Public submit. Honeypot (`_website` must stay empty — bots fill it) +
+  // per-(ip,org) rate limit. Never reveals whether the honeypot tripped; a bot
+  // gets the same 200 as a human so it can't probe the gate.
+  .post("/leads/:orgId/form", async (c) => {
+    const orgId = c.req.param("orgId");
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "Form not found." }, 404);
+
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Expected a JSON object body." }, 400);
+    const { phone, name, fields, _website } = body as {
+      phone?: unknown;
+      name?: unknown;
+      fields?: unknown;
+      _website?: unknown;
+    };
+
+    // Honeypot: a real user never sees or fills `_website`. Silently accept and
+    // drop so a bot can't distinguish this from a real submission.
+    if (typeof _website === "string" && _website.trim() !== "") {
+      return c.json({ ok: true, submitted: true }, 201);
+    }
+
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    if (hostedFormLimiter(`${ip}:${orgId}`)) {
+      return c.json({ error: "Too many submissions. Please try again in a minute." }, 429);
+    }
+
+    if (typeof phone !== "string" || !phone.trim()) {
+      return c.json({ error: "`phone` is required." }, 400);
+    }
+
+    const schema = await resolveIntakeSchema(orgId, org.vertical);
+    const { accepted } = validateFields(fields as Record<string, unknown> | null | undefined, schema);
+
+    const { id, created } = await upsertLead({
+      orgId,
+      phone: phone.trim(),
+      name: typeof name === "string" ? name : null,
+      fields: accepted,
+      source: "form",
+    });
+    return c.json({ ok: true, submitted: true, leadId: id, created }, created ? 201 : 200);
   })
 
   .get("/tracking-config", async (c) => {

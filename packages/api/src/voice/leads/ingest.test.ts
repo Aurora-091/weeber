@@ -11,6 +11,8 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 
 process.env.DATABASE_URL ??= "file:./.test-lead-ingest.db";
 
+import { defaultIntakeSchema } from "./intake-schema";
+
 // Resolve-key behavior is swapped per test.
 let resolveResult: { id: number; orgId: string } | null = { id: 1, orgId: "org_1" };
 // Records every upsertLead call so we can assert source-tagging + dedup shape.
@@ -30,6 +32,14 @@ mock.module("./leads", () => ({
     upsertCalls.push(input);
     return upsertReturn;
   },
+}));
+
+// resolveIntakeSchema hits the DB (per-org override lookup); the ingest router
+// only cares that it gets the effective schema, so resolve to the real vertical
+// default. intake-schema stays REAL so the compliance validation still runs.
+mock.module("./schema-store", () => ({
+  resolveIntakeSchema: async (_orgId: string, vertical: string | null | undefined) =>
+    defaultIntakeSchema(vertical),
 }));
 
 const { leadsIngest } = await import("./ingest");

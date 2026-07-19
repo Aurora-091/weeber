@@ -57,8 +57,9 @@ import {
   createLeadManual,
   type LeadStatus,
 } from "../voice/leads/leads";
-import { defaultIntakeSchema } from "../voice/leads/intake-schema";
+import { getOrgIntakeSchema, setOrgIntakeSchema, resetOrgIntakeSchema } from "../voice/leads/schema-store";
 import { createLeadApiKey, listLeadApiKeys, revokeLeadApiKey } from "../voice/leads/api-keys";
+import { mirrorLeadToCrm } from "../voice/leads/crm-mirror";
 import { callScheduledRowNow } from "../voice/workflows/scheduler";
 import { buildBlankWorkflowScaffold, validateLockedNodesEnforced } from "../voice/workflows/scaffold";
 import type { WorkflowGraph } from "../voice/workflows/graph-types";
@@ -667,10 +668,32 @@ export const userApp = new Hono<UserEnv>()
   // are declared BEFORE /leads/:id so they aren't swallowed by the param route.
 
   // The intake field definitions the Leads page renders as columns/form fields.
-  // Vertical default for now; per-org/per-agent overrides land in Phase 2.
+  // Effective schema = per-org override (Phase 2 editor) → vertical default.
+  // `isCustom` tells the editor whether it's a stored override or the default.
   .get("/leads/intake-schema", async (c) => {
     const org = await getOrg(c.get("userOrgId")!);
-    return c.json({ fields: defaultIntakeSchema(org?.vertical) }, 200);
+    const view = await getOrgIntakeSchema(c.get("userOrgId")!, org?.vertical);
+    return c.json(view, 200);
+  })
+
+  // Save a per-org intake-schema override (Phase 2 editor). Regulated fields
+  // are stripped BEFORE persisting (write-side compliance chokepoint) and the
+  // rejected keys are returned so the UI can warn. An empty list resets to the
+  // vertical default.
+  .put("/leads/intake-schema", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Expected a JSON object" }, 400);
+    const fields = (body as { fields?: unknown }).fields;
+    const result = await setOrgIntakeSchema(c.get("userOrgId")!, fields);
+    return c.json(result, 200);
+  })
+
+  // Reset to the vertical default (delete the stored override).
+  .delete("/leads/intake-schema", async (c) => {
+    await resetOrgIntakeSchema(c.get("userOrgId")!);
+    const org = await getOrg(c.get("userOrgId")!);
+    const view = await getOrgIntakeSchema(c.get("userOrgId")!, org?.vertical);
+    return c.json(view, 200);
   })
 
   // Per-org ingest API keys — safe to hand to a client's form/CRM/Pipedream.
@@ -775,6 +798,21 @@ export const userApp = new Hono<UserEnv>()
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
     await sessionStore.set(placed.sessionKey, { callSid: placed.sessionKey, direction: "outbound", orgId });
     return c.json({ ok: true, callSid: placed.sessionKey, status: placed.status }, 201);
+  })
+
+  // Sync one lead to the org's connected CRM (Phase 3 outbound mirror). The
+  // leads table stays the source of truth; the CRM is the mirror. Reuses the
+  // existing native adapters (HubSpot/Salesforce/GoHighLevel) via crm-mirror.
+  // On-demand (button on the lead detail) — never auto-fires an external call.
+  // Regulated fields can't reach here (never stored), so the mirror is clean.
+  .post("/leads/:id/sync-crm", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const org = await getOrg(orgId);
+    const result = await mirrorLeadToCrm(orgId, id, org?.vertical);
+    if (!result.ok) return c.json({ error: result.message }, result.statusCode);
+    return c.json({ ok: true, crm: result.crm, message: result.message }, 200);
   })
 
   .get("/shopify/status", async (c) => {

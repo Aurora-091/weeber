@@ -36,6 +36,7 @@ const ComplianceHubPage = lazy(() => import("./pages/compliance/index").then((m)
 const ComplianceIndiaPage = lazy(() => import("./pages/compliance/india").then((m) => ({ default: m.ComplianceIndiaPage })));
 const ComplianceGlobalPage = lazy(() => import("./pages/compliance/global").then((m) => ({ default: m.ComplianceGlobalPage })));
 const NotFoundPage = lazy(() => import("./pages/not-found").then((m) => ({ default: m.NotFoundPage })));
+const HostedFormPage = lazy(() => import("./pages/hosted-form").then((m) => ({ default: m.HostedFormPage })));
 
 const AdminKeyGate = lazy(() =>
   import("./components/dashboard/admin-key-gate").then((m) => ({ default: m.AdminKeyGate })),
@@ -194,6 +195,8 @@ function App() {
           {showPublic && <Route path="/compliance" component={ComplianceHubPage} />}
           {showPublic && <Route path="/compliance/india" component={ComplianceIndiaPage} />}
           {showPublic && <Route path="/compliance/global" component={ComplianceGlobalPage} />}
+          {/* Public hosted intake form — no shell, no auth; orgId is the form token. */}
+          {showPublic && <Route path="/f/:orgId" component={HostedFormPage} />}
 
           {/* User auth pages (no shell — must be BEFORE the catch-all) */}
           {showUser && <Route path={appPath("/login")} component={UserLoginPage} />}
