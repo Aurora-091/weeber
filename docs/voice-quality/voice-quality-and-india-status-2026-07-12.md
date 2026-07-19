@@ -1,5 +1,13 @@
 # Voice pipeline, Hindi/multilingual layer, and India-readiness — status, gaps, priorities
 
+> **Superseded on 2026-07-19 by ADR-060 (see `language-support.md`).** This is a point-in-time
+> snapshot; its body is left as-written for history. Two items below are now decided: (1) mid-call
+> spoken-language *switching* — the "Language Switching Instructions field" and the "TTS cannot
+> switch, bigger build" notes — is **REJECTED, not a roadmap item** (voice-identity break, latency,
+> instability; one fixed spoken language per call, STT code-switching understanding stays); (2) Indic
+> calls now **smart-default to Sarvam** automatically. Read this doc as of 2026-07-12; read
+> `language-support.md` + ADR-060 for current truth.
+
 **Not a public doc — internal status artifact**, same convention as `strategy-2026-07.md`. Written after a
 direct code audit (not assumptions) of the voice pipeline, the compliance layer, and a competitive read of
 Bolna's multilingual architecture, plus a vendor feature audit of Cartesia/ElevenLabs/Sarvam. Purpose: one

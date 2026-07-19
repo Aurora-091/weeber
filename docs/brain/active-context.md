@@ -58,17 +58,21 @@ updated: 2026-07-18
   added `AGENTS.md` as the cross-tool entry point, split `DECISIONS.md` → `docs/decisions/` (per-ADR)
   and `changelog.md` → `docs/changelog/` (per-month).
 
-## The one thing that matters most before a pitch/pilot
+## Language support: closed, scoped correctly (ADR-060, 2026-07-19)
 
-**B2 — dynamic dual-language-in-one-call switching.** The Hindi/Hinglish STT/TTS *foundation* is solid
-and live-verified (2026-07-16, `../voice-quality/hindi-hinglish-voice-support.md`), but true mid-call
-language switching — the thing that differentiates Weeber from horizontal builders and from BiteSpeed
-(direct Shopify-vertical competitor) — is still the top open item. See `WEEBER-PLAN.md` Phase B.
+**B2 — multilingual understanding, not mid-call switching.** The Hindi/Hinglish STT/TTS foundation is
+solid and live-verified (2026-07-16, `../voice-quality/hindi-hinglish-voice-support.md`), and Indic
+calls now smart-default to Sarvam automatically (ADR-060, `../voice-quality/language-support.md`).
+Mid-call *spoken-language switching* is REJECTED — not an open gap — because flipping the TTS voice
+mid-call breaks voice identity, adds latency, and destabilizes the call (one fixed spoken language per
+call; STT code-switching understanding is separate and stays). The differentiator is native Hinglish
++ multilingual understanding, not a switching gimmick. Only open B2 item: B2.5 (localized system
+messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
 
 ## Next candidate items (not started, pick by sequencing not scope — ADR-037)
 
 - **A1b** — VAD/endpointing audit (don't assume done just because the pipeline works).
-- **B2** — dynamic mid-call language switching (highest leverage).
+- **B2.5** — localize system messages per language (small polish; mid-call switching REJECTED per ADR-060).
 - Opportunistic + cheap: D1 (Kokoro TTS pilot), D4 (join NVIDIA Inception).
 
 ## Open decisions waiting on the user (STOP-AND-ASK)

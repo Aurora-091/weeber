@@ -81,10 +81,17 @@ means `voice/routes.ts` and `voice/stream.ts` never branch on provider directly.
 ## STT/TTS provider selection today
 
 Per-agent config (`agentTemplates`/`orgAgentConfigs`) lets an operator pick `sttProvider` (`deepgram` |
-`sarvam` | `elevenlabs`) and `voiceProvider` (`elevenlabs` | `cartesia` | `sarvam`) — **but this is one
-static field per call, not a per-call, per-language switch.** Building the actual dual-language-in-one-call
-behavior (detect language mid-call, switch TTS voice, debounce noisy short-utterance detections) is
-tracked as **Phase B2** in `WEEBER-PLAN.md` — that part is still not built.
+`sarvam` | `elevenlabs`) and `voiceProvider` (`elevenlabs` | `cartesia` | `sarvam`) — one fixed spoken
+language per call, by design. As of **ADR-060** (see `docs/voice-quality/language-support.md`), when no
+provider is explicitly chosen and `SARVAM_API_KEY` is present, Indic-language calls smart-default to
+Sarvam automatically (`resolveSttProvider`/`resolveTtsProvider` + `prefersSarvam()` in `voice/stt/index.ts`,
+`voice/tts/index.ts`, `voice/agent-frame.ts`); an explicit operator choice always wins, and the smart
+default beats the env default but never an explicit override. `en`/`multi` are untouched.
+
+**Mid-call spoken-language switching (detect language mid-call, flip the TTS voice, debounce noisy
+detections) is REJECTED per ADR-060 — not a deferred item.** Swapping the TTS voice mid-call breaks the
+agent's voice identity, adds latency, and destabilizes the call. STT *understanding* of code-mixed
+Hindi/English within one call is a separate concern and is fully supported (below).
 
 The STT/TTS *quality* half of the Hindi/Hinglish story, however, was live-verified 2026-07-16
 (`docs/voice-quality/hindi-hinglish-voice-support.md`, not duplicated here): `stt/elevenlabs.ts` (new — ElevenLabs

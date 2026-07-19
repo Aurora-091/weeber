@@ -40,7 +40,8 @@ updated: 2026-07-18
 
 ## Next (by sequencing, not scope — ADR-037)
 
-- **B2 — dynamic mid-call language switching** (top leverage, blocks a serious pitch/pilot).
+- **B2.5 — localize system messages per language** (small polish; mid-call spoken-language switching
+  REJECTED per ADR-060, and Indic calls now smart-default to Sarvam — language support is scoped/closed).
 - **A1b — VAD/endpointing audit.**
 - Per-org DNC lists, full RBAC/multi-seat, per-org billing entity (Phase-1 workstreams, check
   prerequisites in `WEEBER-PLAN.md` J–S).

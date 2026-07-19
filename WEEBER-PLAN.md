@@ -26,12 +26,16 @@
 
 The core voice product works end to end — real calls, real barge-in, real tool-calling, real
 multi-tenant telephony (Twilio + Plivo/Exotel), real per-org retry cadence, a real Shopify vertical
-with revenue attribution, a real Workflow Canvas, real compliance scaffolding. What's missing is the
-thing that actually differentiates Weeber from the horizontal builders and from BiteSpeed (the direct
-Shopify-vertical competitor): true dual-language-in-one-call. Phase A and most of Phase B are done;
-the STT/TTS quality foundation B2 needs is now solid and live-verified as of 2026-07-16 (see
-`docs/voice-quality/hindi-hinglish-voice-support.md`), but B2's actual dynamic mid-call switching is still the one
-open item that matters most before a serious pitch or pilot; Phase C is
+with revenue attribution, a real Workflow Canvas, real compliance scaffolding. Weeber's language
+differentiator vs the horizontal builders and BiteSpeed (the direct Shopify-vertical competitor) is
+**native Hinglish + genuine multilingual understanding** — an agent that *understands* a caller
+code-switching mid-sentence (Deepgram `multi` / Sarvam `codemix` / ElevenLabs Scribe) while speaking
+**one consistent language** per call. Phase A and Phase B are done; the STT/TTS quality foundation is
+solid and live-verified (2026-07-16, see `docs/voice-quality/hindi-hinglish-voice-support.md`) and
+Indic-language calls now smart-default to Sarvam automatically (2026-07-19, ADR-060). **The old "true
+dynamic mid-call language *switching*" goal is now REJECTED, not deferred** — flipping the spoken TTS
+voice mid-call breaks voice identity, adds latency, and destabilizes live calls; see ADR-060 and
+`docs/voice-quality/language-support.md`. Phase C is
 started-but-partial and not currently blocking anything; Phase D is correctly untouched, though D1
 (Kokoro TTS pilot) and D4 (join NVIDIA Inception) are both cheap enough to start opportunistically.
 A1 also picked up a real sub-item (A1b, VAD/endpointing audit) that shouldn't be assumed done just
@@ -109,9 +113,13 @@ because the pipeline itself works.
   design). All are plain `scheduled_calls` rows picked up by the existing 60s sweep
   (`voice/workflows/scheduler.ts`) — no bespoke scheduling infra needed. Revenue-attribution reporting
   (mirroring BiteSpeed's ₹-recovered framing) is covered under B3.
-- [ ] **B2 — Dual-language-in-one-call.** **Partially built as of 2026-07-16 — the STT/TTS
-  foundation for this is now solid and live-verified; the actual dynamic mid-call switching (B2.3/
-  B2.4/B2.5 below) is still not built. Don't mark this closed.** Full research + live-verification
+- [x]/[ ] **B2 — Multilingual understanding (one fixed spoken language per call).** **Reframed
+  2026-07-19 per ADR-060. The STT/TTS foundation is solid, live-verified, and now smart-routes
+  Indic-language calls to Sarvam automatically (ADR-060). Dynamic *mid-call spoken-language
+  switching* (old B2.3/B2.4) is REJECTED — not deferred — because flipping the TTS voice mid-call
+  breaks voice identity, adds latency, and destabilizes the call. STT code-switching *understanding*
+  (caller mixes Hindi/English in one sentence) is separate and stays. B2.5 (localized system
+  messages) is still a valid open item.** Full research + live-verification
   detail in `docs/voice-quality/hindi-hinglish-voice-support.md` (separate doc, not duplicated here) — summary:
   found and fixed 2 real silent bugs in a new ElevenLabs Scribe v2 Realtime STT adapter via live
   testing with a real account (wrong audio-format query param caused garbled/nonsense transcripts
@@ -127,38 +135,38 @@ because the pipeline itself works.
 
   Sarvam is wired as a *selectable provider* (`voice/stt/sarvam.ts`, `voice/tts/sarvam.ts`, and the
   `sttProvider`/`voiceProvider` dropdowns in the agent config UI already list it, now alongside
-  `elevenlabs` too) — but there is still no per-call language detection, no voice-switch logic, no
-  debounce, no localized system messages. Today `language` is one static field per agent config,
-  not a live, mid-call switch. Deferred back to Phase B per direction on 2026-07-13 (considered
-  pulling into Phase A since the LLM/STT layers turned out simpler than first assumed — see "B2
-  breakdown" below — but staying in B since it's explicitly the differentiation story, not baseline
-  infra).
+  `elevenlabs` too) AND, as of ADR-060 (2026-07-19), Indic-language calls now smart-default to
+  Sarvam automatically when no provider is explicitly chosen and `SARVAM_API_KEY` is present
+  (explicit operator choice always wins; smart default beats the env default but never an explicit
+  override; `en`/`multi` untouched). This closes the old "operator must pick the right provider
+  manually" gap for Indic languages. Today `language` is one fixed field per call — by design.
+  Mid-call *spoken-language switching* is not a deferred item; it's REJECTED per ADR-060.
 
   **B2 breakdown (revised scope, smaller than Bolna's full per-language-prompt-tab architecture,
   because Sarvam's Saaras model — and, as of 2026-07-16, ElevenLabs Scribe too — already handles
   code-mixed Hindi/English in one model — you don't need Bolna's hard vendor-per-language split
   unless you want non-Sarvam/non-ElevenLabs options for Hindi too):**
-  - [ ] **B2.1** — One shared multilingual system-prompt instruction ("detect the caller's language,
-    respond naturally, handle Hinglish mixing") — prompt-only change, `voice/agent.ts` persona
-    assembly. Still not a systemic/shared instruction — `buildLanguageInstructionBlock` (added
-    2026-07-12, see `docs/voice-quality/voice-quality-and-india-status-2026-07-12.md`) tells the LLM to *stay* in
-    whichever language it opened with, which is a mitigation for the TTS-can't-switch-voice problem
-    below, not the same thing as an explicit "detect and switch" instruction B2.1 describes.
+  - [x] **B2.1 (revised, valid)** — One shared multilingual system-prompt instruction: respond
+    naturally in the call's language and handle Hinglish/code-mixed input. Implemented via
+    `buildLanguageInstructionBlock` (added 2026-07-12, see
+    `docs/voice-quality/voice-quality-and-india-status-2026-07-12.md`), which instructs the LLM to
+    *stay* in whichever language it opened with. Per ADR-060 this "stay in one spoken language" is
+    the deliberate design, not a stopgap — it's the correct behavior, since mid-call voice switching
+    is rejected. The multilingual-*understanding* half (handle mixed input) is the valid part of the
+    original B2.1 and is covered by the STT layer (B2.2).
   - [x] **B2.2 (revised)** — STT now correctly handles code-mixed Hindi/English for the Indic call
     path, but via a **provider choice, not a Sarvam-only mode flag** as originally scoped: either
     Sarvam STT in `mode: "codemix"` (`voice/stt/sarvam.ts`, live-verified 2026-07-16) or the new
     ElevenLabs Scribe v2 Realtime adapter (`voice/stt/elevenlabs.ts`, also live-verified, currently
     the recommended default per the agents-tab UI). Still per-agent-config, not per-org/per-vertical
     auto-flagged as B2.2 originally described — an operator picks the STT provider explicitly.
-  - [ ] **B2.3** — Per-detected-language TTS voice lookup table, selected at synthesis time — **not
-    built.** Worth re-scoping given ElevenLabs Scribe's own docs claim automatic mid-conversation
-    language detection/switching (unverified for our specific use case — our live test only
-    exercised a single-language-throughout call) — if that claim holds for genuinely bilingual
-    calls, B2.3's STT-side detection work may already be solved by the provider, narrowing this to
-    just the TTS-voice-switching half. Needs a real bilingual test call to confirm before assuming
-    that shortcut is real.
-  - [ ] **B2.4** — Switch-debounce: N consecutive turns or a confidence threshold before actually
-    flipping the active TTS voice (mirrors Bolna's "detection activates after 3 turns"). Not built.
+  - [~] **B2.3 — REJECTED (ADR-060).** Per-detected-language TTS voice lookup table that flips the
+    active voice mid-call. Rejected: swapping the TTS voice mid-call breaks the agent's voice
+    identity (caller hears a different person), adds latency at the switch point, and destabilizes
+    the call. One fixed spoken language per call instead. STT understanding of code-mixed speech is
+    unaffected and stays.
+  - [~] **B2.4 — REJECTED (ADR-060).** Switch-debounce (N turns / confidence threshold before
+    flipping the active TTS voice). Moot — there is no mid-call voice flip, so nothing to debounce.
   - [ ] **B2.5** — Localize the handful of system messages (silence prompt, hangup line, tool-wait
     filler) per supported language. Not built.
 - [x]/[ ] **B3 — Post-call analytics + revenue attribution + compliance layer.** *(Mixed — see below.)*
@@ -173,9 +181,12 @@ because the pipeline itself works.
     but whether this was ever explicitly confirmed *closed* with you is unclear from the docs — treat
     as open until confirmed, not code work.
 
-**Phase B: mostly done. B2's foundation (STT/TTS quality for Hindi/Hinglish, live-verified
-2026-07-16 — see `docs/voice-quality/hindi-hinglish-voice-support.md`) is now solid, but true dynamic
-mid-call language switching (B2.3/B2.4/B2.5) is still the real gap and the priority.**
+**Phase B: mostly done. B2 is now scoped correctly (ADR-060): STT/TTS quality for Hindi/Hinglish is
+solid and live-verified (see `docs/voice-quality/hindi-hinglish-voice-support.md`), Indic calls
+smart-default to Sarvam (ADR-060, see `docs/voice-quality/language-support.md`), multilingual
+*understanding* is shipped, and mid-call spoken-language *switching* (old B2.3/B2.4) is REJECTED —
+not a gap. Only open B2 item is B2.5 (localized system messages), a small polish task, not a
+differentiator.**
 
 ---
 

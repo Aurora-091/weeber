@@ -199,11 +199,12 @@ voices per language, role-playing — don't map cleanly onto Weeber's current ve
   *more* appropriate for these verticals, not less (a healthcare reminder call switching character
   voices would read as confusing or gimmicky, not delightful).
 - The one plausible fit — language-tutoring-style native-accent switching for genuinely bilingual/
-  code-switching calls (relevant given Weeber's existing Hindi/Marathi/Tamil language support work,
-  `WEEBER-PLAN.md`'s Phase B2 "dual-language-in-one-call" item) — is a **real, closer-to-home
-  candidate** than character voices, and worth checking whether B2 already covers this need without
-  multi-voice's markup/tagging machinery at all (a bilingual agent might just need *one* consistent
-  voice that speaks two languages well, not a voice switch).
+  code-switching calls — has since been **settled by ADR-060 (2026-07-19): REJECTED.** Mid-call
+  spoken-language / voice switching breaks voice identity, adds latency, and destabilizes the call.
+  The design is exactly the "one consistent voice per call that handles code-mixed input" option
+  noted here — a bilingual agent uses one voice and the STT layer understands Hinglish; it does not
+  switch voices. So this candidate is closed, which only *strengthens* the recommendation below.
+  (See `docs/voice-quality/language-support.md` and ADR-060.)
 
 **Recommendation**: don't scope a build yet. This is correctly flagged as "worth a note for a future
 feature-gap audit," not "build this." Before any engineering investment: (1) check whether Phase B2's
