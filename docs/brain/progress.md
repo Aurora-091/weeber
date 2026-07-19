@@ -54,9 +54,6 @@ updated: 2026-07-18
 
 ## Known issues / debt (open)
 
-- `VerticalDefinition.dashboard.metrics/cards/emptyState` (`web/src/web/lib/verticals.ts`) defined for
-  shopify + insurance but `pages/app/home.tsx` never reads it — **dead config**. Fix: read
-  `vertical.dashboard` in `home.tsx`.
 - Staging Supabase project has a placeholder `DATABASE_URL` on Railway — **unconfirmed**, don't assume
   fixed.
 - Branch protection on `main` not yet enabled in GitHub settings.
@@ -64,6 +61,11 @@ updated: 2026-07-18
 
 ## Closed recently (so this file doesn't look like it's ignoring them)
 
+- Insurance dashboard `renewals_confirmed`/`leads_qualified` were mislabeled Shopify cart-recovery/
+  COD-confirmation numbers (not "dead config" as previously logged here) — fixed with real
+  `insuranceRenewal`/`insuranceLeadFollowup` KPI blocks, verified LIVE against a local DB + 2 real
+  Supabase test users (not just typecheck) — 2026-07-18.
+- Demo widget play button hit-target drift + feedback agent persona confirmed live — 2026-07-18.
 - In-app `VoiceOrb` rebuilt (3-blob morph + glow) to match marketing `DemoOrb`; app/admin overlap
   scan came back clean (static-analysis-only, no live backend to confirm against) — 2026-07-18.
 - Theme portal-scoping, agent full-window layout, 2 Dependabot vulns — fixed 2026-07-13.

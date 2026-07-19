@@ -12,6 +12,16 @@ updated: 2026-07-18
 
 ## Current focus
 
+- **Insurance dashboard KPI mislabeling fixed + live-verified (2026-07-18):** what the docs called
+  "dead config" (`vertical.dashboard` unread by `home.tsx`) was actually already wired, but wrong —
+  `renewals_confirmed`/`leads_qualified` read Shopify's `recovery`/`codConfirmation` KPI blocks.
+  Fixed with real `insuranceRenewal`/`insuranceLeadFollowup` blocks in `computeKpis()`
+  (`org-queries.ts`), attributed via `calls.agentPersona` value-match (no FK, same pattern as
+  `codConfirmation`). **Verified live, not just typecheck**: local fresh Postgres (never pointed
+  the real backend at the production DB — `scheduler.ts` auto-dials due scheduled calls on boot,
+  too risky against real customer data), 2 real Supabase test users via the actual Auth admin API,
+  seeded test orgs, logged in through the real UI, screenshotted both dashboards. Test users/DB/
+  servers all cleaned up after. Commit `c2bed26`.
 - **Feedback agent persona confirmed + live (2026-07-18):** user confirmed `03-feedback-agent.md`
   as final. `seed.ts`'s `active` flag flipped `false → true` — was the only inactive persona of the
   5, now selectable by merchants and eligible for AI-draft on next boot's seed upsert (no manual DB
@@ -59,8 +69,6 @@ language switching — the thing that differentiates Weeber from horizontal buil
 
 - **A1b** — VAD/endpointing audit (don't assume done just because the pipeline works).
 - **B2** — dynamic mid-call language switching (highest leverage).
-- Wire `vertical.dashboard.metrics/cards/emptyState` into `pages/app/home.tsx` (currently dead config —
-  see Known issues in `progress.md`).
 - Opportunistic + cheap: D1 (Kokoro TTS pilot), D4 (join NVIDIA Inception).
 
 ## Open decisions waiting on the user (STOP-AND-ASK)
@@ -70,4 +78,4 @@ language switching — the thing that differentiates Weeber from horizontal buil
   merchant canvas editor now exists, so this is the last remaining piece of the v4 plan.
 - Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
 
-_Last updated by: VoiceOrb enhancement + app/admin overlap scan session, 2026-07-18._
+_Last updated by: insurance dashboard KPI-mislabeling fix + live verification session, 2026-07-18._

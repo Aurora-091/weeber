@@ -330,10 +330,15 @@ stay parked until volume/revenue actually demands them.**
 
 ## Immediate technical debt (not hidden, not a phase item, just true)
 
-- **`VerticalDefinition.dashboard.metrics`/`cards`/`emptyState`** (`packages/web/src/web/lib/
-  verticals.ts`) is defined for both `shopify` and `insurance` verticals but **`pages/app/home.tsx`
-  never reads it** — dead config. A prior doc (`docs/archive/USER-APP-PAGE-MAP.md`) claimed this was
-  wired up; it wasn't. Small fix once picked up: read `vertical.dashboard` in `home.tsx`.
+- ~~**`VerticalDefinition.dashboard.metrics`/`cards`/`emptyState`**~~ — **resolved 2026-07-18**:
+  turned out `home.tsx` DID already read `dashboard.metrics`/`emptyState` (the "dead config" claim
+  here was itself stale) but two insurance metric keys were wired to the wrong data — real bug,
+  not dead config. `renewals_confirmed` read `data.kpis.recovery` and `leads_qualified` read
+  `data.kpis.codConfirmation`, both Shopify-only KPI blocks — an insurance org's dashboard showed
+  real Shopify cart-recovery/COD numbers mislabeled as insurance metrics. Fixed: `computeKpis()`
+  now computes real `insuranceRenewal`/`insuranceLeadFollowup` blocks (attribution via
+  `calls.agentPersona` value-match, same no-FK pattern as `codConfirmation`). Verified live against
+  a local DB + 2 real Supabase test users, not just typecheck — see `changelog/2026-07.md`.
 - **Staging Supabase project has a placeholder `DATABASE_URL` on Railway.** Not re-verified this
   session — flag as unconfirmed, not assumed fixed.
 - **Theme portal-scoping, agent full-window layout, 2 Dependabot vulns** — all fixed 2026-07-13, see
