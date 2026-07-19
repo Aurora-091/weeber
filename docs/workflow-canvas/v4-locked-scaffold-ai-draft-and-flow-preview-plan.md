@@ -1,7 +1,18 @@
 # Workflow Canvas v4 — Locked Compliance Scaffold, AI-Assisted Drafting, Flow Preview Call
 
-Status: PLAN — awaiting go-ahead to build. Not started.
-Date: 2026-07-18
+Status: SHIPPED. Phase 1 (locked scaffold), Phase 2 (AI draft), and Phase 3 (flow preview via
+web call) are all built, tested, and on `main` as of 2026-07-19.
+Date: 2026-07-18 (Phase 3 shipped 2026-07-19)
+
+> **Reality note (2026-07-19, Phase 3):** §3 below references a `condition` node (branch on cart
+> value / tag / etc.). That node type was never implemented — the real `WorkflowNodeType` union
+> has `conditionalSplit` as its only branch node. Phase 3's flow preview therefore branches on
+> `conditionalSplit` outcomes only. The preview graph-walker is a pure, log-only traversal
+> (`voice/workflows/preview-walker.ts`, `walkForPreview`) mirroring `graph-engine.ts`; the live
+> call at a `call` node reuses the existing test-call pipeline (test-call-tokens.ts +
+> test-call-stream.ts, ADR-051) with zero new socket/wire-format work. Endpoint:
+> `POST /api/app/workflow-configs/:templateKey/preview`. UI: "Preview" button + `FlowPreviewPanel`
+> in the merchant canvas (branch-picker, storyboard log, inline live call).
 Builds on: `workflow-canvas-architecture.md` (original spec/current live behavior),
 `workflow-canvas-v2-and-multivoice-research.md` (competitor research + decision log), and
 `workflow-canvas-v3-user-builder-plan.md` (merchant-buildable graphs — data model, trigger
