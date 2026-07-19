@@ -19,6 +19,12 @@
 > folded into A1/D1/D2/D3 below with concrete targets, not just "evaluate later." One factual conflict
 > resolved: `weeber-stack-decision.report` claimed no per-tenant Twilio isolation existed yet — that's
 > now stale, A2 below (`twilio-provisioning.ts`) closed that gap after the report was written.
+>
+> **Updated 2026-07-19.** Two Phase-C items shipped since the 2026-07-13 rewrite and are now ticked
+> with file refs: the **native leads/records layer (C4, Phases 1–3, ADR-061)** and **Workflow Canvas
+> v4 Phase 3 (flow preview via web call — SHIPPED, `voice/workflows/preview-walker.ts`)**. A new
+> prioritized **"Road ahead — prioritized (2026-07-19)"** block sits below Phase C; its Tier-1 item
+> **C4b** (ingest-triggered call activation) is the highest-leverage open work.
 
 ---
 
@@ -36,7 +42,13 @@ Indic-language calls now smart-default to Sarvam automatically (2026-07-19, ADR-
 dynamic mid-call language *switching*" goal is now REJECTED, not deferred** — flipping the spoken TTS
 voice mid-call breaks voice identity, adds latency, and destabilizes live calls; see ADR-060 and
 `docs/voice-quality/language-support.md`. Phase C is
-started-but-partial and not currently blocking anything; Phase D is correctly untouched, though D1
+started-but-partial and not currently blocking anything — and two more Phase-C pieces shipped
+2026-07-19: the **native leads/records layer** (C4, an owned data-of-record layer built *before*
+external CRMs; ADR-061) and **Workflow Canvas v4 Phase 3** (flow preview via web call). The one
+highest-leverage open piece is **C4b**: the leads layer ingests and stores leads but `triggerWorkflow`
+is deliberately accepted-but-not-dialing until it's wired through the DNC/TCPA/quiet-hours dial-gates —
+closing that "lead lands → agent router → call fires" loop is the top item in the road-ahead block
+below. Phase D is correctly untouched, though D1
 (Kokoro TTS pilot) and D4 (join NVIDIA Inception) are both cheap enough to start opportunistically.
 A1 also picked up a real sub-item (A1b, VAD/endpointing audit) that shouldn't be assumed done just
 because the pipeline itself works.
@@ -254,8 +266,60 @@ differentiator.**
 - [x] **C3d — Generic webhook catch-all (n8n/Zapier/Make).** `voice/webhooks.ts` — fire-and-forget,
   explicitly documented as consumable by any automation tool. This *is* the "Zapier/n8n" integration
   the competitive teardown recommends — already done, don't rebuild it as a separate feature.
-- [ ] **C3e — WhatsApp.** Not built. `docs/agent-prompts/01-cart-recovery-agent.md` explicitly says
-  "do not promise WhatsApp... it isn't built yet" — this is a known, documented gap, not an oversight.
+- [ ] **C3e — WhatsApp.** Not built in the backend. `docs/agent-prompts/01-cart-recovery-agent.md`
+  explicitly says "do not promise WhatsApp... it isn't built yet" — this is a known, documented gap,
+  not an oversight. Marketing pages list it as roadmap-only. **When built, it should mirror the SMS
+  3-surface pattern** (see C5) — a `whatsapp` canvas node, a mid-call `sendWhatsApp` tool, and a
+  post-call action — not a one-off. Tracked under C5 now.
+
+- [x] **C4 — Native, person-centric leads/records layer (Phases 1–3, shipped 2026-07-19).** The
+  *owned* data-of-record layer, built before bolting on external CRMs (ADR-061; plan
+  `docs/product-strategy/native-leads-layer-plan-2026-07-19.md`).
+  - **Phase 1 (owned core):** `leads` table deduped by `(orgId, phone)`, `calls.leadId` plain indexed
+    int (no FK), migration `0040_mushy_arclight.sql`; captured fields promoted `capturedState →
+    leads.fields` at `finalizeCall`; insurance Leads page (list/search, detail + call history,
+    pipeline status, assign advisor, call-now, Excel export, manual add/edit).
+  - **Phase 2 (edges & config):** `POST /api/leads/ingest` (`voice/leads/ingest.ts` — per-org `wlk_`
+    key auth, `validateFields` schema-checked, regulated keys rejected, idempotent `upsertLead`) +
+    per-org/per-agent intake-schema editor.
+  - **Phase 3 (reach):** public hosted form `/f/:orgId` (`pages/hosted-form.tsx` — `orgId` is the
+    non-secret write-only form token, honeypot + per-(ip,org) rate limit) + on-demand "Sync to CRM"
+    mirror (HubSpot/Salesforce/GHL; `leads` stays source of truth).
+  - Verified: typecheck clean · **621 tests pass / 0 fail** · lint 0/0 · build clean.
+- [ ] **C4b — Ingest-triggered call activation (the "AGENT ROUTER → CALL FIRES" gap). Tier-1, highest
+  leverage.** `triggerWorkflow` is *accepted but not wired* in `voice/leads/ingest.ts` — it returns a
+  `note` ("not yet supported") on purpose, because auto-dial must first pass the compliance dial-gates.
+  Close the loop: **lead lands via ingest/form → agent router picks the right agent → outbound call
+  fires**, routed through the existing DNC / TCPA-TRAI quiet-hours / calling-window dial-gates (reuse
+  `voice/scheduler.ts` + `voice/place-outbound-call.ts`, do **not** build a parallel dialer). This is
+  the single highest-leverage open item — it turns the shipped leads layer into an end-to-end
+  autonomous outbound loop.
+  - **Open product decision (CLAUDE.md gate #4 — ask before building the router UI):** the
+    entry-condition routing (which agent, under what conditions) is config-driven vs.
+    visual-canvas-from-day-one — the same unresolved "trigger split" question as item **S**. The dial
+    execution reuses existing gated infra either way; only the *routing config surface* is the open call.
+- [ ] **C5 — Multi-channel reach (WhatsApp + email as first-class flow steps).** SMS is already real
+  and provider-agnostic (Twilio/Plivo/Exotel) across all three surfaces — `sms` canvas node
+  (`voice/workflows/graph-engine.ts`), mid-call `sendSms` tool (`voice/tools/sendSms.ts`), post-call
+  action (`voice/workflows/engine.ts`), all backed by `voice/send-sms.ts` (`sendSmsForOrg`). C5 mirrors
+  that pattern to the other channels:
+  - **WhatsApp** (this subsumes C3e): a `whatsapp` canvas node + mid-call `sendWhatsApp` tool +
+    post-call action, provider-agnostic like SMS.
+  - **Email flow node:** transactional email already exists (`app/email.ts` `sendTransactionalEmail`
+    via Resend) but is **not** a workflow node — expose it as a canvas node/action so flows can send
+    email, not just system transactional mail.
+  - **Cross-channel fallback chains:** call → SMS → WhatsApp → email escalation, via `Wait` +
+    status-branch nodes keyed on delivery/read-status webhooks.
+- [ ] **C6 — External integrations layer (inbound adapters + connector layer).** Per
+  `docs/product-strategy/integrations-strategy-and-roadmap-2026-07-19.md`: Pipedream on the *inbound*
+  edge (any CRM/form → our `/api/leads/ingest`), native adapters for *outbound* mirror (C3c is the
+  outbound half, already partly done).
+  - **Pipedrive native inbound adapter** — flagged as the next likely native inbound adapter (interim
+    path already works: Pipedream → `/ingest`).
+  - **Activate per-org `wlk_` ingest keys** into a first real external source when a pilot needs it
+    (keys exist and are validated; just not yet pointed at a live external feed).
+  - **Vertical flow templates** (clinic/hotel/restaurant) to seed C4b routing once those verticals
+    are built out.
 
 ### Folded in from the old plan — still-open cross-cutting items
 
@@ -278,8 +342,40 @@ differentiator.**
   that item's note.
 
 **Phase C: several pieces already shipped as a side effect of other work (retry cadence, canvas,
-webhooks) — genuinely open pieces are P, Q, R, S, C1, C2b, C3e. None of these block a pilot merchant or
-an investor demo today.**
+webhooks, and now the native leads layer C4). Genuinely open pieces are C1, C2b, C4b, C5, C6, P, Q, R,
+S. None of these block a pilot merchant or an investor demo today — but C4b is the one that converts
+the shipped leads layer into an end-to-end autonomous outbound loop, so it leads the road ahead below.**
+
+---
+
+## Road ahead — prioritized (2026-07-19)
+
+Verified against the codebase this session, not aspirational. Tiers are by leverage, not effort.
+
+- **Tier 1 — activate the loop we already 90% built.**
+  - **C4b — ingest-triggered call activation.** Wire `triggerWorkflow` (accepted-but-not-dialing in
+    `voice/leads/ingest.ts`) → agent router → outbound call through the existing DNC/TCPA/quiet-hours
+    dial-gates (reuse `scheduler.ts` + `place-outbound-call.ts`). The leads layer (C4) is shipped up
+    to the exact point the call would fire; this is the missing "agent router → call fires" step and
+    the single highest-leverage item on the board. *Gated: routing-config-vs-canvas is an open product
+    decision (gate #4) — ask before building the router UI; dial execution reuses gated infra either way.*
+- **Tier 2 — multi-channel reach.**
+  - **C5** — WhatsApp node/tool/action mirroring the existing SMS 3-surface pattern (subsumes C3e);
+    expose transactional email (`app/email.ts`) as a flow node; cross-channel fallback chains
+    (Wait + delivery/read-status branch).
+- **Tier 3 — integrations & templates.**
+  - **C6** — Pipedrive native inbound adapter + Pipedream connector layer; activate per-org `wlk_`
+    keys for a first external source; vertical flow templates (clinic/hotel/restaurant) once built.
+- **Tier 4 — carried forward (decided/known, just not built).**
+  - Supabase Realtime dashboard (`ADR-058`, decided not built — still polls every 4–5s);
+    set `SENTRY_DSN` on Railway (wired, no-op until env var set); **A1b** VAD/endpointing audit;
+    **B2.5** localized system messages (mid-call language *switching* stays REJECTED per ADR-060).
+- **Opportunistic / cheap anytime:** **D1** Kokoro TTS pilot, **D4** join NVIDIA Inception (free, no
+  equity, unlocks Nebius/AWS credit programs).
+
+Not on the road ahead by design: Phase D2/D3 (stay parked until volume/revenue demands them);
+mid-call spoken-language switching (REJECTED, ADR-060); per-org DNC / entry-condition branching config
+changes without a gate #4/#6 sign-off.
 
 ---
 

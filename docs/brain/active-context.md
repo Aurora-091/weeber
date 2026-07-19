@@ -34,13 +34,16 @@ updated: 2026-07-19
   insurance agents 04–08, plus a new **Final Expense Qualifier + Warm-Transfer** agent (persona 09,
   scoped US/English-only). All 10 insurance agent prompts now live in `docs/agent-prompts/`.
 - **Language support: closed/scoped (ADR-060, 2026-07-19)** — see the section below.
+- **Workflow Canvas v4 Phase 3 — SHIPPED (2026-07-19), not open.** Flow preview via web call is
+  built and merged (`voice/workflows/preview-walker.ts`, `components/workflow-preview/
+  FlowPreviewPanel.tsx`, commits `a9dca16`/`91b13ac`; changelog `b491f15`). The whole v4 plan
+  (Phases 1/2/3) is done — do not carry this forward as an open item again.
 - **Still open from 2026-07-18 (carried forward):** adopt **Supabase Realtime** for the dashboard
-  (decided `ADR-058`, not built — currently polls `refetchInterval` every 4–5s); **Workflow Canvas
-  v4 Phase 3** (flow preview via web call — the merchant canvas editor exists, this is the last
-  piece); **set `SENTRY_DSN` on Railway** (Sentry wired, no-op until the env var is set). Everything
-  else from the 2026-07-18 session (insurance KPI-mislabel fix, feedback agent live, VoiceOrb
-  rebuild, infra review, pricing lock `ADR-057`, docs→brain restructure) shipped — see
-  `progress.md` "Closed recently" and `changelog/2026-07.md`.
+  (decided `ADR-058`, not built — currently polls `refetchInterval` every 4–5s); **set `SENTRY_DSN`
+  on Railway** (Sentry wired, no-op until the env var is set). Everything else from the 2026-07-18
+  session (insurance KPI-mislabel fix, feedback agent live, VoiceOrb rebuild, infra review, pricing
+  lock `ADR-057`, docs→brain restructure) shipped — see `progress.md` "Closed recently" and
+  `changelog/2026-07.md`.
 
 ## Language support: closed, scoped correctly (ADR-060, 2026-07-19)
 
@@ -55,15 +58,29 @@ messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
 
 ## Next candidate items (not started, pick by sequencing not scope — ADR-037)
 
-- **A1b** — VAD/endpointing audit (don't assume done just because the pipeline works).
-- **B2.5** — localize system messages per language (small polish; mid-call switching REJECTED per ADR-060).
+**Road ahead is now tiered in `WEEBER-PLAN.md` → "Road ahead — prioritized (2026-07-19)". Short version:**
+
+- **Tier 1 (highest leverage):** **C4b — ingest-triggered call activation.** Wire the
+  accepted-but-not-wired `triggerWorkflow` on `/api/leads/ingest` → agent router → outbound call,
+  routed through the existing DNC/TCPA/quiet-hours dial-gates (reuse `scheduler.ts` /
+  `place-outbound-call.ts`). This is the "lead lands → agent picks → call fires" loop; the leads
+  layer (C4) is shipped up to the point where the call would fire.
+- **Tier 2 (multi-channel reach):** C5 — WhatsApp node/tool/action mirroring the SMS 3-surface
+  pattern; expose the transactional email path (`app/email.ts`) as a flow node; cross-channel
+  fallback chains (Wait + delivery/read-status branch).
+- **Tier 3 (integrations/templates):** C6 — Pipedrive native inbound adapter + Pipedream
+  connector layer; activate per-org `wlk_` keys for a first external source; vertical flow
+  templates (clinic/hotel/restaurant) once those verticals are built.
+- **Tier 4 (carried forward):** Supabase Realtime dashboard (`ADR-058`, decided not built);
+  `SENTRY_DSN` on Railway; A1b VAD/endpointing audit; B2.5 localized system messages.
 - Opportunistic + cheap: D1 (Kokoro TTS pilot), D4 (join NVIDIA Inception).
 
 ## Open decisions waiting on the user (STOP-AND-ASK)
 
 - Supabase Realtime on the dashboard: decided (`ADR-058`), just needs someone to actually build it.
-- Workflow Canvas v4 Phase 3 (flow preview via web call): awaiting go-ahead to start — the
-  merchant canvas editor now exists, so this is the last remaining piece of the v4 plan.
 - Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
+- **C4b entry-condition branching** — config-driven vs. visual-canvas-from-day-one for the
+  ingest→call activation router is still the open product decision (CLAUDE.md gate #4). Ask before
+  building the routing UI.
 
-_Last updated by: native leads/records layer (Phases 1–3) + integrations strategy + insurance language variants/Final Expense agent session, 2026-07-19._
+_Last updated by: road-ahead roadmap sync — C4 leads layer + Canvas v4 Phase 3 marked shipped, C4b/C5/C6 + tiered road ahead added to WEEBER-PLAN.md; native leads/records layer (Phases 1–3) + integrations strategy + insurance language variants/Final Expense agent session, 2026-07-19._

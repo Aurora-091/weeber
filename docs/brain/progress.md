@@ -19,8 +19,9 @@ updated: 2026-07-19
 - Per-org retry cadence via `scheduledCalls` + the in-process sweep; webhook outbox with backoff.
 - Workflow Canvas (React Flow automation builder) — admin template editor, plus (2026-07-18)
   merchant-facing custom graph editing: locked compliance scaffold (`customGraph`,
-  `dncCheck`/`callingWindowCheck` nodes), AI-assisted drafting, full merchant canvas editor.
-  Flow preview via web call (v4 Phase 3) not yet built.
+  `dncCheck`/`callingWindowCheck` nodes), AI-assisted drafting, full merchant canvas editor. Flow
+  preview via web call (v4 Phase 3) SHIPPED 2026-07-19 (`voice/workflows/preview-walker.ts`,
+  `components/workflow-preview/FlowPreviewPanel.tsx`) — the whole v4 plan (Phases 1/2/3) is done.
 - Compliance scaffolding: DNC (no bypass), TCPA/TRAI calling-window, HIPAA guardrail, GDPR
   retention/erasure, audit-trail export (`packages/openvent-compliance`).
 - Auth: Supabase (JWKS), email OTP sign-in, waitlist + referral system.
@@ -46,20 +47,26 @@ updated: 2026-07-19
 - Nothing mid-flight. Last session (native leads layer + integrations strategy, 2026-07-19) shipped
   and verified. Pick the next item from "Next" below by sequencing, not scope (ADR-037).
 
-## Next (by sequencing, not scope — ADR-037)
+## Next (tiered — see `WEEBER-PLAN.md` "Road ahead — prioritized (2026-07-19)")
 
-- **B2.5 — localize system messages per language** (small polish; mid-call spoken-language switching
-  REJECTED per ADR-060, and Indic calls now smart-default to Sarvam — language support is scoped/closed).
-- **A1b — VAD/endpointing audit.**
-- Per-org DNC lists, full RBAC/multi-seat, per-org billing entity (Phase-1 workstreams, check
-  prerequisites in `WEEBER-PLAN.md` J–S).
-- More ecommerce platforms after Shopify: WooCommerce, BigCommerce, Dukaan (build platform-agnostic).
-- **Pipedrive native inbound adapter** — next likely native integration on the leads-ingest edge
-  (interim path = Pipedream → `/api/leads/ingest`). See `product-strategy/integrations-strategy-and-
-  roadmap-2026-07-19.md`.
-- **Leads layer Phase 2 activation** — wire `triggerWorkflow` on ingest once it respects the
-  DNC/TCPA/quiet-hours dial-gates (currently accepted-but-not-dialing on purpose); wire per-org
-  ingest keys into a first real external source when a pilot needs it (ADR-061).
+- **Tier 1 — C4b: ingest-triggered call activation (highest leverage).** Wire `triggerWorkflow`
+  (accepted-but-not-dialing in `voice/leads/ingest.ts`) → agent router → outbound call through the
+  existing DNC/TCPA/quiet-hours dial-gates (reuse `scheduler.ts` + `place-outbound-call.ts`). Turns
+  the shipped leads layer into an end-to-end autonomous outbound loop. *Gated: routing config-vs-canvas
+  is an open product decision (gate #4) — ask before building the router UI.*
+- **Tier 2 — C5: multi-channel reach.** WhatsApp node/tool/action mirroring the SMS 3-surface pattern
+  (subsumes C3e); expose transactional email (`app/email.ts`) as a flow node; cross-channel fallback
+  chains (Wait + delivery/read-status branch).
+- **Tier 3 — C6: integrations & templates.** Pipedrive native inbound adapter + Pipedream connector
+  layer (interim path = Pipedream → `/api/leads/ingest`); activate per-org `wlk_` keys into a first
+  real external source when a pilot needs it; vertical flow templates (clinic/hotel/restaurant) once
+  built. See `product-strategy/integrations-strategy-and-roadmap-2026-07-19.md`, ADR-061.
+- **Tier 4 — carried forward:** Supabase Realtime dashboard (`ADR-058`, decided not built); set
+  `SENTRY_DSN` on Railway; **A1b** VAD/endpointing audit; **B2.5** localize system messages (mid-call
+  spoken-language switching REJECTED per ADR-060, Indic calls smart-default to Sarvam).
+- **Also queued (Phase-1 workstreams / platform breadth):** per-org DNC lists, full RBAC/multi-seat,
+  per-org billing entity (`WEEBER-PLAN.md` P/Q/R/S); more ecommerce platforms after Shopify —
+  WooCommerce, BigCommerce, Dukaan (build platform-agnostic).
 
 ## Recommended, not yet decided (from 2026-07-18 infra review)
 
