@@ -2,7 +2,7 @@
   "name": "@openvent/compliance",
   "version": "0.1.0",
   "private": true,
-  "description": "Framework-agnostic compliance primitives for voice agents — automatic TCPA calling-window checks, Do-Not-Call enforcement, recording/AI consent disclosure, a HIPAA boot-time guardrail, and GDPR retention/erasure. No Twilio, Bun, or database dependency required — bring your own storage adapter and telephony stack.",
+  "description": "Framework-agnostic compliance primitives for voice agents \u2014 automatic TCPA calling-window checks, Do-Not-Call enforcement, recording/AI consent disclosure, a HIPAA boot-time guardrail, and GDPR retention/erasure. No Twilio, Bun, or database dependency required \u2014 bring your own storage adapter and telephony stack.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -11,7 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

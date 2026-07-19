@@ -79,7 +79,13 @@ cd packages/api && bun run db:push       # apply schema.ts to the live DB (addit
 ```
 
 Live call audio only works under the real Bun runtime (Twilio Media Stream WS), never under Vite's dev
-server. CI enforces typecheck + test + build + lint on every push to `main`.
+server. CI enforces typecheck + test + build + lint + e2e on every push to `main`.
+
+**How testing works here — read [`docs/reference/testing.md`](docs/reference/testing.md) before writing or
+running tests.** Non-obvious rules that live there: always `bun run test` (never bare `bun test` — the
+`--isolate` gotcha, ADR-056); install deps first or a green run may be a false green; tests are colocated
+(`foo.ts` → `foo.test.ts`, no `testing/` folder); web component tests use happy-dom; coverage is the
+opt-in `bun run test:coverage`; and the Playwright landing-page E2E is `cd packages/web && bun run test:e2e`.
 
 ## Map of the repo's knowledge
 

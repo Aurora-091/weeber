@@ -1,0 +1,4 @@
+[test]
+# Register a happy-dom global DOM before any test runs, so React component tests
+# can render. Pure-logic tests (theme, verticals) are unaffected.
+preload = ["./test-setup.ts"]

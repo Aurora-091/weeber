@@ -1,30 +1,8 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 
-// Mock localStorage and window for headless testing
-const store: Record<string, string> = {};
-global.localStorage = {
-  getItem: (key: string) => store[key] ?? null,
-  setItem: (key: string, val: string) => {
-    store[key] = val;
-  },
-  removeItem: (key: string) => {
-    delete store[key];
-  },
-  clear: () => {
-    for (const k in store) delete store[k];
-  },
-  key: () => null,
-  length: 0,
-};
-
-global.window = {
-  matchMedia: () => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }),
-} as any;
-
+// `localStorage` and `window.matchMedia` are provided by the happy-dom global
+// DOM registered in test-setup.ts (see bunfig.toml preload). happy-dom's
+// matchMedia defaults `matches` to false, so no manual mocking is needed here.
 import { currentTheme, setTheme, toggleTheme } from "./theme";
 
 describe("theme utility", () => {
