@@ -630,5 +630,48 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
           averageRating: Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10,
         };
 
-  return { recovery, codConfirmation, feedback };
+  // Insurance vertical KPIs (2026-07-18 fix — see docs/changelog for the "mislabeled Shopify
+  // data" bug this replaces). No FK between scheduledCalls and calls (same limitation
+  // codConfirmation above already lives with), so attribution is by value-match on
+  // `calls.agentPersona` (set from `scheduledCalls.persona` at dial time, see
+  // voice/workflows/scheduler.ts:103) against the agent template's `key`, not a join.
+  //
+  // Renewal confirmed — 04-insurance-policy-renewal-agent.md's explicit tool mapping: "confirms
+  // renewing" -> setDisposition({ disposition: "booked" }). "booked" is an overloaded enum value
+  // reused from other verticals (flagged in that doc as worth a dedicated value once this
+  // vertical has real usage data) — not a bug, a known simplification.
+  const renewalAttempted = scheduled.filter(
+    (s) => s.workflowName === "insurance-policy-renewal" && s.status === "executed",
+  ).length;
+  const renewalConfirmed = orgCalls.filter(
+    (c) => c.agentPersona === "insurance-policy-renewal" && c.disposition === "booked",
+  ).length;
+  const insuranceRenewal =
+    renewalAttempted === 0
+      ? null
+      : {
+          attemptedCalls: renewalAttempted,
+          confirmedCount: renewalConfirmed,
+          confirmRate: renewalConfirmed / renewalAttempted > 1 ? 1 : renewalConfirmed / renewalAttempted,
+        };
+
+  // Lead qualified — 05-insurance-lead-followup-agent.md's mapping: the only tool call on the
+  // "qualified, wants advisor follow-up" path is bookAppointment (no explicit setDisposition on
+  // that branch, unlike "not interested" which does set one) — a lead counts as qualified the
+  // moment its call books an advisor callback.
+  const leadCallIds = new Set(orgCalls.filter((c) => c.agentPersona === "insurance-lead-followup").map((c) => c.id));
+  const leadAttempted = scheduled.filter(
+    (s) => s.workflowName === "insurance-lead-followup" && s.status === "executed",
+  ).length;
+  const leadQualified = toolRows.filter((t) => t.toolName === "bookAppointment" && leadCallIds.has(t.callId)).length;
+  const insuranceLeadFollowup =
+    leadAttempted === 0
+      ? null
+      : {
+          attemptedCalls: leadAttempted,
+          qualifiedCount: leadQualified,
+          qualifyRate: leadQualified / leadAttempted > 1 ? 1 : leadQualified / leadAttempted,
+        };
+
+  return { recovery, codConfirmation, feedback, insuranceRenewal, insuranceLeadFollowup };
 }

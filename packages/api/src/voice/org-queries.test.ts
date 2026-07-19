@@ -79,7 +79,37 @@ describe("computeOrgAnalytics KPIs", () => {
   it("returns null KPIs (not zeros) when there is no data", async () => {
     const analytics = await computeOrgAnalytics("org-1", 30);
     expect(analytics.totalCalls).toBe(0);
-    expect(analytics.kpis).toEqual({ recovery: null, codConfirmation: null, feedback: null });
+    expect(analytics.kpis).toEqual({
+      recovery: null,
+      codConfirmation: null,
+      feedback: null,
+      insuranceRenewal: null,
+      insuranceLeadFollowup: null,
+    });
+  });
+
+  it("computes insurance KPIs from agentPersona-matched calls (2026-07-18 fix -- was mislabeled Shopify data)", async () => {
+    rowsByTable.scheduled_calls = [
+      { workflowName: "insurance-policy-renewal", status: "executed" },
+      { workflowName: "insurance-policy-renewal", status: "executed" },
+      { workflowName: "insurance-lead-followup", status: "executed" },
+      { workflowName: "insurance-lead-followup", status: "executed" },
+    ];
+    rowsByTable.calls = [
+      call({ id: 1, agentPersona: "insurance-policy-renewal", disposition: "booked" }),
+      call({ id: 2, agentPersona: "insurance-policy-renewal", disposition: "not-interested" }),
+      call({ id: 3, agentPersona: "insurance-lead-followup", disposition: null }),
+      call({ id: 4, agentPersona: "insurance-lead-followup", disposition: "not-interested" }),
+    ];
+    rowsByTable.tool_calls = [{ id: 1, callId: 3, toolName: "bookAppointment", input: {}, output: {} }];
+
+    const analytics = await computeOrgAnalytics("org-1", 30);
+    expect(analytics.kpis.insuranceRenewal).toEqual({ attemptedCalls: 2, confirmedCount: 1, confirmRate: 0.5 });
+    expect(analytics.kpis.insuranceLeadFollowup).toEqual({ attemptedCalls: 2, qualifiedCount: 1, qualifyRate: 0.5 });
+    // The bug this replaces: cart-recovery/COD-confirmation blocks must stay null, not leak
+    // Shopify-shaped data into an insurance org's response just because these rows exist.
+    expect(analytics.kpis.recovery).toBeNull();
+    expect(analytics.kpis.codConfirmation).toBeNull();
   });
 
   it("computes recovery revenue from real attribution rows, skipping junk amounts", async () => {

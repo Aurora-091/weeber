@@ -64,6 +64,16 @@ type AnalyticsData = {
       averageRating: number;
       responses: number;
     } | null;
+    insuranceRenewal?: {
+      attemptedCalls: number;
+      confirmedCount: number;
+      confirmRate: number;
+    } | null;
+    insuranceLeadFollowup?: {
+      attemptedCalls: number;
+      qualifiedCount: number;
+      qualifyRate: number;
+    } | null;
   };
 };
 
@@ -133,13 +143,18 @@ function resolveMetric(
       return data.kpis?.codConfirmation
         ? { value: String(data.kpis.codConfirmation.confirmedOrders) }
         : null;
+    // Fix (2026-07-18): these two used to read data.kpis.recovery/codConfirmation — Shopify
+    // cart-recovery and COD-confirmation numbers — mislabeled as insurance metrics. Now backed
+    // by real insurance KPIs computed in org-queries.ts's computeKpis (insuranceRenewal /
+    // insuranceLeadFollowup), following the same "null when attempted=0" no-fabricated-metrics
+    // rule as every other block here.
     case "renewals_confirmed":
-      return data.kpis?.recovery
-        ? { value: String(data.kpis.recovery.recoveredOrders) }
+      return data.kpis?.insuranceRenewal
+        ? { value: String(data.kpis.insuranceRenewal.confirmedCount), hint: "Confirmed vs. calls attempted" }
         : null;
     case "leads_qualified":
-      return data.kpis?.codConfirmation
-        ? { value: String(data.kpis.codConfirmation.confirmedOrders) }
+      return data.kpis?.insuranceLeadFollowup
+        ? { value: String(data.kpis.insuranceLeadFollowup.qualifiedCount), hint: "Booked an advisor callback" }
         : null;
     case "avg_feedback":
       return data.kpis?.feedback
