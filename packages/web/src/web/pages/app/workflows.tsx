@@ -16,7 +16,8 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowLeft, Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus2 } from "lucide-react";
+import { ArrowLeft, Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus2, Play } from "lucide-react";
+import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { Button } from "../../components/ui/button";
@@ -388,6 +389,7 @@ function UserWorkflowCanvasEditor({
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [dirty, setDirty] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useUnsavedChanges(dirty);
 
   const onNodesChange = useCallback<typeof onNodesChangeRaw>(
@@ -574,6 +576,10 @@ function UserWorkflowCanvasEditor({
               Delete
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => setPreviewOpen((v) => !v)}>
+            <Play className="size-3.5" aria-hidden />
+            Preview
+          </Button>
           <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
             {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
             {!dirty && save.isSuccess ? "Saved" : "Save"}
@@ -662,6 +668,14 @@ function UserWorkflowCanvasEditor({
               </div>
             )}
           </div>
+        )}
+
+        {previewOpen && (
+          <FlowPreviewPanel
+            templateKey={workflow.id}
+            graph={flowToGraphEditable(nodes, edges)}
+            onClose={() => setPreviewOpen(false)}
+          />
         )}
       </div>
     </div>

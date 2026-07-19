@@ -1100,6 +1100,54 @@ export const userApp = new Hono<UserEnv>()
     return c.json({ graph: result.graph }, 200);
   })
 
+  // Workflow Canvas v4 (2026-07-19, Phase 3) — flow preview storyboard. Walks
+  // the graph log-only (non-call nodes fast-forwarded to a visible log line,
+  // locked compliance nodes included, call nodes marked as the live-handoff
+  // point) so the merchant can read the whole flow before running a single
+  // live sandbox call. The graph is taken from the request body (so an
+  // in-progress, unsaved canvas can be previewed) and falls back to the org's
+  // saved customGraph, then the template graph. No validation gate here —
+  // the walker surfaces broken/looping graphs as error steps rather than
+  // rejecting, so a half-built flow can still be previewed. The live call
+  // itself reuses the existing test-call-token + WS pipeline (ADR-051); this
+  // endpoint only produces the storyboard.
+  .post("/workflow-configs/:templateKey/preview", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    const body = (await c.req.json().catch(() => null)) as {
+      graph?: WorkflowGraph;
+      branchSelections?: Record<string, string>;
+      context?: Record<string, string | number>;
+    } | null;
+
+    let graph = body?.graph;
+    if (!graph) {
+      const [cfg] = await db
+        .select({ customGraph: orgWorkflowConfigs.customGraph })
+        .from(orgWorkflowConfigs)
+        .where(and(eq(orgWorkflowConfigs.orgId, orgId), eq(orgWorkflowConfigs.templateKey, templateKey)))
+        .limit(1);
+      graph = (cfg?.customGraph as WorkflowGraph | null) ?? undefined;
+      if (!graph) {
+        const [template] = await db
+          .select({ graph: workflowTemplates.graph })
+          .from(workflowTemplates)
+          .where(eq(workflowTemplates.id, templateKey))
+          .limit(1);
+        graph = (template?.graph as WorkflowGraph | null) ?? undefined;
+      }
+    }
+    if (!graph) return c.json({ error: "No graph to preview" }, 404);
+
+    const { walkForPreview } = await import("../voice/workflows/preview-walker");
+    const result = walkForPreview({
+      graph,
+      branchSelections: body?.branchSelections,
+      context: body?.context,
+    });
+    return c.json(result, 200);
+  })
+
   // User support submission — same underlying table as the public
   // landing-page form (public-routes.ts), just with orgId known.
   .post("/support", async (c) => {
