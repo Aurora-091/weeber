@@ -38,7 +38,7 @@ mock.module("../database", () => {
           // Awaitable (existing callers just await it) AND chainable with
           // .returning() (provisionVerticalDefaults reads back what it wrote).
           onConflictDoNothing: () => {
-            const p = Promise.resolve([]) as Promise<unknown[]> & Record<string, unknown>;
+            const p = Promise.resolve([] as unknown[]) as Promise<unknown[]> & Record<string, unknown>;
             p.returning = () => Promise.resolve([{ id: 1, ...data }]);
             return p;
           },
