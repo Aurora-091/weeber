@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Active context — what's happening right now
@@ -12,51 +12,35 @@ updated: 2026-07-18
 
 ## Current focus
 
-- **Insurance dashboard KPI mislabeling fixed + live-verified (2026-07-18):** what the docs called
-  "dead config" (`vertical.dashboard` unread by `home.tsx`) was actually already wired, but wrong —
-  `renewals_confirmed`/`leads_qualified` read Shopify's `recovery`/`codConfirmation` KPI blocks.
-  Fixed with real `insuranceRenewal`/`insuranceLeadFollowup` blocks in `computeKpis()`
-  (`org-queries.ts`), attributed via `calls.agentPersona` value-match (no FK, same pattern as
-  `codConfirmation`). **Verified live, not just typecheck**: local fresh Postgres (never pointed
-  the real backend at the production DB — `scheduler.ts` auto-dials due scheduled calls on boot,
-  too risky against real customer data), 2 real Supabase test users via the actual Auth admin API,
-  seeded test orgs, logged in through the real UI, screenshotted both dashboards. Test users/DB/
-  servers all cleaned up after. Commit `c2bed26`.
-- **Feedback agent persona confirmed + live (2026-07-18):** user confirmed `03-feedback-agent.md`
-  as final. `seed.ts`'s `active` flag flipped `false → true` — was the only inactive persona of the
-  5, now selectable by merchants and eligible for AI-draft on next boot's seed upsert (no manual DB
-  fix needed, self-heals like the templates-path bug fix did). STOP-AND-ASK gate #4 closed.
-- **VoiceOrb enhancement + app/admin overlap scan (done, 2026-07-18):** in-app `VoiceOrb` rebuilt
-  as a 3-blob morph cluster + glow to match marketing `DemoOrb` (same-product visual consistency).
-  Typecheck/lint clean, visually confirmed live, committed as `dcb19e8` and pushed to `main`. App/
-  admin (`components/shell`, `components/dashboard`, `pages/app`, `pages/dashboard`) scanned for the
-  same fixed-percentage/z-index/position anti-patterns that caused the marketing hero overlap bug —
-  came back clean. **Static-analysis-only** — no backend/DB in this sandbox, so authenticated
-  `/app/*`/`/dashboard/*` pages couldn't be live-rendered to visually confirm; flag this to whoever
-  picks this up next if a live overlap bug is later reported in the app/admin panel.
-- **Infra consolidation review (done, 2026-07-18):** confirmed the stack is already tightly
-  consolidated on Supabase + Vercel + Railway. No external app pile to cancel. Sentry error
-  monitoring is now wired (`ADR` — see `changelog/2026-07.md`) but still no-op until `SENTRY_DSN` is
-  actually set on Railway (a deploy-config step, not code). Dead `@aws-sdk/client-s3`/`cloudflare`
-  deps + dead S3 env vars removed. Still open: adopt **Supabase Realtime** for the dashboard
-  (decision made, `ADR-058`, not yet built — currently polls via `refetchInterval` every 4-5s on
-  call-detail/calls-list/workflow-runs).
-- **Pricing locked (2026-07-18, not deployed):** India + Global tiers, split by voice-provider cost
-  tier, minutes not calls. `docs/product-strategy/pricing-lock-2026-07-18.md` / `ADR-057`. Decided
-  for grant/investor use — explicitly not on the live site or wired into checkout yet.
-- **Workflow Canvas v4 (2026-07-18):** `workflow-canvas/v4-locked-scaffold-ai-draft-and-flow-
-  preview-plan.md` — supersedes v3's frontend section. **Phase 1 done**: `customGraph` column,
-  `locked` flag + `dncCheck`/`callingWindowCheck` pass-through node types, `scaffold.ts`'s
-  blank-scaffold builder + save-time `validateLockedNodesEnforced`. **Phase 2 done**:
-  `voice/workflows/ai-draft.ts`'s `draftWorkflowGraph()` + `POST /workflow-configs/:templateKey/
-  ai-draft`. **Merchant-facing full canvas editor built** (`app/workflows.tsx`) — standard
-  (read-only+override, unchanged default) vs custom (full drag/connect/delete, reuses the admin
-  editor's exact components) modes, entered via "Customize from this template"/"Start blank," AI
-  drafting wired in via a prompt box in the custom editor. **Phase 3 (flow preview via web call)
-  not started.**
-- **Docs → agent brain (in progress, 2026-07-18):** restructured docs into this `brain/` folder,
-  added `AGENTS.md` as the cross-tool entry point, split `DECISIONS.md` → `docs/decisions/` (per-ADR)
-  and `changelog.md` → `docs/changelog/` (per-month).
+- **Native, person-centric leads/records layer shipped (2026-07-19, Phases 1–3):** built the *owned*
+  data-of-record layer before bolting on external CRMs. New tables (`leads` deduped by
+  `(orgId, phone)`, `leadIntakeSchemas`, `leadApiKeys`; `calls.leadId` plain indexed int, no FK;
+  migration `0040_mushy_arclight.sql`). **Phase 1 (owned core):** captured fields promoted
+  `capturedState → leads.fields` at `finalizeCall`; insurance `Leads` page (list/search, detail +
+  call history, pipeline status, assign advisor, call-now, Excel export, manual add/edit).
+  **Phase 2 (edges & config):** `POST /api/leads/ingest` (per-org `wlk_` key auth, schema-validated,
+  regulated keys rejected, idempotent upsert; `triggerWorkflow` accepted-but-not-wired until it
+  respects DNC/TCPA dial-gates) + per-org/per-agent intake-schema editor. **Phase 3 (reach):**
+  public hosted form `/f/:orgId` (**`orgId` is the non-secret write-only form token** — honeypot +
+  per-(ip,org) rate limit, no migration) + on-demand "Sync to CRM" mirror (HubSpot/Salesforce/GHL,
+  leads stays source of truth). Scoping decisions in **ADR-061**; plan in
+  `product-strategy/native-leads-layer-plan-2026-07-19.md`. Verified: `typecheck` clean · `test`
+  **621 pass / 0 fail** · `lint` 0/0 · `build` clean.
+- **Integrations strategy set (2026-07-19):** Pipedream on the *inbound* edge (any CRM/form → our
+  ingest API), native adapters for *outbound* (CRM mirror). `product-strategy/integrations-strategy-
+  and-roadmap-2026-07-19.md`; recipe in `integrations/pipedream-inbound-recipe.md`. **Pipedrive
+  native adapter** flagged as the next likely inbound native adapter.
+- **Insurance vertical filled out (2026-07-19):** config-driven en/hi/hinglish language variants for
+  insurance agents 04–08, plus a new **Final Expense Qualifier + Warm-Transfer** agent (persona 09,
+  scoped US/English-only). All 10 insurance agent prompts now live in `docs/agent-prompts/`.
+- **Language support: closed/scoped (ADR-060, 2026-07-19)** — see the section below.
+- **Still open from 2026-07-18 (carried forward):** adopt **Supabase Realtime** for the dashboard
+  (decided `ADR-058`, not built — currently polls `refetchInterval` every 4–5s); **Workflow Canvas
+  v4 Phase 3** (flow preview via web call — the merchant canvas editor exists, this is the last
+  piece); **set `SENTRY_DSN` on Railway** (Sentry wired, no-op until the env var is set). Everything
+  else from the 2026-07-18 session (insurance KPI-mislabel fix, feedback agent live, VoiceOrb
+  rebuild, infra review, pricing lock `ADR-057`, docs→brain restructure) shipped — see
+  `progress.md` "Closed recently" and `changelog/2026-07.md`.
 
 ## Language support: closed, scoped correctly (ADR-060, 2026-07-19)
 
@@ -82,4 +66,4 @@ messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
   merchant canvas editor now exists, so this is the last remaining piece of the v4 plan.
 - Set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the free Sentry.io project + env var).
 
-_Last updated by: insurance dashboard KPI-mislabeling fix + live verification session, 2026-07-18._
+_Last updated by: native leads/records layer (Phases 1–3) + integrations strategy + insurance language variants/Final Expense agent session, 2026-07-19._

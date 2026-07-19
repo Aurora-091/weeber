@@ -1,7 +1,7 @@
 ---
 doc: project-brief
 status: evergreen
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Project brief — what Weeber is (and isn't)
@@ -23,6 +23,9 @@ the dashboard, agents, tools, metrics, and terminology adapt to the org's **vert
   the moat, not a checkbox.
 - **Stage:** pre-launch, pre-traction. ~10 real calls all-time, no paying customers yet. **No real
   clients or partners exist** — do not reference any named client/partner as real.
+- **Operating entity:** Weeber is the SaaS product of **ADLOOM X MEDIA SOLUTIONS PRIVATE LIMITED**
+  (Private Limited; CIN `U73200UP2026PTC246714`; incorporated 16 Apr 2026; registered email
+  `adloomx@gmail.com`; active). Use this entity for billing/legal/grant/investor references.
 
 ## The stack (the short version — full detail in `../reference/resources.md`)
 

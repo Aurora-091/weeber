@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -25,7 +25,15 @@ updated: 2026-07-18
   retention/erasure, audit-trail export (`packages/openvent-compliance`).
 - Auth: Supabase (JWKS), email OTP sign-in, waitlist + referral system.
 - Config storage: DB-backed `org_agent_configs`/`org_workflow_configs` (not env).
-- All 5 agent personas written (not placeholders).
+- All 5 Shopify agent personas + 10 insurance agent prompts written (not placeholders); insurance
+  agents 04–08 have config-driven en/hi/hinglish language variants; persona 09 = Final Expense
+  Qualifier + Warm-Transfer (US/English-only) (2026-07-19).
+- Native leads/records layer (Phases 1–3, 2026-07-19): owned `leads` table (deduped `(orgId, phone)`),
+  captured-field promotion at `finalizeCall`, insurance Leads page (list/detail/status/assign/
+  call-now/Excel export/manual CRUD), `POST /api/leads/ingest` (per-org `wlk_` keys, schema-validated,
+  regulated-key rejection, idempotent), intake-schema editor, public hosted form `/f/:orgId`
+  (orgId = write-only form token), on-demand "Sync to CRM" mirror (HubSpot/Salesforce/GHL). 621
+  tests pass. ADR-061.
 - Infra: Railway Pro + Supabase Small + Vercel Pro, all confirmed live (Audit #7, 2026-07-17).
 - Hindi/Hinglish STT/TTS foundation, live-verified (2026-07-16).
 - Sentry error monitoring wired (2026-07-18) — no-op until `SENTRY_DSN` is set on Railway (still
@@ -35,8 +43,8 @@ updated: 2026-07-18
 
 ## In progress
 
-- **Docs → agent brain restructure** (2026-07-18) — this `brain/` folder, `AGENTS.md`, split
-  decisions/changelog.
+- Nothing mid-flight. Last session (native leads layer + integrations strategy, 2026-07-19) shipped
+  and verified. Pick the next item from "Next" below by sequencing, not scope (ADR-037).
 
 ## Next (by sequencing, not scope — ADR-037)
 
@@ -46,6 +54,12 @@ updated: 2026-07-18
 - Per-org DNC lists, full RBAC/multi-seat, per-org billing entity (Phase-1 workstreams, check
   prerequisites in `WEEBER-PLAN.md` J–S).
 - More ecommerce platforms after Shopify: WooCommerce, BigCommerce, Dukaan (build platform-agnostic).
+- **Pipedrive native inbound adapter** — next likely native integration on the leads-ingest edge
+  (interim path = Pipedream → `/api/leads/ingest`). See `product-strategy/integrations-strategy-and-
+  roadmap-2026-07-19.md`.
+- **Leads layer Phase 2 activation** — wire `triggerWorkflow` on ingest once it respects the
+  DNC/TCPA/quiet-hours dial-gates (currently accepted-but-not-dialing on purpose); wire per-org
+  ingest keys into a first real external source when a pilot needs it (ADR-061).
 
 ## Recommended, not yet decided (from 2026-07-18 infra review)
 
@@ -62,6 +76,9 @@ updated: 2026-07-18
 
 ## Closed recently (so this file doesn't look like it's ignoring them)
 
+- Native leads/records layer shipped (Phases 1–3, minus the deferred Shopify Orders migration);
+  integrations strategy set (Pipedream inbound, native outbound adapters); insurance en/hi/hinglish
+  language variants + Final Expense Qualifier agent — 2026-07-19 (ADR-061; `changelog/2026-07.md`).
 - Insurance dashboard `renewals_confirmed`/`leads_qualified` were mislabeled Shopify cart-recovery/
   COD-confirmation numbers (not "dead config" as previously logged here) — fixed with real
   `insuranceRenewal`/`insuranceLeadFollowup` KPI blocks, verified LIVE against a local DB + 2 real

@@ -1,7 +1,7 @@
 ---
 doc: brain-index
 status: evergreen
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Brain index — task → files router
@@ -26,6 +26,8 @@ updated: 2026-07-18
 | **A new vertical** | `../decisions/adr-031-*.md` (vertical-agnostic seam) → `packages/web/src/web/lib/verticals.ts` → `agentTemplates` in `schema.ts`. Add rows, not code paths. |
 | **A new ecommerce platform** (Woo/BigCommerce/Dukaan) | `project-brief.md` (platform-agnostic rule) → the Shopify integration in `packages/api/src/integrations/shopify/` as the pattern → `../reference/contract.md` |
 | **Shopify integration / weebersh contract** | `../reference/contract.md` → `packages/api/src/integrations/shopify/` → remember to bump the contract version in BOTH repos |
+| **Leads / records layer / CRM ingest & sync** | `../decisions/adr-061-*.md` → `../product-strategy/native-leads-layer-plan-2026-07-19.md` → `../integrations/leads-ingest-api.md` + `pipedream-inbound-recipe.md` → `leads`/`leadIntakeSchemas`/`leadApiKeys` in `schema.ts` + `packages/api/src/voice/leads/` |
+| **Integrations strategy** (inbound Pipedream vs native adapters, Pipedrive) | `../product-strategy/integrations-strategy-and-roadmap-2026-07-19.md` |
 | **Scheduling / retries / outbound cadence** | `packages/api/src/voice/workflows/scheduler.ts` → `../decisions/adr-026-*.md` (session store) → `scheduledCalls` in `schema.ts`. The "queue" is the in-process sweep. |
 | **Compliance (DNC/TCPA/HIPAA/GDPR)** | **STOP-AND-ASK first** → `../reference/compliance.md` → `../compliance/global-compliance-engine-plan.md` → `packages/openvent-compliance/` |
 | **Database schema** | `packages/api/src/database/schema.ts` → additive-only rule → `db:push`. Semantics-changing? → write an ADR. |
