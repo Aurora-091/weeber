@@ -41,8 +41,18 @@ export type VerticalDefinition = {
   };
   /** Config-driven Home page content — add a vertical by filling this in, not by branching analytics.tsx. */
   dashboard: {
+    /** The single headline number this vertical opens the dashboard to see —
+     * rendered as a big hero band at the top, with its period-over-period
+     * delta. `key` resolves through the same metric resolver as `metrics`, so
+     * it honors the no-fabricated-metrics null rule (band is hidden when the
+     * KPI hasn't been earned yet). */
+    hero?: { key: string; label: string; sublabel?: string };
     /** Extra metric tiles alongside the universal call stats (calls, latency, tool errors). */
     metrics: { key: string; label: string; hint?: string }[];
+    /** Ordered conversion funnel for this vertical (e.g. abandoned -> called
+     * -> recovered). Each stage's `key` resolves to a raw count; the card is
+     * hidden when no stage resolves. Data per vertical, not a JSX branch. */
+    funnel?: { title: string; stages: { key: string; label: string }[] };
     emptyState: { title: string; body: string };
   };
 };
@@ -94,6 +104,19 @@ const shopify: VerticalDefinition = {
       "Install the Weeber app on your store so your agents can react to checkouts, orders, and fulfillments.",
   },
   dashboard: {
+    hero: {
+      key: "revenue_recovered",
+      label: "Revenue recovered",
+      sublabel: "From carts your agents brought back to checkout",
+    },
+    funnel: {
+      title: "Cart recovery funnel",
+      stages: [
+        { key: "carts_abandoned", label: "Carts abandoned" },
+        { key: "recovery_attempted", label: "Recovery calls made" },
+        { key: "carts_recovered", label: "Carts recovered" },
+      ],
+    },
     // Funnel order: abandoned -> recovered -> rate -> revenue -> avg order
     // value. Backend already computes all five (org-queries.ts's
     // computeKpis) — cartsAbandoned/recoveryRate/avgOrderValue were sitting
@@ -147,6 +170,18 @@ const insurance: VerticalDefinition = {
       "Turn on the Policy Renewal Reminder or Lead Follow-Up agent to start reaching policyholders and leads automatically.",
   },
   dashboard: {
+    hero: {
+      key: "renewals_confirmed",
+      label: "Renewals confirmed",
+      sublabel: "Policyholders who confirmed on a reminder call",
+    },
+    funnel: {
+      title: "Renewal funnel",
+      stages: [
+        { key: "renewal_attempted", label: "Reminder calls made" },
+        { key: "renewals_confirmed", label: "Renewals confirmed" },
+      ],
+    },
     metrics: [
       { key: "renewals_confirmed", label: "Renewals confirmed", hint: "Policyholders who confirmed on a reminder call" },
       { key: "leads_qualified", label: "Leads qualified", hint: "Leads booked with a licensed advisor" },

@@ -218,6 +218,19 @@ describe("computeOrgAnalytics KPIs", () => {
     const analytics = await computeOrgAnalytics("org-1", 30);
     expect(analytics.currency).toBe("INR");
   });
+
+  it("returns a period-over-period comparison block for trend deltas", async () => {
+    rowsByTable.calls = [call({ id: 1 }), call({ id: 2 })];
+    const analytics = await computeOrgAnalytics("org-1", 30);
+    // The previous-window snapshot the frontend turns into "+X% vs previous
+    // period": scalar totals + the same per-vertical KPI blocks, keyed by
+    // the requested range length so the UI can label the comparison window.
+    expect(analytics.comparison).toBeDefined();
+    expect(analytics.comparison.rangeDays).toBe(30);
+    expect(typeof analytics.comparison.totalCalls).toBe("number");
+    expect(typeof analytics.comparison.totalMinutes).toBe("number");
+    expect(analytics.comparison.kpis).toBeDefined();
+  });
 });
 
 describe("computeOrgAnalytics turn latency percentiles (§2)", () => {

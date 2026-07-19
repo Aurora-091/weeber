@@ -6,7 +6,7 @@
  * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
-import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, or } from "drizzle-orm";
 import { db } from "../database";
 import {
   agentTemplates,
@@ -472,7 +472,9 @@ export async function getEffectiveFlags(orgId: string): Promise<Record<string, b
  *     (docs/agent-prompts/03-feedback-agent.md's capture key).
  */
 export async function computeOrgAnalytics(orgId: string, days: number) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const since = new Date(now.getTime() - days * dayMs);
 
   const orgCalls = await db
     .select()
@@ -554,7 +556,37 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
   };
 
   const org = await getOrg(orgId);
-  const kpis = await computeKpis(orgId, since, orgCalls, toolRows);
+  const kpis = await computeKpis(orgId, since, now, orgCalls, toolRows);
+
+  // Period-over-period comparison (2026-07-19) — the immediately preceding
+  // window of equal length [prevSince, since), so the Home dashboard can show
+  // "+X% vs previous period" trend deltas on its headline stats. We only need
+  // the scalar aggregates the frontend turns into deltas (totals + the same
+  // per-vertical KPI blocks), not the full charting payload, so latency /
+  // turn-latency / daily-volume are deliberately NOT recomputed for it. The
+  // frontend computes the delta and drops it when the previous value is 0
+  // (no baseline → no honest percentage), matching the no-fabricated-metrics
+  // rule the rest of this file follows.
+  const prevSince = new Date(now.getTime() - 2 * days * dayMs);
+  const prevOrgCalls = await db
+    .select()
+    .from(calls)
+    .where(and(eq(calls.orgId, orgId), gte(calls.startedAt, prevSince), lt(calls.startedAt, since)));
+  const prevCallIds = prevOrgCalls.map((call) => call.id);
+  const prevToolRows =
+    prevCallIds.length > 0 ? await db.select().from(toolCalls).where(inArray(toolCalls.callId, prevCallIds)) : [];
+  const prevMinutes =
+    prevOrgCalls.reduce((sum, call) => {
+      if (!call.endedAt) return sum;
+      return sum + (call.endedAt.getTime() - call.startedAt.getTime()) / 60000;
+    }, 0) || 0;
+  const prevKpis = await computeKpis(orgId, prevSince, since, prevOrgCalls, prevToolRows);
+  const comparison = {
+    rangeDays: days,
+    totalCalls: prevOrgCalls.length,
+    totalMinutes: Math.round(prevMinutes * 10) / 10,
+    kpis: prevKpis,
+  };
 
   // Provider reliability — how often a call had to fall back off its
   // configured primary STT/TTS provider (see voice/failover.ts + the
@@ -594,13 +626,14 @@ export async function computeOrgAnalytics(orgId: string, days: number) {
     kpis,
     turnLatencyPercentiles,
     reliability,
+    comparison,
   };
 }
 
 type OrgCallRow = typeof calls.$inferSelect;
 type ToolCallRow = typeof toolCalls.$inferSelect;
 
-async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], toolRows: ToolCallRow[]) {
+async function computeKpis(orgId: string, since: Date, until: Date, orgCalls: OrgCallRow[], toolRows: ToolCallRow[]) {
   const scheduled = await db
     .select({
       workflowName: scheduledCalls.workflowName,
@@ -609,7 +642,17 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
       recoveredAmount: scheduledCalls.recoveredAmount,
     })
     .from(scheduledCalls)
-    .where(and(eq(scheduledCalls.orgId, orgId), gte(scheduledCalls.createdAt, since)));
+    .where(
+      and(
+        eq(scheduledCalls.orgId, orgId),
+        gte(scheduledCalls.createdAt, since),
+        // Upper bound (2026-07-19) — previously unbounded (everything since
+        // `since`). Needed so this can be called for a *previous* window
+        // [prevSince, since) to power period-over-period deltas, not just the
+        // current trailing window. Current-window callers pass until=now.
+        lt(scheduledCalls.createdAt, until),
+      ),
+    );
 
   // "Carts abandoned" — the true raw count, not just the ones that resulted
   // in an attempted call. scheduledCalls only ever gets a row when a call
@@ -639,7 +682,7 @@ async function computeKpis(orgId: string, since: Date, orgCalls: OrgCallRow[], t
       .where(inArray(shopifyWebhookEvents.shop, shopNames));
     const convertedTokens = new Set(events.filter((e) => e.topic === "checkout_converted").map((e) => e.idempotencyKey));
     cartsAbandoned = events.filter(
-      (e) => e.topic === "checkouts" && e.processedAt >= since && !convertedTokens.has(e.idempotencyKey),
+      (e) => e.topic === "checkouts" && e.processedAt >= since && e.processedAt < until && !convertedTokens.has(e.idempotencyKey),
     ).length;
   }
 

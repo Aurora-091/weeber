@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  Phone, Clock, Wrench, ShieldAlert, Wallet, TrendingUp, Sparkles,
-  Check, X, TriangleAlert,
+  Phone, Clock, Wrench, ShieldAlert, Wallet, TrendingUp, TrendingDown, Sparkles,
+  Check, X, TriangleAlert, Filter, ShieldCheck, MessageSquare,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
+import type { VerticalDefinition } from "../../lib/verticals";
 import { useUser } from "../../components/app/user-shell";
 import { SetupModal } from "../../components/app/setup-modal";
 import { PageHeader } from "../../components/shell/page-header";
@@ -31,6 +32,36 @@ type OnboardingState = {
   completedAt: string | null;
 };
 
+type Kpis = {
+  recovery?: {
+    cartsAbandoned: number;
+    recoveredOrders: number;
+    recoveredRevenue: number;
+    attemptedCalls: number;
+    recoveryRate: number | null;
+    avgOrderValue: number | null;
+  } | null;
+  codConfirmation?: {
+    confirmedOrders: number;
+    attemptedCalls: number;
+    confirmRate: number;
+  } | null;
+  feedback?: {
+    averageRating: number;
+    responses: number;
+  } | null;
+  insuranceRenewal?: {
+    attemptedCalls: number;
+    confirmedCount: number;
+    confirmRate: number;
+  } | null;
+  insuranceLeadFollowup?: {
+    attemptedCalls: number;
+    qualifiedCount: number;
+    qualifyRate: number;
+  } | null;
+};
+
 type AnalyticsData = {
   totalCalls: number;
   totalMinutes: number;
@@ -38,6 +69,7 @@ type AnalyticsData = {
   minutesPerDay?: number[];
   dailyVolume?: { date: string; count: number }[];
   dispositionBreakdown: Record<string, number>;
+  intentBreakdown?: Record<string, number>;
   toolUsageCounts: Record<string, number>;
   guardrailEventCounts: Record<string, number>;
   avgLatency: {
@@ -46,34 +78,20 @@ type AnalyticsData = {
     ttsFirstByteMs: number | null;
   };
   currency?: string | null;
-  kpis?: {
-    recovery?: {
-      cartsAbandoned: number;
-      recoveredOrders: number;
-      recoveredRevenue: number;
-      attemptedCalls: number;
-      recoveryRate: number | null;
-      avgOrderValue: number | null;
-    } | null;
-    codConfirmation?: {
-      confirmedOrders: number;
-      attemptedCalls: number;
-      confirmRate: number;
-    } | null;
-    feedback?: {
-      averageRating: number;
-      responses: number;
-    } | null;
-    insuranceRenewal?: {
-      attemptedCalls: number;
-      confirmedCount: number;
-      confirmRate: number;
-    } | null;
-    insuranceLeadFollowup?: {
-      attemptedCalls: number;
-      qualifiedCount: number;
-      qualifyRate: number;
-    } | null;
+  kpis?: Kpis;
+  reliability?: {
+    callsWithFailover: number;
+    totalFailoverEvents: number;
+    failoverRate: number | null;
+  };
+  // Immediately preceding window of equal length — powers "+X% vs previous
+  // period" deltas (backend: org-queries.ts computeOrgAnalytics). Only the
+  // scalars the deltas need, not the full charting payload.
+  comparison?: {
+    rangeDays: number;
+    totalCalls: number;
+    totalMinutes: number;
+    kpis?: Kpis;
   };
 };
 
@@ -163,6 +181,178 @@ function resolveMetric(
     default:
       return null;
   }
+}
+
+/** The raw number behind a metric key — used for funnel stage bars, the hero
+ *  band, and period-over-period deltas (where a formatted string won't do).
+ *  Same keys as resolveMetric, plus the funnel-only "*_attempted" stages.
+ *  Returns null under the same no-fabricated-metrics rule (absent kpi block
+ *  or a genuinely unknowable ratio). */
+function metricNumber(key: string, kpis: Kpis | undefined): number | null {
+  const r = kpis?.recovery;
+  const cod = kpis?.codConfirmation;
+  const fb = kpis?.feedback;
+  const ren = kpis?.insuranceRenewal;
+  const lead = kpis?.insuranceLeadFollowup;
+  switch (key) {
+    case "carts_recovered":
+      return r ? r.recoveredOrders : null;
+    case "carts_abandoned":
+      return r ? r.cartsAbandoned : null;
+    case "revenue_recovered":
+      return r ? r.recoveredRevenue : null;
+    case "avg_order_value":
+      return r?.avgOrderValue ?? null;
+    case "recovery_rate":
+      return r?.recoveryRate ?? null;
+    case "recovery_attempted":
+      return r ? r.attemptedCalls : null;
+    case "cod_confirmed":
+      return cod ? cod.confirmedOrders : null;
+    case "cod_confirm_rate":
+      return cod ? cod.confirmRate : null;
+    case "renewals_confirmed":
+      return ren ? ren.confirmedCount : null;
+    case "renewal_attempted":
+      return ren ? ren.attemptedCalls : null;
+    case "leads_qualified":
+      return lead ? lead.qualifiedCount : null;
+    case "lead_attempted":
+      return lead ? lead.attemptedCalls : null;
+    case "avg_feedback":
+      return fb ? fb.averageRating : null;
+    default:
+      return null;
+  }
+}
+
+/** Period-over-period percentage change. Null (no delta shown) when either
+ *  side is missing or the previous value is 0 — a "+∞%" jump off a zero
+ *  baseline isn't an honest number, matching the file's no-fabricated rule. */
+function pctDelta(current: number | null, previous: number | null): number | null {
+  if (current == null || previous == null || previous === 0) return null;
+  return ((current - previous) / previous) * 100;
+}
+
+function DeltaPill({ delta }: { delta: number | null }) {
+  if (delta == null) return null;
+  const up = delta >= 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium ${
+        up ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+      }`}
+    >
+      <Icon className="size-3" aria-hidden />
+      {up ? "+" : ""}
+      {delta.toFixed(1)}%
+    </span>
+  );
+}
+
+/** Big single headline number for the vertical (config: dashboard.hero).
+ *  Hidden entirely when the KPI hasn't been earned yet (resolveMetric null). */
+function HeroBand({
+  hero,
+  data,
+  days,
+}: {
+  hero: NonNullable<VerticalDefinition["dashboard"]["hero"]>;
+  data: AnalyticsData;
+  days: number;
+}) {
+  const resolved = resolveMetric(hero.key, data);
+  if (!resolved) return null;
+  const delta = pctDelta(metricNumber(hero.key, data.kpis), metricNumber(hero.key, data.comparison?.kpis));
+  return (
+    <div className="card-weeber flex items-start justify-between gap-4 p-6">
+      <div>
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{hero.label}</div>
+        <div className="mt-2 flex items-baseline gap-3">
+          <span className="text-4xl font-semibold tracking-tight">{resolved.value}</span>
+          <DeltaPill delta={delta} />
+        </div>
+        {hero.sublabel && <p className="mt-1.5 text-sm text-muted-foreground">{hero.sublabel}</p>}
+        {delta != null && <p className="mt-0.5 text-xs text-muted-foreground">vs. previous {days} days</p>}
+      </div>
+      <div className="shrink-0 rounded-full bg-primary/10 p-3 text-primary">
+        <TrendingUp className="size-5" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+/** Ordered conversion funnel (config: dashboard.funnel). Each stage shows its
+ *  raw count and the stage-over-stage conversion %. Hidden when no stage
+ *  resolves a number. */
+function FunnelCard({
+  funnel,
+  data,
+}: {
+  funnel: NonNullable<VerticalDefinition["dashboard"]["funnel"]>;
+  data: AnalyticsData;
+}) {
+  const stages = funnel.stages
+    .map((s) => ({ ...s, value: metricNumber(s.key, data.kpis) }))
+    .filter((s): s is { key: string; label: string; value: number } => s.value != null);
+  if (stages.length === 0) return null;
+  const max = Math.max(1, ...stages.map((s) => s.value));
+  return (
+    <div className="card-weeber p-5">
+      <div className="mb-4 flex items-center gap-1.5 text-sm font-medium">
+        <Filter className="size-3.5" aria-hidden />
+        {funnel.title}
+      </div>
+      <div className="space-y-3">
+        {stages.map((s, i) => {
+          const prev = i > 0 ? stages[i - 1].value : null;
+          const conv = prev != null && prev > 0 ? (s.value / prev) * 100 : null;
+          return (
+            <div key={s.key}>
+              <div className="mb-1 flex items-baseline justify-between text-xs">
+                <span className="text-muted-foreground">{s.label}</span>
+                <span className="font-medium tabular-nums">
+                  {s.value.toLocaleString("en-IN")}
+                  {conv != null && <span className="ml-2 font-normal text-muted-foreground">{conv.toFixed(0)}%</span>}
+                </span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary/70 transition-all"
+                  style={{ width: `${Math.max(4, (s.value / max) * 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Provider reliability — how often calls stayed on their primary STT/TTS
+ *  provider vs. failing over to a backup. Universal (call-level fact, not a
+ *  per-vertical business metric). Hidden when there are no calls in range. */
+function ReliabilityCard({ reliability }: { reliability: AnalyticsData["reliability"] }) {
+  if (!reliability || reliability.failoverRate == null) return null;
+  const onPrimaryPct = Math.round((1 - reliability.failoverRate) * 100);
+  return (
+    <div className="card-weeber p-5">
+      <div className="mb-3 flex items-center gap-1.5 text-sm font-medium">
+        <ShieldCheck className="size-3.5" aria-hidden />
+        Call reliability
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-semibold tracking-tight">{onPrimaryPct}%</span>
+        <span className="text-xs text-muted-foreground">of calls stayed on the primary provider</span>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {reliability.callsWithFailover} call{reliability.callsWithFailover === 1 ? "" : "s"} switched to a backup provider
+        mid-call ({reliability.totalFailoverEvents} failover event{reliability.totalFailoverEvents === 1 ? "" : "s"}).
+      </p>
+    </div>
+  );
 }
 
 function useDays(defaultDays = 30): [number, (d: number) => void] {
@@ -337,6 +527,11 @@ export function UserHomePage() {
 
       {data && (
         <>
+          {/* Hero band — the one headline number this vertical opens the
+           * dashboard for (config: dashboard.hero). Vertical-specific by
+           * construction, honors the null rule. */}
+          {vertical.dashboard.hero && <HeroBand hero={vertical.dashboard.hero} data={data} days={days} />}
+
           {/* Business/revenue metrics first — this is what a merchant
            * actually opens the dashboard to check (cart recovery, revenue,
            * abandonment), not raw call-volume/latency numbers. Those moved
@@ -356,6 +551,7 @@ export function UserHomePage() {
                     label={m.label}
                     value={m.resolved!.value}
                     hint={m.hint ?? m.resolved!.hint}
+                    trend={pctDelta(metricNumber(m.key, data.kpis), metricNumber(m.key, data.comparison?.kpis))}
                     icon={
                       m.key.includes("revenue")
                         ? Wallet
@@ -371,6 +567,16 @@ export function UserHomePage() {
             );
           })()}
 
+          {/* Vertical funnel (config: dashboard.funnel) + universal call
+           * reliability, side by side. Each hides itself when it has no data,
+           * so a fresh org sees neither rather than empty shells. */}
+          {(vertical.dashboard.funnel || data.reliability?.failoverRate != null) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {vertical.dashboard.funnel && <FunnelCard funnel={vertical.dashboard.funnel} data={data} />}
+              <ReliabilityCard reliability={data.reliability} />
+            </div>
+          )}
+
           {/* Usage stats, secondary. Avg LLM TTFT / Avg TTS first byte
            * removed entirely from here (2026-07-16) — those are raw
            * AI-pipeline latency numbers, an ops/engineering concern, not a
@@ -381,12 +587,14 @@ export function UserHomePage() {
               label="Total calls"
               value={String(data.totalCalls)}
               icon={Phone}
+              trend={pctDelta(data.totalCalls, data.comparison?.totalCalls ?? null)}
               sparkData={data.callsPerDay}
             />
             <StatCard
               label="Total minutes"
               value={String(data.totalMinutes)}
               icon={Clock}
+              trend={pctDelta(data.totalMinutes, data.comparison?.totalMinutes ?? null)}
               sparkData={data.minutesPerDay}
             />
           </div>
@@ -483,6 +691,26 @@ export function UserHomePage() {
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* Why customers called — intent (WHY they called), distinct from
+           * outcomes (HOW the call ended). Drops the "no-intent" bucket and
+           * hides entirely if nothing else is left, so it never shows a card
+           * that's just "no-intent: N". */}
+          {(() => {
+            const intents = Object.fromEntries(
+              Object.entries(data.intentBreakdown ?? {}).filter(([k]) => k !== "no-intent"),
+            );
+            if (Object.keys(intents).length === 0) return null;
+            return (
+              <div>
+                <div className="flex items-center gap-1.5 text-sm font-medium mb-3">
+                  <MessageSquare className="size-3.5" aria-hidden />
+                  Why customers called
+                </div>
+                <BreakdownList counts={intents} />
+              </div>
+            );
+          })()}
 
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
