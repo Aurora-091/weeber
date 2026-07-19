@@ -34,6 +34,7 @@ import {
   getOrg,
   getAgentConfigsForOrg,
   upsertAgentConfig,
+  provisionVerticalDefaults,
   assignPhoneNumberToAgent,
   computeOrgAnalytics,
   listOrgCalls,
@@ -291,6 +292,15 @@ export const userApp = new Hono<UserEnv>()
     const merged = await getAgentConfigsForOrg(c.get("userOrgId")!);
     if (!merged) return c.json({ error: "org not found" }, 404);
     return c.json({ agentConfigs: merged }, 200);
+  })
+
+  // Turn on the org vertical's curated default agents + workflow in one shot
+  // (2026-07-19). Called by the setup wizard on the "Pick agents" step so a
+  // new merchant lands with the recommended set already live instead of every
+  // toggle off. Idempotent + non-destructive — see provisionVerticalDefaults.
+  .post("/provision-defaults", async (c) => {
+    const result = await provisionVerticalDefaults(c.get("userOrgId")!);
+    return c.json(result, 200);
   })
 
   .put("/agent-configs/:templateKey", async (c) => {

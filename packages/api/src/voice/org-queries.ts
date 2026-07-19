@@ -23,7 +23,10 @@ import {
   toolCalls,
   transcripts,
   turnLatency,
+  orgWorkflowConfigs,
+  workflowTemplates,
 } from "../database/schema";
+import { getRecommendedDefaults } from "./vertical-defaults";
 
 /**
  * Nearest-rank percentile over a numeric sample (§2's latency benchmark) —
@@ -105,6 +108,70 @@ export async function updateOnboardingState(
     })
     .returning();
   return row;
+}
+
+export type ProvisionResult = {
+  vertical: string;
+  agentsEnabled: string[];
+  workflowsEnabled: string[];
+};
+
+/**
+ * Turn on a vertical's curated default agents + workflow for an org, the first
+ * time. Idempotent and non-destructive:
+ *   - only writes a row for a template that has NO config row yet
+ *     (onConflictDoNothing), so a merchant who deliberately disabled something
+ *     is never silently re-enabled on a re-run;
+ *   - skips any template key that isn't actually a real active template for
+ *     this vertical, so a stale key in RECOMMENDED_DEFAULTS can never create an
+ *     orphan config row pointing at a template that doesn't exist.
+ * Returns exactly what it newly enabled (empty arrays if everything was already
+ * configured, or the vertical has no defined default set).
+ */
+export async function provisionVerticalDefaults(orgId: string): Promise<ProvisionResult> {
+  const org = await getOrg(orgId);
+  if (!org) return { vertical: "", agentsEnabled: [], workflowsEnabled: [] };
+  const defaults = getRecommendedDefaults(org.vertical);
+
+  const agentsEnabled: string[] = [];
+  const workflowsEnabled: string[] = [];
+
+  if (defaults.agents.length > 0) {
+    // Validate against real, active templates for this vertical.
+    const validTemplates = await db
+      .select({ key: agentTemplates.key })
+      .from(agentTemplates)
+      .where(and(eq(agentTemplates.vertical, org.vertical), eq(agentTemplates.active, true)));
+    const validKeys = new Set(validTemplates.map((t) => t.key));
+    for (const key of defaults.agents) {
+      if (!validKeys.has(key)) continue;
+      const inserted = await db
+        .insert(orgAgentConfigs)
+        .values({ orgId, templateKey: key, enabled: true })
+        .onConflictDoNothing({ target: [orgAgentConfigs.orgId, orgAgentConfigs.templateKey] })
+        .returning({ id: orgAgentConfigs.id });
+      if (inserted.length > 0) agentsEnabled.push(key);
+    }
+  }
+
+  if (defaults.workflows.length > 0) {
+    const validWf = await db
+      .select({ id: workflowTemplates.id })
+      .from(workflowTemplates)
+      .where(and(eq(workflowTemplates.vertical, org.vertical), eq(workflowTemplates.active, true)));
+    const validWfIds = new Set(validWf.map((t) => t.id));
+    for (const wfId of defaults.workflows) {
+      if (!validWfIds.has(wfId)) continue;
+      const inserted = await db
+        .insert(orgWorkflowConfigs)
+        .values({ orgId, templateKey: wfId, enabled: true })
+        .onConflictDoNothing({ target: [orgWorkflowConfigs.orgId, orgWorkflowConfigs.templateKey] })
+        .returning({ templateKey: orgWorkflowConfigs.templateKey });
+      if (inserted.length > 0) workflowsEnabled.push(wfId);
+    }
+  }
+
+  return { vertical: org.vertical, agentsEnabled, workflowsEnabled };
 }
 
 /** Every active template for the org's vertical, merged with the org's saved config row (or null). */
