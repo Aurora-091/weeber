@@ -8,7 +8,7 @@
  * All routes are admin-key gated.
  */
 import { Hono } from "hono";
-import { desc, eq, gte, inArray, isNull, and } from "drizzle-orm";
+import { desc, eq, gte, inArray, isNull, isNotNull, and } from "drizzle-orm";
 import { db } from "../database";
 import {
   agentTemplates,
@@ -20,6 +20,7 @@ import {
   orgs,
   platformAdmins,
   platformSettings,
+  scheduledCalls,
   shopLinks,
   toolCalls,
   orgAgentConfigs,
@@ -365,6 +366,43 @@ export const admin = new Hono<AdminEnv>()
       },
       200,
     );
+  })
+
+  // Cross-org view of scheduled calls a compliance gate blocked (2026-07-19).
+  // The merchant Orders page shows each org its own blocked rows; this is the
+  // platform-wide oversight version — "which calls got stopped, for which
+  // org, and why" — so support/compliance can spot a misconfigured window,
+  // an unexpected DNC hit, or a repeatedly-failing number series across all
+  // tenants at once. Queried directly against scheduled_calls (same pattern
+  // as /compliance/overview reading doNotCall directly), filtered to rows
+  // that actually carry a persisted block reason, newest block first.
+  .get("/compliance/blocked-calls", async (c) => {
+    const rows = await db
+      .select({
+        id: scheduledCalls.id,
+        orgId: scheduledCalls.orgId,
+        toNumber: scheduledCalls.toNumber,
+        workflowName: scheduledCalls.workflowName,
+        status: scheduledCalls.status,
+        attempt: scheduledCalls.attempt,
+        maxAttempts: scheduledCalls.maxAttempts,
+        runAt: scheduledCalls.runAt,
+        lastBlockReason: scheduledCalls.lastBlockReason,
+        lastBlockDetail: scheduledCalls.lastBlockDetail,
+        blockedAt: scheduledCalls.blockedAt,
+      })
+      .from(scheduledCalls)
+      .where(isNotNull(scheduledCalls.lastBlockReason))
+      .orderBy(desc(scheduledCalls.blockedAt))
+      .limit(200);
+
+    const byReason: Record<string, number> = {};
+    for (const row of rows) {
+      const key = row.lastBlockReason ?? "unknown";
+      byReason[key] = (byReason[key] ?? 0) + 1;
+    }
+
+    return c.json({ blockedCalls: rows, byReason, total: rows.length }, 200);
   })
 
   // Consent ledger read endpoints (Marketing + Consent UI plan, 2026-07-16,

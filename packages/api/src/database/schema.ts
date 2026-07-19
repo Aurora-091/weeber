@@ -476,6 +476,22 @@ export const scheduledCalls = pgTable("scheduled_calls", {
   recoveredAmount: numeric("recovered_amount", { precision: 12, scale: 2 }),
   metadata: jsonb("metadata").$type<Record<string, string | number>>(),
   workflowRunId: text("workflow_run_id"),
+  // Why the last dispatch attempt didn't go out (2026-07-19). The scheduler's
+  // dispatchScheduledCall returns a rich {reason, detail} on every block, but
+  // until now the sweep only wrote `status` and discarded the reason to a
+  // console.warn — leaving merchants (and admins) with a "trigger detected,
+  // no call ever happened" mystery and no way to self-diagnose. These three
+  // columns persist that reason so the Orders page (merchant) and the admin
+  // compliance view can show WHY. `lastBlockReason` is one of the
+  // DispatchResult reason enum values (dnc / calling_window / attempt_cap /
+  // insurance_number_series / insurance_producer_licensing /
+  // india_number_series / place_failed); `lastBlockDetail` is the
+  // human-readable sentence; `blockedAt` is when it was last recorded.
+  // Cleared back to null on a successful dispatch so a deferred-then-succeeded
+  // row never shows a stale reason.
+  lastBlockReason: text("last_block_reason"),
+  lastBlockDetail: text("last_block_detail"),
+  blockedAt: timestamp("blocked_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("scheduled_calls_checkout_token_idx").on(table.checkoutToken),

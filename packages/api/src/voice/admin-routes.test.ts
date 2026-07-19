@@ -166,3 +166,30 @@ describe("admin consent ledger routes", () => {
     expect(body.activeByOrgPurpose["org-a"]?.marketing ?? 0).toBe(0);
   });
 });
+
+// Blocked scheduled calls oversight (2026-07-19).
+describe("admin blocked-calls route", () => {
+  beforeEach(() => {
+    rowsByTable = { orgs: [], feature_flags: [], do_not_call: [], tool_calls: [], calls: [], consent_records: [], scheduled_calls: [] };
+    insertsByTable = {};
+    updatesByTable = {};
+  });
+
+  it("requires the admin key on /compliance/blocked-calls", async () => {
+    const res = await admin.request("/compliance/blocked-calls");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns blocked scheduled calls with a per-reason breakdown", async () => {
+    rowsByTable.scheduled_calls = [
+      { id: 1, orgId: "org-a", toNumber: "+15550001111", workflowName: "shopify-cart-recovery", status: "canceled", attempt: 1, maxAttempts: 2, runAt: new Date(), lastBlockReason: "dnc", lastBlockDetail: "on DNC", blockedAt: new Date() },
+      { id: 2, orgId: "org-b", toNumber: "+15550002222", workflowName: "shopify-cod-confirmation", status: "pending", attempt: 1, maxAttempts: 3, runAt: new Date(), lastBlockReason: "calling_window", lastBlockDetail: "outside window", blockedAt: new Date() },
+    ];
+    const res = await admin.request("/compliance/blocked-calls", { headers: adminHeaders });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { blockedCalls: unknown[]; byReason: Record<string, number>; total: number };
+    expect(body.total).toBe(2);
+    expect(body.byReason.dnc).toBe(1);
+    expect(body.byReason.calling_window).toBe(1);
+  });
+});

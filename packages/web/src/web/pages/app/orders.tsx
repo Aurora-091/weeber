@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Phone, Loader as Loader2, ShoppingCart, MessageSquareHeart, Search } from "lucide-react";
+import { Phone, Loader as Loader2, ShoppingCart, MessageSquareHeart, Search, ShieldAlert, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
+import { blockReasonMeta } from "../../lib/block-reasons";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
@@ -21,6 +22,9 @@ type OrderRow = {
   recoveredOrderId: string | null;
   recoveredAmount: string | null;
   metadata: Record<string, string | number> | null;
+  lastBlockReason: string | null;
+  lastBlockDetail: string | null;
+  blockedAt: string | null;
   createdAt: string;
 };
 
@@ -126,28 +130,56 @@ export function UserOrdersPage() {
           {filtered.map((row) => {
             const tag = TAGS[row.workflowName] ?? { label: row.workflowName, icon: Phone, className: "" };
             const Icon = tag.icon;
+            const block = row.lastBlockReason ? blockReasonMeta(row.lastBlockReason) : null;
+            // A transient block (calling window / attempt cap) that's back to
+            // pending with a future runAt WILL retry automatically — show when.
+            const willRetryAt =
+              block?.transient && row.status === "pending" && new Date(row.runAt).getTime() > Date.now() ? row.runAt : null;
             return (
-              <div key={row.id} className="flex flex-wrap items-center gap-4 px-5 py-shell-row">
-                <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <div className="min-w-[10rem] flex-1">
-                  <div className="font-mono text-sm">{row.toNumber}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {row.metadata?.shop ? String(row.metadata.shop) : "—"}
-                    {row.recoveredOrderId ? ` · order ${row.recoveredOrderId}` : row.metadata?.orderId ? ` · order ${row.metadata.orderId}` : ""}
+              <div key={row.id} className="px-5 py-shell-row">
+                <div className="flex flex-wrap items-center gap-4">
+                  <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <div className="min-w-[10rem] flex-1">
+                    <div className="font-mono text-sm">{row.toNumber}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.metadata?.shop ? String(row.metadata.shop) : "—"}
+                      {row.recoveredOrderId ? ` · order ${row.recoveredOrderId}` : row.metadata?.orderId ? ` · order ${row.metadata.orderId}` : ""}
+                    </div>
+                  </div>
+                  <Badge variant="outline" className={tag.className}>{tag.label}</Badge>
+                  <Badge variant={STATUS_VARIANT[row.status] ?? "outline"} className="capitalize">{row.status}</Badge>
+                  {block && (
+                    <Badge variant="outline" className="gap-1 border-warning/40 bg-warning-soft text-warning">
+                      <ShieldAlert className="size-3" aria-hidden />
+                      {block.label}
+                    </Badge>
+                  )}
+                  <div className="w-28 shrink-0 text-xs text-muted-foreground">
+                    Attempt {row.attempt}/{row.maxAttempts}
+                  </div>
+                  <div className="w-40 shrink-0 text-xs text-muted-foreground">{formatWhen(row.runAt)}</div>
+                  {row.recoveredAmount && (
+                    <div className="w-24 shrink-0 text-xs font-medium text-success">₹{row.recoveredAmount}</div>
+                  )}
+                  <div className="ml-auto shrink-0">
+                    <CallNowButton row={row} />
                   </div>
                 </div>
-                <Badge variant="outline" className={tag.className}>{tag.label}</Badge>
-                <Badge variant={STATUS_VARIANT[row.status] ?? "outline"} className="capitalize">{row.status}</Badge>
-                <div className="w-28 shrink-0 text-xs text-muted-foreground">
-                  Attempt {row.attempt}/{row.maxAttempts}
-                </div>
-                <div className="w-40 shrink-0 text-xs text-muted-foreground">{formatWhen(row.runAt)}</div>
-                {row.recoveredAmount && (
-                  <div className="w-24 shrink-0 text-xs font-medium text-success">₹{row.recoveredAmount}</div>
+                {block && (
+                  <div className="mt-2 flex items-start gap-2 rounded-md border border-warning/20 bg-warning-soft/50 px-3 py-2 text-xs">
+                    <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+                    <div className="text-muted-foreground">
+                      <span className="font-medium text-foreground">Why this didn&apos;t go out: </span>
+                      {row.lastBlockDetail || block.description}
+                      {willRetryAt && (
+                        <span className="ml-1 inline-flex items-center gap-1 text-warning">
+                          <Clock className="size-3" aria-hidden />
+                          retries {formatWhen(willRetryAt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 )}
-                <div className="ml-auto shrink-0">
-                  <CallNowButton row={row} />
-                </div>
               </div>
             );
           })}

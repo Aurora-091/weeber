@@ -146,7 +146,10 @@ export async function executeDueScheduledCalls() {
 
       if (!result.ok && result.reason === "dnc") {
         console.warn(`[scheduler] skipping scheduled call to ${row.toNumber} — on DNC list`);
-        await db.update(scheduledCalls).set({ status: "canceled" }).where(eq(scheduledCalls.id, row.id));
+        await db
+          .update(scheduledCalls)
+          .set({ status: "canceled", lastBlockReason: result.reason, lastBlockDetail: result.detail, blockedAt: new Date() })
+          .where(eq(scheduledCalls.id, row.id));
         continue;
       }
 
@@ -163,7 +166,13 @@ export async function executeDueScheduledCalls() {
         console.warn(`[scheduler] deferring scheduled call id=${row.id} to ${row.toNumber} — ${result.detail}`);
         await db
           .update(scheduledCalls)
-          .set({ runAt: new Date(Date.now() + 30 * 60 * 1000), status: "pending" })
+          .set({
+            runAt: new Date(Date.now() + 30 * 60 * 1000),
+            status: "pending",
+            lastBlockReason: result.reason,
+            lastBlockDetail: result.detail,
+            blockedAt: new Date(),
+          })
           .where(eq(scheduledCalls.id, row.id));
         continue;
       }
@@ -179,22 +188,45 @@ export async function executeDueScheduledCalls() {
         console.warn(`[scheduler] deferring scheduled call id=${row.id} to ${row.toNumber} — ${result.detail}`);
         await db
           .update(scheduledCalls)
-          .set({ runAt: new Date(Date.now() + 6 * 60 * 60 * 1000), status: "pending" })
+          .set({
+            runAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+            status: "pending",
+            lastBlockReason: result.reason,
+            lastBlockDetail: result.detail,
+            blockedAt: new Date(),
+          })
           .where(eq(scheduledCalls.id, row.id));
         continue;
       }
 
       if (!result.ok) {
         console.error(`[scheduler] could not place scheduled call id=${row.id} to ${row.toNumber}: ${result.detail}`);
-        await db.update(scheduledCalls).set({ status: "failed" }).where(eq(scheduledCalls.id, row.id));
+        await db
+          .update(scheduledCalls)
+          .set({ status: "failed", lastBlockReason: result.reason, lastBlockDetail: result.detail, blockedAt: new Date() })
+          .where(eq(scheduledCalls.id, row.id));
         continue;
       }
 
       console.log(`[scheduler] executed scheduled call to ${row.toNumber} (workflow: ${row.workflowName})`);
-      await db.update(scheduledCalls).set({ status: "executed" }).where(eq(scheduledCalls.id, row.id));
+      // Clear any prior block reason — a row that was deferred (e.g. outside
+      // the calling window) and then succeeded on a later sweep must not keep
+      // showing a stale "why it didn't go out" reason in the UI.
+      await db
+        .update(scheduledCalls)
+        .set({ status: "executed", lastBlockReason: null, lastBlockDetail: null, blockedAt: null })
+        .where(eq(scheduledCalls.id, row.id));
     } catch (err) {
       console.error(`[scheduler] failed to execute scheduled call id=${row.id}`, err);
-      await db.update(scheduledCalls).set({ status: "failed" }).where(eq(scheduledCalls.id, row.id));
+      await db
+        .update(scheduledCalls)
+        .set({
+          status: "failed",
+          lastBlockReason: "place_failed",
+          lastBlockDetail: err instanceof Error ? err.message : "Failed to place the call",
+          blockedAt: new Date(),
+        })
+        .where(eq(scheduledCalls.id, row.id));
     }
   }
 }
@@ -242,9 +274,17 @@ export async function callScheduledRowNow(orgId: string, rowId: number): Promise
       // "pending" so the normal sweep can still pick it up automatically
       // later — the merchant tried to force it now and couldn't, that
       // doesn't mean the trigger itself should be lost.
+      // Persist the reason too (same as the sweep) so the Orders page still
+      // shows WHY after the merchant navigates away from the toast — the
+      // manual path surfaces it live, but the row should carry it afterward.
       await db
         .update(scheduledCalls)
-        .set({ status: result.reason === "dnc" ? "canceled" : "pending" })
+        .set({
+          status: result.reason === "dnc" ? "canceled" : "pending",
+          lastBlockReason: result.reason,
+          lastBlockDetail: result.detail,
+          blockedAt: new Date(),
+        })
         .where(eq(scheduledCalls.id, rowId));
       const statusCode =
         result.reason === "dnc" ? 403 : result.reason === "calling_window" ? 409 : result.reason === "attempt_cap" ? 429 : 502;
@@ -252,10 +292,21 @@ export async function callScheduledRowNow(orgId: string, rowId: number): Promise
     }
 
     console.log(`[call-now] manually dispatched scheduled call id=${rowId} to ${row.toNumber} (workflow: ${row.workflowName})`);
-    await db.update(scheduledCalls).set({ status: "executed" }).where(eq(scheduledCalls.id, rowId));
+    await db
+      .update(scheduledCalls)
+      .set({ status: "executed", lastBlockReason: null, lastBlockDetail: null, blockedAt: null })
+      .where(eq(scheduledCalls.id, rowId));
     return { ok: true };
   } catch (err) {
-    await db.update(scheduledCalls).set({ status: "failed" }).where(eq(scheduledCalls.id, rowId));
+    await db
+      .update(scheduledCalls)
+      .set({
+        status: "failed",
+        lastBlockReason: "place_failed",
+        lastBlockDetail: err instanceof Error ? err.message : "Failed to place the call",
+        blockedAt: new Date(),
+      })
+      .where(eq(scheduledCalls.id, rowId));
     return { ok: false, statusCode: 502, error: err instanceof Error ? err.message : "Failed to place the call" };
   }
 }

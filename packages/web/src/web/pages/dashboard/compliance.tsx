@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download, Search, FileCheck } from "lucide-react";
+import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download, Search, FileCheck, PhoneOff } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { blockReasonMeta } from "../../lib/block-reasons";
 
 type DncRow = {
   phoneNumber: string;
@@ -28,6 +29,26 @@ type ConsentSummary = {
   activeByOrgPurpose: Record<string, Record<string, number>>;
   withdrawnByOrgPurpose: Record<string, Record<string, number>>;
   totalRecords: number;
+};
+
+type BlockedCall = {
+  id: number;
+  orgId: string | null;
+  toNumber: string;
+  workflowName: string;
+  status: string;
+  attempt: number;
+  maxAttempts: number;
+  runAt: string;
+  lastBlockReason: string | null;
+  lastBlockDetail: string | null;
+  blockedAt: string | null;
+};
+
+type BlockedCallsResponse = {
+  blockedCalls: BlockedCall[];
+  byReason: Record<string, number>;
+  total: number;
 };
 
 type ComplianceOverview = {
@@ -62,6 +83,15 @@ export function CompliancePage() {
     queryFn: async () => {
       const res = await apiFetch("/api/voice/compliance/overview", { headers: adminHeaders() });
       if (!res.ok) throw new Error("Failed to load compliance overview");
+      return res.json();
+    },
+  });
+
+  const blockedCalls = useQuery<BlockedCallsResponse>({
+    queryKey: ["admin-blocked-calls"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/voice/compliance/blocked-calls", { headers: adminHeaders() });
+      if (!res.ok) throw new Error("Failed to load blocked calls");
       return res.json();
     },
   });
@@ -241,6 +271,86 @@ export function CompliancePage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Blocked scheduled calls (2026-07-19) — cross-org view of calls a
+              compliance gate stopped, with the persisted reason + detail. */}
+          <div className="rounded-lg border border-border p-5 bg-card space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <PhoneOff className="size-4 text-warning" />
+                <h3 className="text-sm font-semibold">Blocked Scheduled Calls</h3>
+              </div>
+              {blockedCalls.data && blockedCalls.data.blockedCalls.length > 0 && (
+                <button
+                  onClick={() =>
+                    downloadCsv(
+                      "blocked-scheduled-calls.csv",
+                      ["Org", "To", "Workflow", "Status", "Reason", "Detail", "Blocked At"],
+                      blockedCalls.data!.blockedCalls.map((b) => [
+                        b.orgId ?? "",
+                        b.toNumber,
+                        b.workflowName,
+                        b.status,
+                        b.lastBlockReason ?? "",
+                        b.lastBlockDetail ?? "",
+                        b.blockedAt ?? "",
+                      ]),
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <Download className="size-3" />
+                  Export CSV
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              Every scheduled / workflow call a compliance gate stopped before it dialed, across all tenants —
+              the reason it was blocked and the exact detail the gate produced. Merchants see their own rows on
+              their Orders page; this is the platform-wide oversight view.
+            </p>
+
+            {blockedCalls.isLoading && <p className="text-xs text-muted-foreground">Loading blocked calls…</p>}
+            {blockedCalls.isError && <p className="text-xs text-destructive">Failed to load blocked calls.</p>}
+
+            {blockedCalls.data && blockedCalls.data.byReason && Object.keys(blockedCalls.data.byReason).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(blockedCalls.data.byReason).map(([reason, count]) => (
+                  <span key={reason} className="rounded bg-warning-soft px-1.5 py-0.5 text-warning font-mono text-[10px] font-medium">
+                    {blockReasonMeta(reason).label}: {count}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {blockedCalls.data && blockedCalls.data.blockedCalls.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No scheduled calls have been blocked.</p>
+            ) : (
+              blockedCalls.data && (
+                <div className="divide-y divide-border border-t border-border text-xs">
+                  {blockedCalls.data.blockedCalls.map((b) => {
+                    const meta = blockReasonMeta(b.lastBlockReason);
+                    return (
+                      <div key={b.id} className="py-2.5 flex justify-between items-start gap-4">
+                        <div className="min-w-0">
+                          <div className="font-mono text-foreground">
+                            {b.toNumber} <span className="text-muted-foreground">· {b.workflowName}</span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                            org {b.orgId ?? "—"} · status {b.status} · attempt {b.attempt}/{b.maxAttempts} · blocked {formatWhen(b.blockedAt)}
+                          </div>
+                          {(b.lastBlockDetail || meta.description) && (
+                            <div className="text-[10px] text-muted-foreground mt-1">{b.lastBlockDetail || meta.description}</div>
+                          )}
+                        </div>
+                        <span className="shrink-0 rounded bg-warning-soft px-1.5 py-0.5 font-medium text-warning">{meta.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
           </div>
 
           {/* Consent Ledger (Marketing + Consent UI plan, 2026-07-16, Part B) */}

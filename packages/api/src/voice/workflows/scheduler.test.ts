@@ -247,7 +247,12 @@ describe("Scheduler — DNC and calling-window gates (sweep)", () => {
     await executeDueScheduledCalls();
 
     expect(lastTwilioCallParams).toBeNull();
-    expect(mockUpdateCalls.some((u) => u.table === "scheduled_calls" && u.data.status === "canceled")).toBe(true);
+    const cancelUpdate = mockUpdateCalls.find((u) => u.table === "scheduled_calls" && u.data.status === "canceled");
+    expect(cancelUpdate).toBeDefined();
+    // The block reason must be persisted so the Orders page can show WHY.
+    expect(cancelUpdate!.data.lastBlockReason).toBe("dnc");
+    expect(typeof cancelUpdate!.data.lastBlockDetail).toBe("string");
+    expect(cancelUpdate!.data.blockedAt).toBeInstanceOf(Date);
   });
 
   it("defers (requeues +30min, status back to pending) a call blocked by the calling window", async () => {
@@ -262,6 +267,27 @@ describe("Scheduler — DNC and calling-window gates (sweep)", () => {
     expect(lastTwilioCallParams).toBeNull();
     const deferUpdate = mockUpdateCalls.find((u) => u.table === "scheduled_calls" && u.data.status === "pending" && u.data.runAt);
     expect(deferUpdate).toBeDefined();
+    // A deferred call carries its block reason so a "pending" row can still
+    // explain why it hasn't gone out yet (outside the calling window).
+    expect(deferUpdate!.data.lastBlockReason).toBe("calling_window");
+    expect(typeof deferUpdate!.data.lastBlockDetail).toBe("string");
+    expect(deferUpdate!.data.blockedAt).toBeInstanceOf(Date);
+  });
+
+  it("clears any prior block reason when a scheduled call finally succeeds", async () => {
+    mockScheduledCallRows = [
+      { id: 1, toNumber: "+15557776666", orgId: "org-123", attempt: 1, maxAttempts: 2, workflowName: "shopify-cart-recovery", persona: "test-persona", lastBlockReason: "calling_window", lastBlockDetail: "outside window" },
+    ];
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888" }];
+
+    await executeDueScheduledCalls();
+
+    const executedUpdate = mockUpdateCalls.find((u) => u.table === "scheduled_calls" && u.data.status === "executed");
+    expect(executedUpdate).toBeDefined();
+    // A deferred-then-succeeded row must not keep showing a stale reason.
+    expect(executedUpdate!.data.lastBlockReason).toBeNull();
+    expect(executedUpdate!.data.lastBlockDetail).toBeNull();
+    expect(executedUpdate!.data.blockedAt).toBeNull();
   });
 
   // Regression coverage for the 2026-07-16 "turn off compliance for testing"
