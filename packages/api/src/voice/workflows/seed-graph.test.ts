@@ -63,6 +63,28 @@ describe("seed-graph templates", () => {
     }
   });
 
+  describe("Cart Recovery", () => {
+    const graph = CART_RECOVERY_TEMPLATE.graph;
+
+    it("is triggered by checkout_abandoned", () => {
+      const trigger = graph.nodes.find((n) => n.type === "trigger")!;
+      expect((trigger.config as { event: string }).event).toBe("checkout_abandoned");
+    });
+
+    it("passes the locked-node compliance validator", () => {
+      expect(validateLockedNodesEnforced(graph)).toEqual({ valid: true });
+    });
+
+    it("has locked dncCheck + callingWindowCheck nodes", () => {
+      expect(graph.nodes.some((n) => n.type === "dncCheck" && n.locked)).toBe(true);
+      expect(graph.nodes.some((n) => n.type === "callingWindowCheck" && n.locked)).toBe(true);
+    });
+
+    it("is structurally well-formed", () => {
+      assertGraphWellFormed(graph);
+    });
+  });
+
   describe("COD Confirmation", () => {
     const graph = COD_CONFIRMATION_TEMPLATE.graph;
 

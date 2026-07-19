@@ -13,16 +13,21 @@ export const CART_RECOVERY_GRAPH: WorkflowGraph = {
       position: { x: 400, y: 0 },
       config: { event: "checkout_abandoned" },
     },
+    // v4 compliance gate (2026-07-19 retrofit) — the only path out of the
+    // trigger passes through these locked nodes, so every downstream call
+    // survives validateLockedNodesEnforced when a merchant forks + re-saves.
+    { id: "dnc-1", type: "dncCheck", position: { x: 400, y: 100 }, config: {}, locked: true },
+    { id: "window-1", type: "callingWindowCheck", position: { x: 400, y: 200 }, config: {}, locked: true },
     {
       id: "wait-1",
       type: "wait",
-      position: { x: 400, y: 100 },
+      position: { x: 400, y: 300 },
       config: { delayMinutes: 45 },
     },
     {
       id: "call-1",
       type: "call",
-      position: { x: 400, y: 200 },
+      position: { x: 400, y: 400 },
       config: {
         persona: "shopify-cart-recovery",
         discountPercent: 0,
@@ -31,7 +36,7 @@ export const CART_RECOVERY_GRAPH: WorkflowGraph = {
     {
       id: "split-1",
       type: "conditionalSplit",
-      position: { x: 400, y: 320 },
+      position: { x: 400, y: 520 },
       config: {
         outcomes: ["interested", "no-answer", "busy", "failed", "not-interested"],
       },
@@ -85,25 +90,38 @@ export const CART_RECOVERY_GRAPH: WorkflowGraph = {
       },
     },
     // -- Terminal nodes --
+    // Success terminal: the customer said they'll complete the purchase, so
+    // notify the merchant and stop — previously "interested" had no edge and
+    // fell through to `default`, which re-dialled a customer who already said
+    // yes (fixed 2026-07-19 alongside the v4 compliance retrofit).
+    {
+      id: "webhook-recovered",
+      type: "webhook",
+      position: { x: 150, y: 620 },
+      config: { url: "", payloadTemplate: { workflow_action: "cart_recovered", to_number: "{{to_number}}" } },
+    },
     {
       id: "dnc-exhausted",
       type: "addToDnc",
-      position: { x: 1100, y: 1060 },
+      position: { x: 1100, y: 1160 },
       config: { reason: "cart recovery exhausted" },
     },
     {
       id: "dnc-declined",
       type: "addToDnc",
-      position: { x: 150, y: 420 },
+      position: { x: 150, y: 520 },
       config: { reason: "declined cart recovery" },
     },
   ],
   edges: [
-    { id: "e-trigger-wait1", source: "trigger-1", target: "wait-1" },
+    { id: "e-trigger-dnc", source: "trigger-1", target: "dnc-1" },
+    { id: "e-dnc-window", source: "dnc-1", target: "window-1" },
+    { id: "e-window-wait1", source: "window-1", target: "wait-1" },
     { id: "e-wait1-call1", source: "wait-1", target: "call-1" },
     { id: "e-call1-split1", source: "call-1", target: "split-1" },
 
     // Split 1 branches
+    { id: "e-split1-interested", source: "split-1", target: "webhook-recovered", branch: "interested" },
     { id: "e-split1-noanswer", source: "split-1", target: "wait-2", branch: "no-answer" },
     { id: "e-split1-busy", source: "split-1", target: "wait-2", branch: "busy" },
     { id: "e-split1-failed", source: "split-1", target: "wait-2", branch: "failed" },
@@ -115,6 +133,7 @@ export const CART_RECOVERY_GRAPH: WorkflowGraph = {
     { id: "e-call2-split2", source: "call-2", target: "split-2" },
 
     // Split 2 branches
+    { id: "e-split2-interested", source: "split-2", target: "webhook-recovered", branch: "interested" },
     { id: "e-split2-noanswer", source: "split-2", target: "wait-3", branch: "no-answer" },
     { id: "e-split2-busy", source: "split-2", target: "wait-3", branch: "busy" },
     { id: "e-split2-failed", source: "split-2", target: "wait-3", branch: "failed" },
@@ -126,6 +145,7 @@ export const CART_RECOVERY_GRAPH: WorkflowGraph = {
     { id: "e-call3-split3", source: "call-3", target: "split-3" },
 
     // Split 3 branches — final attempt, all non-interested paths exhaust
+    { id: "e-split3-interested", source: "split-3", target: "webhook-recovered", branch: "interested" },
     { id: "e-split3-noanswer", source: "split-3", target: "dnc-exhausted", branch: "no-answer" },
     { id: "e-split3-notinterested", source: "split-3", target: "dnc-declined", branch: "not-interested" },
     { id: "e-split3-default", source: "split-3", target: "dnc-exhausted", branch: "default" },

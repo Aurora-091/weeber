@@ -3,6 +3,7 @@ import { agentTemplates, workflowTemplates } from "./schema";
 import { eq } from "drizzle-orm";
 import { join } from "path";
 import { SHOPIFY_WORKFLOW_TEMPLATES } from "../voice/workflows/seed-graph";
+import { validateLockedNodesEnforced } from "../voice/workflows/scaffold";
 
 /**
  * Single source of truth for the seeded agent templates — exported (not
@@ -190,6 +191,7 @@ export async function seedWorkflowTemplates() {
   console.log("[db-seed] Seeding workflow templates...");
   let seededCount = 0;
   let skippedCount = 0;
+  let migratedCount = 0;
   for (const t of SHOPIFY_WORKFLOW_TEMPLATES) {
     try {
       const [existing] = await db
@@ -198,7 +200,27 @@ export async function seedWorkflowTemplates() {
         .where(eq(workflowTemplates.id, t.id))
         .limit(1);
       if (existing) {
-        console.log(`[db-seed] Workflow template "${t.id}" already exists — skipping.`);
+        // Self-healing compliance migration (2026-07-19): pre-v4 canonical
+        // templates (e.g. the original cart-recovery graph) were seeded before
+        // locked dncCheck/callingWindowCheck nodes were required, so plain
+        // skip-if-exists would leave those rows non-compliant forever — a fork
+        // of them fails validateLockedNodesEnforced on save. These rows are
+        // canonical/system-owned (merchants fork into org_workflow_configs,
+        // they never edit this table), so it's safe to overwrite the graph in
+        // place when the stored one no longer passes the compliance validator.
+        const check = validateLockedNodesEnforced(existing.graph);
+        if (!check.valid) {
+          await db
+            .update(workflowTemplates)
+            .set({ graph: t.graph, updatedAt: new Date() })
+            .where(eq(workflowTemplates.id, t.id));
+          console.log(
+            `[db-seed] Workflow template "${t.id}" upgraded to v4-compliant graph (was: ${check.error}).`,
+          );
+          migratedCount++;
+          continue;
+        }
+        console.log(`[db-seed] Workflow template "${t.id}" already exists and is compliant — skipping.`);
         skippedCount++;
         continue;
       }
@@ -216,6 +238,6 @@ export async function seedWorkflowTemplates() {
     }
   }
   console.log(
-    `[db-seed] Workflow templates: ${seededCount} seeded, ${skippedCount} skipped (of ${SHOPIFY_WORKFLOW_TEMPLATES.length}).`,
+    `[db-seed] Workflow templates: ${seededCount} seeded, ${migratedCount} migrated, ${skippedCount} skipped (of ${SHOPIFY_WORKFLOW_TEMPLATES.length}).`,
   );
 }
