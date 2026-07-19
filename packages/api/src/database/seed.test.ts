@@ -107,12 +107,13 @@ describe("seedAgentTemplates", () => {
     const missingFileErrors = consoleErrors.filter((args) => String(args[0]).includes("Prompt file does not exist"));
     expect(missingFileErrors).toEqual([]);
 
-    // All 8 templates (3 Shopify + 5 Insurance, as of the insurance-vertical
-    // prompt-catalog work — 04/05 plus the #5/#7/#8 appointment-setter,
-    // post-sale-welcome, and feedback-nps agents added 2026-07-16) should
-    // have gone through insert (since existingKeys is always empty in this
-    // mock) with real, non-empty prompt content read off disk.
-    expect(inserted.length).toBe(8);
+    // All 9 templates (3 Shopify + 6 Insurance) should have gone through
+    // insert (since existingKeys is always empty in this mock) with real,
+    // non-empty prompt content read off disk. Insurance set: 04/05 policy-
+    // renewal + lead-followup, plus the appointment-setter, post-sale-welcome,
+    // and feedback-nps agents (2026-07-16), plus the final-expense qualifier
+    // (09, added 2026-07-19).
+    expect(inserted.length).toBe(9);
     for (const row of inserted) {
       expect(row.defaultPersonaPrompt.length).toBeGreaterThan(0);
     }

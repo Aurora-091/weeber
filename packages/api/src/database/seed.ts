@@ -110,6 +110,16 @@ export const AGENT_TEMPLATES = [
       defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
+    {
+      key: "insurance-final-expense-qualifier",
+      name: "Insurance Final Expense Qualifier / Warm-Transfer",
+      vertical: "insurance",
+      description: "Qualifies a warm final-expense lead (need, rough budget, tobacco, coarse health-readiness flag), then live-transfers to a licensed advisor or books a callback. Stops cold at the regulated line — never quotes, underwrites, or collects SSN/bank/health details.",
+      fileName: "09-insurance-final-expense-qualifier-agent.md",
+      literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently reached out about {{interest_area}}, and I wanted to follow up. Do you have a couple of minutes?",
+      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
+      active: true,
+    },
   ];
 
 export async function seedAgentTemplates() {
