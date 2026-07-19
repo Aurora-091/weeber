@@ -19,6 +19,7 @@ import { db } from "../database";
 import { orgAgentConfigs, agentTemplates } from "../database/schema";
 import { and, eq } from "drizzle-orm";
 import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
+import { resolveLocalizedGreeting } from "./insurance-greetings";
 import { TONE_INSTRUCTION_BLOCK } from "./tone-tags";
 
 function languageLabel(code?: string): string {
@@ -286,6 +287,15 @@ function buildLanguageInstructionBlock(language: string | undefined): string {
       `with, default to English.\n\n`
     );
   }
+  if (language === "hinglish") {
+    return (
+      `Conduct this entire call in natural Hinglish — the everyday Hindi-English code-mix urban Indian ` +
+      `callers actually speak (e.g. "aapki policy {{due_date}} ko renew ho rahi hai, main aapko details ` +
+      `bhej deta hoon"). Don't force pure formal Hindi or pure English; mirror the caller's register and ` +
+      `keep it warm and conversational. Speak amounts and dates clearly. Keep responding in Hinglish for ` +
+      `the whole call — do not switch to pure Hindi, pure English, or any other language mid-call.\n\n`
+    );
+  }
   const label = languageLabel(language);
   return (
     `Conduct this entire call in ${label}. If the caller speaks in a different language, politely ` +
@@ -488,7 +498,15 @@ export async function resolveAgentConfig(opts: {
         // fixed greeting line verbatim in that case would be wrong,
         // regardless of latency. Falls back to the existing LLM-generated
         // greeting for those orgs, unchanged.
-        literalGreetingTemplate: config.personaPrompt ? undefined : (tmpl?.literalGreetingTemplate ?? undefined),
+        //
+        // Language-localized (2026-07-19): for a non-English configured
+        // language, speak the AUDITED translated greeting (insurance 04–08),
+        // not the English DB line through a non-English voice. Languages with
+        // no audited translation resolve to undefined here → the LLM greets in
+        // the configured language instead (resolveLocalizedGreeting).
+        literalGreetingTemplate: config.personaPrompt
+          ? undefined
+          : resolveLocalizedGreeting(resolvedTemplateKey, config.language ?? undefined, tmpl?.literalGreetingTemplate ?? undefined),
       };
     }
   }

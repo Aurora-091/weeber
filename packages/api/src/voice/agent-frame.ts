@@ -65,6 +65,7 @@ export const RECOMMENDED_LANGUAGES = [
   { code: "bn", label: "Bengali" },
   { code: "gu", label: "Gujarati" },
   { code: "pa", label: "Punjabi" },
+  { code: "hinglish", label: "Hinglish (Hindi-English code-mix)" },
   { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
 ] as const;
 
@@ -79,7 +80,10 @@ export const RECOMMENDED_LANGUAGES = [
  * resolveTtsProvider) so self-hosted setups without one fall back cleanly.
  * Mirrors RECOMMENDED_LANGUAGES minus "en" (English) and "multi" (code-switching,
  * handled by each provider's own multi/codemix mode, not a fixed language). */
-export const SARVAM_PREFERRED_LANGUAGES = ["hi", "mr", "ta", "te", "kn", "ml", "bn", "gu", "pa"] as const;
+// "hinglish" is included so a Hinglish agent with no explicit provider routes to
+// Sarvam (its Hindi voice renders the code-mix best; toSarvamLanguageCode maps
+// hinglish → hi-IN). It has no separate Sarvam language code of its own.
+export const SARVAM_PREFERRED_LANGUAGES = ["hi", "hinglish", "mr", "ta", "te", "kn", "ml", "bn", "gu", "pa"] as const;
 
 export function prefersSarvam(language?: string | null): boolean {
   return !!language && (SARVAM_PREFERRED_LANGUAGES as readonly string[]).includes(language.toLowerCase());

@@ -1390,13 +1390,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // merge tags resolve. Falls back to the existing LLM-generated
             // greeting (literalGreetingText stays undefined) whenever:
             // there's no literalGreetingTemplate for this call (custom
-            // persona, or a template that doesn't have one), the language
-            // is anything other than English (Hindi/other variants aren't
-            // wired here yet), or any {{tag}} in the template can't be
-            // resolved from context — renderTemplate leaves an unresolved
-            // tag as literal "{{tag}}" text, so that's the signal checked.
-            const resolvedLanguage = agentConfig.language ?? session?.language ?? numberConfig.language;
-            if (agentConfig.literalGreetingTemplate && (!resolvedLanguage || resolvedLanguage === "en")) {
+            // persona, or a template that doesn't have one), or any {{tag}} in
+            // the template can't be resolved from context — renderTemplate
+            // leaves an unresolved tag as literal "{{tag}}" text, so that's the
+            // signal checked.
+            //
+            // Language (2026-07-19): resolveAgentConfig now hands us a
+            // language-APPROPRIATE literalGreetingTemplate — the audited
+            // translated line for a non-English configured language (insurance
+            // 04–08), or undefined for a language with no audited greeting (so
+            // we never speak the English line through a non-English voice).
+            // That means the English-only gate here is no longer needed; if a
+            // greeting string is present, it's safe to speak in this call's
+            // voice.
+            if (agentConfig.literalGreetingTemplate) {
               const merchantName = orgRow[0]?.name;
               const greetingContext: Record<string, string> = { ...capturedState, agent_name: agentConfig.agentName ?? "our team" };
               if (merchantName) {

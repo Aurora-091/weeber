@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { buildKnownFactsBlock, resolveAgentConfig } from "./agent";
+import { INSURANCE_GREETINGS } from "./insurance-greetings";
 
 describe("buildKnownFactsBlock", () => {
   it("returns an empty string when there is no captured state", () => {
@@ -190,6 +191,74 @@ describe("resolveAgentConfig — literalGreetingTemplate (latency fix, 2026-07-1
       explicitPersona: "shopify-feedback",
       orgId: "org-123",
       templateKey: "shopify-feedback",
+    });
+
+    expect(config.literalGreetingTemplate).toBeUndefined();
+  });
+
+  // Language-localized canned greeting (2026-07-19): for an insurance template
+  // configured in a non-English language, the canned greeting must be the
+  // AUDITED translation, never the English DB line through a non-English voice.
+  it("keeps the English literalGreetingTemplate for an English insurance agent", async () => {
+    mockOrgConfig = { personaPrompt: null, name: "Priya", language: "en" };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{company_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "insurance-policy-renewal",
+      orgId: "org-123",
+      templateKey: "insurance-policy-renewal",
+    });
+
+    expect(config.literalGreetingTemplate).toBe("Hello, this is {{agent_name}} calling from {{company_name}}.");
+  });
+
+  it("uses the audited Hindi greeting (not the English line) for a Hindi insurance agent", async () => {
+    mockOrgConfig = { personaPrompt: null, name: "Priya", language: "hi" };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{company_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "insurance-policy-renewal",
+      orgId: "org-123",
+      templateKey: "insurance-policy-renewal",
+    });
+
+    expect(config.literalGreetingTemplate).toBe(INSURANCE_GREETINGS["insurance-policy-renewal"]!.hi!);
+    expect(config.literalGreetingTemplate).not.toContain("Hello, this is");
+  });
+
+  it("uses the audited Hinglish greeting for a Hinglish insurance agent", async () => {
+    mockOrgConfig = { personaPrompt: null, name: "Priya", language: "hinglish" };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{company_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "insurance-post-sale-welcome",
+      orgId: "org-123",
+      templateKey: "insurance-post-sale-welcome",
+    });
+
+    expect(config.literalGreetingTemplate).toBe(INSURANCE_GREETINGS["insurance-post-sale-welcome"]!.hinglish!);
+  });
+
+  it("suppresses the canned greeting for a language with no audited translation (LLM greets instead)", async () => {
+    mockOrgConfig = { personaPrompt: null, name: "Priya", language: "mr" };
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{company_name}}.",
+    };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "insurance-policy-renewal",
+      orgId: "org-123",
+      templateKey: "insurance-policy-renewal",
     });
 
     expect(config.literalGreetingTemplate).toBeUndefined();

@@ -14,10 +14,13 @@ const DEFAULT_SPEAKER = "shubh"; // bulbul:v3 default speaker
 const DEFAULT_LANGUAGE_CODE = "hi-IN";
 
 /** ISO-ish agent-frame language code -> Sarvam's BCP-47 target_language_code. */
-function toSarvamLanguageCode(language?: string): string {
+export function toSarvamLanguageCode(language?: string): string {
   if (!language || language === "multi" || language === "unknown") return DEFAULT_LANGUAGE_CODE;
   if (language.includes("-")) return language;
   if (language === "en") return "en-IN";
+  // Hinglish (Hindi-English code-mix) has no dedicated Sarvam code — the Hindi
+  // voice (hi-IN) renders the code-mixed text naturally, so map it there.
+  if (language === "hinglish") return "hi-IN";
   return `${language}-IN`;
 }
 
