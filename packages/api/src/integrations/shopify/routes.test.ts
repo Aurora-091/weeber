@@ -119,6 +119,55 @@ describe("Shopify routes - Checkout Token cancellation and Attribution", () => {
     expect(mockInsertedCalls[0].toNumber).toBe("+15555555555");
   });
 
+  // Opt-in gate (2026-07-19): the three Shopify auto-call flows are OFF by
+  // default. When a template matching the event exists but the merchant has no
+  // ENABLED org_workflow_configs row, findActiveWorkflowTemplate returns the
+  // "disabled" sentinel and the route must place NO call (neither the graph
+  // nor the legacy scheduledCalls path) and report status "workflow_disabled".
+  // (The mock returns the same array for the templates query and the org-config
+  // query inside findActiveWorkflowTemplate; the template row has no `enabled`
+  // field, so the opt-in check reads it as disabled — exactly the missing-row
+  // case.)
+  it("does not schedule a cart-recovery call when the merchant hasn't enabled the workflow (opt-in)", async () => {
+    mockSelectedShopLinks = [{ orgId: "org-123", shop: "test.myshopify.com" }];
+    mockSelectedCalls = [
+      {
+        id: "shopify-cart-recovery",
+        vertical: "shopify",
+        name: "Cart Recovery",
+        active: true,
+        graph: {
+          nodes: [{ id: "trigger-1", type: "trigger", config: { event: "checkout_abandoned" } }],
+          edges: [],
+        },
+        // no `enabled` field => treated as a missing/disabled org config
+      },
+    ];
+
+    const res = await shopify.request("/integrations/shopify/webhooks/checkouts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Weeber-Secret": "test-secret"
+      },
+      body: JSON.stringify({
+        shop: "test.myshopify.com",
+        topic: "checkouts/create",
+        body: {
+          token: "chk_token_optin",
+          phone: "+15555555555",
+          total_price: "100.00"
+        }
+      })
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "workflow_disabled" });
+    expect(mockInsertedCalls.length).toBe(0);
+    // Abandonment is still recorded even though no call is placed.
+    expect(mockMarkedProcessed.some((m) => m.topic === "checkouts")).toBe(true);
+  });
+
   it("cancels pending cart-recovery calls by checkoutToken first", async () => {
     mockSelectedShopLinks = [{ orgId: "org-123", shop: "test.myshopify.com" }];
     mockReturningRows = [{ id: 456 }]; // simulate successfully finding and updating a row by token

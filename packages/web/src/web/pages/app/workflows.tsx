@@ -43,6 +43,7 @@ function getMergeTagsForVertical(vertical?: string): readonly string[] {
 type WorkflowResponse = {
   id: string;
   name: string;
+  description: string;
   vertical: string;
   graph: WorkflowGraph;
   active: boolean;
@@ -753,6 +754,9 @@ export function UserWorkflowsListPage() {
                     <span className="font-medium text-sm">{w.name}</span>
                     {w.orgConfig.customGraph && <Badge variant="secondary" className="text-[10px]">Custom</Badge>}
                   </div>
+                  {w.description && (
+                    <p className="mb-2 text-xs text-muted-foreground line-clamp-2">{w.description}</p>
+                  )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                       active ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-500/15 text-zinc-400"

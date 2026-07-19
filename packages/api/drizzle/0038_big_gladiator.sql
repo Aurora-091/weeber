@@ -1,0 +1,1 @@
+ALTER TABLE "workflow_templates" ADD COLUMN "description" text DEFAULT '' NOT NULL;

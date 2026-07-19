@@ -156,6 +156,8 @@ export const CART_RECOVERY_TEMPLATE = {
   id: "shopify-cart-recovery-v1",
   vertical: "shopify",
   name: "Cart Recovery",
+  description:
+    "Calls customers who abandoned checkout, up to 3 attempts with an escalating discount (0% → 10% → 20%), to win the sale back.",
   graph: CART_RECOVERY_GRAPH,
 } as const;
 
@@ -280,6 +282,8 @@ export const COD_CONFIRMATION_TEMPLATE = {
   id: "shopify-cod-confirmation-v1",
   vertical: "shopify",
   name: "COD Confirmation",
+  description:
+    "Calls Cash-on-Delivery customers right after they order to confirm the order before you ship it — cutting returns-to-origin (RTO) from fake or accidental COD orders.",
   graph: COD_CONFIRMATION_GRAPH,
 } as const;
 
@@ -362,6 +366,8 @@ export const FEEDBACK_TEMPLATE = {
   id: "shopify-feedback-v1",
   vertical: "shopify",
   name: "Post-Delivery Feedback",
+  description:
+    "Calls customers about 3 days after their order is delivered to collect feedback — routing happy customers to a review request and flagging unhappy ones for you to follow up.",
   graph: FEEDBACK_GRAPH,
 } as const;
 

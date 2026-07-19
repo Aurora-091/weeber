@@ -1025,8 +1025,13 @@ export const userApp = new Hono<UserEnv>()
       .where(eq(orgWorkflowConfigs.orgId, orgId));
     const configMap = new Map(configs.map((cfg) => [cfg.templateKey, cfg]));
     const merged = templates.map((t) => ({
+      // Opt-in default (2026-07-19): a template with no org_workflow_configs
+      // row is OFF, not on. This mirrors the dispatch-side gate in
+      // shopify/routes.ts (findActiveWorkflowTemplate) so the UI toggle and the
+      // actual auto-call behaviour agree — a merchant must explicitly enable a
+      // flow before we ever call their customers.
       ...t,
-      orgConfig: configMap.get(t.id) ?? { enabled: true, overrides: null },
+      orgConfig: configMap.get(t.id) ?? { enabled: false, overrides: null },
     }));
     return c.json({ workflows: merged }, 200);
   })

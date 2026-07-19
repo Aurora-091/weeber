@@ -29,8 +29,26 @@ async function resolveOrgIdForShop(shop: string): Promise<string | undefined> {
   return link?.orgId;
 }
 
+// Sentinel returned when a template matching the event exists but the merchant
+// has NOT opted into it — see findActiveWorkflowTemplate for the full rationale.
+const WORKFLOW_DISABLED = "disabled" as const;
+
 async function findActiveWorkflowTemplate(orgId: string | undefined, event: string) {
-  // Find a template matching the event; if org has a config, check it's enabled
+  // Opt-in dispatch (2026-07-19): a seeded template matching `event` always
+  // exists in production (all three Shopify flows ship active=true), so a plain
+  // "does a template exist?" check can't tell "merchant enabled this flow" apart
+  // from "merchant never opted in" — the old code returned null for both and the
+  // callers' legacy scheduledCalls fallback then auto-called the customer anyway.
+  // We now return a 3-way result so callers can distinguish them:
+  //   - the template row   -> merchant opted in (enabled config row) -> run graph
+  //   - WORKFLOW_DISABLED   -> a matching template exists but there is no ENABLED
+  //                            org_workflow_configs row (missing row = off by
+  //                            default) -> do NOT auto-call, and do NOT fall back
+  //                            to the legacy path either
+  //   - null                -> no matching template at all (unseeded/legacy org)
+  //                            -> caller may use its legacy scheduledCalls path
+  // This 3-way split is what makes the Shopify auto-call flows genuinely opt-in:
+  // without an enabled org_workflow_configs row, no call is ever placed.
   const templates = await db
     .select()
     .from(workflowTemplates)
@@ -43,20 +61,21 @@ async function findActiveWorkflowTemplate(orgId: string | undefined, event: stri
     const config = triggerNode.config as { event?: string };
     if (config.event !== event) continue;
 
-    // Check if org has explicitly disabled this template
-    if (orgId) {
-      const [orgConfig] = await db
-        .select()
-        .from(orgWorkflowConfigs)
-        .where(
-          and(
-            eq(orgWorkflowConfigs.orgId, orgId),
-            eq(orgWorkflowConfigs.templateKey, tpl.id),
-          ),
-        )
-        .limit(1);
-      if (orgConfig && !orgConfig.enabled) continue;
-    }
+    // A template for this event exists. Opt-in gate: the merchant must have an
+    // ENABLED org_workflow_configs row for it. No org, no row, or enabled=false
+    // => off by default => signal disabled (skip entirely, no legacy fallback).
+    if (!orgId) return WORKFLOW_DISABLED;
+    const [orgConfig] = await db
+      .select()
+      .from(orgWorkflowConfigs)
+      .where(
+        and(
+          eq(orgWorkflowConfigs.orgId, orgId),
+          eq(orgWorkflowConfigs.templateKey, tpl.id),
+        ),
+      )
+      .limit(1);
+    if (!orgConfig || !orgConfig.enabled) return WORKFLOW_DISABLED;
     return tpl;
   }
   return null;
@@ -174,7 +193,14 @@ shopify
     const delayMinutes = retryConfig.firstCallDelayMinutes;
 
     // Check if org has a graph-based workflow template for this trigger
-    const graphTemplate = await findActiveWorkflowTemplate(orgId, "checkout_abandoned");
+    const dispatch = await findActiveWorkflowTemplate(orgId, "checkout_abandoned");
+    if (dispatch === WORKFLOW_DISABLED) {
+      // Cart-recovery flow is not enabled by the merchant (opt-in, off by
+      // default). Still count the abandonment (markProcessed) but place no call.
+      await markProcessed(shop, "checkouts", token);
+      return c.json({ status: "workflow_disabled" }, 200);
+    }
+    const graphTemplate = dispatch;
 
     if (graphTemplate) {
       // Graph-based path — create a workflow_run and let the graph engine handle everything
@@ -340,13 +366,19 @@ shopify
     const isCod =
       (gateways ?? []).some((g) => /cash_on_delivery|cod/i.test(g)) || financialStatus === "pending";
 
+    let codScheduled = false;
     if (isCod && phone && isValidE164(phone)) {
       // Graph-based path — same dual-path pattern as /checkouts: if the org
       // has an active graph template for `order_placed`, drive the flow via
       // the workflow engine (editable/forkable in the canvas). Otherwise fall
       // back to the legacy single scheduledCalls insert.
-      const codTemplate = await findActiveWorkflowTemplate(orgId, "order_placed");
-      if (codTemplate) {
+      const codDispatch = await findActiveWorkflowTemplate(orgId, "order_placed");
+      if (codDispatch === WORKFLOW_DISABLED) {
+        // COD confirmation flow is not enabled by the merchant (opt-in) —
+        // skip the auto-call. `cod_scheduled` in the response reflects this.
+      } else if (codDispatch) {
+        const codTemplate = codDispatch;
+        codScheduled = true;
         const customerName = String(
           (body.billing_address && (body.billing_address as Record<string, unknown>).first_name) || "",
         );
@@ -377,6 +409,7 @@ shopify
           console.error(`[shopify/orders_create] graph-engine advance failed for run ${run.id}`, err),
         );
       } else {
+        codScheduled = true;
         const codRetryConfig = await resolveRetryConfig(orgId, "shopify-cod-confirmation");
         await db.insert(scheduledCalls).values({
           toNumber: phone,
@@ -406,7 +439,7 @@ shopify
     }
 
     await markProcessed(shop, "orders_create", idempotencyKey);
-    return c.json({ status: "processed", cod_scheduled: isCod }, 200);
+    return c.json({ status: "processed", cod_scheduled: codScheduled }, 200);
   })
 
   // 4. POST /orders/fulfilled — order fulfilled. Schedules the feedback
@@ -433,7 +466,14 @@ shopify
     // Graph-based path (same dual-path pattern as /checkouts and COD above):
     // if the org has an active graph template for `order_fulfilled`, drive the
     // feedback flow via the workflow engine; else legacy scheduledCalls insert.
-    const feedbackTemplate = await findActiveWorkflowTemplate(orgId, "order_fulfilled");
+    const feedbackDispatch = await findActiveWorkflowTemplate(orgId, "order_fulfilled");
+    if (feedbackDispatch === WORKFLOW_DISABLED) {
+      // Post-delivery feedback flow is not enabled by the merchant (opt-in) —
+      // skip the auto-call.
+      await markProcessed(shop, "orders_fulfilled", idempotencyKey);
+      return c.json({ status: "workflow_disabled" }, 200);
+    }
+    const feedbackTemplate = feedbackDispatch;
     if (feedbackTemplate) {
       const customerName = String(
         (body as { billing_address?: Record<string, unknown> }).billing_address?.first_name || "",

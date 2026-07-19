@@ -619,6 +619,10 @@ export const workflowTemplates = pgTable("workflow_templates", {
   id: text("id").primaryKey(),
   vertical: text("vertical").notNull(),
   name: text("name").notNull(),
+  // Merchant-facing "what does this flow do" copy shown on the workflows list
+  // card (2026-07-19). Empty-string default so pre-existing rows and any
+  // admin-created template without copy render cleanly instead of "undefined".
+  description: text("description").notNull().default(""),
   graph: jsonb("graph").notNull().$type<import("../voice/workflows/graph-types").WorkflowGraph>(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

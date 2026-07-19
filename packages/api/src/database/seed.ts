@@ -212,11 +212,24 @@ export async function seedWorkflowTemplates() {
         if (!check.valid) {
           await db
             .update(workflowTemplates)
-            .set({ graph: t.graph, updatedAt: new Date() })
+            .set({ graph: t.graph, description: t.description, updatedAt: new Date() })
             .where(eq(workflowTemplates.id, t.id));
           console.log(
             `[db-seed] Workflow template "${t.id}" upgraded to v4-compliant graph (was: ${check.error}).`,
           );
+          migratedCount++;
+          continue;
+        }
+        // Keep the merchant-facing description copy in sync even for compliant
+        // rows — descriptions are code-owned canonical copy (see seed-graph.ts)
+        // and were added after these rows were first seeded, so a plain skip
+        // would leave older rows with an empty description forever.
+        if (existing.description !== t.description) {
+          await db
+            .update(workflowTemplates)
+            .set({ description: t.description, updatedAt: new Date() })
+            .where(eq(workflowTemplates.id, t.id));
+          console.log(`[db-seed] Workflow template "${t.id}" description synced.`);
           migratedCount++;
           continue;
         }
@@ -228,6 +241,7 @@ export async function seedWorkflowTemplates() {
         id: t.id,
         vertical: t.vertical,
         name: t.name,
+        description: t.description,
         graph: t.graph,
       });
       console.log(`[db-seed] Workflow template "${t.id}" seeded.`);

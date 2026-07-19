@@ -63,6 +63,16 @@ describe("seed-graph templates", () => {
     }
   });
 
+  it("every template carries merchant-facing description copy", () => {
+    // Descriptions are code-owned canonical copy surfaced on the workflows
+    // list card (packages/web .../workflows.tsx) and synced to the DB on seed
+    // (database/seed.ts). A blank one would render an empty card, so guard it.
+    for (const t of SHOPIFY_WORKFLOW_TEMPLATES) {
+      expect(typeof t.description).toBe("string");
+      expect(t.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
   describe("Cart Recovery", () => {
     const graph = CART_RECOVERY_TEMPLATE.graph;
 
