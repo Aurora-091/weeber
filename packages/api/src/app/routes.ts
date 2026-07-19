@@ -49,7 +49,16 @@ import {
   updateOnboardingState,
   listOrgOrderCalls,
 } from "../voice/org-queries";
-import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook } from "./export";
+import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook, buildLeadsWorkbook } from "./export";
+import {
+  listOrgLeads,
+  getOrgLead,
+  updateOrgLead,
+  createLeadManual,
+  type LeadStatus,
+} from "../voice/leads/leads";
+import { defaultIntakeSchema } from "../voice/leads/intake-schema";
+import { createLeadApiKey, listLeadApiKeys, revokeLeadApiKey } from "../voice/leads/api-keys";
 import { callScheduledRowNow } from "../voice/workflows/scheduler";
 import { buildBlankWorkflowScaffold, validateLockedNodesEnforced } from "../voice/workflows/scaffold";
 import type { WorkflowGraph } from "../voice/workflows/graph-types";
@@ -652,6 +661,122 @@ export const userApp = new Hono<UserEnv>()
     return c.json({ ok: true }, 200);
   })
 
+  // ── Native Leads / Records layer (2026-07-19,
+  // docs/product-strategy/native-leads-layer-plan-2026-07-19.md) ──────────────
+  // The person-of-record projection. Static sub-paths (intake-schema, api-keys)
+  // are declared BEFORE /leads/:id so they aren't swallowed by the param route.
+
+  // The intake field definitions the Leads page renders as columns/form fields.
+  // Vertical default for now; per-org/per-agent overrides land in Phase 2.
+  .get("/leads/intake-schema", async (c) => {
+    const org = await getOrg(c.get("userOrgId")!);
+    return c.json({ fields: defaultIntakeSchema(org?.vertical) }, 200);
+  })
+
+  // Per-org ingest API keys — safe to hand to a client's form/CRM/Pipedream.
+  .get("/leads/api-keys", async (c) => {
+    const keys = await listLeadApiKeys(c.get("userOrgId")!);
+    return c.json({ keys }, 200);
+  })
+  .post("/leads/api-keys", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const label = typeof (body as { label?: unknown })?.label === "string" ? (body as { label: string }).label.trim() : "";
+    if (!label) return c.json({ error: "`label` is required" }, 400);
+    // Returns the plaintext key exactly once — the client must store it now.
+    const created = await createLeadApiKey(c.get("userOrgId")!, label);
+    return c.json(created, 201);
+  })
+  .delete("/leads/api-keys/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    await revokeLeadApiKey(c.get("userOrgId")!, id);
+    return c.json({ ok: true }, 200);
+  })
+
+  // List + optional free-text search (name/phone).
+  .get("/leads", async (c) => {
+    const query = c.req.query("q") ?? undefined;
+    const rows = await listOrgLeads(c.get("userOrgId")!, query);
+    return c.json({ leads: rows }, 200);
+  })
+
+  // Manual add. Upserts by (orgId, phone) so a manual add for an existing
+  // person merges rather than duplicates. Regulated fields are dropped.
+  .post("/leads", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const body = await c.req.json().catch(() => null);
+    const phone = typeof (body as { phone?: unknown })?.phone === "string" ? (body as { phone: string }).phone.trim() : "";
+    if (!phone) return c.json({ error: "`phone` is required" }, 400);
+    const b = body as { name?: unknown; fields?: unknown };
+    const org = await getOrg(orgId);
+    const result = await createLeadManual({
+      orgId,
+      phone,
+      name: typeof b.name === "string" ? b.name : null,
+      fields: (b.fields && typeof b.fields === "object" ? b.fields : {}) as Record<string, unknown>,
+      vertical: org?.vertical,
+    });
+    return c.json(result, result.created ? 201 : 200);
+  })
+
+  // One lead + its aggregated call history.
+  .get("/leads/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const result = await getOrgLead(c.get("userOrgId")!, id);
+    if (!result) return c.json({ error: "not found" }, 404);
+    return c.json(result, 200);
+  })
+
+  // Merge-patch: name / status / assignedAdvisorId / fields.
+  .patch("/leads/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Expected a JSON object" }, 400);
+    const b = body as { name?: unknown; status?: unknown; assignedAdvisorId?: unknown; fields?: unknown };
+
+    const patch: { name?: string | null; status?: LeadStatus; assignedAdvisorId?: number | null; fields?: Record<string, string> } = {};
+    if ("name" in b) patch.name = typeof b.name === "string" ? b.name : null;
+    if ("status" in b) {
+      const validStatuses: LeadStatus[] = ["new", "contacted", "qualified", "booked", "closed", "lost"];
+      if (!validStatuses.includes(b.status as LeadStatus)) return c.json({ error: "invalid status" }, 400);
+      patch.status = b.status as LeadStatus;
+    }
+    if ("assignedAdvisorId" in b) {
+      patch.assignedAdvisorId = b.assignedAdvisorId === null ? null : Number(b.assignedAdvisorId);
+      if (patch.assignedAdvisorId !== null && !Number.isFinite(patch.assignedAdvisorId)) {
+        return c.json({ error: "invalid assignedAdvisorId" }, 400);
+      }
+    }
+    if ("fields" in b && b.fields && typeof b.fields === "object") {
+      patch.fields = Object.fromEntries(
+        Object.entries(b.fields as Record<string, unknown>).map(([k, v]) => [k, String(v)]),
+      );
+    }
+
+    const ok = await updateOrgLead(c.get("userOrgId")!, id, patch);
+    if (!ok) return c.json({ error: "not found" }, 404);
+    return c.json({ ok: true }, 200);
+  })
+
+  // Call now — dial the lead's number through the same outbound path as the
+  // manual test-call, honoring the org's outbound routing.
+  .post("/leads/:id/call-now", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const result = await getOrgLead(orgId, id);
+    if (!result) return c.json({ error: "not found" }, 404);
+    if (!isValidE164(result.lead.phone)) {
+      return c.json({ error: "Lead phone is not a valid E.164 number, can't place a call." }, 400);
+    }
+    const placed = await placeOutboundCall({ orgId, to: result.lead.phone });
+    if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
+    await sessionStore.set(placed.sessionKey, { callSid: placed.sessionKey, direction: "outbound", orgId });
+    return c.json({ ok: true, callSid: placed.sessionKey, status: placed.status }, 201);
+  })
+
   .get("/shopify/status", async (c) => {
     const status = await getShopifyStatus(c.get("userOrgId")!);
     return c.json(status, 200);
@@ -690,6 +815,14 @@ export const userApp = new Hono<UserEnv>()
     const buffer = await buildTranscriptsWorkbook(c.get("userOrgId")!);
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     c.header("Content-Disposition", `attachment; filename="transcripts-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return c.body(new Uint8Array(buffer));
+  })
+
+  .get("/export/leads.xlsx", async (c) => {
+    const org = await getOrg(c.get("userOrgId")!);
+    const buffer = await buildLeadsWorkbook(c.get("userOrgId")!, org?.vertical);
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     return c.body(new Uint8Array(buffer));
   })
 

@@ -44,6 +44,9 @@ describe("verticals helper", () => {
     expect(labels).toContain("Integrations");
     // Analytics is no longer a separate nav item — it lives on the Home page.
     expect(labels).not.toContain("Analytics");
+    // Leads is the insurance projection of the native leads layer; Shopify
+    // uses Orders instead until it migrates onto the layer (Phase 3).
+    expect(labels).not.toContain("Leads");
   });
 
   it("resolves insurance vertical with Policyholder glossary and no Integrations nav item", () => {
@@ -51,16 +54,19 @@ describe("verticals helper", () => {
     expect(v.key).toBe("insurance");
     expect(v.glossary.customer).toBe("Policyholder");
     expect(v.glossary.customers).toBe("Policyholders");
-    // Home, Agents, Workflows, Conversations, Billing, Knowledge Base,
+    // Home, Agents, Workflows, Conversations, Leads, Billing, Knowledge Base,
     // Phone Numbers, Settings —
     // no Integrations item (no live policy-system integration yet),
     // no Analytics item (folded into Home).
-    expect(v.nav).toHaveLength(8);
+    expect(v.nav).toHaveLength(9);
     const labels = v.nav.map((n) => n.label);
     expect(labels).not.toContain("Policy System");
     expect(labels).not.toContain("Analytics");
     // Orders (2026-07-16) lists Shopify-prefixed workflow triggers only —
     // no equivalent for insurance yet, same gating as Integrations above.
     expect(labels).not.toContain("Orders");
+    // Leads is the insurance projection of the native leads/records layer —
+    // present for insurance, gated OFF for Shopify (which uses Orders).
+    expect(labels).toContain("Leads");
   });
 });

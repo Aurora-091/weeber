@@ -9,7 +9,8 @@
 import ExcelJS from "exceljs";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "../database";
-import { calls, callLatency, scheduledCalls, transcripts } from "../database/schema";
+import { calls, callLatency, scheduledCalls, transcripts, leads } from "../database/schema";
+import { defaultIntakeSchema } from "../voice/leads/intake-schema";
 
 function durationSeconds(startedAt: Date, endedAt: Date | null): number | null {
   if (!endedAt) return null;
@@ -118,6 +119,58 @@ export async function buildAnalyticsWorkbook(orgId: string): Promise<ExcelJS.Buf
       ttsFirstByteMs: latency?.ttsFirstByteMs ?? "",
       sttReconnectCount: call.sttReconnectCount ?? 0,
     });
+  }
+
+  return workbook.xlsx.writeBuffer();
+}
+
+/**
+ * Leads: one row per person in the native leads layer, newest activity first.
+ * Fixed columns (phone/name/status/source/advisor + timestamps) plus one
+ * column per field in the org vertical's default intake schema, so the export
+ * mirrors exactly what the Leads page renders. Regulated fields never appear
+ * here because they were never stored (blocked at the validation chokepoint).
+ */
+export async function buildLeadsWorkbook(
+  orgId: string,
+  vertical: string | null | undefined,
+): Promise<ExcelJS.Buffer> {
+  const rows = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.orgId, orgId))
+    .orderBy(desc(leads.lastActivityAt));
+
+  const schema = defaultIntakeSchema(vertical);
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Leads");
+  sheet.columns = [
+    { header: "Phone Number", key: "phone", width: 18 },
+    { header: "Name", key: "name", width: 22 },
+    { header: "Status", key: "status", width: 12 },
+    { header: "Source", key: "source", width: 12 },
+    { header: "Assigned Advisor ID", key: "assignedAdvisorId", width: 18 },
+    ...schema.map((f) => ({ header: f.label, key: `field_${f.key}`, width: 20 })),
+    { header: "First Seen", key: "firstSeenAt", width: 22 },
+    { header: "Last Activity", key: "lastActivityAt", width: 22 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
+  for (const row of rows) {
+    const record: Record<string, unknown> = {
+      phone: row.phone,
+      name: row.name ?? "",
+      status: row.status,
+      source: row.source,
+      assignedAdvisorId: row.assignedAdvisorId ?? "",
+      firstSeenAt: row.firstSeenAt,
+      lastActivityAt: row.lastActivityAt,
+    };
+    for (const f of schema) {
+      record[`field_${f.key}`] = row.fields?.[f.key] ?? "";
+    }
+    sheet.addRow(record);
   }
 
   return workbook.xlsx.writeBuffer();

@@ -1,4 +1,4 @@
-import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen, Phone, ShoppingBag, ShieldCheck } from "lucide-react";
+import { Rocket, Bot, PhoneCall, CreditCard, Plug, Settings, GitBranch, BookOpen, Phone, ShoppingBag, ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NavItem } from "../components/shell/app-shell";
 import { appPath } from "./route-base";
@@ -155,6 +155,11 @@ const insurance: VerticalDefinition = {
     { href: appPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
     { href: appPath("/workflows"), label: "Workflows", icon: GitBranch, match: navMatch("/workflows", "(/.*)?") },
     { href: appPath("/calls"), label: "Conversations", icon: PhoneCall, match: navMatch("/calls", "(/.*)?") },
+    // Leads is the insurance projection of the native leads/records layer
+    // (person-of-record: agent calls, forms, CRM all converge here). Gated to
+    // insurance for now, the same data-per-vertical pattern as Shopify's
+    // Orders above; Shopify's Orders migrates onto this layer in Phase 3.
+    { href: appPath("/leads"), label: "Leads", icon: Users, match: navMatch("/leads", "") },
     { href: appPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
     { href: appPath("/knowledge-base"), label: "Knowledge Base", icon: BookOpen, match: navMatch("/knowledge-base", "") },
     { href: appPath("/numbers"), label: "Phone Numbers", icon: Phone, match: navMatch("/numbers", "") },

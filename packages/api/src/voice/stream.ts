@@ -15,6 +15,7 @@ import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
+import { promoteLeadFromCall } from "./leads/leads";
 import { getTwilioClientForOrg, getPublicUrl } from "./twilio-client";
 import { hangupPlivoCall, transferPlivoCall } from "./plivo-client";
 import { sendSmsForOrg } from "./send-sms";
@@ -485,6 +486,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // the caller's rolling memory. No-op if nothing was captured.
       if (humanNumber && dbCallId) {
         await upsertCallerMemory(humanNumberOrgId, humanNumber, capturedState, dbCallId);
+      }
+
+      // Native Leads layer (2026-07-19) — promote this call's captured facts
+      // into the deduped person-of-record (leads table) and link the call to
+      // it. Best-effort and org-scoped: skips silently for no-org self-host
+      // usage, and a failure here never blocks the call from finalizing (same
+      // contract as upsertCallerMemory above).
+      if (humanNumber && dbCallId && humanNumberOrgId) {
+        await promoteLeadFromCall({
+          orgId: humanNumberOrgId,
+          phone: humanNumber,
+          capturedState,
+          callId: dbCallId,
+          vertical: undefined,
+        });
       }
 
       await sessionStore.delete(callSid);

@@ -189,8 +189,15 @@ export const calls = pgTable("calls", {
   estimatedCostUsdCents: real("estimated_cost_usd_cents"),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+  // Native Leads layer (2026-07-19, docs/product-strategy/native-leads-layer-plan-2026-07-19.md).
+  // The deduped person-of-record this call belongs to. Set at finalizeCall by promoteLeadFromCall,
+  // which upserts a `leads` row keyed on (orgId, phone) and links it back here. Nullable: a call
+  // finalized before this column existed, a call with no resolvable human number, or one whose
+  // lead-promotion raced/failed (best-effort, doesn't block finalize) simply has no lead link.
+  leadId: integer("lead_id"),
 }, (table) => [
   index("calls_org_id_idx").on(table.orgId),
+  index("calls_lead_id_idx").on(table.leadId),
 ]);
 
 export const callLatency = pgTable("call_latency", {
@@ -772,3 +779,98 @@ export const webhookOutbox = pgTable("webhook_outbox", {
   deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: "date" }),
   alertedAt: timestamp("alerted_at", { withTimezone: true, mode: "date" }),
 });
+
+/**
+ * Native Leads / Records layer (2026-07-19,
+ * docs/product-strategy/native-leads-layer-plan-2026-07-19.md).
+ *
+ * The person-of-record. One row per (orgId, phone) — a deduped human, NOT one
+ * row per call/cart (that's `scheduledCalls`) or one row per raw capture
+ * (that's `calls.capturedState`). Every inbound source (agent calls, web
+ * forms, client CRMs, Pipedream) funnels through `POST /api/leads/ingest`
+ * into this table; every outbound sink (Excel export, native CRM adapters)
+ * reads from it. The DB is the source of truth — external tools attach at the
+ * edges, never in the middle.
+ *
+ * `fields` is validated against the org's lead intake schema
+ * (`leadIntakeSchemas`, falling back to the vertical default) on every ingest
+ * path, and regulated fields (SSN/PAN/Aadhaar/bank/full DOB/health/exact
+ * policy financials) are BLOCKED at that validation layer regardless of
+ * source — the same regulatory boundary the agents enforce, so this layer
+ * can't become a backdoor for what agents are forbidden to collect.
+ */
+export const leads = pgTable("leads", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull(),
+  // Dedup key with orgId. E.164-ish as captured; normalization is the caller's
+  // job before ingest so the unique index actually catches duplicates.
+  phone: text("phone").notNull(),
+  name: text("name"),
+  // Structured, schema-validated captured fields (see leadIntakeSchemas). The
+  // keys here are the intake schema's defined keys, not the LLM's free-form
+  // capturedState keys — capturedState is promoted INTO here at finalizeCall.
+  fields: jsonb("fields").$type<Record<string, string>>().notNull().default({}),
+  // Pipeline. Fixed enum in v1 (per-org configurable deferred). Manual in v1 —
+  // not auto-advanced from call dispositions yet (an open question in the plan).
+  status: text("status", {
+    enum: ["new", "contacted", "qualified", "booked", "closed", "lost"],
+  }).notNull().default("new"),
+  // How this lead first entered the layer. `call` = promoted from an agent
+  // call; the rest are ingest sources.
+  source: text("source", {
+    enum: ["call", "form", "webhook", "pipedream", "crm", "manual"],
+  }).notNull().default("manual"),
+  // Licensed advisor this lead is assigned to (insurance). References
+  // insuranceAdvisors, not org_members — advisors are a distinct compliance
+  // record (licensed states / lines of authority). Nullable = unassigned.
+  assignedAdvisorId: integer("assigned_advisor_id"),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  // The dedup/upsert key — one lead per person per org.
+  uniqueIndex("leads_org_phone_idx").on(table.orgId, table.phone),
+  index("leads_org_status_idx").on(table.orgId, table.status),
+]);
+
+/**
+ * Per-org (optionally per-agent) lead intake field definitions — "what should
+ * this agent collect?". Falls back to the vertical default (see
+ * voice/leads/intake-schema.ts) when no row exists. `fields` is the ordered
+ * field-definition list ({ key, label, type, required, piiClass }); the Leads
+ * page renders these as real columns/sections, and ingest validates against
+ * them. The schema editor (Phase 2) refuses regulated fields.
+ */
+export const leadIntakeSchemas = pgTable("lead_intake_schemas", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull(),
+  // Null = the org-wide default. Non-null = an override for one agent config.
+  agentId: integer("agent_id"),
+  fields: jsonb("fields").$type<
+    { key: string; label: string; type: "text" | "number" | "enum" | "boolean" | "date"; required?: boolean; options?: string[]; piiClass?: string }[]
+  >().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("lead_intake_schemas_org_agent_idx").on(table.orgId, table.agentId),
+]);
+
+/**
+ * Per-org scoped API keys for the lead ingest contract (POST /api/leads/ingest).
+ * Safe to hand to a client's form/CRM/Pipedream: scoped to one org, revocable,
+ * and can never read another org's data. Same generation/hashing shape as
+ * adminKeys (SHA-256 of a high-entropy token, plaintext returned exactly once),
+ * but org-scoped and ingest-only rather than full dashboard auth.
+ */
+export const leadApiKeys = pgTable("lead_api_keys", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull(),
+  label: text("label").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: "date" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+}, (table) => [
+  index("lead_api_keys_org_id_idx").on(table.orgId),
+]);
