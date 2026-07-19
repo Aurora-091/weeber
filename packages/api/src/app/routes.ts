@@ -1015,10 +1015,18 @@ export const userApp = new Hono<UserEnv>()
 
   .get("/workflow-configs", async (c) => {
     const orgId = c.get("userOrgId")!;
+    // Vertical scoping (2026-07-19): only ever show a merchant the workflow
+    // templates for THEIR vertical. Without this filter a Shopify org saw the
+    // insurance templates (and vice-versa) — a real cross-vertical leak, and
+    // worse, could toggle+run a flow that makes no sense for their business.
+    // Mirrors findActiveWorkflowTemplate's dispatch-side vertical gate so the
+    // list a merchant sees matches the flows that can actually fire for them.
+    const org = await getOrg(orgId);
+    if (!org) return c.json({ error: "org not found" }, 404);
     const templates = await db
       .select()
       .from(workflowTemplates)
-      .where(and(eq(workflowTemplates.active, true)));
+      .where(and(eq(workflowTemplates.active, true), eq(workflowTemplates.vertical, org.vertical)));
     const configs = await db
       .select()
       .from(orgWorkflowConfigs)

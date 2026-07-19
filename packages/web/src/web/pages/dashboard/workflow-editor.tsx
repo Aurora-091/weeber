@@ -398,7 +398,6 @@ function EditorInner({ template }: { template: TemplateResponse }) {
           <div className="w-72 border-l border-border overflow-y-auto p-4">
             {selectedNode && (
               <NodeConfigPanel
-                nodeId={selectedNode.id}
                 nodeType={selectedNode.data.nodeType as WorkflowNodeType}
                 config={selectedNode.data.config as Record<string, unknown>}
                 onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}

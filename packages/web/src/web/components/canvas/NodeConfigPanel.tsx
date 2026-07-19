@@ -11,13 +11,12 @@ function getMergeTags(vertical?: string): readonly string[] {
 import type { WorkflowNodeType } from "./types";
 
 type Props = {
-  nodeId: string;
   nodeType: WorkflowNodeType;
   config: Record<string, unknown>;
   onUpdate: (config: Record<string, unknown>) => void;
 };
 
-export function NodeConfigPanel({ nodeId, nodeType, config, onUpdate }: Props) {
+export function NodeConfigPanel({ nodeType, config, onUpdate }: Props) {
   const style = NODE_STYLES[nodeType];
 
   function set(key: string, value: unknown) {
@@ -29,9 +28,6 @@ export function NodeConfigPanel({ nodeId, nodeType, config, onUpdate }: Props) {
       <div className="flex items-center gap-2 pb-2 border-b border-border">
         <div className={`w-1 h-5 rounded-full ${style.color}`} />
         <h3 className="text-sm font-medium">{style.label}</h3>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground truncate max-w-[100px]">
-          {nodeId}
-        </span>
       </div>
 
       {nodeType === "trigger" && <TriggerFields config={config} set={set} />}

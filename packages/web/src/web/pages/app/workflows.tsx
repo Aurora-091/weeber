@@ -34,6 +34,7 @@ import { BranchEdge } from "../../components/canvas/BranchEdge";
 import { NodePalette } from "../../components/canvas/NodePalette";
 import { NodeConfigPanel } from "../../components/canvas/NodeConfigPanel";
 import { MERGE_TAGS, WORKFLOW_OUTCOMES } from "../../components/canvas/types";
+import { NODE_STYLES } from "../../components/canvas/node-styles";
 import type { WorkflowGraph, WorkflowNodeType } from "../../components/canvas/types";
 
 function getMergeTagsForVertical(vertical?: string): readonly string[] {
@@ -58,6 +59,17 @@ type WorkflowResponse = {
 };
 
 const nodeTypes = { workflow: WorkflowNode };
+
+// Node types that aren't merchant-authored "steps" — the trigger is the entry
+// point, dncCheck/callingWindowCheck are locked compliance markers, and
+// webhook is a system/terminal hook. Counting them (and any locked node)
+// inflated the "N steps" badge on the list card with plumbing a merchant
+// never configured. Kept in sync with WorkflowNodeType in canvas/types.ts.
+const SYSTEM_NODE_TYPES: WorkflowNodeType[] = ["trigger", "webhook", "dncCheck", "callingWindowCheck"];
+
+function countMerchantSteps(graph: WorkflowGraph): number {
+  return graph.nodes.filter((n) => !n.locked && !SYSTEM_NODE_TYPES.includes(n.type)).length;
+}
 const edgeTypes = { branch: BranchEdge };
 
 // Nodes a merchant can manually add via the palette/drag-drop. Excludes the
@@ -82,7 +94,7 @@ function graphToFlowEditable(graph: WorkflowGraph) {
     id: n.id,
     type: "workflow",
     position: n.position,
-    data: { nodeType: n.type, config: n.config, label: n.id, locked: n.locked },
+    data: { nodeType: n.type, config: n.config, locked: n.locked },
     draggable: !n.locked,
     deletable: !n.locked,
   }));
@@ -128,7 +140,7 @@ function graphToFlowReadOnly(graph: WorkflowGraph) {
     id: n.id,
     type: "workflow",
     position: n.position,
-    data: { nodeType: n.type, config: n.config, label: n.id, locked: n.locked },
+    data: { nodeType: n.type, config: n.config, locked: n.locked },
     draggable: false,
     connectable: false,
   }));
@@ -266,7 +278,7 @@ function UserWorkflowStandardView({
         {editingNode && editingConfig && (
           <div className="w-72 border-l border-border overflow-y-auto p-4 space-y-4">
             <h3 className="text-sm font-medium border-b border-border pb-2">
-              Edit: {editingNode.type} node
+              Edit: {NODE_STYLES[editingNode.type].label}
             </h3>
 
             {editingNode.type === "wait" && (
@@ -647,7 +659,6 @@ function UserWorkflowCanvasEditor({
           <div className="w-72 border-l border-border overflow-y-auto p-4">
             {selectedNode && (
               <NodeConfigPanel
-                nodeId={selectedNode.id}
                 nodeType={selectedNode.data.nodeType as WorkflowNodeType}
                 config={selectedNode.data.config as Record<string, unknown>}
                 onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
@@ -765,7 +776,10 @@ export function UserWorkflowsListPage() {
                       {active ? "Active" : "Paused"}
                     </span>
                     <Badge variant="secondary" className="text-[10px]">{w.vertical}</Badge>
-                    <span>{(w.orgConfig.customGraph ?? w.graph).nodes.length} steps</span>
+                    {(() => {
+                      const steps = countMerchantSteps(w.orgConfig.customGraph ?? w.graph);
+                      return <span>{steps} {steps === 1 ? "step" : "steps"}</span>;
+                    })()}
                   </div>
                 </Link>
                 <Switch
