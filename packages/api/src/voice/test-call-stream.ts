@@ -237,7 +237,7 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
         // like for this agent's current settings.
         const failoverEvents: { channel: "stt" | "tts"; from: string; to: string }[] = [];
         if (payload.simulateFailover) {
-          const sttPrimary = resolveSttProvider(sttProviderOverride);
+          const sttPrimary = resolveSttProvider(sttProviderOverride, languageOverride);
           const sttChain = resolveSttFailoverChain(sttPrimary, agentConfig.sttFallbackOrder);
           if (sttChain.length > 0) {
             failoverEvents.push({ channel: "stt", from: sttPrimary, to: sttChain[0] });

@@ -647,7 +647,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
     const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
     if (cached) {
       await speak(ws, async () => text, { cachedAudioBase64: cached });
@@ -686,7 +686,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   const TOOL_CALL_FILLER_LINES = ["One moment, let me check that.", "Let me look into that for you."];
 
   async function warmFillerCache(text: string) {
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
     if (getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text)) return;
     const chunks: string[] = [];
     await new Promise<void>((resolve) => {
@@ -716,7 +716,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     if (ended || !streamSid) return;
 
     const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride);
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
     const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
     if (!cached) {
       void warmFillerCache(text);
@@ -877,7 +877,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // captures every sendText call so far so it can be replayed to a
       // fallback provider's connection if we do fail over before any audio
       // played — nothing is lost by retrying at that point.
-      const ttsFailoverChain = resolveTtsFailoverChain(resolveTtsProvider(ttsProviderOverride), ttsFallbackOrderOverride);
+      const ttsFailoverChain = resolveTtsFailoverChain(resolveTtsProvider(ttsProviderOverride, languageOverride), ttsFallbackOrderOverride);
       const sentTextBuffer: string[] = [];
 
       const attemptTts = (providerOverride: string | undefined, replayText: string[] = []): TtsConnection => {

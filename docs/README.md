@@ -54,6 +54,7 @@ overview.
 Everything about making the voice pipeline itself better — STT/TTS/LLM quality, latency, Hindi/Hinglish,
 India-readiness.
 - `voice-quality-and-india-status-2026-07-12.md` — status/gaps/priorities snapshot
+- `language-support.md` — what actually works + which provider handles which language (Indic smart default, ADR-060)
 - `hindi-hinglish-voice-support.md` — plan + progress on Hindi/Hinglish agents
 - `india-telephony.md` — Plivo/Exotel real-call transport, protocol notes
 - `llm-provider-latency-case-study-2026-07-17.md` — reducing TTFT without dropping model quality tier

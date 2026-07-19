@@ -68,6 +68,23 @@ export const RECOMMENDED_LANGUAGES = [
   { code: "multi", label: "Multi (English + auto-detected other, Deepgram STT only)" },
 ] as const;
 
+/** Languages for which Sarvam (India-specialized STT/TTS) is the smart default
+ * provider when the agent hasn't explicitly picked one. The platform-wide
+ * defaults are English-first — Deepgram for STT, Cartesia for TTS — and weaker
+ * on Indic speech recognition and natural Indic voices, so picking one of these
+ * languages alone (without also choosing a provider) used to leave the call on
+ * an English-first provider that may fumble it. `prefersSarvam()` closes that
+ * gap: an Indic-language agent with no explicit provider routes to Sarvam, but
+ * only when a SARVAM_API_KEY is actually configured (see resolveSttProvider /
+ * resolveTtsProvider) so self-hosted setups without one fall back cleanly.
+ * Mirrors RECOMMENDED_LANGUAGES minus "en" (English) and "multi" (code-switching,
+ * handled by each provider's own multi/codemix mode, not a fixed language). */
+export const SARVAM_PREFERRED_LANGUAGES = ["hi", "mr", "ta", "te", "kn", "ml", "bn", "gu", "pa"] as const;
+
+export function prefersSarvam(language?: string | null): boolean {
+  return !!language && (SARVAM_PREFERRED_LANGUAGES as readonly string[]).includes(language.toLowerCase());
+}
+
 export const STRICTNESS_LEVELS = ["low", "medium", "high"] as const;
 export type StrictnessLevel = (typeof STRICTNESS_LEVELS)[number];
 

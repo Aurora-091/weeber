@@ -3,6 +3,11 @@
 Started 2026-07-16. Tracks the work to make Hindi/Hinglish agents actually good, not just
 "technically has a language dropdown entry."
 
+> **See also:** [`language-support.md`](./language-support.md) — the broader "what actually works
+> and which provider handles what" reference covering **all** supported languages (not just
+> Hindi/Hinglish), plus the 2026-07-19 smart provider default that auto-routes Indic-language calls
+> to Sarvam when no provider is explicitly chosen (ADR-060).
+
 ## ✅ All 4 phases complete (2026-07-16)
 
 Every phase below was built and then **live-verified** with the user's real ElevenLabs and Sarvam
