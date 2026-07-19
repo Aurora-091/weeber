@@ -2,7 +2,7 @@ import { db } from "./index";
 import { agentTemplates, workflowTemplates } from "./schema";
 import { eq } from "drizzle-orm";
 import { join } from "path";
-import { CART_RECOVERY_TEMPLATE } from "../voice/workflows/seed-graph";
+import { SHOPIFY_WORKFLOW_TEMPLATES } from "../voice/workflows/seed-graph";
 
 /**
  * Single source of truth for the seeded agent templates — exported (not
@@ -188,20 +188,34 @@ export async function seedAgentTemplates() {
 
 export async function seedWorkflowTemplates() {
   console.log("[db-seed] Seeding workflow templates...");
-  const [existing] = await db
-    .select()
-    .from(workflowTemplates)
-    .where(eq(workflowTemplates.id, CART_RECOVERY_TEMPLATE.id))
-    .limit(1);
-  if (existing) {
-    console.log(`[db-seed] Workflow template "${CART_RECOVERY_TEMPLATE.id}" already exists — skipping.`);
-    return;
+  let seededCount = 0;
+  let skippedCount = 0;
+  for (const t of SHOPIFY_WORKFLOW_TEMPLATES) {
+    try {
+      const [existing] = await db
+        .select()
+        .from(workflowTemplates)
+        .where(eq(workflowTemplates.id, t.id))
+        .limit(1);
+      if (existing) {
+        console.log(`[db-seed] Workflow template "${t.id}" already exists — skipping.`);
+        skippedCount++;
+        continue;
+      }
+      await db.insert(workflowTemplates).values({
+        id: t.id,
+        vertical: t.vertical,
+        name: t.name,
+        graph: t.graph,
+      });
+      console.log(`[db-seed] Workflow template "${t.id}" seeded.`);
+      seededCount++;
+    } catch (err) {
+      console.error(`[db-seed] failed to seed workflow template ${t.id}:`, err);
+      skippedCount++;
+    }
   }
-  await db.insert(workflowTemplates).values({
-    id: CART_RECOVERY_TEMPLATE.id,
-    vertical: CART_RECOVERY_TEMPLATE.vertical,
-    name: CART_RECOVERY_TEMPLATE.name,
-    graph: CART_RECOVERY_TEMPLATE.graph,
-  });
-  console.log(`[db-seed] Workflow template "${CART_RECOVERY_TEMPLATE.id}" seeded.`);
+  console.log(
+    `[db-seed] Workflow templates: ${seededCount} seeded, ${skippedCount} skipped (of ${SHOPIFY_WORKFLOW_TEMPLATES.length}).`,
+  );
 }

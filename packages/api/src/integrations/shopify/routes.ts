@@ -341,18 +341,55 @@ shopify
       (gateways ?? []).some((g) => /cash_on_delivery|cod/i.test(g)) || financialStatus === "pending";
 
     if (isCod && phone && isValidE164(phone)) {
-      const codRetryConfig = await resolveRetryConfig(orgId, "shopify-cod-confirmation");
-      await db.insert(scheduledCalls).values({
-        toNumber: phone,
-        workflowName: "shopify-cod-confirmation",
-        persona: "shopify-cod-confirmation",
-        attempt: 1,
-        maxAttempts: codRetryConfig.maxAttempts,
-        runAt: new Date(Date.now() + codRetryConfig.firstCallDelayMinutes * 60 * 1000),
-        status: "pending",
-        orgId,
-        metadata: { shop, orderId },
-      });
+      // Graph-based path — same dual-path pattern as /checkouts: if the org
+      // has an active graph template for `order_placed`, drive the flow via
+      // the workflow engine (editable/forkable in the canvas). Otherwise fall
+      // back to the legacy single scheduledCalls insert.
+      const codTemplate = await findActiveWorkflowTemplate(orgId, "order_placed");
+      if (codTemplate) {
+        const customerName = String(
+          (body.billing_address && (body.billing_address as Record<string, unknown>).first_name) || "",
+        );
+        const startNodeId =
+          codTemplate.graph.nodes.find((n: { type: string }) => n.type === "trigger")?.id ??
+          codTemplate.graph.nodes[0]?.id ??
+          "trigger";
+        const [run] = await db
+          .insert(workflowRuns)
+          .values({
+            orgId,
+            templateKey: codTemplate.id,
+            context: {
+              to_number: phone,
+              customer_name: customerName,
+              shop_name: shop,
+              orderId: String(orderId),
+              cart_value: totalPrice,
+              attempt_number: 0,
+              discount_percent: 0,
+            },
+            currentNodeId: startNodeId,
+            nodeHistory: [{ nodeId: startNodeId, enteredAt: new Date().toISOString() }],
+            status: "running",
+          })
+          .returning();
+        void advanceWorkflow(run.id).catch((err) =>
+          console.error(`[shopify/orders_create] graph-engine advance failed for run ${run.id}`, err),
+        );
+      } else {
+        const codRetryConfig = await resolveRetryConfig(orgId, "shopify-cod-confirmation");
+        await db.insert(scheduledCalls).values({
+          toNumber: phone,
+          workflowName: "shopify-cod-confirmation",
+          persona: "shopify-cod-confirmation",
+          attempt: 1,
+          maxAttempts: codRetryConfig.maxAttempts,
+          runAt: new Date(Date.now() + codRetryConfig.firstCallDelayMinutes * 60 * 1000),
+          status: "pending",
+          orgId,
+          metadata: { shop, orderId },
+        });
+      }
     }
 
     // (d) Mark the checkout that led to this order as "converted" —
@@ -392,19 +429,54 @@ shopify
     }
 
     const orgId = await resolveOrgIdForShop(shop);
-    const feedbackRetryConfig = await resolveRetryConfig(orgId, "shopify-feedback");
 
-    await db.insert(scheduledCalls).values({
-      toNumber: phone,
-      workflowName: "shopify-feedback",
-      persona: "shopify-feedback",
-      attempt: 1,
-      maxAttempts: feedbackRetryConfig.maxAttempts, // feedback calls don't retry by default — a missed call just means no feedback this time
-      runAt: new Date(Date.now() + feedbackRetryConfig.firstCallDelayMinutes * 60 * 1000),
-      status: "pending",
-      orgId,
-      metadata: { shop, orderId },
-    });
+    // Graph-based path (same dual-path pattern as /checkouts and COD above):
+    // if the org has an active graph template for `order_fulfilled`, drive the
+    // feedback flow via the workflow engine; else legacy scheduledCalls insert.
+    const feedbackTemplate = await findActiveWorkflowTemplate(orgId, "order_fulfilled");
+    if (feedbackTemplate) {
+      const customerName = String(
+        (body as { billing_address?: Record<string, unknown> }).billing_address?.first_name || "",
+      );
+      const startNodeId =
+        feedbackTemplate.graph.nodes.find((n: { type: string }) => n.type === "trigger")?.id ??
+        feedbackTemplate.graph.nodes[0]?.id ??
+        "trigger";
+      const [run] = await db
+        .insert(workflowRuns)
+        .values({
+          orgId,
+          templateKey: feedbackTemplate.id,
+          context: {
+            to_number: phone,
+            customer_name: customerName,
+            shop_name: shop,
+            orderId: String(orderId),
+            attempt_number: 0,
+            discount_percent: 0,
+          },
+          currentNodeId: startNodeId,
+          nodeHistory: [{ nodeId: startNodeId, enteredAt: new Date().toISOString() }],
+          status: "running",
+        })
+        .returning();
+      void advanceWorkflow(run.id).catch((err) =>
+        console.error(`[shopify/orders_fulfilled] graph-engine advance failed for run ${run.id}`, err),
+      );
+    } else {
+      const feedbackRetryConfig = await resolveRetryConfig(orgId, "shopify-feedback");
+      await db.insert(scheduledCalls).values({
+        toNumber: phone,
+        workflowName: "shopify-feedback",
+        persona: "shopify-feedback",
+        attempt: 1,
+        maxAttempts: feedbackRetryConfig.maxAttempts, // feedback calls don't retry by default — a missed call just means no feedback this time
+        runAt: new Date(Date.now() + feedbackRetryConfig.firstCallDelayMinutes * 60 * 1000),
+        status: "pending",
+        orgId,
+        metadata: { shop, orderId },
+      });
+    }
 
     await markProcessed(shop, "orders_fulfilled", idempotencyKey);
     return c.json({ status: "scheduled" }, 200);
