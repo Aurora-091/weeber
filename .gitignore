@@ -10,10 +10,14 @@ dist
 coverage
 *.lcov
 
-# logs
+# logs & temp files
 logs
+*.log
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.tmp
+tmp/
+.tmp/
 
 # local databases
 *.db
@@ -36,6 +40,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # IntelliJ based IDEs
 .idea
+
+# VS Code editor settings
+.vscode/
 
 # macOS
 .DS_Store
