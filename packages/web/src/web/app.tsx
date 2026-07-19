@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Redirect, Route, Switch } from "wouter";
 import { Loader as Loader2 } from "lucide-react";
 import { ChunkErrorBoundary } from "./components/chunk-error-boundary";
+import { ErrorBoundary } from "./components/error-boundary";
 import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
@@ -34,6 +35,7 @@ const TermsPage = lazy(() => import("./pages/terms").then((m) => ({ default: m.T
 const ComplianceHubPage = lazy(() => import("./pages/compliance/index").then((m) => ({ default: m.ComplianceHubPage })));
 const ComplianceIndiaPage = lazy(() => import("./pages/compliance/india").then((m) => ({ default: m.ComplianceIndiaPage })));
 const ComplianceGlobalPage = lazy(() => import("./pages/compliance/global").then((m) => ({ default: m.ComplianceGlobalPage })));
+const NotFoundPage = lazy(() => import("./pages/not-found").then((m) => ({ default: m.NotFoundPage })));
 
 const AdminKeyGate = lazy(() =>
   import("./components/dashboard/admin-key-gate").then((m) => ({ default: m.AdminKeyGate })),
@@ -171,6 +173,7 @@ function AdminAppRoutes() {
 
 function App() {
   return (
+    <ErrorBoundary>
     <ChunkErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Switch>
@@ -211,16 +214,18 @@ function App() {
             <SubdomainRedirect target={appUrl(window.location.pathname.replace(/^\/app/, ""))} />
           </Route>
 
-          {/* Fallback */}
+          {/* Fallback: authenticated surfaces bounce to their home; the public
+              surface renders a real (noindex) 404 instead of a soft-404 redirect. */}
           <Route>
             {surface === "admin" ? <Redirect to={adminPath()} /> :
              surface === "user" ? <Redirect to={appPath()} /> :
-             <Redirect to="/" />}
+             <NotFoundPage />}
           </Route>
         </Switch>
       </Suspense>
       {import.meta.env.DEV && <AgentFeedback />}
     </ChunkErrorBoundary>
+    </ErrorBoundary>
   );
 }
 

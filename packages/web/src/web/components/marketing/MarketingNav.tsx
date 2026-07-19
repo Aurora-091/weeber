@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Menu, X } from "lucide-react";
 import { NAV_LINKS } from "../../lib/marketing-config";
 import { WeeberLogo } from "../WeeberLogo";
+import { SkipToContent } from "./SkipToContent";
 
 /** Marketing site nav — ported from Vocalist's MarketingNav.tsx, adapted
  * from react-router-dom (Link `to=`, object-returning useLocation) to
@@ -29,6 +30,8 @@ export function MarketingNav() {
   }, []);
 
   return (
+    <>
+    <SkipToContent />
     <header
       
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
@@ -107,5 +110,6 @@ export function MarketingNav() {
         </div>
       )}
     </header>
+    </>
   );
 }

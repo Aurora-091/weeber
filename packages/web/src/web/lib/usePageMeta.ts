@@ -7,6 +7,8 @@ interface PageMetaOptions {
   description: string;
   /** Path for the canonical URL, e.g. "/compliance/india". Defaults to the current pathname. */
   path?: string;
+  /** When true, emits `<meta name="robots" content="noindex">` so this page (e.g. a 404) is not indexed. */
+  noindex?: boolean;
 }
 
 function upsertMeta(attr: "name" | "property", key: string, content: string): { el: Element; prev: string | null } {
@@ -40,13 +42,16 @@ function upsertLink(rel: string, href: string): { el: Element; prev: string | nu
  * the very first paint before hydration/route resolution, this hook keeps them accurate per-route
  * after that).
  */
-export function usePageMeta({ title, description, path }: PageMetaOptions) {
+export function usePageMeta({ title, description, path, noindex }: PageMetaOptions) {
   useEffect(() => {
     const prevTitle = document.title;
     const fullTitle = `${title} \u00b7 Weeber`;
     document.title = fullTitle;
 
     const desc = upsertMeta("name", "description", description);
+    // Only touch the robots tag when a page explicitly opts into noindex (e.g. the 404 page);
+    // indexable pages are left as the site default so we never accidentally deindex real routes.
+    const robots = noindex ? upsertMeta("name", "robots", "noindex") : null;
     const ogTitle = upsertMeta("property", "og:title", fullTitle);
     const ogDesc = upsertMeta("property", "og:description", description);
     const twTitle = upsertMeta("name", "twitter:title", fullTitle);
@@ -58,6 +63,11 @@ export function usePageMeta({ title, description, path }: PageMetaOptions) {
 
     return () => {
       document.title = prevTitle;
+      if (robots) {
+        // Restore the prior robots value, or remove the tag we injected if there was none.
+        if (robots.prev) robots.el.setAttribute("content", robots.prev);
+        else robots.el.remove();
+      }
       if (desc.prev) desc.el.setAttribute("content", desc.prev);
       if (ogTitle.prev) ogTitle.el.setAttribute("content", ogTitle.prev);
       if (ogDesc.prev) ogDesc.el.setAttribute("content", ogDesc.prev);
@@ -66,5 +76,5 @@ export function usePageMeta({ title, description, path }: PageMetaOptions) {
       if (canonical.prev) canonical.el.setAttribute("href", canonical.prev);
       if (ogUrl.prev) ogUrl.el.setAttribute("content", ogUrl.prev);
     };
-  }, [title, description, path]);
+  }, [title, description, path, noindex]);
 }
