@@ -590,11 +590,15 @@ export const userApp = new Hono<UserEnv>()
     );
   })
 
-  // "Turn off compliance for testing" (2026-07-16) — self-expiring, org-
-  // scoped, bypasses ONLY the calling-window/TCPA-TRAI check (never DNC,
-  // no exceptions — see scheduler.ts's checkCallingWindowForRow). Always
-  // sets to now()+24h on enable rather than accepting an arbitrary duration
-  // from the client, specifically so it can't be left on indefinitely.
+  // "Turn off compliance for testing" (2026-07-16, extended 2026-07-19) —
+  // self-expiring, org-scoped. Bypasses the calling-window/TCPA-TRAI check
+  // (see scheduler.ts's checkCallingWindowForRow) AND the two insurance-
+  // vertical config gates (1600-series + producer licensing, see
+  // voice/compliance/insurance-gates.ts) so a founder can run a live phone
+  // demo to pilots at night / before that paperwork exists. Never DNC, never
+  // the FTSA attempt cap — no exceptions. Always sets to now()+24h on enable
+  // rather than accepting an arbitrary duration from the client, so it can't
+  // be left on indefinitely.
   .post("/compliance/test-mode", async (c) => {
     const orgId = c.get("userOrgId")!;
     const body = await c.req.json().catch(() => null);

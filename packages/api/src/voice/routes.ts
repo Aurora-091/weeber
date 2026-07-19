@@ -233,9 +233,10 @@ export const voice = new Hono()
     // `BYPASS_COMPLIANCE=true` shipped to prod by accident (or left over from a staging config)
     // can no longer silently disable compliance. Outside production (dev/test), the env var
     // still works for local testing. The only other sanctioned bypass anywhere in this codebase
-    // is the calling-window-only, self-expiring `orgs.callingWindowTestModeUntil` (see
-    // workflows/scheduler.ts) — DNC has no bypass anywhere, on purpose, and this endpoint's
-    // bypass never covered DNC either.
+    // is the self-expiring `orgs.callingWindowTestModeUntil` (see workflows/scheduler.ts and
+    // compliance/insurance-gates.ts) — it covers the calling-window check and the two insurance-
+    // vertical config gates for demos, but DNC and the FTSA attempt cap have no bypass anywhere,
+    // on purpose, and this endpoint's bypass never covered DNC either.
     const isProduction = process.env.NODE_ENV === "production";
     const bypassCompliance = !isProduction && process.env.BYPASS_COMPLIANCE === "true";
     if (!bypassCompliance) {

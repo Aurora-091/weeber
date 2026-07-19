@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
  * instead of ignoring the condition) — same pattern as `consent-adapter.test.ts`.
  */
 
-type OrgRow = { id: string; vertical: string };
+type OrgRow = { id: string; vertical: string; callingWindowTestModeUntil?: Date | null };
 type PhoneNumberRow = { orgId: string; status: string; numberSeries: string | null };
 type AdvisorRow = { orgId: string; licensedStates: string[] };
 
@@ -74,7 +74,12 @@ mock.module("drizzle-orm", () => {
 // consent-adapter.test.ts's single-table case) needs to disambiguate between three tables sharing
 // the same `db.select().from()` mock.
 mock.module("../../database/schema", () => ({
-  orgs: { __table: "orgs", id: { name: "id" }, vertical: { name: "vertical" } },
+  orgs: {
+    __table: "orgs",
+    id: { name: "id" },
+    vertical: { name: "vertical" },
+    callingWindowTestModeUntil: { name: "calling_window_test_mode_until" },
+  },
   orgPhoneNumbers: {
     __table: "org_phone_numbers",
     orgId: { name: "org_id" },
@@ -130,6 +135,20 @@ describe("checkInsuranceNumberSeriesCompliance — Platform gap #1 (India 1600-s
     const result = await checkInsuranceNumberSeriesCompliance("org-1", "+919876543210");
     expect(result.allowed).toBe(false);
   });
+
+  it("allows with no 1600-series number while self-expiring test mode is active (demo bypass)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance", callingWindowTestModeUntil: new Date(Date.now() + 60_000) }];
+    phoneNumberRows = [];
+    const result = await checkInsuranceNumberSeriesCompliance("org-1", "+919876543210");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("still blocks with an expired test-mode timestamp (bypass has self-expired)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance", callingWindowTestModeUntil: new Date(Date.now() - 60_000) }];
+    phoneNumberRows = [];
+    const result = await checkInsuranceNumberSeriesCompliance("org-1", "+919876543210");
+    expect(result.allowed).toBe(false);
+  });
 });
 
 describe("checkInsuranceProducerLicensing — Platform gap #2 (US producer state licensing)", () => {
@@ -175,5 +194,19 @@ describe("checkInsuranceProducerLicensing — Platform gap #2 (US producer state
     advisorRows = [{ orgId: "org-1", licensedStates: ["CA"] }];
     const result = await checkInsuranceProducerLicensing("org-1", "+19995550100"); // unmapped area code
     expect(result.allowed).toBe(true);
+  });
+
+  it("allows an unlicensed org while self-expiring test mode is active (demo bypass)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance", callingWindowTestModeUntil: new Date(Date.now() + 60_000) }];
+    advisorRows = [{ orgId: "org-1", licensedStates: ["CA"] }];
+    const result = await checkInsuranceProducerLicensing("org-1", "+12125550100"); // 212 -> NY, not licensed
+    expect(result.allowed).toBe(true);
+  });
+
+  it("still blocks with an expired test-mode timestamp (bypass has self-expired)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance", callingWindowTestModeUntil: new Date(Date.now() - 60_000) }];
+    advisorRows = [{ orgId: "org-1", licensedStates: ["CA"] }];
+    const result = await checkInsuranceProducerLicensing("org-1", "+12125550100"); // 212 -> NY, not licensed
+    expect(result.allowed).toBe(false);
   });
 });

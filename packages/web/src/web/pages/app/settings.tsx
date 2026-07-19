@@ -417,17 +417,19 @@ export function UserSettingsPage() {
 
         <Section icon={ShieldAlert} title="Compliance">
           <p className="mb-4 text-sm text-muted-foreground">
-            For testing only — bypasses the TCPA/TRAI calling-window check (e.g. calling outside 9am-9pm)
-            so you can place test calls any time of day. The Do Not Call list is <strong>always</strong>{" "}
-            enforced regardless — there's no way to bypass that. Auto-turns off after 24 hours so it can't
-            be accidentally left on in production.
+            For demos &amp; testing — lets you place live phone calls to your agents any time of day,
+            even at night. It bypasses the TCPA/TRAI calling-window check (calling outside 9am–9pm) and,
+            for the insurance vertical, the 1600-series number and state-licensed-advisor checks — so you
+            can run a pilot demo from your own Twilio number before that paperwork is in place. The Do Not
+            Call list and per-number attempt caps are <strong>always</strong> enforced — there's no way to
+            bypass those. Auto-turns off after 24 hours so it can't be accidentally left on in production.
           </p>
           <label className="flex items-center gap-3 text-sm">
             <Switch
               checked={testModeActive}
               disabled={testMode.isPending}
               onCheckedChange={(checked) => testMode.mutate(checked)}
-              aria-label="Calling-window compliance test mode"
+              aria-label="Demo &amp; testing compliance mode"
             />
             <span className="font-medium">
               {testModeActive ? "Test mode is ON" : "Test mode is off"}

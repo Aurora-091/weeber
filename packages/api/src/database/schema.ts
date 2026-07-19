@@ -101,12 +101,16 @@ export const orgs = pgTable("orgs", {
   exotelApiToken: text("exotel_api_token"),
   exotelSubdomain: text("exotel_subdomain"),
   humanTransferNumber: text("human_transfer_number"),
-  // Per-org, self-expiring "test mode" that bypasses ONLY the TCPA/TRAI
+  // Per-org, self-expiring "test mode" bypass. Bypasses the TCPA/TRAI
   // calling-window compliance check (voice/workflows/scheduler.ts and the
-  // new manual call-now path both read this) — DNC is never bypassed, no
-  // exceptions, even in test mode (2026-07-16 explicit decision). Null/past
-  // = test mode off. Auto-expires rather than staying on indefinitely so
-  // it can't be accidentally left on in production — set via
+  // manual call-now path both read this) AND — as of 2026-07-19 — the two
+  // insurance-vertical config gates (1600-series number series + producer
+  // state licensing, voice/compliance/insurance-gates.ts) so a founder can
+  // run a live phone demo to pilots before that paperwork is in place. DNC
+  // and the FTSA attempt cap are NEVER bypassed, no exceptions, even in test
+  // mode (2026-07-16 / 2026-07-19 explicit decisions). Null/past = test mode
+  // off. Auto-expires rather than staying on indefinitely so it can't be
+  // accidentally left on in production — set via
   // POST /api/app/compliance/test-mode, always to now()+24h.
   callingWindowTestModeUntil: timestamp("calling_window_test_mode_until", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),

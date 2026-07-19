@@ -28,6 +28,19 @@ function isNanpNumber(e164: string): boolean {
 }
 
 /**
+ * Self-expiring, org-scoped "test mode" bypass (orgs.callingWindowTestModeUntil, set via
+ * POST /api/app/compliance/test-mode → now()+24h). Originally added for the TCPA/TRAI
+ * calling-window check; extended (2026-07-19) to ALSO lift these two insurance-vertical config
+ * gates so a founder can run a live phone demo to pilots — including at night and before the
+ * 1600-series number / state-licensed-advisor paperwork is in place — using their own Twilio
+ * numbers. Same self-expiring discipline as the calling-window bypass: it can't be left on
+ * indefinitely. DNC and the FTSA attempt cap are NEVER bypassed by test mode, here or anywhere.
+ */
+function isTestModeActive(testModeUntil: Date | null | undefined): boolean {
+  return Boolean(testModeUntil && testModeUntil.getTime() > Date.now());
+}
+
+/**
  * India — TRAI/IRDAI 1600-series mandate. IRDAI-regulated entities must place service/
  * transactional calls from a dedicated 1600-series number, not the general 140 (promotional)/160
  * (transactional) series most orgs use — a real, separate requirement, deadline Feb 15, 2026
@@ -45,8 +58,15 @@ export async function checkInsuranceNumberSeriesCompliance(
   if (!orgId) return { allowed: true };
   if (!isIndianNumber(toNumber)) return { allowed: true };
 
-  const [org] = await db.select({ vertical: orgs.vertical }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  const [org] = await db
+    .select({ vertical: orgs.vertical, callingWindowTestModeUntil: orgs.callingWindowTestModeUntil })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
   if (org?.vertical !== "insurance") return { allowed: true };
+  // Self-expiring test-mode bypass — lets founders run a live phone demo before the 1600-series
+  // number is registered. See isTestModeActive's doc comment.
+  if (isTestModeActive(org.callingWindowTestModeUntil)) return { allowed: true };
 
   const [compliantNumber] = await db
     .select({ id: orgPhoneNumbers.id })
@@ -87,8 +107,15 @@ export async function checkInsuranceProducerLicensing(
   if (!orgId) return { allowed: true };
   if (!isNanpNumber(toNumber)) return { allowed: true };
 
-  const [org] = await db.select({ vertical: orgs.vertical }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  const [org] = await db
+    .select({ vertical: orgs.vertical, callingWindowTestModeUntil: orgs.callingWindowTestModeUntil })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
   if (org?.vertical !== "insurance") return { allowed: true };
+  // Self-expiring test-mode bypass — lets founders run a live phone demo before a state-licensed
+  // advisor is on file. See isTestModeActive's doc comment.
+  if (isTestModeActive(org.callingWindowTestModeUntil)) return { allowed: true };
 
   const state = resolveUsState(toNumber);
   if (!state) {
