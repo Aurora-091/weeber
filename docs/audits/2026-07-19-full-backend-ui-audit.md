@@ -131,7 +131,7 @@ Verified against `main` after commits `fb46225`, `59b2aba`, `2d90a53`.
 | 2 | Global (module-singleton) outbound rate limiter | ✅ Fixed | `59b2aba` — Postgres-backed `rate-limit-store.ts`, keyed by `orgId` (genuinely per-tenant, survives restart, shared across instances) |
 | 3 | CORS reflect-any-origin + `credentials:true` when unset | ✅ Fixed | `2d90a53` — `cors-config.ts` refuses to boot in `production` without `CORS_ALLOWED_ORIGINS`; dev/test still reflect for zero-config |
 | 4 | Twilio/Plivo webhook signature skipped when no token | ✅ Fixed | `2d90a53` — fails **closed** (401) when no auth token resolves; Plivo signature path added |
-| 5 | Suite green only under `--isolate`; mock-leakage fragility | ⚠️ Open (P2) | Suite is green as-configured; underlying `mock.module` leakage (41 files, no restore) not yet centralized |
+| 5 | Suite green only under `--isolate`; mock-leakage fragility | 🟡 Guarded (P2) | Guardrails landed: turbo `test` now `cache:false` (no stale-green); `packages/api/TESTING.md` documents the `--isolate` requirement + root cause; CI already runs isolated+fresh. Deep fix (centralize `mock.module` into a shared `--preload` DB fake, 30+ files) deliberately deferred as tracked debt — not a launch blocker |
 | 6–7 | Data-fetch pattern / type-escape hatches | ℹ️ No action | Non-issues as assessed |
 
 Net: all security findings (1–4) closed and verified; only the P2 test-harness hygiene item (5) remains, and it does not affect the shipped product or CI signal.

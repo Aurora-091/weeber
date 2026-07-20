@@ -31,6 +31,7 @@
       "dependsOn": [
         "^test"
       ],
+      "cache": false,
       "outputs": []
     },
     "test:coverage": {
