@@ -12,17 +12,16 @@ import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
 import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@openvent/compliance";
 import { requestLogger } from "./middleware/request-logger";
 import { errorHandler } from "./middleware/error-handler";
+import { assertCorsConfiguredForProduction, buildCorsOriginResolver } from "./middleware/cors-config";
 
 // Cross-origin policy for the split deploy (frontend on Vercel, API on
 // Railway — ADR-035). CORS_ALLOWED_ORIGINS: comma-separated origin allowlist
-// (e.g. "https://app.weeber.example,https://admin.weeber.example"). Unset =
-// reflect any origin — today's single-deploy behavior, acceptable while auth
-// is header-based (no cookies), but set the allowlist before the Vercel
-// frontend goes live on a real domain.
-const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
+// (e.g. "https://app.weeber.example,https://admin.weeber.example"). Unset in
+// production = refuse to boot (audit 2026-07-19 finding #3 — was previously
+// a silent reflect-any-origin fallback); unset outside production still
+// reflects any origin so local dev/CI need zero extra config. See
+// middleware/cors-config.ts.
+assertCorsConfiguredForProduction();
 
 const app = new Hono()
   .basePath('api')
@@ -30,10 +29,7 @@ const app = new Hono()
   .use("*", requestLogger())
   .use(
     cors({
-      origin: (origin) => {
-        if (allowedOrigins.length === 0) return origin ?? "*";
-        return origin && allowedOrigins.includes(origin) ? origin : null;
-      },
+      origin: buildCorsOriginResolver(),
       credentials: true,
       // Explicit allowlist because both auth headers are non-simple — with a
       // CORS origin allowlist set, preflights would otherwise reject them.

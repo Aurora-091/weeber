@@ -42,9 +42,11 @@ import { calls, orgs, orgPhoneNumbers } from "../../database/schema";
  *   3. Falls back to the global TWILIO_AUTH_TOKEN when neither resolves —
  *      unchanged behavior for platform-only deployments.
  *
- * Skips validation with a loud warning if no token can be resolved at all
- * (shouldn't happen given config-check.ts, but fail open with visibility
- * rather than crash every webhook call).
+ * Fails CLOSED (401) if no token can be resolved at all (audit 2026-07-19 finding #4 — this used
+ * to fail OPEN here, skipping signature validation entirely with a warning; a misconfigured org
+ * with no resolvable token would silently accept unsigned/spoofed webhooks). Shouldn't happen
+ * given config-check.ts's boot-time validation, but an attacker forging call events for a
+ * misconfigured org is a worse outcome than that one org's webhooks failing loudly until fixed.
  *
  * Parses the form body once here and stores it on context as "twilioBody" —
  * route handlers must read `c.get("twilioBody")` instead of calling
@@ -99,10 +101,10 @@ export const requireTwilioSignature = createMiddleware<{
 
   if (!authToken) {
     if (!warnedMissingToken) {
-      console.warn("[twilio-signature] No auth token could be resolved (global or org-specific) — skipping webhook signature validation");
+      console.error("[twilio-signature] No auth token could be resolved (global or org-specific) — rejecting webhook (fail closed)");
       warnedMissingToken = true;
     }
-    return next();
+    return c.json({ error: "Unable to resolve an auth token to validate this webhook — rejecting" }, 401);
   }
 
   const signature = c.req.header("X-Twilio-Signature");

@@ -156,4 +156,26 @@ describe("requireTwilioSignature — org-aware token resolution", () => {
     const res = await app.request(signedRequest(params, "org-specific-token"));
     expect(res.status).toBe(200);
   });
+
+  // Audit 2026-07-19 finding #4: used to fail OPEN (skip validation, warn) when no token could
+  // be resolved at all — now fails CLOSED (401), since that's exactly the state where a
+  // misconfigured org would otherwise silently accept unsigned/spoofed webhooks.
+  it("fails CLOSED (401) rather than skipping validation when no auth token can be resolved at all", async () => {
+    const originalGlobalToken = process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.TWILIO_AUTH_TOKEN; // no global fallback either
+    try {
+      const app = buildApp();
+      const params = { CallSid: "CAunresolvable", CallStatus: "completed" };
+      // No signature header at all -- doesn't matter, the middleware must reject before it
+      // even gets to signature comparison once no token resolved.
+      const res = await app.request("https://example.test/hook", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(params).toString(),
+      });
+      expect(res.status).toBe(401);
+    } finally {
+      process.env.TWILIO_AUTH_TOKEN = originalGlobalToken;
+    }
+  });
 });

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../database";
 import { orgs } from "../../database/schema";
+import { readCredential, PLIVO_FIELDS } from "../../database/credential-vault";
 
 /**
  * Validates that a request to /api/voice/incoming/plivo actually came from
@@ -20,11 +21,12 @@ import { orgs } from "../../database/schema";
  * itself (plivo-client.ts's `createPlivoOutboundCall` appends it) — a
  * user wiring up a Plivo number for pure inbound use needs to include
  * the same `?orgId=` on the Answer URL configured in their Plivo
- * Application. Falls back to skipping validation (loud warning) if no
- * org/token can be resolved, matching requireTwilioSignature's fail-open
- * shape — this is unverified against a live Plivo account (see
- * docs/india-telephony.md's status note), flagged rather than assumed
- * correct.
+ * Application. Fails CLOSED (401) if no org/token can be resolved (audit
+ * 2026-07-19 finding #4, extended here to Plivo alongside the Twilio fix —
+ * same fail-open bug class: a misconfigured org would otherwise silently
+ * accept unsigned/spoofed webhooks). This is unverified against a live
+ * Plivo account (see docs/india-telephony.md's status note), flagged
+ * rather than assumed correct.
  */
 let warnedMissingToken = false;
 
@@ -33,16 +35,25 @@ export const requirePlivoSignature = createMiddleware(async (c, next) => {
   let authToken: string | undefined;
 
   if (orgId) {
-    const [org] = await db.select({ token: orgs.plivoAuthToken }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
-    authToken = org?.token ?? undefined;
+    // Vault-first, plaintext-column fallback (audit 2026-07-19 finding #1/#3) — this was the
+    // one telephony read path that skipped the vault entirely and went straight to the
+    // plaintext `orgs.plivoAuthToken` column, unlike twilio-client.ts/plivo-client.ts/
+    // exotel-client.ts, which already prefer the vault.
+    const vaultToken = await readCredential(orgId, PLIVO_FIELDS.authToken);
+    if (vaultToken) {
+      authToken = vaultToken;
+    } else {
+      const [org] = await db.select({ token: orgs.plivoAuthToken }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+      authToken = org?.token ?? undefined;
+    }
   }
 
   if (!authToken) {
     if (!warnedMissingToken) {
-      console.warn("[plivo-signature] No org-specific Plivo auth token could be resolved (missing/unknown ?orgId=) — skipping signature validation");
+      console.error("[plivo-signature] No org-specific Plivo auth token could be resolved (missing/unknown ?orgId=) — rejecting webhook (fail closed)");
       warnedMissingToken = true;
     }
-    return next();
+    return c.json({ error: "Unable to resolve an org-specific Plivo auth token to validate this webhook — rejecting" }, 401);
   }
 
   const signature = c.req.header("x-plivo-signature-v3");
