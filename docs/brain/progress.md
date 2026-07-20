@@ -12,6 +12,8 @@ updated: 2026-07-19
 
 ## Done (works end-to-end, real-verified)
 
+- User App UI/UX Restructuring (2026-07-20): Elevated Sonner Toaster z-index (`99999`) across modals/drawers, refactored Integrations page (removed double-background overrides and full-screen blur overlays), and upgraded route fallback to animated page skeletons.
+
 - Core voice pipeline: real inbound + outbound calls, barge-in, streamed tool-calling.
 - Multi-provider STT/TTS/LLM with cross-provider failover; per-agent/per-call override.
 - Multi-tenant telephony: Twilio (platform + BYO sub-accounts) + Plivo/Exotel (BYO).

@@ -12,6 +12,14 @@ updated: 2026-07-19
 
 ## Current focus
 
+- **App UI/UX Restructuring & Integrations Alignment (2026-07-20):** Resolved UI defects across `/app` routes.
+  **Toaster Z-Index Elevation**: Elevated Sonner `Toaster` z-index to `99999` in `sonner.tsx` and `styles.css`
+  so notifications float over all modal dialogs, drawers, sticky headers, and backdrop overlays.
+  **Integrations Page Redesign**: Removed `bg-background` root class overrides in `integrations.tsx` (preventing
+  nested double-background box artifacts) and replaced full-screen blur overlays (`fixed inset-0 z-50`) with an
+  inline card-level status banner. **Route Fallbacks**: Upgraded `PageFallback` in `app.tsx` from a bare spinner
+  to a structured page skeleton (`page-enter space-y-6`). Verified: `typecheck` clean · `test` 16 pass / 0 fail · `build` clean. Pushed to `origin/main`.
+
 - **Native, person-centric leads/records layer shipped (2026-07-19, Phases 1–3):** built the *owned*
   data-of-record layer before bolting on external CRMs. New tables (`leads` deduped by
   `(orgId, phone)`, `leadIntakeSchemas`, `leadApiKeys`; `calls.leadId` plain indexed int, no FK;
