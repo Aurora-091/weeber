@@ -66,7 +66,7 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.75rem;
 
   /* Vent brand palette — warm, editorial, paper/ink/ember family */
   --paper: oklch(0.95 0.015 80);
@@ -363,7 +363,7 @@
  * glance).
  */
 .theme-weeber {
-  --radius: 0.5rem; /* 8px — mid-rounded, not pillow-soft */
+  --radius: 0.75rem; /* 12px — clearly rounded corners across cards/inputs/buttons */
 
   /* Monochrome surfaces — faint warm tint on background for texture warmth */
   --weeber-paper: oklch(0.985 0.003 80);   /* warm near-white */
@@ -380,7 +380,7 @@
   /* Shadow tokens — components lift off the background */
   --weeber-shadow-card: 0 1px 2px oklch(0 0 0 / 0.05), 0 4px 16px oklch(0 0 0 / 0.04);
   --weeber-shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.07), 0 8px 24px oklch(0 0 0 / 0.06);
-  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.05), 3px 0 24px oklch(0 0 0 / 0.07);
+  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.06), 8px 0 30px oklch(0 0 0 / 0.11), 2px 0 6px oklch(0 0 0 / 0.06);
   --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.1), 0 1px 4px oklch(0 0 0 / 0.06);
 
   /* Status */
@@ -409,13 +409,13 @@
   --border: var(--weeber-border);
   --input: var(--weeber-border);
   --ring: oklch(0.55 0 0);
-  --sidebar: oklch(0.975 0.002 80); /* warm sidebar bg */
+  --sidebar: oklch(0.955 0.004 80); /* warm sidebar bg — clearly recessed vs paper (0.985) and cards (0.995) */
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);
   --sidebar-primary-foreground: var(--weeber-accent-foreground);
-  --sidebar-accent: oklch(0.95 0.002 80);
+  --sidebar-accent: oklch(0.92 0.004 80); /* active/hover pill — darker fill that reads on the tinted sidebar */
   --sidebar-accent-foreground: var(--weeber-ink);
-  --sidebar-border: oklch(0.9 0.003 80);
+  --sidebar-border: oklch(0.88 0.004 80);
   --sidebar-ring: oklch(0.55 0 0);
 
   /* Utility vars for inline style references (e.g. status dots) */
@@ -650,7 +650,7 @@
   /* Shadow tokens for dark mode */
   --weeber-shadow-card: 0 1px 3px oklch(0 0 0 / 0.4), 0 4px 16px oklch(0 0 0 / 0.3);
   --weeber-shadow-card-hover: 0 2px 6px oklch(0 0 0 / 0.5), 0 8px 24px oklch(0 0 0 / 0.35);
-  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.5), 3px 0 28px oklch(0 0 0 / 0.45);
+  --weeber-shadow-sidebar: 1px 0 0 oklch(0 0 0 / 0.55), 10px 0 34px oklch(0 0 0 / 0.5), 2px 0 8px oklch(0 0 0 / 0.4);
   --weeber-shadow-elevated: 0 4px 20px oklch(0 0 0 / 0.5), 0 1px 4px oklch(0 0 0 / 0.3);
 
   --weeber-success: oklch(0.6 0.14 150);

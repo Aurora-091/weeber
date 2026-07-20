@@ -269,9 +269,9 @@ export function AppShell({
             {/* Desktop sidebar */}
             <aside
               className={cn(
-                "sticky top-0 hidden h-screen shrink-0 flex-col md:flex",
+                "sticky top-0 z-20 hidden h-screen shrink-0 flex-col md:flex",
                 "bg-sidebar text-sidebar-foreground",
-                "border-r border-sidebar-border",
+                "rounded-r-2xl border-r border-sidebar-border",
                 // Same spring-like easing as .page-enter/.content-fade-in
                 // (cubic-bezier(0.16,1,0.3,1)) — the collapse/expand used a
                 // plain ease-out before, a subtly different motion feel from
