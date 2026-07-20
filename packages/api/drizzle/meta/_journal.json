@@ -288,6 +288,13 @@
       "when": 1784491174249,
       "tag": "0040_mushy_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784517363133,
+      "tag": "0041_woozy_karen_page",
+      "breakpoints": true
     }
   ]
 }

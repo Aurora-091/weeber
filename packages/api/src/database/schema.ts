@@ -874,3 +874,21 @@ export const leadApiKeys = pgTable("lead_api_keys", {
 }, (table) => [
   index("lead_api_keys_org_id_idx").on(table.orgId),
 ]);
+
+/**
+ * Per-org outbound-call rate-limit window (audit 2026-07-19 finding #2). Replaces the old
+ * process-local module-singleton limiter (`voice/middleware/rate-limit.ts`), which was global
+ * across every org (one aggressive org could throttle everyone) and reset on every restart.
+ *
+ * One row per org — a fixed-window counter, reset-or-increment done in a single atomic UPSERT
+ * (see `voice/middleware/rate-limit.ts`) so concurrent requests can't race past the limit.
+ * Postgres-backed rather than Redis: the audit's own "even a Postgres-backed counter is enough
+ * at current scale" call, and it means the limiter works with zero extra infra/config (unlike
+ * `session-store.ts`'s Redis-optional pattern, which only activates when `REDIS_URL` is set).
+ */
+export const outboundRateLimitWindows = pgTable("outbound_rate_limit_windows", {
+  orgId: text("org_id").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true, mode: "date" }).notNull(),
+  callCount: integer("call_count").notNull().default(0),
+});
+
