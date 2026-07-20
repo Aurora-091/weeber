@@ -14,9 +14,17 @@ import { AppShell } from "../shell/app-shell";
 export type UserMe = {
   user: { id: string; email: string | null } | null;
   role: string | null;
+  /** True until orgs.name is set to a real business name at onboarding —
+   * orgs.name is what the agent SPEAKS on calls ({{company_name}}) and the
+   * Twilio subaccount friendly name, so nothing should go live until it's a
+   * real name. Drives the required business-name step in SetupModal. */
+  needsOnboarding: boolean;
   org: {
     id: string;
     name: string | null;
+    /** Lifecycle state: active normally; suspended after inactivity (auto-
+     * reactivated on next login); closed is terminal (permanent teardown). */
+    status: "active" | "suspended" | "closed";
     vertical: string;
     planName: string | null;
     currency: string | null;

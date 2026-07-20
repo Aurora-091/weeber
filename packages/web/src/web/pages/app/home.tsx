@@ -397,6 +397,12 @@ export function UserHomePage() {
   });
 
   useEffect(() => {
+    // A brand-new org with no business name yet must set one before anything
+    // goes live — force setup open regardless of the dismissed flag.
+    if (me.needsOnboarding) {
+      setSetupOpen(true);
+      return;
+    }
     if (!onboarding.data) return;
     const steps = onboarding.data.steps ?? {};
     const incomplete = !Object.values(steps).every(Boolean) || Object.keys(steps).length === 0;
@@ -409,7 +415,7 @@ export function UserHomePage() {
       window.history.replaceState(null, "", url.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onboarding.data]);
+  }, [onboarding.data, me.needsOnboarding]);
 
   const steps = onboarding.data?.steps ?? {};
   const stepEntries = Object.entries(steps);

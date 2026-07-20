@@ -333,6 +333,11 @@ export function SetupModal({
   const { me } = useUser();
   const [manualStep, setManualStep] = useState<number | null>(null);
   const [pickedVertical, setPickedVertical] = useState(me.org.vertical);
+  // Business name captured at onboarding — orgs.name is what the agent SPEAKS
+  // on calls ({{company_name}}) and the Twilio subaccount friendly name, so
+  // it must be a real business name (not the junk "<email>'s workspace" the
+  // backend used to auto-derive). Required to leave the first step.
+  const [businessName, setBusinessName] = useState(me.org.name ?? "");
   // Guards the one-shot default provisioning so it fires at most once per open
   // session even as the agents step re-renders.
   const provisionedRef = useRef(false);
@@ -341,7 +346,17 @@ export function SetupModal({
     setPickedVertical(me.org.vertical);
   }, [me.org.vertical]);
 
+  useEffect(() => {
+    // Only adopt a server value that actually exists — never clobber what the
+    // user is typing with the null a fresh org carries.
+    if (me.org.name) setBusinessName(me.org.name);
+  }, [me.org.name]);
+
   const vertical = getVertical(pickedVertical);
+  // Vertical-aware example so the business-name field reads naturally for
+  // whatever the merchant just picked (store / clinic / company).
+  const namePlaceholder =
+    pickedVertical === "insurance" ? "e.g. Meridian Insurance" : pickedVertical === "shopify" ? "e.g. Acme Store" : "e.g. Acme Co";
 
   const onboarding = useQuery<OnboardingState>({
     queryKey: ["app-onboarding"],
@@ -397,12 +412,15 @@ export function SetupModal({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["app-onboarding"] }),
   });
 
-  const saveVertical = useMutation({
-    mutationFn: async (next: string) => {
+  // Saves the business name AND vertical together on the first step — orgs.name
+  // is the agent's spoken company name + Twilio friendly name, so it's captured
+  // here rather than left to be derived from the email.
+  const saveProfile = useMutation({
+    mutationFn: async ({ name, vertical: next }: { name: string; vertical: string }) => {
       const res = await appFetch("/api/app/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vertical: next }),
+        body: JSON.stringify({ name, vertical: next }),
       });
       if (!res.ok) throw new Error(`Failed to save (${res.status})`);
       return res.json();
@@ -411,8 +429,9 @@ export function SetupModal({
       queryClient.invalidateQueries({ queryKey: ["app-me"] });
       queryClient.invalidateQueries({ queryKey: ["app-agent-configs"] });
       patchOnboarding.mutate({ pick_vertical: true });
+      goNext();
     },
-    onError: (err: Error) => toast.error("Couldn't save business type", { description: err.message }),
+    onError: (err: Error) => toast.error("Couldn't save your details", { description: err.message }),
   });
 
   const toggleAgent = useMutation({
@@ -557,12 +576,33 @@ export function SetupModal({
                 <div className="flex items-start gap-3">
                   <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-lg font-medium">What kind of business is this?</h2>
+                    <h2 className="text-lg font-medium">Let's set up your business</h2>
                     <p className="mt-1 max-w-xl text-sm text-muted-foreground">
                       This decides which agents, dashboard metrics, and terminology you see everywhere else in
                       Weeber — you can change it later in Settings.
                     </p>
-                    <div className="mt-5 space-y-2.5">
+
+                    <div className="mt-5 space-y-1.5">
+                      <label htmlFor="ob-business-name" className="text-sm font-medium">
+                        What's your business name?
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Your agents say this out loud on every call — e.g. "Thanks for calling{" "}
+                        <span className="font-medium text-foreground">{businessName.trim() || namePlaceholder}</span>."
+                        Use the name customers know you by.
+                      </p>
+                      <Input
+                        id="ob-business-name"
+                        value={businessName}
+                        onChange={(e) => setBusinessName(e.target.value)}
+                        placeholder={namePlaceholder}
+                        maxLength={80}
+                        autoFocus
+                      />
+                    </div>
+
+                    <p className="mt-5 mb-2 text-sm font-medium">What kind of business is this?</p>
+                    <div className="space-y-2.5">
                       {VERTICAL_OPTIONS.map((opt) => (
                         <button
                           key={opt.key}
@@ -586,18 +626,10 @@ export function SetupModal({
                     </div>
                     <Button
                       className="mt-5"
-                      disabled={saveVertical.isPending}
-                      onClick={() => {
-                        if (pickedVertical === me.org.vertical) {
-                          // Unchanged — still confirm the step without a wasted PATCH.
-                          patchOnboarding.mutate({ pick_vertical: true });
-                        } else {
-                          saveVertical.mutate(pickedVertical);
-                        }
-                        goNext();
-                      }}
+                      disabled={saveProfile.isPending || businessName.trim().length === 0}
+                      onClick={() => saveProfile.mutate({ name: businessName.trim(), vertical: pickedVertical })}
                     >
-                      {saveVertical.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                      {saveProfile.isPending && <Loader2 className="size-3.5 animate-spin" />}
                       Continue
                     </Button>
                   </div>

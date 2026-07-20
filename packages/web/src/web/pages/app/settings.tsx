@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded, AlertTriangle } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
+import { appPath } from "../../lib/route-base";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
 import { PageHeader } from "../../components/shell/page-header";
@@ -66,6 +67,13 @@ export function UserSettingsPage() {
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  // Permanent account close (owner-only) — types the business name to confirm.
+  const [closeConfirm, setCloseConfirm] = useState("");
+  const isOwner = (me.role ?? "owner") === "owner";
+  // Confirm by retyping the business name (falls back to CLOSE if unnamed) —
+  // the same string the agent speaks, so it's the one the owner recognizes.
+  const closePhrase = (me.org.name ?? "").trim() || "CLOSE";
 
   useEffect(() => {
     setOrgName(me.org.name ?? "");
@@ -145,6 +153,29 @@ export function UserSettingsPage() {
     onError: (err) => {
       toast.error(err.message);
     },
+  });
+
+  // Permanent teardown: releases every rented number (stops the recurring
+  // Twilio charge), closes the Twilio subaccount, and marks the org closed.
+  // Irreversible — the backend never auto-reactivates a closed org. Owner-only
+  // (POST /org/close enforces it server-side too).
+  const closeAccount = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/org/close", { method: "POST" });
+      const data = await res.json().catch(() => ({ error: "Unknown error" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to close account");
+      return data as { ok: true; releasedNumbers: number };
+    },
+    onSuccess: async (data) => {
+      toast.success(
+        data.releasedNumbers > 0
+          ? `Account closed — ${data.releasedNumbers} number(s) released. Signing you out…`
+          : "Account closed. Signing you out…",
+      );
+      await supabase?.auth.signOut();
+      window.location.href = appPath("/login");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const testModeUntil = me.org.callingWindowTestModeUntil ? new Date(me.org.callingWindowTestModeUntil) : null;
@@ -533,6 +564,54 @@ export function UserSettingsPage() {
             Notification preferences are coming soon. You'll be able to control alerts for call events, weekly digests, and billing updates.
           </p>
         </Section>
+
+        {isOwner && (
+          <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-6">
+            <div className="flex items-center gap-2.5 mb-4">
+              <AlertTriangle className="size-4 text-destructive" aria-hidden />
+              <h2 className="text-sm font-semibold tracking-tight text-destructive">Danger zone</h2>
+            </div>
+            <h3 className="text-sm font-medium">Close this account</h3>
+            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
+              Permanently closes your workspace. We release every phone number you're renting (this
+              stops the recurring telephony charge immediately) and shut down your telephony account.
+              Your agents stop calling and this <strong>can't be undone</strong> — you'd start over from
+              scratch. If you only want to pause for a while, just stop using it: idle accounts are
+              suspended automatically after 30 days and closed after 60, and logging back in reactivates
+              a suspended one.
+            </p>
+            {closePhrase && (
+              <div className="mt-4 max-w-sm space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Type <span className="font-mono font-medium text-foreground">{closePhrase}</span> to confirm
+                </Label>
+                <Input
+                  value={closeConfirm}
+                  onChange={(e) => setCloseConfirm(e.target.value)}
+                  placeholder={closePhrase}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              className="mt-4"
+              disabled={closeAccount.isPending || closeConfirm.trim() !== closePhrase}
+              onClick={() => {
+                if (
+                  confirm(
+                    "This permanently closes your account, releases your phone numbers, and can't be undone. Continue?",
+                  )
+                ) {
+                  closeAccount.mutate();
+                }
+              }}
+            >
+              {closeAccount.isPending ? "Closing…" : "Close account permanently"}
+            </Button>
+          </section>
+        )}
       </div>
     </div>
   );
