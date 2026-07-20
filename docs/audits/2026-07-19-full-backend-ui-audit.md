@@ -89,7 +89,9 @@ These were checked specifically because they're the usual failure points; each h
 
 **Impact:** A developer or CI step that runs `bun test` directly, or trusts a turbo cache hit, gets a misleading signal — either 69 false failures or a masked real failure.
 
-**Recommendation:** (a) Document loudly that tests **must** run with `--isolate` (or make `bun test` alias to it). (b) In CI, run the test task with `--force` (or exclude it from remote cache) so a red suite can never be served from cache. (c) Longer term, fix the underlying mock leakage (per-file `mock.restore()` in `afterEach`) so the suite is invocation-robust.
+**Recommendation:** (a) Document loudly that tests **must** run with `--isolate` (already the `test` script default; keep it, and don't let anyone "simplify" it away). (b) In CI, run the test task with `--force` (or exclude it from remote cache) so a red suite can never be served from cache. (c) Longer term, remove the leakage-tolerance: 41 test files install `mock.module` and none restore it. Note that `mock.restore()`/`afterEach` does **not** undo `mock.module()` in Bun — the durable fix is to centralize DB/drizzle mocking into a single shared `--preload` module all tests import (one canonical mock, no cross-file divergence), so the suite is green even without `--isolate`.
+
+> **Verification (2026-07-20):** Confirmed one-file-per-process run = **658 pass / 0 fail**; single-process `bun test` (no flag) = **73 fail** (count drifts as files are added — order-dependent, definitional of mock leakage). The configured `bun test --isolate src/` = **658 pass / 0 fail**. So this is a harness-fragility finding, not a product regression: **CI is green and correct**; only the bare `bun test` invocation misleads.
 
 ### 6 — P3: Mixed data-fetching pattern (effectively a non-issue)
 
@@ -116,3 +118,20 @@ These were checked specifically because they're the usual failure points; each h
 ---
 
 *All findings are static-analysis + test-run based. Nothing in `packages/openvent-compliance` was modified, and no real credentials were used.*
+
+---
+
+## Resolution status — 2026-07-20
+
+Verified against `main` after commits `fb46225`, `59b2aba`, `2d90a53`.
+
+| # | Finding | Status | Fix commit |
+|---|---------|--------|-----------|
+| 1 | CRM/calendar creds stored/read as plaintext jsonb | ✅ Fixed | `fb46225` — `resolve-crm.ts` reads vault-first (`readOrgIntegrationCredentials`), plaintext jsonb only as a legacy fallback with a loud warning |
+| 2 | Global (module-singleton) outbound rate limiter | ✅ Fixed | `59b2aba` — Postgres-backed `rate-limit-store.ts`, keyed by `orgId` (genuinely per-tenant, survives restart, shared across instances) |
+| 3 | CORS reflect-any-origin + `credentials:true` when unset | ✅ Fixed | `2d90a53` — `cors-config.ts` refuses to boot in `production` without `CORS_ALLOWED_ORIGINS`; dev/test still reflect for zero-config |
+| 4 | Twilio/Plivo webhook signature skipped when no token | ✅ Fixed | `2d90a53` — fails **closed** (401) when no auth token resolves; Plivo signature path added |
+| 5 | Suite green only under `--isolate`; mock-leakage fragility | ⚠️ Open (P2) | Suite is green as-configured; underlying `mock.module` leakage (41 files, no restore) not yet centralized |
+| 6–7 | Data-fetch pattern / type-escape hatches | ℹ️ No action | Non-issues as assessed |
+
+Net: all security findings (1–4) closed and verified; only the P2 test-harness hygiene item (5) remains, and it does not affect the shipped product or CI signal.
