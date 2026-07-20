@@ -472,12 +472,12 @@ export function UserIntegrationsPage() {
   };
 
   return (
-    <div className="space-y-8 font-sans text-foreground bg-background page-enter">
+    <div className="page-enter space-y-6">
       {(redirectingToShopify || confirmingConnection) && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/70 backdrop-blur-sm">
-          <Loader2 className="size-6 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            {redirectingToShopify ? "Redirecting you to Shopify…" : "Confirming connection…"}
+        <div className="card-weeber p-4 border-primary/30 bg-primary/5 flex items-center gap-3">
+          <Loader2 className="size-4 animate-spin text-primary shrink-0" />
+          <p className="text-xs font-medium text-foreground">
+            {redirectingToShopify ? "Redirecting you to Shopify…" : "Confirming connection with Shopify…"}
           </p>
         </div>
       )}

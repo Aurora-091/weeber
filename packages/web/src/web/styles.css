@@ -731,5 +731,10 @@
   color: var(--foreground);
 }
 
+/* ─── Toaster Notification Overlay ───────────────────────────────────────── */
+[data-sonner-toaster], .toaster {
+  z-index: 99999 !important;
+}
+
 
 @import "./styles-marketing.css";

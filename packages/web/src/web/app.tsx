@@ -96,8 +96,17 @@ function RouteFallback() {
 
 function PageFallback() {
   return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    <div className="page-enter space-y-6">
+      <div className="space-y-2">
+        <div className="h-7 w-48 rounded bg-muted/60 animate-pulse" />
+        <div className="h-4 w-96 rounded bg-muted/40 animate-pulse" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
+        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
+        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
+      </div>
+      <div className="h-64 rounded-lg border border-border bg-card/60 animate-pulse" />
     </div>
   );
 }
