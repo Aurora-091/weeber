@@ -30,6 +30,7 @@ import { AgentFrameSchema } from "./agent-frame";
 import { makeFixedWindowLimiter } from "./fixed-window-limiter";
 import { issueTestCallToken } from "./test-call-tokens";
 import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
+import { bumpOrgActivity } from "../app/org-activity";
 import { generatePreviewAudio } from "./tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
 import {
@@ -125,6 +126,9 @@ export const voice = new Hono()
         })
         .onConflictDoNothing()
         .catch((err) => console.error("[voice] failed to insert call row from /incoming", err));
+
+      // Activity heartbeat for the inactivity lifecycle sweep (no-ops if orgId null).
+      bumpOrgActivity(session?.orgId);
 
       void dispatchWebhook(webhookUrl, "call.started", {
         callSid,

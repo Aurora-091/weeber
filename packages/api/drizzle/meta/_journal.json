@@ -295,6 +295,13 @@
       "when": 1784517363133,
       "tag": "0041_woozy_karen_page",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784539549467,
+      "tag": "0042_colossal_silverclaw",
+      "breakpoints": true
     }
   ]
 }

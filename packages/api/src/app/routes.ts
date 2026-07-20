@@ -71,6 +71,8 @@ import {
   releaseNumberForOrg,
   setByoCredentials,
   resetToPlatformDefault,
+  closeOrgTelephony,
+  syncSubaccountFriendlyName,
 } from "../voice/twilio-provisioning";
 import { getPlivoStatus, setPlivoByoCredentials } from "../voice/plivo-provisioning";
 import { getExotelStatus, setExotelByoCredentials } from "../voice/exotel-provisioning";
@@ -96,10 +98,14 @@ async function resolveOrCreateMembership(userId: string, email: string | null) {
   if (existing) return existing;
 
   const orgId = `org_${randomUUID()}`;
-  const name = email ? `${email.split("@")[0]}'s workspace` : "My workspace";
-
+  // Business name is captured at onboarding (POST /org/profile), not derived
+  // from the email — orgs.name is the name the agent SPEAKS on calls
+  // ({{company_name}}) and the Twilio subaccount friendly name, so a junk
+  // "<emailprefix>'s workspace" string here would leak into live calls. Left
+  // null until onboarding sets it; the /me response flags needsOnboarding so
+  // the UI can force the step.
   await db.transaction(async (tx) => {
-    await tx.insert(orgs).values({ id: orgId, name, contactEmail: email ?? undefined }).onConflictDoNothing();
+    await tx.insert(orgs).values({ id: orgId, name: null, contactEmail: email ?? undefined }).onConflictDoNothing();
     await tx.insert(orgMembers).values({ supabaseUserId: userId, orgId, role: "owner" }).onConflictDoNothing();
   });
 
@@ -190,14 +196,31 @@ export const userApp = new Hono<UserEnv>()
     const org = await getOrg(orgId);
     if (!org) return c.json({ error: "Organization not found", code: "no_org" }, 403);
 
+    // Activity heartbeat for the inactivity lifecycle sweep — a login counts
+    // as the org being alive. If the org was auto-suspended for inactivity,
+    // an owner/admin logging back in reactivates it (status -> active); the
+    // sweep already released its numbers, so the user just re-picks one. We
+    // never auto-reactivate a "closed" org — that's terminal by design.
+    const nextStatus = org.status === "suspended" ? "active" : org.status;
+    await db
+      .update(orgs)
+      .set({ lastActivityAt: new Date(), status: nextStatus })
+      .where(eq(orgs.id, orgId))
+      .catch((err) => console.error("[me] activity heartbeat failed", err));
+
     return c.json(
       {
         user: userId ? { id: userId, email } : null,
         role,
+        // Force the onboarding business-name step whenever orgs.name is unset
+        // — it's what the agent speaks on calls and the Twilio subaccount
+        // name, so it must be a real business name before anything goes live.
+        needsOnboarding: !org.name || org.name.trim().length === 0,
         org: {
           id: org.id,
           name: org.name,
           vertical: org.vertical,
+          status: nextStatus,
           planName: org.planName,
           currency: org.currency,
           countryCode: org.countryCode,
@@ -256,6 +279,11 @@ export const userApp = new Hono<UserEnv>()
       return c.json({ error: "No valid fields to update" }, 400);
     }
     await db.update(orgs).set(updates).where(eq(orgs.id, orgId));
+    // Keep the Twilio subaccount friendly name in sync with the business
+    // name — best-effort, never blocks the rename.
+    if ("name" in updates && updates.name) {
+      void syncSubaccountFriendlyName(orgId, updates.name);
+    }
     const org = await getOrg(orgId);
     return c.json({
       org: {
@@ -271,6 +299,25 @@ export const userApp = new Hono<UserEnv>()
         humanTransferNumber: org!.humanTransferNumber,
       },
     }, 200);
+  })
+
+  // User-initiated permanent account close. Releases every number and closes
+  // the Twilio subaccount for good (irreversible — mirrors what the 60-day
+  // inactivity sweep does, just on demand). Owner-only: closing an account
+  // is destructive and shouldn't be reachable by a regular member.
+  .post("/org/close", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    if (c.get("userRole") !== "owner") {
+      return c.json({ error: "Only the workspace owner can close the account" }, 403);
+    }
+    const result = await closeOrgTelephony(orgId, "close");
+    if (!result.ok) {
+      return c.json({ error: result.error }, 502);
+    }
+    return c.json(
+      { ok: true, status: "closed", releasedNumbers: result.releasedNumbers, subaccountAction: result.subaccountAction },
+      200,
+    );
   })
 
   // Org-scoped mirror of voice/routes.ts's admin /webhooks/test — fires a

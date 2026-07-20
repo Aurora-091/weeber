@@ -28,6 +28,17 @@ mock.module("../database", () => {
     select: () => ({
       from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
     }),
+    update: () => ({
+      set: () => ({
+        // Awaitable + .catch-able (the /me activity heartbeat is
+        // fire-and-forget: db.update(orgs).set(...).where(...).catch(...)).
+        where: () => {
+          const p = Promise.resolve([] as unknown[]) as Promise<unknown[]> & Record<string, unknown>;
+          p.catch = () => Promise.resolve([]);
+          return p;
+        },
+      }),
+    }),
     insert: (table: unknown) => ({
       values: (data: Record<string, unknown>) => {
         const name = getTableName(table) ?? "";
@@ -116,10 +127,13 @@ describe("user /api/app routes", () => {
   it("bootstraps an org + owner membership on first /me", async () => {
     const res = await userApp.request("/me", { headers: await bearer("user-new", "jane@shop.com") });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { org: { id: string; name: string }; role: string };
+    const body = (await res.json()) as { org: { id: string; name: string | null }; role: string; needsOnboarding: boolean };
     expect(body.role).toBe("owner");
     expect(body.org.id.startsWith("org_")).toBe(true);
-    expect(body.org.name).toBe("jane's workspace");
+    // Business name is no longer auto-derived from the email — it's captured
+    // at onboarding, so a fresh org has a null name and needsOnboarding=true.
+    expect(body.org.name).toBeNull();
+    expect(body.needsOnboarding).toBe(true);
     expect(insertsByTable.orgs).toHaveLength(1);
     expect(insertsByTable.org_members).toHaveLength(1);
   });

@@ -113,6 +113,19 @@ export const orgs = pgTable("orgs", {
   // accidentally left on in production — set via
   // POST /api/app/compliance/test-mode, always to now()+24h.
   callingWindowTestModeUntil: timestamp("calling_window_test_mode_until", { withTimezone: true, mode: "date" }),
+  // Org lifecycle (2026-07-20). `active` is the normal state; `suspended` is
+  // a reversible pause the inactivity sweep applies after ORG_INACTIVITY_
+  // SUSPEND_DAYS with no activity (its numbers are released so it stops
+  // billing, but the org + subaccount can be reactivated); `closed` is the
+  // terminal state — the Twilio subaccount has been permanently closed
+  // (either by the sweep after ORG_INACTIVITY_CLOSE_DAYS, or by the user's
+  // own "close account" action). See voice/twilio-provisioning.ts
+  // (closeOrgTelephony) and voice/workflows/org-lifecycle-sweep.ts.
+  status: text("status").notNull().default("active").$type<"active" | "suspended" | "closed">(),
+  // Last time this org did anything that counts as "alive" — a call placed
+  // or received, or a session bootstrap (/me). Drives the inactivity sweep.
+  // Defaults to now() so freshly-created orgs aren't instantly swept.
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 

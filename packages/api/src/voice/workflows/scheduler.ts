@@ -9,8 +9,14 @@ import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing }
 import { checkIndiaNumberSeriesCompliance } from "../compliance/number-series-gate";
 import { checkFtsaAttemptCap } from "../compliance/attempt-cap";
 import { executeDueWorkflowRuns } from "./graph-engine";
+import { runOrgLifecycleSweep } from "./org-lifecycle-sweep";
 
 const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
+// The inactivity lifecycle sweep is day-scale, not minute-scale — running it
+// every minute would be wasteful churn. Once an hour is plenty granular for a
+// 30/60-DAY threshold. unref'd like the main sweep so it never holds the
+// process open on its own.
+const LIFECYCLE_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 type ScheduledCallRow = typeof scheduledCalls.$inferSelect;
 
@@ -319,4 +325,9 @@ export function startScheduledCallSweep() {
   };
   run();
   setInterval(run, SWEEP_INTERVAL_MS).unref?.();
+
+  const lifecycleRun = () =>
+    void runOrgLifecycleSweep().catch((err) => console.error("[scheduler] org-lifecycle sweep failed", err));
+  lifecycleRun();
+  setInterval(lifecycleRun, LIFECYCLE_SWEEP_INTERVAL_MS).unref?.();
 }

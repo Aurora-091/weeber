@@ -4,6 +4,7 @@ import { orgs, orgAgentConfigs, orgPhoneNumbers } from "../database/schema";
 import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
 import { createPlivoOutboundCall } from "./plivo-client";
 import { createExotelOutboundCall } from "./exotel-client";
+import { bumpOrgActivity } from "../app/org-activity";
 
 export type TelephonyProvider = "twilio" | "plivo" | "exotel";
 
@@ -103,6 +104,10 @@ export async function placeOutboundCall(input: {
   if (!from) {
     return { ok: false, error: "No outbound phone number configured", statusCode: 500 };
   }
+
+  // Activity heartbeat for the inactivity lifecycle sweep — placing a call
+  // counts as the org being alive, even with no dashboard logins.
+  bumpOrgActivity(orgId);
 
   if (provider === "plivo") {
     if (!orgId) {

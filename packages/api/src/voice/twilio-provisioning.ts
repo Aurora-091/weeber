@@ -179,6 +179,118 @@ export async function releaseNumberForOrg(orgId: string, phoneNumberId: number):
   return { ok: true };
 }
 
+/**
+ * Keeps the Twilio subaccount's friendly name in sync when the org renames
+ * itself — the friendly name is set once at createSubaccountForOrg and would
+ * otherwise go stale, leaving the Twilio console showing an old/placeholder
+ * name that's the only human-readable hook for reconciling which subaccount
+ * belongs to whom. Best-effort: a failure here never blocks the rename
+ * itself (the DB name is the source of truth), just logs. Platform mode with
+ * a provisioned subaccount only.
+ */
+export async function syncSubaccountFriendlyName(orgId: string, friendlyName: string): Promise<void> {
+  const [org] = await db
+    .select({ mode: orgs.twilioMode, accountSid: orgs.twilioAccountSid })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
+  if (!org || org.mode !== "platform" || !org.accountSid) return;
+  try {
+    await twilioClient.api.v2010.accounts(org.accountSid).update({ friendlyName });
+  } catch (err) {
+    console.error(`[twilio] failed to sync friendly name for ${orgId}: ${(err as Error).message}`);
+  }
+}
+
+export type CloseTelephonyResult =
+  | { ok: true; releasedNumbers: number; subaccountAction: "closed" | "suspended" | "none" }
+  | { ok: false; error: string };
+
+/**
+ * Tears down an org's telephony to stop it billing when the org goes cold or
+ * the user closes their account. Two modes:
+ *
+ *  - "suspend": reversible. Releases every rented number (the actual monthly
+ *    cost) and suspends the Twilio subaccount. The org can come back later —
+ *    its creds stay on the row, status -> "suspended". Used by the 30-day
+ *    inactivity step.
+ *  - "close": permanent. Releases numbers, then CLOSES the subaccount on
+ *    Twilio (irreversible — Twilio won't let it reopen), clears the stored
+ *    creds, and marks the org "closed". Used by the 60-day sweep step and by
+ *    the user's own "close account" action.
+ *
+ * Billing note: an idle subaccount with no numbers costs nothing, so the
+ * number release is what actually stops the bleed; the subaccount status
+ * change is cleanup. BYO orgs (twilioMode "byo") only have their org row
+ * updated — we never touch a customer's own Twilio account.
+ */
+export async function closeOrgTelephony(orgId: string, mode: "suspend" | "close"): Promise<CloseTelephonyResult> {
+  const [org] = await db
+    .select({ twilioMode: orgs.twilioMode, accountSid: orgs.twilioAccountSid, authToken: orgs.twilioAuthToken })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
+  if (!org) return { ok: false, error: "Org not found" };
+
+  const orgStatus = mode === "close" ? "closed" : "suspended";
+
+  // BYO: never touch the customer's own Twilio account — just flip our
+  // org row so we stop routing calls through it.
+  if (org.twilioMode === "byo") {
+    await db.update(orgs).set({ status: orgStatus }).where(eq(orgs.id, orgId));
+    return { ok: true, releasedNumbers: 0, subaccountAction: "none" };
+  }
+
+  // Platform mode but no subaccount ever provisioned (still on global
+  // default) — nothing on Twilio to tear down, just mark the org.
+  if (!org.accountSid || !org.authToken) {
+    await db.update(orgs).set({ status: orgStatus }).where(eq(orgs.id, orgId));
+    return { ok: true, releasedNumbers: 0, subaccountAction: "none" };
+  }
+
+  const subClient = Twilio(org.accountSid, org.authToken);
+  let releasedNumbers = 0;
+
+  // Release every rented number first — this is what stops the monthly
+  // rental. (Closing the subaccount would auto-release them too, but suspend
+  // would NOT, so we always do it explicitly for consistent behavior.)
+  try {
+    const numbers = await subClient.incomingPhoneNumbers.list({ limit: 100 });
+    for (const n of numbers) {
+      await subClient.incomingPhoneNumbers(n.sid).remove();
+      releasedNumbers++;
+    }
+  } catch (err) {
+    return { ok: false, error: `Failed to release numbers: ${(err as Error).message}` };
+  }
+
+  // Mark our own org_phone_numbers rows released so the DB matches Twilio.
+  await db
+    .update(orgPhoneNumbers)
+    .set({ status: "released" })
+    .where(and(eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")));
+
+  // Suspend or close the subaccount itself (via the PARENT client — a
+  // subaccount can't change its own status).
+  try {
+    await twilioClient.api.v2010.accounts(org.accountSid).update({ status: mode === "close" ? "closed" : "suspended" });
+  } catch (err) {
+    return { ok: false, error: `Numbers released but failed to ${mode} subaccount: ${(err as Error).message}` };
+  }
+
+  if (mode === "close") {
+    // Terminal: clear creds so nothing tries to use the dead subaccount.
+    await db
+      .update(orgs)
+      .set({ status: "closed", twilioAccountSid: null, twilioAuthToken: null, outboundNumber: null })
+      .where(eq(orgs.id, orgId));
+  } else {
+    await db.update(orgs).set({ status: "suspended", outboundNumber: null }).where(eq(orgs.id, orgId));
+  }
+
+  return { ok: true, releasedNumbers, subaccountAction: mode === "close" ? "closed" : "suspended" };
+}
+
 export type ByoResult = { ok: true } | { ok: false; error: string };
 
 /**
