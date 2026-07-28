@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { INTEGRATIONS_NAV_LABEL } from "../../lib/verticals";
+import { formatDate } from "../../lib/format";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
@@ -657,7 +658,7 @@ export function UserIntegrationsPage() {
                   </div>
                   <div className="flex justify-between border-b border-border pb-2">
                     <span>Connected At</span>
-                    <span className="text-foreground">{new Date(activeShop.connectedAt).toLocaleDateString()}</span>
+                    <span className="text-foreground">{formatDate(activeShop.connectedAt)}</span>
                   </div>
                   <div className="flex justify-between border-b border-border pb-2">
                     <span>Last Connected</span>

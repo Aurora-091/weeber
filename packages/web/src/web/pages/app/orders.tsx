@@ -7,6 +7,7 @@ import { blockReasonMeta } from "../../lib/block-reasons";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
+import { formatRelative } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 
@@ -45,7 +46,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatRelative(iso);
 }
 
 function CallNowButton({ row }: { row: OrderRow }) {

@@ -6,6 +6,7 @@ import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
+import { formatRelative } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -99,8 +100,7 @@ const SOURCE_LABEL: Record<LeadSource, string> = {
 const UNASSIGNED = "__unassigned__";
 
 function formatWhen(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatRelative(iso as string);
 }
 
 export function UserLeadsPage() {

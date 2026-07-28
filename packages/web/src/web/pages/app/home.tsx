@@ -17,6 +17,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { StatCard } from "../../components/charts/stat-card";
 import { BreakdownList } from "../../components/charts/breakdown-list";
 import { DateRangeSelector } from "../../components/charts/date-range-selector";
+import { formatMoney, formatDateTime } from "../../lib/format";
 
 const CHART_COLORS = [
   "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
@@ -101,16 +102,8 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 
-function fmtCurrency(amount: number, currency: string | null | undefined): string {
-  try {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: currency || "INR",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${currency ?? "INR"} ${amount.toFixed(0)}`;
-  }
+function fmtCurrency(amount: number, currency: string | null | undefined, locale?: string): string {
+  return formatMoney(amount, currency, locale);
 }
 
 function fmtPercent(ratio: number | null | undefined): string {
@@ -448,7 +441,7 @@ export function UserHomePage() {
           {testModeActive && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-xs font-medium text-warning"
-              title={`Calling-window compliance is bypassed until ${testModeUntil!.toLocaleString()}. Turn off on the Settings page.`}
+              title={`Calling-window compliance is bypassed until ${formatDateTime(testModeUntil!)}. Turn off on the Settings page.`}
             >
               <TriangleAlert className="size-3 shrink-0" aria-hidden />
               Compliance test mode — calling window OFF

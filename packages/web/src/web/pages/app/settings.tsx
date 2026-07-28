@@ -7,6 +7,7 @@ import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
+import { formatDateTime } from "../../lib/format";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -468,7 +469,7 @@ export function UserSettingsPage() {
           </label>
           {testModeActive && testModeUntil && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Turns back on automatically at {testModeUntil.toLocaleString()}.
+              Turns back on automatically at {formatDateTime(testModeUntil)}.
             </p>
           )}
 
