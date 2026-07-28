@@ -8,7 +8,6 @@ import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
-import { formatRelative } from "../../lib/format";
 
 type CallRow = {
   id: number;
@@ -39,7 +38,8 @@ type DirectionFilter = "all" | "inbound" | "outbound";
 type StatusFilter = "all" | "in-progress" | "completed" | "failed";
 
 function formatWhen(iso: string | null) {
-  return formatRelative(iso as string);
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 /** Estimated per-call cost (2026-07-18) — stored as US cents (a float) in
