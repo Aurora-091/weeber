@@ -8,6 +8,7 @@ import { PortalContainerContext } from "../../lib/portal-container";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "../ui/sheet";
 import { Toaster } from "../ui/sonner";
 import { CommandPalette, type PaletteAction } from "./command-palette";
+import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { ThemeToggle } from "./theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 
@@ -264,6 +265,7 @@ export function AppShell({
         >
           <PortalContainerContext.Provider value={portalContainer}>
           <CommandPalette nav={nav} actions={actions} />
+          <KeyboardShortcuts />
           <Toaster position="bottom-right" />
           <div className="flex min-h-screen">
             {/* Desktop sidebar */}

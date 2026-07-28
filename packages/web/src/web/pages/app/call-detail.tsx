@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRoute, Link } from "wouter";
-import { ArrowLeft, Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench, RefreshCw, CircleDollarSign } from "lucide-react";
+import { useRoute } from "wouter";
+import { Sparkles, CirclePlay as PlayCircle, Copy, Check, Wrench, RefreshCw, CircleDollarSign } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
+import { PageHeader } from "../../components/shell/page-header";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
 type CallRow = {
@@ -144,72 +145,88 @@ export function UserCallDetailPage() {
 
   return (
     <div className="page-enter">
-      <Link
-        href={appPath("/calls")}
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        All conversations
-      </Link>
-
-      {call.isLoading && <SkeletonCards count={2} lines={4} />}
-      {call.isError && <EmptyState title="Conversation not found" description="This call doesn't exist or isn't yours." />}
+      {call.isLoading && (
+        <>
+          <div className="mb-4 h-3 w-32 animate-pulse rounded bg-muted" />
+          <SkeletonCards count={2} lines={4} />
+        </>
+      )}
+      {call.isError && (
+        <>
+          <PageHeader
+            title="Conversation not found"
+            breadcrumbs={[
+              { label: "Conversations", href: appPath("/calls") },
+              { label: "Not found" },
+            ]}
+          />
+          <EmptyState title="Conversation not found" description="This call doesn't exist or isn't yours." />
+        </>
+      )}
 
       {row && (
         <div className="content-fade-in">
-          <div className="mb-[var(--shell-section-gap)]">
-            <div className="flex items-center gap-3">
-              <h1 className="font-mono text-2xl font-medium">
-                {row.direction === "inbound" ? row.fromNumber : row.toNumber}
-              </h1>
-              <StatusBadge status={row.status} />
-              {(row.providerFailoverCount ?? 0) > 0 && (
-                <FailoverBadge count={row.providerFailoverCount as number} />
-              )}
-              {row.estimatedCostUsdCents !== null && row.estimatedCostUsdCents !== undefined && (
-                <CostBadge cents={row.estimatedCostUsdCents} />
-              )}
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {row.direction} · {row.status}
-              {row.disposition ? ` · ${row.disposition}` : ""}
-              {row.sentiment ? (
-                <span
-                  className={
-                    row.sentiment === "positive"
-                      ? " text-weeber-success"
-                      : row.sentiment === "negative"
-                        ? " text-weeber-error"
-                        : ""
-                  }
-                >
-                  {" "}
-                  · {row.sentiment}
+          <PageHeader
+            breadcrumbs={[
+              { label: "Conversations", href: appPath("/calls") },
+              { label: row.direction === "inbound" ? row.fromNumber : row.toNumber },
+            ]}
+            title={
+              <span className="flex flex-wrap items-center gap-3">
+                <span className="font-mono">
+                  {row.direction === "inbound" ? row.fromNumber : row.toNumber}
                 </span>
-              ) : (
-                ""
-              )}
-            </p>
-            {row.recordingUrl && (
-              <div className="mt-3">
-                <div className="inline-flex items-center gap-1.5 text-sm text-primary">
-                  <PlayCircle className="size-4" aria-hidden />
-                  <span className="font-medium">Recording</span>
-                </div>
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio
-                  controls
-                  src={row.recordingUrl}
-                  className="mt-2 w-full max-w-md"
-                  preload="metadata"
-                >
-                  <a href={row.recordingUrl} target="_blank" rel="noreferrer">
-                    Play recording
-                  </a>
-                </audio>
+                <StatusBadge status={row.status} />
+                {(row.providerFailoverCount ?? 0) > 0 && (
+                  <FailoverBadge count={row.providerFailoverCount as number} />
+                )}
+                {row.estimatedCostUsdCents !== null && row.estimatedCostUsdCents !== undefined && (
+                  <CostBadge cents={row.estimatedCostUsdCents} />
+                )}
+              </span>
+            }
+            description={
+              <>
+                {row.direction} · {row.status}
+                {row.disposition ? ` · ${row.disposition}` : ""}
+                {row.sentiment ? (
+                  <span
+                    className={
+                      row.sentiment === "positive"
+                        ? " text-weeber-success"
+                        : row.sentiment === "negative"
+                          ? " text-weeber-error"
+                          : ""
+                    }
+                  >
+                    {" "}
+                    · {row.sentiment}
+                  </span>
+                ) : (
+                  ""
+                )}
+              </>
+            }
+          />
+          {row.recordingUrl && (
+            <div className="mb-shell-section -mt-2">
+              <div className="inline-flex items-center gap-1.5 text-sm text-primary">
+                <PlayCircle className="size-4" aria-hidden />
+                <span className="font-medium">Recording</span>
               </div>
-            )}
-          </div>
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <audio
+                controls
+                src={row.recordingUrl}
+                className="mt-2 w-full max-w-md"
+                preload="metadata"
+              >
+                <a href={row.recordingUrl} target="_blank" rel="noreferrer">
+                  Play recording
+                </a>
+              </audio>
+            </div>
+          )}
 
           <div className="grid gap-8 md:grid-cols-[1fr_300px]">
             <div>

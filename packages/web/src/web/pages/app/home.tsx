@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import {
-  Phone, Clock, Wrench, ShieldAlert, Wallet, TrendingUp, TrendingDown, Sparkles,
-  Check, X, TriangleAlert, Filter, ShieldCheck, MessageSquare,
-} from "lucide-react";
+import { Phone, Clock, Wrench, ShieldAlert, Wallet, TrendingUp, TrendingDown, Sparkles, Check, X, TriangleAlert, ListFilter as Filter, ShieldCheck, MessageSquare } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
@@ -466,60 +463,87 @@ export function UserHomePage() {
         <Skeleton className="h-28 w-full rounded-lg" />
       ) : (
         !checklistDone &&
-        !onboarding.data?.dismissed && (
-          <div className="card-weeber">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <div className="text-sm font-medium">Finish setting up Weeber</div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {stepEntries.filter(([, done]) => done).length} of{" "}
-                  {stepEntries.length || 4} steps done
-                </p>
+        !onboarding.data?.dismissed && (() => {
+          const doneCount = stepEntries.filter(([, d]) => d).length;
+          const total = stepEntries.length || 4;
+          const pct = Math.round((doneCount / total) * 100);
+          const nextStep = stepEntries.find(([, d]) => !d);
+          const nextLabel = nextStep ? STEP_LABELS[nextStep[0]] || nextStep[0] : null;
+          return (
+            <div className="card-weeber overflow-hidden">
+              <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium">Finish setting up Weeber</div>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium text-primary tabular-nums">
+                      {pct}%
+                    </span>
+                  </div>
+                  {nextLabel && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      Up next: <span className="text-foreground">{nextLabel}</span>
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setSetupOpen(true)}
+                  >
+                    <Sparkles className="size-3.5" aria-hidden />
+                    Resume
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={dismissChecklist}
+                    aria-label="Dismiss checklist"
+                    className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={dismissChecklist}
-                aria-label="Dismiss checklist"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              <div
+                className="h-1 w-full bg-muted"
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Setup progress"
               >
-                <X className="size-4" aria-hidden />
-              </button>
+                <div
+                  className="h-full bg-primary transition-[width] duration-500 ease-out"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="px-5 py-4">
+                <ul className="grid gap-2.5 sm:grid-cols-2">
+                  {stepEntries.map(([key, done]) => (
+                    <li key={key} className="flex items-center gap-3">
+                      <span
+                        className={`flex size-5 shrink-0 items-center justify-center rounded-full transition-colors ${
+                          done
+                            ? "bg-success/15 text-success"
+                            : "border border-border text-transparent"
+                        }`}
+                      >
+                        {done && <Check className="size-3" aria-hidden />}
+                      </span>
+                      <span
+                        className={`text-sm ${
+                          done ? "text-muted-foreground line-through" : "text-foreground"
+                        }`}
+                      >
+                        {STEP_LABELS[key] || key}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
-            <div className="px-5 py-4">
-              <ul className="space-y-2.5">
-                {stepEntries.map(([key, done]) => (
-                  <li key={key} className="flex items-center gap-3">
-                    <span
-                      className={`flex size-5 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        done
-                          ? "bg-success/15 text-success"
-                          : "border border-border text-transparent"
-                      }`}
-                    >
-                      {done && <Check className="size-3" aria-hidden />}
-                    </span>
-                    <span
-                      className={`text-sm ${
-                        done ? "text-muted-foreground line-through" : "text-foreground"
-                      }`}
-                    >
-                      {STEP_LABELS[key] || key}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-4 gap-1.5"
-                onClick={() => setSetupOpen(true)}
-              >
-                <Sparkles className="size-3.5" aria-hidden />
-                Resume setup
-              </Button>
-            </div>
-          </div>
-        )
+          );
+        })()
       )}
 
       {/* ── KPIs ── */}
