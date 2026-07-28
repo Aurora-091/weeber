@@ -292,8 +292,12 @@ export function AppShell({
 
             {/* Content area */}
             <div className="min-w-0 flex-1">
-              {/* Mobile topbar */}
-              <div className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-sm md:hidden">
+              {/* Mobile topbar — z-30 so it clears sticky page headers
+                  (z-10) and the desktop sidebar's z-20 when the viewport
+                  transitions across the md breakpoint mid-session, while
+                  still sitting well below dialog/sheet overlays at
+                  z-50. */}
+              <div className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-sm md:hidden">
                 <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
                   <SheetTrigger asChild>
                     <button

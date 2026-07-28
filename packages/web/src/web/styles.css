@@ -149,6 +149,19 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Horizontal-overflow guard — decorative absolutely-positioned hero
+     elements, wide inline SVGs, and long unbroken words (URLs, emails,
+     merchant IDs) all have a habit of nudging the layout past 100vw on
+     narrow viewports, which surfaces as a stray horizontal scrollbar and
+     a broken mobile hero. Applied on `html` so it doesn't fight with
+     any `position: fixed` toast/dialog/sheet root (which position
+     against the viewport, not the html clip box). Content-scroll inside
+     its own container (see `.overflow-x-auto` wrappers on data tables
+     and the pricing comparison) still works — this only kills accidental
+     page-level bleed. */
+  html {
+    overflow-x: clip;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
@@ -158,6 +171,28 @@
   }
   code, pre, .font-mono-label {
     font-family: var(--font-mono);
+  }
+  /* Anchor-jump offset — MarketingNav is `fixed h-[66px]`, the app-shell
+     mobile topbar is `sticky h-12`. Section landings via `/#waitlist` or
+     `/pricing#compare` used to slide the section title under the nav.
+     Applied to every `[id]` because sections, headings, and inline
+     anchor targets all get jumped to. */
+  [id] {
+    scroll-margin-top: 96px;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  /* Long-word wrap fallback — prevents a monster URL or a base-64 blob
+     pasted into a call transcript from stretching a card off-screen.
+     Deliberately at the paragraph/body level, not inputs. */
+  p, li, dd, dt, blockquote, figcaption {
+    overflow-wrap: anywhere;
   }
 }
 
