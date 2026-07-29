@@ -1,13 +1,15 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { PhoneIncoming, PhoneOutgoing, Search, RefreshCw } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, Search, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
+import { Button } from "../../components/ui/button";
+import { formatRelative } from "../../lib/format";
 
 type CallRow = {
   id: number;
@@ -38,8 +40,7 @@ type DirectionFilter = "all" | "inbound" | "outbound";
 type StatusFilter = "all" | "in-progress" | "completed" | "failed";
 
 function formatWhen(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatRelative(iso as string);
 }
 
 /** Estimated per-call cost (2026-07-18) — stored as US cents (a float) in
@@ -57,28 +58,7 @@ function formatEstimatedCost(cents: number | null): string | null {
   return `~${dollars.toFixed(2)}`;
 }
 
-function relativeTime(iso: string | null): string {
-  if (!iso) return "";
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  if (diffMs < 0) return "just now";
 
-  const seconds = Math.floor(diffMs / 1000);
-  if (seconds < 60) return "just now";
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
 
 function PillToggle<T extends string>({
   options,
@@ -167,7 +147,17 @@ export function UserCallsPage() {
       {calls.isLoading && <SkeletonTable columns={4} rows={6} />}
 
       {calls.isError && (
-        <EmptyState title="Couldn't load conversations" description="Something went wrong — refresh to try again." />
+        <EmptyState
+          title="Couldn't load conversations"
+          description="Something went wrong fetching your calls. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => calls.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {!calls.isLoading && !calls.isError && rows.length === 0 && (
@@ -243,8 +233,6 @@ export function UserCallsPage() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <span>{formatWhen(call.startedAt)}</span>
-                      <span className="opacity-60">·</span>
-                      <span className="opacity-70">{relativeTime(call.startedAt)}</span>
                     </div>
                   </div>
                   {(call.providerFailoverCount ?? 0) > 0 && (

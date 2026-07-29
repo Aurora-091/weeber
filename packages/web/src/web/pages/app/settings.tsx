@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded, AlertTriangle } from "lucide-react";
+import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded, TriangleAlert as AlertTriangle } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
+import { formatDateTime } from "../../lib/format";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -468,7 +469,7 @@ export function UserSettingsPage() {
           </label>
           {testModeActive && testModeUntil && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Turns back on automatically at {testModeUntil.toLocaleString()}.
+              Turns back on automatically at {formatDateTime(testModeUntil)}.
             </p>
           )}
 

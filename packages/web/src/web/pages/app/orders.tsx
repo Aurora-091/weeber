@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Phone, Loader as Loader2, ShoppingCart, MessageSquareHeart, Search, ShieldAlert, Clock } from "lucide-react";
+import { Phone, Loader as Loader2, ShoppingCart, MessageSquareHeart, Search, ShieldAlert, Clock, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { blockReasonMeta } from "../../lib/block-reasons";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
+import { formatRelative } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 
@@ -45,7 +46,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatRelative(iso);
 }
 
 function CallNowButton({ row }: { row: OrderRow }) {
@@ -113,7 +114,19 @@ export function UserOrdersPage() {
       </div>
 
       {orders.isLoading && <SkeletonTable rows={6} />}
-      {orders.isError && <EmptyState title="Couldn't load orders" description="Something went wrong reaching the server — try refreshing." />}
+      {orders.isError && (
+        <EmptyState
+          title="Couldn't load orders"
+          description="Something went wrong reaching the server. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => orders.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
+        />
+      )}
       {!orders.isLoading && !orders.isError && filtered.length === 0 && (
         <EmptyState
           title={rows.length === 0 ? "No triggers captured yet" : "No matches"}

@@ -16,7 +16,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowLeft, Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus2, Play } from "lucide-react";
+import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play } from "lucide-react";
 import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
@@ -29,6 +29,7 @@ import { Switch } from "../../components/ui/switch";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
+import { Breadcrumbs } from "../../components/shell/breadcrumbs";
 import { WorkflowNode } from "../../components/canvas/WorkflowNode";
 import { BranchEdge } from "../../components/canvas/BranchEdge";
 import { NodePalette } from "../../components/canvas/NodePalette";
@@ -212,15 +213,13 @@ function UserWorkflowStandardView({
     <div className="page-enter flex flex-col h-[calc(100vh-4rem)]">
       <div className="flex items-center justify-between gap-3 pb-4 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
-          <Link
-            href={appPath("/workflows")}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            Workflows
-          </Link>
-          <span className="text-muted-foreground/40">/</span>
-          <h1 className="font-medium text-sm truncate">{workflow.name}</h1>
+          <Breadcrumbs
+            className="mb-0"
+            items={[
+              { label: "Workflows", href: appPath("/workflows") },
+              { label: workflow.name },
+            ]}
+          />
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -573,15 +572,13 @@ function UserWorkflowCanvasEditor({
     <div className="page-enter flex flex-col h-[calc(100vh-4rem)]">
       <div className="flex items-center justify-between gap-3 pb-4 border-b border-border mb-0">
         <div className="flex items-center gap-3 min-w-0">
-          <Link
-            href={appPath("/workflows")}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            Workflows
-          </Link>
-          <span className="text-muted-foreground/40">/</span>
-          <h1 className="font-medium text-sm truncate">{workflow.name}</h1>
+          <Breadcrumbs
+            className="mb-0"
+            items={[
+              { label: "Workflows", href: appPath("/workflows") },
+              { label: workflow.name },
+            ]}
+          />
           <Badge variant="secondary" className="text-[10px]">Custom</Badge>
         </div>
         <div className="flex items-center gap-2">

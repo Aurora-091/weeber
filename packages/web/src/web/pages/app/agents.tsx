@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRoute, useLocation, Link } from "wouter";
-import { Loader as Loader2, ChevronLeft, User, Mic, Shield, PhoneCall, Info, Settings } from "lucide-react";
+import { useRoute, useLocation } from "wouter";
+import { Loader as Loader2, User, Mic, Shield, PhoneCall, Info, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
@@ -15,6 +15,7 @@ import { VoicePicker } from "../../components/voice/VoicePicker";
 import { useUser } from "../../components/app/user-shell";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
+import { Breadcrumbs } from "../../components/shell/breadcrumbs";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
@@ -555,10 +556,14 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-5">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href={appPath("/agents")} className="text-muted-foreground hover:text-foreground transition-colors duration-150" aria-label="Back to agents">
-            <ChevronLeft className="size-5" />
-          </Link>
           <div className="min-w-0">
+            <Breadcrumbs
+              className="mb-2"
+              items={[
+                { label: "Agents", href: appPath("/agents") },
+                { label: row.config?.name || row.templateName },
+              ]}
+            />
             <h1 className="truncate text-xl font-bold leading-snug">{row.config?.name || row.templateName}</h1>
             <p className="truncate text-xs text-muted-foreground leading-relaxed">{row.templateDescription}</p>
           </div>

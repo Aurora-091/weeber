@@ -9,6 +9,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
+import { formatDate } from "../../lib/format";
 
 type OrgPhoneNumber = {
   id: number;
@@ -194,7 +195,7 @@ export function UserNumbersPage() {
                 <div>
                   <div className="text-sm font-medium">{row.phoneNumber}</div>
                   <div className="text-xs text-muted-foreground capitalize">
-                    {row.provider} · purchased {new Date(row.purchasedAt).toLocaleDateString()}
+                    {row.provider} · purchased {formatDate(row.purchasedAt)}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

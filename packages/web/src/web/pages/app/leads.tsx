@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound, SlidersHorizontal, Trash2, Share2 } from "lucide-react";
+import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound, SlidersHorizontal, Trash2, Share2, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
+import { formatRelative } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -99,8 +100,7 @@ const SOURCE_LABEL: Record<LeadSource, string> = {
 const UNASSIGNED = "__unassigned__";
 
 function formatWhen(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatRelative(iso as string);
 }
 
 export function UserLeadsPage() {
@@ -211,7 +211,19 @@ export function UserLeadsPage() {
       </div>
 
       {leads.isLoading && <SkeletonTable rows={6} />}
-      {leads.isError && <EmptyState title="Couldn't load leads" description="Something went wrong reaching the server — try refreshing." />}
+      {leads.isError && (
+        <EmptyState
+          title="Couldn't load leads"
+          description="Something went wrong reaching the server. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => leads.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
+        />
+      )}
       {!leads.isLoading && !leads.isError && rows.length === 0 && (
         <EmptyState
           title={query.trim() ? "No matches" : "No leads yet"}
