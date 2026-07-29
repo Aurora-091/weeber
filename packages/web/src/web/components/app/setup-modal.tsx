@@ -341,6 +341,7 @@ export function SetupModal({
   // Guards the one-shot default provisioning so it fires at most once per open
   // session even as the agents step re-renders.
   const provisionedRef = useRef(false);
+  const businessNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPickedVertical(me.org.vertical);
@@ -513,6 +514,16 @@ export function SetupModal({
   const current = manualStep ?? (firstIncomplete === -1 ? stepKeys.length - 1 : firstIncomplete);
   const currentKey = stepKeys[current];
 
+  // Focus the business-name field when the "vertical" step becomes active.
+  // Replaces the `autoFocus` attribute (which fails jsx-a11y/no-autofocus and
+  // fires on any load); this is scoped to the moment the step is shown. The
+  // 0ms defer lets Radix Dialog's own open-focus settle first.
+  useEffect(() => {
+    if (!open || currentKey !== "vertical") return;
+    const id = window.setTimeout(() => businessNameRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open, currentKey]);
+
   function goNext() {
     setManualStep(Math.min(current + 1, stepKeys.length - 1));
   }
@@ -592,12 +603,12 @@ export function SetupModal({
                         Use the name customers know you by.
                       </p>
                       <Input
+                        ref={businessNameRef}
                         id="ob-business-name"
                         value={businessName}
                         onChange={(e) => setBusinessName(e.target.value)}
                         placeholder={namePlaceholder}
                         maxLength={80}
-                        autoFocus
                       />
                     </div>
 
