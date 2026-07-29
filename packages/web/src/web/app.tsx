@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Redirect, Route, Switch } from "wouter";
 import { Loader as Loader2 } from "lucide-react";
+import { Skeleton } from "./components/ui/skeleton";
 import { ChunkErrorBoundary } from "./components/chunk-error-boundary";
 import { ErrorBoundary } from "./components/error-boundary";
 import { AgentFeedback } from "@runablehq/website-runtime";
@@ -98,15 +99,15 @@ function PageFallback() {
   return (
     <div className="page-enter space-y-6">
       <div className="space-y-2">
-        <div className="h-7 w-48 rounded bg-muted/60 animate-pulse" />
-        <div className="h-4 w-96 rounded bg-muted/40 animate-pulse" />
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-80" />
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
-        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
-        <div className="h-28 rounded-lg border border-border bg-card/60 animate-pulse" />
+        <Skeleton className="h-28 rounded-lg" />
+        <Skeleton className="h-28 rounded-lg" />
+        <Skeleton className="h-28 rounded-lg" />
       </div>
-      <div className="h-64 rounded-lg border border-border bg-card/60 animate-pulse" />
+      <Skeleton className="h-64 rounded-lg" />
     </div>
   );
 }

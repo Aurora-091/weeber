@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Phone, Trash2, Loader as Loader2, Search } from "lucide-react";
+import { Phone, Trash2, Loader as Loader2, Search, RefreshCw, AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
@@ -181,7 +181,20 @@ export function UserNumbersPage() {
       <div className="card-weeber p-6">
         <h3 className="text-sm font-semibold mb-3">Your numbers</h3>
         {numbers.isLoading && <SkeletonCards count={2} />}
-        {!numbers.isLoading && activeRows.length === 0 && (
+        {numbers.isError && (
+          <EmptyState
+            title="Couldn't load your numbers"
+            description="Something went wrong. Check your connection and try again."
+            icon={AlertCircle}
+            action={
+              <Button size="sm" variant="outline" onClick={() => numbers.refetch()}>
+                <RefreshCw className="size-3.5" aria-hidden />
+                Retry
+              </Button>
+            }
+          />
+        )}
+        {!numbers.isLoading && !numbers.isError && activeRows.length === 0 && (
           <EmptyState
             icon={Phone}
             title="No numbers yet"
@@ -189,7 +202,7 @@ export function UserNumbersPage() {
           />
         )}
         {activeRows.length > 0 && (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border content-fade-in">
             {activeRows.map((row) => (
               <div key={row.id} className="flex items-center justify-between py-3">
                 <div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BookOpen, FileText, Link as LinkIcon, File, Trash2, Loader as Loader2 } from "lucide-react";
+import { BookOpen, FileText, Link as LinkIcon, File, Trash2, Loader as Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
@@ -202,7 +202,19 @@ export function UserKnowledgeBasePage() {
       </div>
 
       {documents.isLoading && <SkeletonCards count={2} lines={2} />}
-      {documents.isError && <EmptyState title="Couldn't load your knowledge base" description="Try refreshing the page." />}
+      {documents.isError && (
+        <EmptyState
+          title="Couldn't load your knowledge base"
+          description="Something went wrong reaching the server. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => documents.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
+        />
+      )}
 
       {!documents.isLoading && !documents.isError && rows.length === 0 && (
         <EmptyState
@@ -213,7 +225,7 @@ export function UserKnowledgeBasePage() {
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border border-border divide-y divide-border">
+        <div className="rounded-lg border border-border divide-y divide-border content-fade-in">
           {rows.map((doc) => (
             <div key={doc.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">

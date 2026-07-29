@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, Phone, Clock, ShieldCheck, Check, Mail } from "lucide-react";
+import { CreditCard, Phone, Clock, ShieldCheck, Check, Mail, RefreshCw, AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
@@ -111,7 +111,14 @@ export function UserBillingPage() {
       {usageQuery.isError && (
         <EmptyState
           title="Couldn't load billing data"
-          description="Try refreshing the page. If this keeps happening, contact support."
+          description="Something went wrong. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => usageQuery.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
         />
       )}
 
@@ -141,7 +148,7 @@ export function UserBillingPage() {
               <Phone className="size-3.5" />
               Calls made (last 30d)
             </div>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">{usage.calls}</h2>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight">{usage.calls.toLocaleString()}</h2>
             <p className="mt-1 text-xs text-muted-foreground">Successful outbound dials.</p>
           </div>
 
@@ -151,7 +158,7 @@ export function UserBillingPage() {
               <Clock className="size-3.5" />
               Usage (last 30d)
             </div>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">{usage.minutes} min</h2>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight">{usage.minutes.toLocaleString()} min</h2>
             <div className="mt-3">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
@@ -160,7 +167,7 @@ export function UserBillingPage() {
                 />
               </div>
               <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
-                <span>{usage.minutes} used</span>
+                <span>{usage.minutes.toLocaleString()} used</span>
                 <span>{limit === 999999 ? "Unlimited" : `${limit} limit`}</span>
               </div>
             </div>
@@ -240,7 +247,7 @@ export function UserBillingPage() {
                     variant="outline"
                     asChild
                   >
-                    <a href="mailto:hello@weeber.ai?subject=Upgrade to {tier.name}">
+                    <a href={`mailto:hello@weeber.ai?subject=Upgrade to ${tier.name}`}>
                       {tier.cta}
                     </a>
                   </Button>
