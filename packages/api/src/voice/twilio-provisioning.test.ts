@@ -88,6 +88,19 @@ mock.module("twilio", () => {
   return { default: Twilio };
 });
 
+// Cred resolution now lives in twilio-client (vault-first, plaintext fallback);
+// mock it so these tests exercise twilio-provisioning's own logic. Returns creds
+// straight from mockOrgRow, mirroring the previous direct-db-read behavior.
+mock.module("./twilio-client", () => ({
+  twilioClient: {
+    api: { v2010: { accounts: () => ({ update: async () => ({}) }) } },
+  },
+  resolveOrgTwilioCreds: async () =>
+    mockOrgRow?.accountSid && mockOrgRow?.authToken
+      ? { accountSid: mockOrgRow.accountSid, authToken: mockOrgRow.authToken }
+      : null,
+}));
+
 const { listAvailableNumbers, buyNumberForOrg, releaseNumberForOrg } = await import("./twilio-provisioning");
 
 describe("C2b number provisioning", () => {

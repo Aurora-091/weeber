@@ -11,9 +11,12 @@ type OrgTwilioCreds = { accountSid: string; authToken: string } | null;
 
 /**
  * Reads org Twilio credentials — Vault first (encrypted), plaintext column fallback
- * during the migration transition period.
+ * during the migration transition period. Exported so the provisioning/teardown
+ * paths (twilio-provisioning.ts) resolve creds through this ONE vault-first
+ * helper instead of reading the plaintext `orgs.twilioAuthToken` column directly
+ * (audit 2026-07-29 finding #2 — the last two plaintext reads).
  */
-async function lookupOrgCreds(orgId: string): Promise<OrgTwilioCreds> {
+export async function resolveOrgTwilioCreds(orgId: string): Promise<OrgTwilioCreds> {
   const vaultSid = await readCredential(orgId, TWILIO_FIELDS.accountSid);
   const vaultToken = await readCredential(orgId, TWILIO_FIELDS.authToken);
 
@@ -36,7 +39,7 @@ async function lookupOrgCreds(orgId: string): Promise<OrgTwilioCreds> {
  */
 export async function getTwilioClientForOrg(orgId?: string | null) {
   if (!orgId) return twilioClient;
-  const creds = await lookupOrgCreds(orgId);
+  const creds = await resolveOrgTwilioCreds(orgId);
   if (!creds) return twilioClient;
   return Twilio(creds.accountSid, creds.authToken);
 }
@@ -47,7 +50,7 @@ export async function getTwilioClientForOrg(orgId?: string | null) {
  */
 export async function getAuthTokenForOrg(orgId?: string | null): Promise<string | undefined> {
   if (!orgId) return process.env.TWILIO_AUTH_TOKEN;
-  const creds = await lookupOrgCreds(orgId);
+  const creds = await resolveOrgTwilioCreds(orgId);
   return creds?.authToken ?? process.env.TWILIO_AUTH_TOKEN;
 }
 

@@ -29,6 +29,18 @@ export async function deleteOrgCredentials(orgId: string): Promise<void> {
 }
 
 /**
+ * Removes a SINGLE vault-stored credential field for an org. Used when a
+ * telephony provider is reset/torn down: the org row's plaintext columns get
+ * nulled, so the matching vault entry must be cleared too — otherwise the
+ * vault-first read path (resolveOrgTwilioCreds etc.) keeps resolving the stale
+ * credential after a reset. Unlike deleteOrgCredentials this is field-scoped,
+ * so clearing telephony never touches CRM/calendar credentials.
+ */
+export async function deleteCredential(orgId: string, field: string): Promise<void> {
+  await db.execute(sql`SELECT public.delete_org_credential(${orgId}, ${field})`);
+}
+
+/**
  * Reads multiple credential fields for an org in a single round-trip.
  * Returns a record of field -> value (null if not found).
  */
@@ -57,6 +69,17 @@ export const EXOTEL_FIELDS = {
   sid: "exotel_sid",
   apiKey: "exotel_api_key",
   apiToken: "exotel_api_token",
+} as const;
+
+/**
+ * Every vault field a telephony provider can occupy — used to purge the vault
+ * on reset/teardown so a vault-first read never resolves a stale credential
+ * after the org's plaintext columns have been cleared.
+ */
+export const TELEPHONY_VAULT_FIELDS = {
+  twilio: [TWILIO_FIELDS.accountSid, TWILIO_FIELDS.authToken],
+  plivo: [PLIVO_FIELDS.authId, PLIVO_FIELDS.authToken],
+  exotel: [EXOTEL_FIELDS.sid, EXOTEL_FIELDS.apiKey, EXOTEL_FIELDS.apiToken],
 } as const;
 
 export const CRM_PROVIDERS = ["gohighlevel", "salesforce", "hubspot"] as const;

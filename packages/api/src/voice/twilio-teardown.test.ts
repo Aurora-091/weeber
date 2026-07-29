@@ -44,6 +44,9 @@ mock.module("../database", () => ({
         },
       }),
     }),
+    // deleteCredential (called on "close") runs a raw db.execute against the
+    // vault delete function — no-op it here.
+    execute: async () => [],
   },
 }));
 
@@ -74,6 +77,12 @@ mock.module("./twilio-client", () => ({
       },
     },
   },
+  // Vault-first cred resolver — return creds from the mocked org row, mirroring
+  // the previous direct plaintext-column read.
+  resolveOrgTwilioCreds: async () =>
+    mockOrgRow?.accountSid && mockOrgRow?.authToken
+      ? { accountSid: mockOrgRow.accountSid, authToken: mockOrgRow.authToken }
+      : null,
 }));
 
 const { closeOrgTelephony } = await import("./twilio-provisioning");

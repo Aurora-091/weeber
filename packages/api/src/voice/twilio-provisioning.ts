@@ -8,8 +8,8 @@ import Twilio from "twilio";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
 import { orgs, orgPhoneNumbers } from "../database/schema";
-import { storeCredential, TWILIO_FIELDS } from "../database/credential-vault";
-import { twilioClient } from "./twilio-client";
+import { storeCredential, deleteCredential, TWILIO_FIELDS, TELEPHONY_VAULT_FIELDS } from "../database/credential-vault";
+import { twilioClient, resolveOrgTwilioCreds } from "./twilio-client";
 
 export type TwilioStatus = {
   mode: "platform" | "byo";
@@ -80,15 +80,13 @@ export type AvailableNumbersResult =
   | { ok: false; error: string };
 
 async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.Twilio } | { ok: false; error: string }> {
-  const [org] = await db
-    .select({ accountSid: orgs.twilioAccountSid, authToken: orgs.twilioAuthToken })
-    .from(orgs)
-    .where(eq(orgs.id, orgId))
-    .limit(1);
-  if (!org?.accountSid || !org?.authToken) {
+  // Vault-first (plaintext fallback during transition) via the shared resolver
+  // in twilio-client.ts — never read orgs.twilioAuthToken directly here.
+  const creds = await resolveOrgTwilioCreds(orgId);
+  if (!creds) {
     return { ok: false, error: "No Twilio sub-account provisioned for this org yet — call createSubaccountForOrg first" };
   }
-  return { ok: true, client: Twilio(org.accountSid, org.authToken) };
+  return { ok: true, client: Twilio(creds.accountSid, creds.authToken) };
 }
 
 /**
@@ -226,7 +224,7 @@ export type CloseTelephonyResult =
  */
 export async function closeOrgTelephony(orgId: string, mode: "suspend" | "close"): Promise<CloseTelephonyResult> {
   const [org] = await db
-    .select({ twilioMode: orgs.twilioMode, accountSid: orgs.twilioAccountSid, authToken: orgs.twilioAuthToken })
+    .select({ twilioMode: orgs.twilioMode })
     .from(orgs)
     .where(eq(orgs.id, orgId))
     .limit(1);
@@ -241,14 +239,16 @@ export async function closeOrgTelephony(orgId: string, mode: "suspend" | "close"
     return { ok: true, releasedNumbers: 0, subaccountAction: "none" };
   }
 
-  // Platform mode but no subaccount ever provisioned (still on global
-  // default) — nothing on Twilio to tear down, just mark the org.
-  if (!org.accountSid || !org.authToken) {
+  // Resolve creds vault-first (plaintext fallback) — never read
+  // orgs.twilioAuthToken directly. Platform mode but no subaccount ever
+  // provisioned (still on global default) → nothing on Twilio to tear down.
+  const creds = await resolveOrgTwilioCreds(orgId);
+  if (!creds) {
     await db.update(orgs).set({ status: orgStatus }).where(eq(orgs.id, orgId));
     return { ok: true, releasedNumbers: 0, subaccountAction: "none" };
   }
 
-  const subClient = Twilio(org.accountSid, org.authToken);
+  const subClient = Twilio(creds.accountSid, creds.authToken);
   let releasedNumbers = 0;
 
   // Release every rented number first — this is what stops the monthly
@@ -273,17 +273,20 @@ export async function closeOrgTelephony(orgId: string, mode: "suspend" | "close"
   // Suspend or close the subaccount itself (via the PARENT client — a
   // subaccount can't change its own status).
   try {
-    await twilioClient.api.v2010.accounts(org.accountSid).update({ status: mode === "close" ? "closed" : "suspended" });
+    await twilioClient.api.v2010.accounts(creds.accountSid).update({ status: mode === "close" ? "closed" : "suspended" });
   } catch (err) {
     return { ok: false, error: `Numbers released but failed to ${mode} subaccount: ${(err as Error).message}` };
   }
 
   if (mode === "close") {
-    // Terminal: clear creds so nothing tries to use the dead subaccount.
+    // Terminal: clear creds so nothing tries to use the dead subaccount —
+    // both the plaintext columns AND the vault entries (otherwise the
+    // vault-first read path would keep resolving the dead subaccount).
     await db
       .update(orgs)
       .set({ status: "closed", twilioAccountSid: null, twilioAuthToken: null, outboundNumber: null })
       .where(eq(orgs.id, orgId));
+    for (const field of TELEPHONY_VAULT_FIELDS.twilio) await deleteCredential(orgId, field);
   } else {
     await db.update(orgs).set({ status: "suspended", outboundNumber: null }).where(eq(orgs.id, orgId));
   }
@@ -349,4 +352,11 @@ export async function resetToPlatformDefault(orgId: string): Promise<void> {
       outboundNumber: null,
     })
     .where(eq(orgs.id, orgId));
+
+  // Purge every provider's vault entries too — clearing only the plaintext
+  // columns would leave the vault-first read path resolving stale creds. This
+  // is field-scoped to telephony, so CRM/calendar credentials are untouched.
+  for (const provider of ["twilio", "plivo", "exotel"] as const) {
+    for (const field of TELEPHONY_VAULT_FIELDS[provider]) await deleteCredential(orgId, field);
+  }
 }
