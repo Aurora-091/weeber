@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, Phone, Clock, ShieldCheck, Check, Mail, RefreshCw, AlertCircle } from "lucide-react";
+import { CreditCard, Phone, Clock, ShieldCheck, Check, Mail, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Phone, Trash2, Loader as Loader2, Search, RefreshCw, AlertCircle } from "lucide-react";
+import { Phone, Trash2, Loader as Loader2, Search, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
 import { appFetch } from "../../lib/user-session";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
