@@ -43,12 +43,16 @@ export type UserMe = {
   };
 };
 
-const UserContext = createContext<{
+export type UserContextValue = {
   me: UserMe;
   vertical: VerticalDefinition;
   flags: Record<string, boolean>;
   isFlagEnabled: (key: string) => boolean;
-} | null>(null);
+};
+
+// Exported so the DEV-only /__preview harness can mount real pages with a
+// mock context (no backend/secrets). Not used anywhere in production code.
+export const UserContext = createContext<UserContextValue | null>(null);
 
 export function useUser() {
   const ctx = useContext(UserContext);

@@ -23,6 +23,7 @@ import { INTEGRATIONS_NAV_LABEL } from "../../lib/verticals";
 import { formatDate } from "../../lib/format";
 import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
+import { SkeletonCards } from "../../components/shell/skeletons";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -498,11 +499,7 @@ export function UserIntegrationsPage() {
         </div>
       </div>
 
-      {statusQuery.isLoading && (
-        <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
-          Loading Shopify integration status...
-        </div>
-      )}
+      {statusQuery.isLoading && <SkeletonCards count={2} lines={4} />}
 
       {data && (
         <div className="space-y-6 content-fade-in">
@@ -691,7 +688,7 @@ export function UserIntegrationsPage() {
           )}
 
           {/* Troubleshooting */}
-          <div className="rounded-lg border border-border p-5 space-y-3">
+          <div className="card-weeber p-5 space-y-3">
             <h3 className="text-sm font-semibold">Troubleshooting</h3>
             <div className="space-y-2">
               <details className="group rounded-md border border-border">

@@ -27,6 +27,7 @@ import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { Switch } from "../../components/ui/switch";
 import { PageHeader } from "../../components/shell/page-header";
+import { useShellFullBleed } from "../../components/shell/app-shell";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Breadcrumbs } from "../../components/shell/breadcrumbs";
@@ -164,6 +165,7 @@ function UserWorkflowStandardView({
   onStartCustomizing: (startingGraph: WorkflowGraph) => void;
 }) {
   const qc = useQueryClient();
+  useShellFullBleed();
   const { nodes, edges } = useMemo(() => graphToFlowReadOnly(workflow.graph), [workflow.graph]);
   const [overrides, setOverrides] = useState<Record<string, Record<string, unknown>>>(
     workflow.orgConfig.overrides ?? {},
@@ -210,7 +212,7 @@ function UserWorkflowStandardView({
   });
 
   return (
-    <div className="page-enter flex flex-col h-[calc(100vh-4rem)]">
+    <div className="page-enter flex h-full flex-col p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3 pb-4 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
           <Breadcrumbs
@@ -394,6 +396,7 @@ function UserWorkflowCanvasEditor({
   startingGraph: WorkflowGraph;
 }) {
   const qc = useQueryClient();
+  useShellFullBleed();
   const initial = useMemo(() => graphToFlowEditable(startingGraph), [startingGraph]);
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChangeRaw] = useEdgesState(initial.edges);
@@ -569,7 +572,7 @@ function UserWorkflowCanvasEditor({
   }, [aiPrompt, dirty, aiDraft]);
 
   return (
-    <div className="page-enter flex flex-col h-[calc(100vh-4rem)]">
+    <div className="page-enter flex h-full flex-col p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3 pb-4 border-b border-border mb-0">
         <div className="flex items-center gap-3 min-w-0">
           <Breadcrumbs

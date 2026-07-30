@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./components/error-boundary";
 import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
+import { registerPrefetch } from "./lib/route-prefetch";
 
 const surface = (import.meta.env.VITE_APP_SURFACE || "all") as "public" | "admin" | "user" | "all";
 const showPublic = surface === "all" || surface === "public";
@@ -86,6 +87,48 @@ const UserSettingsPage = lazy(() => import("./pages/app/settings").then((m) => (
 const UserWorkflowsListPage = lazy(() => import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowsListPage })));
 const UserWorkflowDetailPage = lazy(() => import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowDetailPage })));
 const UserShell = lazy(() => import("./components/app/user-shell").then((m) => ({ default: m.UserShell })));
+
+// DEV-only preview harness — gated at the route level by import.meta.env.DEV,
+// so this lazy import is dead code in production and dropped at build time.
+const PreviewHarness = lazy(() => import("./pages/__preview").then((m) => ({ default: m.PreviewHarness })));
+
+// Warm each in-shell page's chunk on nav intent (hover/focus) so the inner
+// <Suspense fallback> never flashes on click — see lib/route-prefetch.ts. Keys
+// mirror the nav hrefs in verticals.ts (user) and dashboard-shell.tsx (admin);
+// a second import() of an already-loaded module is a cheap cache hit.
+registerPrefetch({
+  // User app
+  [appPath()]: () => import("./pages/app/home"),
+  [appPath("/agents")]: () => import("./pages/app/agents"),
+  [appPath("/workflows")]: () => import("./pages/app/workflows"),
+  [appPath("/calls")]: () => import("./pages/app/calls"),
+  [appPath("/orders")]: () => import("./pages/app/orders"),
+  [appPath("/leads")]: () => import("./pages/app/leads"),
+  [appPath("/billing")]: () => import("./pages/app/billing"),
+  [appPath("/integrations")]: () => import("./pages/app/integrations"),
+  [appPath("/knowledge-base")]: () => import("./pages/app/knowledge-base"),
+  [appPath("/numbers")]: () => import("./pages/app/numbers"),
+  [appPath("/settings")]: () => import("./pages/app/settings"),
+  // Admin dashboard
+  [adminPath()]: () => import("./pages/dashboard/calls-list"),
+  [adminPath("/agents")]: () => import("./pages/dashboard/agents"),
+  [adminPath("/analytics")]: () => import("./pages/dashboard/analytics"),
+  [adminPath("/compliance")]: () => import("./pages/dashboard/compliance"),
+  [adminPath("/dnc")]: () => import("./pages/dashboard/dnc"),
+  [adminPath("/orgs")]: () => import("./pages/dashboard/orgs"),
+  [adminPath("/users")]: () => import("./pages/dashboard/users"),
+  [adminPath("/waitlist")]: () => import("./pages/dashboard/waitlist"),
+  [adminPath("/broadcasts")]: () => import("./pages/dashboard/broadcasts"),
+  [adminPath("/templates")]: () => import("./pages/dashboard/templates"),
+  [adminPath("/billing")]: () => import("./pages/dashboard/billing"),
+  [adminPath("/revenue-analytics")]: () => import("./pages/dashboard/revenue-analytics"),
+  [adminPath("/marketing-analytics")]: () => import("./pages/dashboard/marketing-analytics"),
+  [adminPath("/workflows")]: () => import("./pages/dashboard/workflows-list"),
+  [adminPath("/flags")]: () => import("./pages/dashboard/flags"),
+  [adminPath("/support")]: () => import("./pages/dashboard/support"),
+  [adminPath("/logs")]: () => import("./pages/dashboard/logs"),
+  [adminPath("/settings")]: () => import("./pages/dashboard/settings"),
+});
 
 function RouteFallback() {
   return (
@@ -190,6 +233,9 @@ function App() {
     <ChunkErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Switch>
+          {/* DEV-only structural preview harness (tree-shaken from prod builds). */}
+          {import.meta.env.DEV && <Route path="/__preview" component={PreviewHarness} />}
+
           {/* Public pages */}
           {showPublic && <Route path="/" component={LandingPage} />}
           {showPublic && <Route path="/docs" component={DocsPage} />}

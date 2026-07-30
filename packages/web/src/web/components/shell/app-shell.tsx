@@ -1,8 +1,9 @@
-import { useState, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, useEffect, createContext, useContext } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { prefetchRoute } from "../../lib/route-prefetch";
 import { useTheme } from "../../lib/theme";
 import { PortalContainerContext } from "../../lib/portal-container";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "../ui/sheet";
@@ -40,6 +41,28 @@ export function useSidebar() {
   return useContext(SidebarContext);
 }
 
+/**
+ * Per-page opt-in to a full-bleed content area. The shell stays mounted while
+ * inner pages swap, so a page that needs the whole viewport (workflow canvas)
+ * flips this on mount and back off on unmount — every other page keeps the
+ * default centered, padded, max-width <main> (natural document scroll, sticky
+ * headers intact). See useShellFullBleed().
+ */
+const ShellLayoutContext = createContext<{ setFullBleed: (v: boolean) => void }>({
+  setFullBleed: () => {},
+});
+
+/** Call from a page component to make the shell's <main> fill the viewport
+ * edge-to-edge (no max-width, no padding, no document scroll) for as long as
+ * that page is mounted. */
+export function useShellFullBleed() {
+  const { setFullBleed } = useContext(ShellLayoutContext);
+  useEffect(() => {
+    setFullBleed(true);
+    return () => setFullBleed(false);
+  }, [setFullBleed]);
+}
+
 function NavLink({
   href,
   label,
@@ -51,10 +74,18 @@ function NavLink({
   const [location] = useLocation();
   const active = match ? match.test(location) : location === href;
 
+  // Warm the target page's lazy chunk on nav intent so clicking swaps
+  // content instantly instead of flashing PageFallback while the chunk
+  // downloads (see lib/route-prefetch.ts). Best-effort, fires at most once.
+  const warm = () => prefetchRoute(href);
+
   const linkEl = (
     <Link
       href={href}
       onClick={onClick}
+      onMouseEnter={warm}
+      onFocus={warm}
+      onTouchStart={warm}
       aria-current={active ? "page" : undefined}
       className={cn(
         "group relative flex items-center gap-3 rounded-md text-sm font-medium outline-none",
@@ -225,6 +256,7 @@ export function AppShell({
 }: AppShellProps) {
   const { theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [fullBleed, setFullBleed] = useState(false);
 
   const [collapsed, setCollapsed] = useState(() => {
     if (!collapsible) return false;
@@ -254,6 +286,7 @@ export function AppShell({
 
   return (
     <SidebarContext.Provider value={{ collapsed: activeCollapsed, toggle: toggleCollapsed }}>
+      <ShellLayoutContext.Provider value={{ setFullBleed }}>
       <TooltipProvider>
         <div
           ref={shellRef}
@@ -292,8 +325,10 @@ export function AppShell({
               />
             </aside>
 
-            {/* Content area */}
-            <div className="min-w-0 flex-1">
+            {/* Content area — becomes a fixed-height flex column only in
+                full-bleed mode so a canvas page can fill the viewport; every
+                other page keeps natural document flow/scroll. */}
+            <div className={cn("min-w-0 flex-1", fullBleed && "flex h-[100dvh] flex-col overflow-hidden")}>
               {/* Mobile topbar — z-30 so it clears sticky page headers
                   (z-10) and the desktop sidebar's z-20 when the viewport
                   transitions across the md breakpoint mid-session, while
@@ -328,20 +363,25 @@ export function AppShell({
 
               {banner}
 
-              <main
-                className="mx-auto w-full"
-                style={{
-                  maxWidth: "var(--shell-page-max-w)",
-                  padding: "var(--shell-page-py) var(--shell-page-px)",
-                }}
-              >
-                {children}
-              </main>
+              {fullBleed ? (
+                <main className="min-h-0 w-full flex-1 overflow-hidden">{children}</main>
+              ) : (
+                <main
+                  className="mx-auto w-full"
+                  style={{
+                    maxWidth: "var(--shell-page-max-w)",
+                    padding: "var(--shell-page-py) var(--shell-page-px)",
+                  }}
+                >
+                  {children}
+                </main>
+              )}
             </div>
           </div>
           </PortalContainerContext.Provider>
         </div>
       </TooltipProvider>
+      </ShellLayoutContext.Provider>
     </SidebarContext.Provider>
   );
 }

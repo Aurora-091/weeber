@@ -332,7 +332,7 @@ export function TemplatesPage() {
                 </div>
               </div>
 
-              <Button variant="outline" text-xs onClick={() => startEdit(t)}>
+              <Button variant="outline" className="text-xs" onClick={() => startEdit(t)}>
                 Edit
               </Button>
             </div>
