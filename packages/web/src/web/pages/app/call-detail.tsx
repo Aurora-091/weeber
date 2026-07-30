@@ -301,7 +301,7 @@ export function UserCallDetailPage() {
                 <Wrench className="size-3.5" aria-hidden />
                 What the agent did
               </h2>
-              <div className="rounded-lg border border-border divide-y divide-border">
+              <div className="card-weeber divide-y divide-border">
                 {toolCallRows.length === 0 && (
                   <div className="px-4 py-6 text-center text-sm text-muted-foreground">Nothing yet.</div>
                 )}

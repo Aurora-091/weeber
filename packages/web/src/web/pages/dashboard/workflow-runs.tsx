@@ -69,7 +69,7 @@ export function WorkflowRunsPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="card-weeber overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-wider">
               <tr>

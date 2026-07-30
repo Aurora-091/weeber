@@ -152,7 +152,7 @@ export function CompliancePage() {
           {/* Stat Cards */}
           <div className="grid gap-6 sm:grid-cols-3">
             {/* Global DNC */}
-            <div className="rounded-lg border border-border bg-card p-5">
+            <div className="card-weeber p-5">
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                 <Ban className="size-3.5" />
                 Global DNC List
@@ -164,7 +164,7 @@ export function CompliancePage() {
             </div>
 
             {/* Scope Badge Card */}
-            <div className="rounded-lg border border-border bg-card p-5">
+            <div className="card-weeber p-5">
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                 <ShieldCheck className="size-3.5" />
                 DNC Scope Level
@@ -176,7 +176,7 @@ export function CompliancePage() {
             </div>
 
             {/* Missing Dispositions */}
-            <div className="rounded-lg border border-border bg-card p-5">
+            <div className="card-weeber p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                   <AlertTriangle className="size-3.5 text-warning" />
@@ -207,7 +207,7 @@ export function CompliancePage() {
 
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Recent DNC */}
-            <div className="rounded-lg border border-border p-5 bg-card">
+            <div className="card-weeber p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold">Recent Global DNC Additions</h3>
                 {data.recentDnc.length > 0 && (
@@ -248,7 +248,7 @@ export function CompliancePage() {
             </div>
 
             {/* Guardrail events */}
-            <div className="rounded-lg border border-border p-5 bg-card">
+            <div className="card-weeber p-5">
               <h3 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
                 <ShieldAlert className="size-4 text-warning" />
                 Guardrail Exceptions by Organization
@@ -276,7 +276,7 @@ export function CompliancePage() {
 
           {/* Blocked scheduled calls (2026-07-19) — cross-org view of calls a
               compliance gate stopped, with the persisted reason + detail. */}
-          <div className="rounded-lg border border-border p-5 bg-card space-y-4">
+          <div className="card-weeber p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <PhoneOff className="size-4 text-warning" />
@@ -355,7 +355,7 @@ export function CompliancePage() {
           </div>
 
           {/* Consent Ledger (Marketing + Consent UI plan, 2026-07-16, Part B) */}
-          <div className="rounded-lg border border-border p-5 bg-card space-y-4">
+          <div className="card-weeber p-5 space-y-4">
             <div className="flex items-center gap-1.5">
               <FileCheck className="size-4 text-primary" />
               <h3 className="text-sm font-semibold">Consent Ledger</h3>

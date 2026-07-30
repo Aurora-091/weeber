@@ -106,7 +106,7 @@ export function BroadcastsPage() {
         description="Message users or the waitlist. Sending needs RESEND_API_KEY configured \u2014 without it, broadcasts are marked \u201cqueued,\u201d not silently faked as sent."
       />
 
-      <div className="rounded-lg border border-border p-4 mb-6 space-y-3">
+      <div className="card-weeber p-4 mb-6 space-y-3">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}

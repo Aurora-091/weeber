@@ -171,7 +171,7 @@ export function TemplatesPage() {
       )}
 
       {(showCreate || editingTemplate) && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-4 content-fade-in">
+        <div className="card-weeber p-6 space-y-4 content-fade-in">
           <h2 className="text-base font-semibold">{showCreate ? "Create New Agent Template" : `Edit Template: ${key}`}</h2>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -304,7 +304,7 @@ export function TemplatesPage() {
       )}
 
       {rows.length > 0 && !showCreate && !editingTemplate && (
-        <div className="rounded-lg border border-border divide-y divide-border bg-card">
+        <div className="card-weeber divide-y divide-border">
           {rows.map((t) => (
             <div key={t.id} className="flex justify-between items-start gap-4 p-4 hover:bg-muted/10 transition-colors">
               <div className="space-y-1">

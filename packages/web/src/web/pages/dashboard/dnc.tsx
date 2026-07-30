@@ -96,7 +96,7 @@ export function DncPage() {
       </form>
       {error && <p className="text-sm text-destructive -mt-6 mb-6">{error}</p>}
 
-      <div className="rounded-lg border border-border divide-y divide-border">
+      <div className="card-weeber divide-y divide-border">
         {dncRows.map((entry) => (
           <div key={entry.phoneNumber} className="flex items-center justify-between px-4 py-3">
             <div>

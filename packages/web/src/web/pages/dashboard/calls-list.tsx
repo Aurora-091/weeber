@@ -58,7 +58,7 @@ export function CallsListPage() {
         </div>
       )}
 
-      <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+      <div className="card-weeber overflow-hidden divide-y divide-border">
         {rows.map((call) => {
           const factCount = Object.keys(call.capturedState ?? {}).length;
           const duration = formatDuration(call.startedAt, call.endedAt ?? null);

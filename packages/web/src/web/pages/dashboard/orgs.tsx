@@ -284,7 +284,7 @@ export function OrgsPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border border-border divide-y divide-border bg-card">
+        <div className="card-weeber divide-y divide-border">
           {rows.map((org) => {
             const isExpanded = expandedId === org.id;
             return (

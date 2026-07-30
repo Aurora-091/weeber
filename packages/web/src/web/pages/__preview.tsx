@@ -24,6 +24,14 @@ import { UserIntegrationsPage } from "./app/integrations";
 import { UserWorkflowsListPage } from "./app/workflows";
 import { UserCallsPage } from "./app/calls";
 import { UserSettingsPage } from "./app/settings";
+import { UserKnowledgeBasePage } from "./app/knowledge-base";
+// Admin pages mounted purely to verify the card-primitive sweep (fix #3) — they
+// use no admin context (confirmed), just react-query hooks that fail fast to
+// empty/skeleton states under the isolated retry:false client. Enough to check
+// corner-radius + shadow parity of converted card-weeber frames vs skeletons.
+import { CompliancePage } from "./dashboard/compliance";
+import { TemplatesPage } from "./dashboard/templates";
+import { FlagsPage } from "./dashboard/flags";
 
 const previewClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: Infinity } },
@@ -79,7 +87,11 @@ const PAGES = {
   workflows: { label: "Workflows (full-bleed)", Comp: UserWorkflowsListPage },
   calls: { label: "Conversations", Comp: UserCallsPage },
   integrations: { label: "Integrations", Comp: UserIntegrationsPage },
+  kb: { label: "Knowledge base", Comp: UserKnowledgeBasePage },
   settings: { label: "Settings", Comp: UserSettingsPage },
+  compliance: { label: "Admin · Compliance", Comp: CompliancePage },
+  templates: { label: "Admin · Templates", Comp: TemplatesPage },
+  flags: { label: "Admin · Flags", Comp: FlagsPage },
 } as const;
 
 type PageKey = keyof typeof PAGES;

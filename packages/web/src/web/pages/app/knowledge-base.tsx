@@ -225,7 +225,7 @@ export function UserKnowledgeBasePage() {
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border border-border divide-y divide-border content-fade-in">
+        <div className="card-weeber divide-y divide-border content-fade-in">
           {rows.map((doc) => (
             <div key={doc.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">

@@ -140,7 +140,7 @@ export function CallDetailPage() {
       <div className="grid md:grid-cols-[1fr_320px] gap-8">
         <div>
           <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground mb-3">Transcript</h2>
-          <div className="rounded-lg border border-border divide-y divide-border">
+          <div className="card-weeber divide-y divide-border">
             {transcriptRows.map((t) => (
               <div key={t.id} className={`px-4 py-3 ${t.role === "agent" ? "bg-muted/40" : ""}`}>
                 <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">{t.role}</div>
@@ -156,7 +156,7 @@ export function CallDetailPage() {
             <Wrench className="size-3.5" />
             Tool calls
           </h2>
-          <div className="rounded-lg border border-border divide-y divide-border">
+          <div className="card-weeber divide-y divide-border">
             {toolCallRows.map((tc) => (
               <div key={tc.id} className="px-4 py-3">
                 <div className="flex items-center justify-between">
@@ -183,7 +183,7 @@ export function CallDetailPage() {
             <Gauge className="size-3.5 text-primary" />
             Latency breakdown
           </h2>
-          <div className="rounded-lg border border-border bg-card p-4 mb-6">
+          <div className="card-weeber p-4 mb-6">
             <LatencyRow label="Pickup to first word (caller-perceived)" ms={latencyRow?.pickupToFirstAudioMs ?? null} />
             <LatencyRow label="STT connect" ms={latencyRow?.sttConnectMs ?? null} />
             <LatencyRow label="LLM time-to-first-token" ms={latencyRow?.llmTtftMs ?? null} />

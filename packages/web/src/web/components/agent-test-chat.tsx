@@ -61,7 +61,7 @@ export function AgentTestChat({ fetchFn, templateName }: TestChatProps) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="card-weeber overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Bot className="size-4 text-primary" />

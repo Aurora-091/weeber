@@ -70,7 +70,7 @@ export function DataTable<T>({
   }, [rows, sortKey, sortDir, columns]);
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border content-fade-in">
+    <div className="card-weeber overflow-x-auto content-fade-in">
       <table
         className="w-full text-sm"
         aria-label={!caption ? ariaLabel : undefined}

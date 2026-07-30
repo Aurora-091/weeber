@@ -56,7 +56,7 @@ export function BillingPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden bg-card content-fade-in">
+        <div className="card-weeber overflow-hidden content-fade-in">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
               <thead className="bg-muted/50 border-b border-border font-medium text-muted-foreground">

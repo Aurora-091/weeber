@@ -105,7 +105,7 @@ function TrackingSection() {
 
       <div className="space-y-6">
         {/* GTM */}
-        <div className="rounded-lg border border-border p-4">
+        <div className="card-weeber p-4">
           <label className="text-sm font-medium block mb-1.5">Google Tag Manager Container ID</label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -135,7 +135,7 @@ function TrackingSection() {
         </div>
 
         {/* GA4 */}
-        <div className="rounded-lg border border-border p-4">
+        <div className="card-weeber p-4">
           <label className="text-sm font-medium block mb-1.5">Google Analytics 4 Measurement ID</label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -280,7 +280,7 @@ export function SettingsPage() {
         </form>
         {error && <p className="text-sm text-destructive -mt-6 mb-6">{error}</p>}
 
-        <div className="rounded-lg border border-border divide-y divide-border">
+        <div className="card-weeber divide-y divide-border">
           {rows.map((k) => (
             <div key={k.id} className="flex items-center justify-between px-4 py-3">
               <div>

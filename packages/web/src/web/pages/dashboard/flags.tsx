@@ -127,7 +127,7 @@ export function FlagsPage() {
       )}
 
       {showCreate && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-4 content-fade-in">
+        <div className="card-weeber p-6 space-y-4 content-fade-in">
           <h2 className="text-base font-semibold">Create or Override Feature Flag</h2>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -199,7 +199,7 @@ export function FlagsPage() {
       )}
 
       {rows.length > 0 && !showCreate && (
-        <div className="rounded-lg border border-border divide-y divide-border bg-card">
+        <div className="card-weeber divide-y divide-border">
           {rows.map((flag) => (
             <div key={flag.id} className="flex justify-between items-center gap-4 p-4 hover:bg-muted/10 transition-colors">
               <div className="space-y-1">
