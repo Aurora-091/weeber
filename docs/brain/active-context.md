@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-07-19
+updated: 2026-07-30
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,18 @@ updated: 2026-07-19
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Workflows Standard View — affordance/legibility fixes (2026-07-30):** Follow-up to a UX audit —
+  a tester got lost on the default workflow view because the read-only React Flow graph looks editable
+  but only `wait/call/sms` nodes respond to a click, with no signal which. Fixed with pure
+  affordance/legibility changes (no architecture change; canvas editor untouched): editable-node cue
+  (hover ring + pencil + pointer cursor via a new `editable` flag on `WorkflowNode`), an orientation
+  strip + legend above the graph, "Save changes" now only renders when there are unsaved edits (was a
+  looks-broken disabled button on load), and the "No workflows" empty state gained a "Connect your
+  store" CTA to `/app/integrations` (was a dead end). Files: `components/canvas/WorkflowNode.tsx`,
+  `pages/app/workflows.tsx`. Verified: `packages/web` tsc clean · build clean · `oxlint` 0/0.
+  See `changelog/2026-07.md`. **Still open (unchanged):** set `SENTRY_DSN` on Railway; the deeper
+  question of whether SMBs should ever see a node-graph canvas at all (deferred, not this session).
 
 - **App UI/UX Restructuring & Integrations Alignment (2026-07-20):** Resolved UI defects across `/app` routes.
   **Toaster Z-Index Elevation**: Elevated Sonner `Toaster` z-index to `99999` in `sonner.tsx` and `styles.css`
@@ -91,4 +103,4 @@ messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
   ingest→call activation router is still the open product decision (CLAUDE.md gate #4). Ask before
   building the routing UI.
 
-_Last updated by: road-ahead roadmap sync — C4 leads layer + Canvas v4 Phase 3 marked shipped, C4b/C5/C6 + tiered road ahead added to WEEBER-PLAN.md; native leads/records layer (Phases 1–3) + integrations strategy + insurance language variants/Final Expense agent session, 2026-07-19._
+_Last updated by: Workflows Standard View affordance/legibility fixes (editable-node cue + orientation strip + Save declutter + empty-state CTA), 2026-07-30._

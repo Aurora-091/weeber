@@ -16,7 +16,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play } from "lucide-react";
+import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play, Pencil, Plug } from "lucide-react";
 import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
@@ -142,7 +142,15 @@ function graphToFlowReadOnly(graph: WorkflowGraph) {
     id: n.id,
     type: "workflow",
     position: n.position,
-    data: { nodeType: n.type, config: n.config, locked: n.locked },
+    data: {
+      nodeType: n.type,
+      config: n.config,
+      locked: n.locked,
+      // Only wait/call/sms open the edit panel on click — flag them so the
+      // node renders a visible affordance instead of looking identical to the
+      // static nodes a click does nothing on.
+      editable: EDITABLE_TYPES.includes(n.type) && !n.locked,
+    },
     draggable: false,
     connectable: false,
   }));
@@ -241,11 +249,31 @@ function UserWorkflowStandardView({
             {startBlank.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FilePlus2 className="size-3.5" aria-hidden />}
             Start blank
           </Button>
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
-            {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
-            {!dirty && save.isSuccess ? "Saved" : "Save changes"}
-          </Button>
+          {/* Only surfaced once there's something to save — a permanently
+              disabled "Save changes" on load reads as broken (nothing tells
+              you it activates after you edit a step). */}
+          {(dirty || save.isPending || save.isSuccess) && (
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
+              {save.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
+              {!dirty && save.isSuccess ? "Saved" : "Save changes"}
+            </Button>
+          )}
         </div>
+      </div>
+
+      {/* Orientation strip — the read-only graph looks like an editor but only
+          the highlighted steps respond to a click; without this, testers try
+          to drag/connect nodes and get stuck. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2.5 text-xs text-muted-foreground">
+        <span>
+          This is your automated call flow.{" "}
+          <span className="text-foreground">Steps marked editable</span> (call, wait, message) can be
+          changed — click one to adjust its timing or wording. The rest run automatically.
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Pencil className="size-3 text-primary/70" aria-hidden />
+          Editable
+        </span>
       </div>
       {save.isError && <p className="text-xs text-destructive py-2">{(save.error as Error).message}</p>}
       {startBlank.isError && <p className="text-xs text-destructive py-2">Couldn't load a blank starting flow — try again.</p>}
@@ -748,8 +776,17 @@ export function UserWorkflowsListPage() {
 
       {!workflows.isLoading && !workflows.isError && rows.length === 0 && (
         <EmptyState
+          icon={Plug}
           title="No workflows available"
-          description="Workflow templates will appear here once your store is connected."
+          description="Workflow templates appear here automatically once your store is connected. Connect it to get started."
+          action={
+            <Button asChild size="sm">
+              <Link href={appPath("/integrations")}>
+                <Plug className="size-3.5" aria-hidden />
+                Connect your store
+              </Link>
+            </Button>
+          }
         />
       )}
 

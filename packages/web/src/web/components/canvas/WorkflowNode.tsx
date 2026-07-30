@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Globe,
   Lock,
+  Pencil,
 } from "lucide-react";
 import { NODE_STYLES } from "./node-styles";
 import type {
@@ -43,6 +44,12 @@ type WorkflowNodeData = {
   // nodes; rendered with a lock icon and no delete affordance (delete itself
   // is gated in the parent editor page, this is just the visual signal).
   locked?: boolean;
+  // Standard (read-only) view only — true for the wait/call/sms nodes a user
+  // can click to open the edit panel. Gives them a visible affordance (hover
+  // ring + pencil hint + pointer cursor) so it's obvious which of the
+  // otherwise-static nodes actually respond to a click. Undefined everywhere
+  // else (canvas editor handles its own selection state).
+  editable?: boolean;
   analytics?: {
     entryCount: number;
     avgDurationMs: number | null;
@@ -102,14 +109,24 @@ function getNodeSummary(nodeType: WorkflowNodeType, config: NodeConfig): string 
 }
 
 export function WorkflowNode({ data }: NodeProps) {
-  const { nodeType, config, analytics, locked } = data as unknown as WorkflowNodeData;
+  const { nodeType, config, analytics, locked, editable } = data as unknown as WorkflowNodeData;
   const style = NODE_STYLES[nodeType];
   const Icon = ICON_MAP[style.icon as keyof typeof ICON_MAP];
 
   return (
     <div
-      className={`card-weeber w-[200px] border-l-[3px] ${style.color} p-3 ${locked ? "bg-muted/30" : ""}`}
-      title={locked ? "Required compliance step — can't be removed or reconfigured" : undefined}
+      className={`card-weeber w-[200px] border-l-[3px] ${style.color} p-3 ${locked ? "bg-muted/30" : ""} ${
+        editable
+          ? "cursor-pointer ring-1 ring-primary/25 transition hover:ring-2 hover:ring-primary/60 hover:shadow-md"
+          : ""
+      }`}
+      title={
+        locked
+          ? "Required compliance step — can't be removed or reconfigured"
+          : editable
+            ? "Click to edit this step"
+            : undefined
+      }
     >
       {nodeType !== "trigger" && (
         <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
@@ -121,6 +138,9 @@ export function WorkflowNode({ data }: NodeProps) {
           {style.label}
         </span>
         {locked && <Lock className="h-3 w-3 text-muted-foreground/70 ml-auto" aria-label="Locked" />}
+        {editable && !locked && (
+          <Pencil className="h-3 w-3 text-primary/70 ml-auto" aria-label="Editable" />
+        )}
       </div>
 
       <p className="text-xs font-medium leading-tight truncate">
