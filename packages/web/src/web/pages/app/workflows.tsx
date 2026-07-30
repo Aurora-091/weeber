@@ -16,7 +16,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play, Pencil, Plug } from "lucide-react";
+import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play, Pencil, Plug, TriangleAlert as AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
@@ -91,6 +91,11 @@ type WorkflowResponse = {
     customGraph?: WorkflowGraph | null;
   };
 };
+
+// Non-blocking graph-validation warnings returned by the save endpoint
+// (graph-validation.ts, severity "warning") — surfaced after a successful
+// save so the merchant can tidy up without being stopped.
+type GraphWarning = { code: string; nodeId?: string; message: string };
 
 const nodeTypes = { workflow: WorkflowNode };
 
@@ -645,6 +650,11 @@ function UserWorkflowCanvasEditor({
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || `Save failed (${res.status})`);
       }
+      // The save succeeds (no hard errors, no activation blockers) but may
+      // return non-blocking warnings (a clamped wait, an unreachable node) —
+      // surface them so the merchant can tidy up without being stopped.
+      const body = (await res.json().catch(() => ({}))) as { warnings?: GraphWarning[] };
+      return body.warnings ?? [];
     },
     onSuccess: () => {
       setDirty(false);
@@ -732,6 +742,19 @@ function UserWorkflowCanvasEditor({
       </div>
       {aiDraft.isError && <p className="text-xs text-destructive py-1">{(aiDraft.error as Error).message}</p>}
       {save.isError && <p className="text-xs text-destructive py-1">{(save.error as Error).message}</p>}
+      {save.isSuccess && !dirty && (save.data?.length ?? 0) > 0 && (
+        <div className="flex items-start gap-2 py-2 text-xs text-amber-600 dark:text-amber-500">
+          <AlertTriangle className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+          <div>
+            <span className="font-medium">Saved with {save.data!.length} suggestion{save.data!.length > 1 ? "s" : ""}:</span>
+            <ul className="mt-0.5 list-disc pl-4">
+              {save.data!.map((w) => (
+                <li key={`${w.code}-${w.nodeId ?? ""}`}>{w.message}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <NodePalette onAddNode={addNodeFromPalette} excludeTypes={MERCHANT_LOCKED_EXCLUDED} />

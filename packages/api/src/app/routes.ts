@@ -62,6 +62,7 @@ import { createLeadApiKey, listLeadApiKeys, revokeLeadApiKey } from "../voice/le
 import { mirrorLeadToCrm } from "../voice/leads/crm-mirror";
 import { callScheduledRowNow } from "../voice/workflows/scheduler";
 import { buildBlankWorkflowScaffold, validateLockedNodesEnforced } from "../voice/workflows/scaffold";
+import { validateWorkflowGraph } from "../voice/workflows/graph-validation";
 import type { WorkflowGraph } from "../voice/workflows/graph-types";
 import {
   getTwilioStatus,
@@ -1281,11 +1282,39 @@ export const userApp = new Hono<UserEnv>()
       customGraph?: WorkflowGraph;
     };
 
+    // Two independent guards run on any save that includes a graph:
+    // (1) the compliance guard (scaffold.ts) — call/sms can't be reachable
+    //     without passing the locked DNC/window nodes; and (2) the shared
+    //     structural/completeness validator (graph-validation.ts).
+    // Hard structural errors always block. Completeness "blockers" (empty
+    // persona, split with no default, etc.) block only when this save turns
+    // the workflow ON — every canvas save currently sends enabled:true, so a
+    // merchant can't push a broken workflow live, but the runtime is still
+    // guarded regardless. Warnings never block; they're echoed to the client.
+    let graphWarnings: { code: string; nodeId?: string; message: string }[] = [];
     if (customGraph !== undefined) {
-      const validation = validateLockedNodesEnforced(customGraph);
-      if (!validation.valid) {
-        return c.json({ error: `Invalid workflow graph: ${validation.error}` }, 400);
+      const compliance = validateLockedNodesEnforced(customGraph);
+      if (!compliance.valid) {
+        return c.json({ error: `Invalid workflow graph: ${compliance.error}` }, 400);
       }
+      const result = validateWorkflowGraph(customGraph);
+      if (result.errors.length > 0) {
+        return c.json(
+          { error: result.errors.map((i) => i.message).join(" "), issues: result.errors },
+          400,
+        );
+      }
+      const activating = (enabled ?? true) === true;
+      if (activating && result.blockers.length > 0) {
+        return c.json(
+          {
+            error: `This workflow can't go live yet: ${result.blockers.map((i) => i.message).join(" ")}`,
+            issues: result.blockers,
+          },
+          400,
+        );
+      }
+      graphWarnings = result.warnings.map((i) => ({ code: i.code, nodeId: i.nodeId, message: i.message }));
     }
 
     const values = {
@@ -1312,7 +1341,7 @@ export const userApp = new Hono<UserEnv>()
         },
       })
       .returning();
-    return c.json({ config }, 200);
+    return c.json({ config, warnings: graphWarnings }, 200);
   })
 
   // Workflow Canvas v4 (2026-07-18, Phase 1) — the starting graph for

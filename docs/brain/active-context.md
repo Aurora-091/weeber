@@ -12,6 +12,29 @@ updated: 2026-07-30
 
 ## Current focus
 
+- **Workflow graph validation (P1) + Sentry loop closed (2026-07-30):** Shipped a shared,
+  authoring-time graph validator and proved the monitoring loop end-to-end.
+  **Sentry:** ran a one-off smoke test through the real `initSentry`/`captureError` +
+  `Sentry.flush(5000)` → returned `true` (event delivered), env-tagged `sentry-smoketest`. Loop is
+  proven working; `SENTRY_DSN` set on Railway prod+staging. Smoke-test script deleted, not committed.
+  **P1 validation:** new pure module `packages/api/src/voice/workflows/graph-validation.ts`
+  (`validateWorkflowGraph(graph)` → `{ issues, errors, blockers, warnings }` + `hasStructuralErrors`,
+  `canActivate`; no I/O). Severity taxonomy maps to real `graph-engine.ts` runtime behavior —
+  **error** (run fails/ambiguous → always block save), **blocker** (runs wrong/nothing → block admin
+  save + merchant *activation*, allow draft), **warning** (engine tolerates → never blocks, surfaced).
+  This is the authoring-time **belt**; `validateLockedNodesEnforced` stays the compliance **suspenders**
+  and `scheduler.ts` stays the runtime enforcement — neither replaced. Wired: admin `validateGraph`
+  delegates to it; merchant `PUT /workflow-configs/:templateKey` (errors→400 always, blockers→400 when
+  `enabled:true`, warnings echoed in 200 body); `ai-draft` rejects drafts with structural errors only
+  (blockers expected — merchant fills them in). Frontend `workflows.tsx` surfaces an amber "Saved with
+  N suggestions" note. 14 new tests (`graph-validation.test.ts`). Verified: `packages/api` tsc 0 ·
+  `packages/web` tsc 0 · web build ✓ · root `oxlint` 0/0 · `bun test src/voice/workflows` 110 pass/0.
+  **Known pre-existing (NOT this work):** `bun test src/app` has 1 failing test
+  (`supabase-auth.test.ts`, `getOrgLead` export + `db.update` mock leaking across files when the whole
+  `src/app` dir runs in one invocation); reproduces on a clean tree, passes in isolation — flagged for
+  a separate test-isolation fix. **Still open:** P2 template gallery at entry; **no usage analytics on
+  the canvas/Customize flow** (still the highest-value gap — instrument before further tuning).
+
 - **Workflow builder P0 UX fixes — persona dropdown + AI-draft front door (2026-07-30):** After a cold
   UX audit of the merchant workflow builder (`audit/2026-07-30-audit-08-workflow-canvas-ux.md`) +
   competitor matrix. **Decision: keep the canvas** — it's *orchestration* (the Shopify-Flow pattern

@@ -4,6 +4,7 @@ import { db } from "../../database";
 import { workflowTemplates, orgWorkflowConfigs, workflowRuns } from "../../database/schema";
 import type { WorkflowGraph } from "./graph-types";
 import { validateLockedNodesEnforced } from "./scaffold";
+import { validateWorkflowGraph } from "./graph-validation";
 import { requireAdminKey, type AdminAuthVariables } from "../middleware/admin-auth";
 import { adminSessionAuth } from "../middleware/admin-session";
 
@@ -28,41 +29,20 @@ export const workflowAdminRoutes = new Hono<{ Variables: AdminAuthVariables }>()
   .use("*", requireAdminKey);
 
 /**
- * Validate a workflow graph before saving:
- * - Every conditionalSplit node must have a "default" outgoing edge
- * - All edges reference existing node IDs
- * - At least one trigger node exists
+ * Validate a workflow *template* graph before saving. Delegates to the shared
+ * `validateWorkflowGraph` (graph-validation.ts) — the single source of truth
+ * now used by both the admin template save (here) and the merchant customGraph
+ * save (app/routes.ts). A shared production template is held to the strict bar:
+ * both hard structural errors AND completeness blockers (empty persona, a split
+ * with no `default`, etc.) reject the save. Warnings do not block.
+ *
+ * This preserves the original admin contract (trigger presence, edge endpoints,
+ * split-default all still reject) while inheriting the newer checks for free.
  */
 function validateGraph(graph: WorkflowGraph): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  const nodeIds = new Set(graph.nodes.map((n) => n.id));
-
-  const triggerNodes = graph.nodes.filter((n) => n.type === "trigger");
-  if (triggerNodes.length === 0) {
-    errors.push("Graph must have at least one trigger node");
-  }
-
-  for (const edge of graph.edges) {
-    if (!nodeIds.has(edge.source)) {
-      errors.push(`Edge ${edge.id} references non-existent source node: ${edge.source}`);
-    }
-    if (!nodeIds.has(edge.target)) {
-      errors.push(`Edge ${edge.id} references non-existent target node: ${edge.target}`);
-    }
-  }
-
-  const conditionalSplitNodes = graph.nodes.filter((n) => n.type === "conditionalSplit");
-  for (const node of conditionalSplitNodes) {
-    const outgoing = graph.edges.filter((e) => e.source === node.id);
-    const hasDefault = outgoing.some((e) => e.branch === "default");
-    if (!hasDefault) {
-      errors.push(
-        `ConditionalSplit node "${node.id}" must have a "default" outgoing edge to prevent dead-ending runs`,
-      );
-    }
-  }
-
-  return { valid: errors.length === 0, errors };
+  const result = validateWorkflowGraph(graph);
+  const blocking = [...result.errors, ...result.blockers];
+  return { valid: blocking.length === 0, errors: blocking.map((i) => i.message) };
 }
 
 // --- Workflow Templates CRUD ---

@@ -22,6 +22,7 @@ import { db } from "../../database";
 import { agentTemplates } from "../../database/schema";
 import { eq } from "drizzle-orm";
 import { validateLockedNodesEnforced } from "./scaffold";
+import { validateWorkflowGraph } from "./graph-validation";
 import type { WorkflowGraph } from "./graph-types";
 import { WORKFLOW_OUTCOMES } from "./graph-types";
 
@@ -131,6 +132,17 @@ export async function draftWorkflowGraph(prompt: string): Promise<DraftWorkflowR
     // doc's explicit "reject and re-prompt, never silently return" rule.
     console.error(`[workflow-ai-draft] generated graph failed validation: ${validation.error}`);
     return { ok: false, error: "The generated workflow didn't meet compliance requirements — try describing it differently." };
+  }
+
+  // Structural integrity (graph-validation.ts): a draft with a broken edge or
+  // duplicate node id would fail at runtime, so it's a generation error too.
+  // Completeness "blockers" (e.g. a call node with no persona yet) are NOT
+  // rejected here — filling those in is precisely what the merchant does after
+  // the draft lands in the canvas; the save gate catches them at activation.
+  const structural = validateWorkflowGraph(graph);
+  if (structural.errors.length > 0) {
+    console.error(`[workflow-ai-draft] generated graph has structural errors: ${structural.errors.map((i) => i.code).join(", ")}`);
+    return { ok: false, error: "The generated workflow came out malformed — try describing it again." };
   }
 
   return { ok: true, graph };
