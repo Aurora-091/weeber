@@ -179,6 +179,16 @@ export const calls = pgTable("calls", {
   // string "custom" (an explicit override / env var was used instead — see resolveDisclosure).
   disclosureText: text("disclosure_text"),
   disclosureVersion: text("disclosure_version"),
+  // ADR-062 (2026-07-30): when the disclosure/opening turn actually fired on
+  // this call — the "what was disclosed and *when*" audit answer, read from
+  // canonical state rather than inferred from transcript timestamps. Written
+  // best-effort right after the greeting turn is spoken (see stream.ts
+  // runGreeting); a call whose greeting never ran, or one finalized before
+  // this column existed, simply has null here rather than a misleading guess.
+  // `disclosureText`/`disclosureVersion` above say WHAT was configured; this
+  // says WHETHER/WHEN it was actually delivered. The transcript substring
+  // check in @openvent/compliance's audit-trail.ts stays as a content fallback.
+  disclosureFiredAt: timestamp("disclosure_fired_at", { withTimezone: true, mode: "date" }),
   // Per-call cost visibility (2026-07-18, India feature-gap analysis Phase 3):
   // the STT/TTS/LLM providers *actually used* for this specific call, snapshotted
   // at call time — not looked up from current org config, which can change after
@@ -319,6 +329,32 @@ export const consentRecords = pgTable("consent_records", {
   withdrawnAt: timestamp("withdrawn_at", { withTimezone: true, mode: "date" }),
 }, (table) => [
   index("consent_records_org_principal_purpose_idx").on(table.orgId, table.dataPrincipal, table.purpose),
+]);
+
+/**
+ * Per-call opt-out events (ADR-062, 2026-07-30) — the "did they opt out on
+ * this call" audit answer. Distinct from `doNotCall` (the current, point-in-time
+ * list state) because an opt-out is a call-time FACT that stays true even if the
+ * number is later removed from the DNC list, and a number can also land on the
+ * DNC list for reasons unrelated to a specific call. Written when the agent
+ * records a cancellation/opt-out intent (see voice/stream.ts's setIntent hook);
+ * `dncPropagatedAt` is stamped if/when that opt-out is pushed onto the DNC list,
+ * so the audit trail can show both the request and the follow-through. Append-only
+ * — never updated except to fill in `dncPropagatedAt`.
+ */
+export const optOutEvents = pgTable("opt_out_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
+  orgId: text("org_id"),
+  phoneNumber: text("phone_number").notNull(),
+  /** The phrase/tool signal that triggered the opt-out, if captured (e.g. the intent notes) — null when only the fact was recorded. */
+  triggerPhrase: text("trigger_phrase"),
+  firedAt: timestamp("fired_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  /** When this opt-out was propagated to the Do-Not-Call list, if it was — null means not (yet) scrubbed. */
+  dncPropagatedAt: timestamp("dnc_propagated_at", { withTimezone: true, mode: "date" }),
+}, (table) => [
+  index("opt_out_events_call_id_idx").on(table.callId),
+  index("opt_out_events_phone_number_idx").on(table.phoneNumber),
 ]);
 
 export const featureFlags = pgTable("feature_flags", {

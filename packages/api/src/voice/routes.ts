@@ -44,7 +44,7 @@ import {
   buildPhoneNumberAuditTrail,
   renderAuditTrailText,
 } from "@openvent/compliance";
-import { dncAdapter, callLogAdapter, callAuditAdapter } from "./compliance/adapters";
+import { dncAdapter, callLogAdapter, callAuditAdapter, auditConsentFactory } from "./compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "./compliance/number-series-gate";
 import { runWorkflowForOutcome } from "./workflows/engine";
@@ -468,7 +468,7 @@ export const voice = new Hono()
   // officer as-is; default is JSON for programmatic use.
   .get("/calls/:id/audit", requireAdminKey, async (c) => {
     const id = c.req.param("id");
-    const record = await buildCallAuditRecord(id, callAuditAdapter, dncAdapter, getDisclosureLine());
+    const record = await buildCallAuditRecord(id, callAuditAdapter, dncAdapter, getDisclosureLine(), auditConsentFactory);
     if (!record) return c.json({ error: "call not found" }, 404);
     if (c.req.query("format") === "text") {
       return c.text(renderAuditTrailText([record]), 200);
@@ -481,7 +481,7 @@ export const voice = new Hono()
   // contacted"), not just one call id.
   .get("/callers/:phoneNumber/audit", requireAdminKey, async (c) => {
     const phoneNumber = decodeURIComponent(c.req.param("phoneNumber"));
-    const trail = await buildPhoneNumberAuditTrail(phoneNumber, callAuditAdapter, dncAdapter, getDisclosureLine());
+    const trail = await buildPhoneNumberAuditTrail(phoneNumber, callAuditAdapter, dncAdapter, getDisclosureLine(), auditConsentFactory);
     if (c.req.query("format") === "text") {
       return c.text(renderAuditTrailText(trail), 200);
     }

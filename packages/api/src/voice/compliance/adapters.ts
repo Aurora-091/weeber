@@ -1,6 +1,6 @@
 import type { CallAuditStorageAdapter, CallLogStorageAdapter, ConsentPurpose, ConsentRecord, ConsentStorageAdapter, DncStorageAdapter } from "@openvent/compliance";
 import { db } from "../../database";
-import { calls, consentRecords, doNotCall, transcripts, toolCalls } from "../../database/schema";
+import { calls, consentRecords, doNotCall, optOutEvents, transcripts, toolCalls } from "../../database/schema";
 import { desc, eq, lt, or, asc } from "drizzle-orm";
 
 /**
@@ -152,6 +152,10 @@ export const callAuditAdapter: CallAuditStorageAdapter = {
       endedAt: row.endedAt,
       status: row.status,
       disposition: row.disposition,
+      // ADR-062: orgId scopes the consent lookup (same number can belong to
+      // multiple orgs); disclosureFiredAt is the "what was disclosed, when" fact.
+      orgId: row.orgId,
+      disclosureFiredAt: row.disclosureFiredAt,
     };
   },
   async getTranscript(callId) {
@@ -170,7 +174,34 @@ export const callAuditAdapter: CallAuditStorageAdapter = {
       .where(or(eq(calls.fromNumber, phoneNumber), eq(calls.toNumber, phoneNumber)));
     return rows.map((r) => ({ callId: String(r.id) }));
   },
+  // ADR-062: per-call opt-out events — the "did they opt out" audit answer,
+  // read from canonical state (opt_out_events), oldest first.
+  async getOptOutEvents(callId) {
+    const id = Number(callId);
+    const rows = await db
+      .select()
+      .from(optOutEvents)
+      .where(eq(optOutEvents.callId, id))
+      .orderBy(asc(optOutEvents.firedAt));
+    return rows.map((r) => ({
+      firedAt: r.firedAt,
+      triggerPhrase: r.triggerPhrase ?? null,
+      dncPropagatedAt: r.dncPropagatedAt ?? null,
+    }));
+  },
 };
+
+/**
+ * ConsentAdapterFactory (ADR-062) for the audit trail — bridges the audit
+ * module's per-call, org-scoped consent lookup to this app's per-org
+ * consent adapter. The audit module hands us each call's own orgId; we
+ * return a ConsentStorageAdapter scoped to it (see createConsentAdapterForOrg
+ * above for why consent is strictly org-scoped). Passed as the optional
+ * `consentFactory` arg to buildCallAuditRecord/buildPhoneNumberAuditTrail.
+ */
+export function auditConsentFactory(orgId: string): ConsentStorageAdapter {
+  return createConsentAdapterForOrg(orgId);
+}
 
 import { and } from "drizzle-orm";
 import { callerMemory, scheduledCalls } from "../../database/schema";

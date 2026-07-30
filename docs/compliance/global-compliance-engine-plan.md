@@ -59,6 +59,16 @@ that actually dials India numbers commercially.
 
 **Not a single blob of work** — each row only triggers when that market's first real customer is imminent. Doing #7 before an India customer exists, or #8 before a US one, is effort spent on a market that isn't real yet.
 
+> **See ADR-062 (2026-07-30):** the "exportable audit pack" half of #11, plus dial-time consent
+> enforcement, planned in three phases. **Phase I is implemented (2026-07-30):** the audit export now
+> carries consent-in-export (org-scoped, PEC/PEWC tier), a disclosure fired-timestamp
+> (`calls.disclosure_fired_at`), and per-call opt-out events (`opt_out_events` table), rendered as a
+> plain-language per-call timeline — migration `0043_massive_ultron.sql` (additive). **Phases II–III
+> (DNC-scrub log, tamper-evidence hash chain, CSV/PDF, and the dial-time `hasConsent` gate that
+> `dispatchScheduledCall` still lacks) are deferred** until the first real outbound *marketing*
+> campaign, since they're exposure-driven and there is no outbound marketing volume pre-pilot. The
+> retention split (#10) is a Phase III dependency for the clinic 7-yr requirement.
+
 ---
 
 ## Tier 2 — Defer until ~50+ customers

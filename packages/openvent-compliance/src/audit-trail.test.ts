@@ -3,9 +3,14 @@ import {
   buildCallAuditRecord,
   buildPhoneNumberAuditTrail,
   renderAuditTrailText,
+  tierForPurpose,
+  type CallAuditRecord,
   type CallAuditStorageAdapter,
+  type CallOptOutEvent,
+  type ConsentAdapterFactory,
 } from "./audit-trail";
-import { createMemoryDncAdapter } from "./adapters/memory";
+import { createMemoryDncAdapter, createMemoryConsentAdapter } from "./adapters/memory";
+import type { ConsentRecord } from "./storage";
 
 const DISCLOSURE_TEXT =
   "Quick heads up before we start — this call may be recorded, and you're speaking with an AI assistant.";
@@ -13,9 +18,11 @@ const DISCLOSURE_TEXT =
 function createMemoryAuditStorage(): CallAuditStorageAdapter & {
   seedCall: (call: Awaited<ReturnType<CallAuditStorageAdapter["getCall"]>>) => void;
   seedTranscript: (callId: string, turns: { role: "caller" | "agent"; text: string; at: Date }[]) => void;
+  seedOptOut: (callId: string, events: CallOptOutEvent[]) => void;
 } {
   const calls = new Map<string, NonNullable<Awaited<ReturnType<CallAuditStorageAdapter["getCall"]>>>>();
   const transcripts = new Map<string, { role: "caller" | "agent"; text: string; at: Date }[]>();
+  const optOuts = new Map<string, CallOptOutEvent[]>();
 
   return {
     seedCall(call) {
@@ -23,6 +30,9 @@ function createMemoryAuditStorage(): CallAuditStorageAdapter & {
     },
     seedTranscript(callId, turns) {
       transcripts.set(callId, turns);
+    },
+    seedOptOut(callId, events) {
+      optOuts.set(callId, events);
     },
     async getCall(callId) {
       return calls.get(callId) ?? null;
@@ -35,8 +45,28 @@ function createMemoryAuditStorage(): CallAuditStorageAdapter & {
         .filter((c) => c.fromNumber === phoneNumber || c.toNumber === phoneNumber)
         .map((c) => ({ callId: c.callId }));
     },
+    async getOptOutEvents(callId) {
+      return optOuts.get(callId) ?? [];
+    },
   };
 }
+
+/** A ConsentAdapterFactory backed by a single in-memory consent adapter, ignoring orgId (tests seed per case). */
+function factoryFor(records: ConsentRecord[]): ConsentAdapterFactory {
+  const adapter = createMemoryConsentAdapter();
+  adapter.seed(records);
+  return () => adapter;
+}
+
+describe("tierForPurpose", () => {
+  it("marks marketing and underwriting as PEWC (written) and the rest as PEC (oral)", () => {
+    expect(tierForPurpose("marketing")).toBe("PEWC");
+    expect(tierForPurpose("underwriting")).toBe("PEWC");
+    expect(tierForPurpose("service")).toBe("PEC");
+    expect(tierForPurpose("transactional")).toBe("PEC");
+    expect(tierForPurpose("feedback")).toBe("PEC");
+  });
+});
 
 describe("buildCallAuditRecord", () => {
   it("returns null for a call id that doesn't exist", async () => {
@@ -70,6 +100,10 @@ describe("buildCallAuditRecord", () => {
     expect(record!.dncStatus).toEqual({ isListed: false });
     expect(record!.transcript).toHaveLength(2);
     expect(record!.disposition).toBe("interested");
+    // No consent factory wired and no opt-out seeded → both empty, and no disclosure fire time recorded.
+    expect(record!.consentBasis).toEqual([]);
+    expect(record!.optOutEvents).toEqual([]);
+    expect(record!.disclosureFiredAt).toBeNull();
   });
 
   it("flags disclosure as not confirmed when the opening line doesn't match", async () => {
@@ -131,6 +165,142 @@ describe("buildCallAuditRecord", () => {
     const record = await buildCallAuditRecord("4", storage, dnc, DISCLOSURE_TEXT);
     expect(record!.dncStatus).toEqual({ isListed: true, reason: "caller requested", addedAt });
   });
+
+  it("reads consent basis from the ledger, scoped to the call's org, resolving tier and active state", async () => {
+    const storage = createMemoryAuditStorage();
+    const dnc = createMemoryDncAdapter();
+    storage.seedCall({
+      callId: "5",
+      direction: "outbound",
+      fromNumber: "+15551110000",
+      toNumber: "+15559998888",
+      startedAt: new Date("2026-07-06T10:00:00Z"),
+      endedAt: new Date("2026-07-06T10:05:00Z"),
+      status: "completed",
+      disposition: "interested",
+      orgId: "org_a",
+    });
+    storage.seedTranscript("5", []);
+
+    const factory = factoryFor([
+      {
+        dataPrincipal: "+15559998888",
+        purpose: "marketing",
+        granted: true,
+        grantedAt: new Date("2026-03-12T00:00:00Z"),
+        version: "cart-recovery-v1",
+        channel: "shopify",
+        source: "checkout consent checkbox",
+      },
+    ]);
+
+    const record = await buildCallAuditRecord("5", storage, dnc, DISCLOSURE_TEXT, factory);
+    expect(record!.consentBasis).toHaveLength(1);
+    const entry = record!.consentBasis[0]!;
+    expect(entry.purpose).toBe("marketing");
+    expect(entry.tier).toBe("PEWC");
+    expect(entry.active).toBe(true);
+    expect(entry.channel).toBe("shopify");
+    expect(entry.version).toBe("cart-recovery-v1");
+  });
+
+  it("leaves consent basis empty when a factory is wired but the call has no org", async () => {
+    const storage = createMemoryAuditStorage();
+    const dnc = createMemoryDncAdapter();
+    storage.seedCall({
+      callId: "6",
+      direction: "outbound",
+      fromNumber: "+15551110000",
+      toNumber: "+15559998888",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      status: "completed",
+      disposition: null,
+      orgId: null,
+    });
+    storage.seedTranscript("6", []);
+
+    const factory = factoryFor([
+      {
+        dataPrincipal: "+15559998888",
+        purpose: "marketing",
+        granted: true,
+        grantedAt: new Date("2026-03-12T00:00:00Z"),
+        version: "v1",
+        channel: "shopify",
+        source: "checkout",
+      },
+    ]);
+
+    const record = await buildCallAuditRecord("6", storage, dnc, DISCLOSURE_TEXT, factory);
+    expect(record!.consentBasis).toEqual([]);
+  });
+
+  it("marks a withdrawn consent as not active and carries withdrawnAt", async () => {
+    const storage = createMemoryAuditStorage();
+    const dnc = createMemoryDncAdapter();
+    storage.seedCall({
+      callId: "7",
+      direction: "outbound",
+      fromNumber: "+15551110000",
+      toNumber: "+15559998888",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      status: "completed",
+      disposition: null,
+      orgId: "org_a",
+    });
+    storage.seedTranscript("7", []);
+
+    const withdrawnAt = new Date("2026-07-01T00:00:00Z");
+    const factory = factoryFor([
+      {
+        dataPrincipal: "+15559998888",
+        purpose: "service",
+        granted: true,
+        grantedAt: new Date("2026-03-12T00:00:00Z"),
+        version: "v1",
+        channel: "ivr",
+        source: "verbal on inbound call",
+        withdrawnAt,
+      },
+    ]);
+
+    const record = await buildCallAuditRecord("7", storage, dnc, DISCLOSURE_TEXT, factory);
+    const entry = record!.consentBasis[0]!;
+    expect(entry.tier).toBe("PEC");
+    expect(entry.active).toBe(false);
+    expect(entry.withdrawnAt).toEqual(withdrawnAt);
+  });
+
+  it("includes per-call opt-out events and the disclosure fire time from canonical state", async () => {
+    const storage = createMemoryAuditStorage();
+    const dnc = createMemoryDncAdapter();
+    const firedAt = new Date("2026-07-06T10:00:02Z");
+    const optOutAt = new Date("2026-07-06T10:03:00Z");
+    storage.seedCall({
+      callId: "8",
+      direction: "outbound",
+      fromNumber: "+15551110000",
+      toNumber: "+15559998888",
+      startedAt: new Date("2026-07-06T10:00:00Z"),
+      endedAt: new Date("2026-07-06T10:05:00Z"),
+      status: "completed",
+      disposition: "opted-out",
+      orgId: "org_a",
+      disclosureFiredAt: firedAt,
+    });
+    storage.seedTranscript("8", []);
+    storage.seedOptOut("8", [
+      { firedAt: optOutAt, triggerPhrase: "take me off your list", dncPropagatedAt: null },
+    ]);
+
+    const record = await buildCallAuditRecord("8", storage, dnc, DISCLOSURE_TEXT);
+    expect(record!.disclosureFiredAt).toEqual(firedAt);
+    expect(record!.optOutEvents).toHaveLength(1);
+    expect(record!.optOutEvents[0]!.triggerPhrase).toBe("take me off your list");
+    expect(record!.optOutEvents[0]!.dncPropagatedAt).toBeNull();
+  });
 });
 
 describe("buildPhoneNumberAuditTrail", () => {
@@ -172,6 +342,27 @@ describe("buildPhoneNumberAuditTrail", () => {
   });
 });
 
+/** Builds a minimal valid CallAuditRecord for renderer tests, with overrides. */
+function makeRecord(overrides: Partial<CallAuditRecord> = {}): CallAuditRecord {
+  return {
+    callId: "1",
+    direction: "outbound",
+    fromNumber: "+15551110000",
+    toNumber: "+15559998888",
+    startedAt: new Date("2026-07-06T10:00:00Z"),
+    endedAt: new Date("2026-07-06T10:05:00Z"),
+    status: "completed",
+    disposition: "interested",
+    consentBasis: [],
+    disclosureConfirmed: true,
+    disclosureFiredAt: null,
+    optOutEvents: [],
+    transcript: [],
+    dncStatus: { isListed: false },
+    ...overrides,
+  };
+}
+
 describe("renderAuditTrailText", () => {
   it("returns a clear message for an empty result set", () => {
     expect(renderAuditTrailText([])).toBe("No calls found for this query.");
@@ -179,42 +370,70 @@ describe("renderAuditTrailText", () => {
 
   it("renders a readable record including transcript, disposition, and DNC status", () => {
     const text = renderAuditTrailText([
-      {
-        callId: "1",
-        direction: "outbound",
-        fromNumber: "+15551110000",
-        toNumber: "+15559998888",
-        startedAt: new Date("2026-07-06T10:00:00Z"),
-        endedAt: new Date("2026-07-06T10:05:00Z"),
-        status: "completed",
-        disposition: "interested",
-        disclosureConfirmed: true,
+      makeRecord({
         transcript: [{ role: "agent", text: "Hi there", at: new Date("2026-07-06T10:00:01Z") }],
-        dncStatus: { isListed: false },
-      },
+      }),
     ]);
     expect(text).toContain("Call 1 of 1");
     expect(text).toContain("Disposition: interested");
-    expect(text).toContain("disclosure spoken: yes");
+    expect(text).toContain("Spoken: yes");
     expect(text).toContain("not listed");
     expect(text).toContain("Hi there");
   });
 
+  it("shows a plain-language consent basis line with tier and grant date", () => {
+    const text = renderAuditTrailText([
+      makeRecord({
+        consentBasis: [
+          {
+            purpose: "marketing",
+            tier: "PEWC",
+            grantedAt: new Date("2026-03-12T00:00:00Z"),
+            version: "cart-recovery-v1",
+            channel: "shopify",
+            source: "checkout consent checkbox",
+            active: true,
+            withdrawnAt: null,
+          },
+        ],
+      }),
+    ]);
+    expect(text).toContain("Marketing consent (written / PEWC), granted 12 Mar 2026 — active");
+    expect(text).toContain("cart-recovery-v1");
+  });
+
+  it("states plainly when no consent is on file", () => {
+    const text = renderAuditTrailText([makeRecord({ consentBasis: [] })]);
+    expect(text).toContain("No consent record on file for this number under this org.");
+  });
+
+  it("renders opt-out events and notes when not yet propagated to DNC", () => {
+    const text = renderAuditTrailText([
+      makeRecord({
+        optOutEvents: [
+          {
+            firedAt: new Date("2026-07-06T10:03:00Z"),
+            triggerPhrase: "take me off your list",
+            dncPropagatedAt: null,
+          },
+        ],
+      }),
+    ]);
+    expect(text).toContain("Caller opted out at 2026-07-06T10:03:00.000Z");
+    expect(text).toContain("take me off your list");
+    expect(text).toContain("not yet propagated to Do-Not-Call list");
+  });
+
   it("clearly flags an unconfirmed disclosure and a DNC-listed number", () => {
     const text = renderAuditTrailText([
-      {
+      makeRecord({
         callId: "2",
-        direction: "outbound",
-        fromNumber: "+15551110000",
-        toNumber: "+15559998888",
-        startedAt: new Date(),
         endedAt: null,
         status: "failed",
         disposition: null,
         disclosureConfirmed: false,
-        transcript: [],
         dncStatus: { isListed: true, reason: "opted out", addedAt: new Date("2026-06-01T00:00:00Z") },
-      },
+      }),
     ]);
     expect(text).toContain("NOT CONFIRMED");
     expect(text).toContain("ON THE LIST");

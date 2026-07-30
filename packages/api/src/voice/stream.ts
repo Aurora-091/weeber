@@ -32,7 +32,7 @@ import { getTelephonyTransport, type TelephonyProvider } from "./telephony-trans
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents } from "../database/schema";
 import { eq } from "drizzle-orm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
@@ -154,6 +154,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
   let capturedIntent: string | undefined;
+  /**
+   * ADR-062: whether a recording/AI disclosure was resolved+configured for
+   * this call (set in the "start" handler where disclosureText/Version are
+   * persisted). Gates the `disclosureFiredAt` stamp after the greeting turn —
+   * we only claim disclosure "fired" for a call that actually had one to fire.
+   */
+  let disclosureConfigured = false;
+  /** ADR-062: set once, so a greeting that runs more than once (rare re-prompt path) doesn't re-stamp disclosureFiredAt. */
+  let disclosureFiredStamped = false;
   let history: ModelMessage[] = [];
   /**
    * §3b: adaptive noise filter — created once per call, only when the
@@ -416,6 +425,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // disposition (a call can have an intent recorded well before its final outcome is known).
     if (name === "setIntent" && input && typeof input === "object" && "intent" in input) {
       capturedIntent = String((input as { intent: unknown }).intent);
+
+      // ADR-062: a "cancellation_or_opt_out" intent IS a per-call opt-out
+      // event — log it to canonical state (opt_out_events) so the audit trail
+      // can answer "did they opt out on this call" without re-reading the
+      // transcript. Distinct from the DNC list (current state); this is the
+      // call-time fact. Fire-and-forget: a failure here never blocks the call.
+      // dncPropagatedAt is left null here — DNC propagation is a separate step
+      // (Phase II / an existing DNC-add path), and the audit trail shows the
+      // request even before any follow-through.
+      if (capturedIntent === "cancellation_or_opt_out" && dbCallId && humanNumber) {
+        const notes = (input as { notes?: unknown }).notes;
+        const triggerPhrase = typeof notes === "string" && notes.trim() ? notes.trim() : null;
+        void db
+          .insert(optOutEvents)
+          .values({
+            callId: dbCallId,
+            orgId: humanNumberOrgId ?? null,
+            phoneNumber: humanNumber,
+            triggerPhrase,
+          })
+          .catch((err) => console.error("[voice] failed to log opt-out event", err));
+      }
     }
   }
 
@@ -1099,6 +1130,24 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     );
   }
 
+  /**
+   * ADR-062: stamp when the disclosure/opening turn actually fired. The
+   * recording/AI disclosure is prepended to the very start of the opening
+   * turn (see @openvent/compliance's withDisclosure), so the moment the
+   * greeting finishes speaking is the moment disclosure was delivered as
+   * audio. Fire-and-forget and gated on disclosure actually being configured
+   * for this call — a failure here just leaves the audit record's fire-time
+   * empty, it never blocks the call. Idempotent via disclosureFiredStamped.
+   */
+  function stampDisclosureFired() {
+    if (disclosureFiredStamped || !disclosureConfigured || !callSid) return;
+    disclosureFiredStamped = true;
+    void withRetry(
+      () => db.update(calls).set({ disclosureFiredAt: new Date() }).where(eq(calls.twilioCallSid, callSid!)),
+      { label: "persist-disclosure-fired" },
+    ).catch((err) => console.error("[voice] failed to persist disclosureFiredAt", err));
+  }
+
   async function runGreeting(ws: Sendable) {
     // Latency fix (2026-07-16): a fully-resolved literal greeting was
     // rendered in the "start" handler — speak it directly via the same
@@ -1107,6 +1156,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // through to the LLM-generated greeting below whenever this is unset.
     if (literalGreetingText) {
       await speakCannedLine(ws, literalGreetingText);
+      stampDisclosureFired();
       return;
     }
 
@@ -1135,6 +1185,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // response to caller speech, so there's no voiceToVoiceMs to measure.
       { turnLlmTtftRef },
     );
+    stampDisclosureFired();
   }
 
   /**
@@ -1387,6 +1438,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // below — a failure here shouldn't block the call itself, just
             // means this one call's audit record is incomplete.
             if (callSid && (agentConfig.disclosureText || agentConfig.disclosureVersion)) {
+              disclosureConfigured = true;
               void withRetry(
                 () =>
                   db
