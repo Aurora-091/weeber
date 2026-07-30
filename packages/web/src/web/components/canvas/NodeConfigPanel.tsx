@@ -10,13 +10,21 @@ function getMergeTags(vertical?: string): readonly string[] {
 }
 import type { WorkflowNodeType } from "./types";
 
+export type PersonaOption = { value: string; label: string };
+
 type Props = {
   nodeType: WorkflowNodeType;
   config: Record<string, unknown>;
   onUpdate: (config: Record<string, unknown>) => void;
+  /** Optional list of the org's agents to pick a call node's persona from.
+   * When supplied (merchant canvas), the raw persona text input becomes a
+   * dropdown so a merchant can't fat-finger a templateKey that doesn't map to
+   * any real agent. Omitted in the admin template editor, which edits global
+   * template keys by hand — there it falls back to the raw input. */
+  personaOptions?: PersonaOption[];
 };
 
-export function NodeConfigPanel({ nodeType, config, onUpdate }: Props) {
+export function NodeConfigPanel({ nodeType, config, onUpdate, personaOptions }: Props) {
   const style = NODE_STYLES[nodeType];
 
   function set(key: string, value: unknown) {
@@ -32,7 +40,7 @@ export function NodeConfigPanel({ nodeType, config, onUpdate }: Props) {
 
       {nodeType === "trigger" && <TriggerFields config={config} set={set} />}
       {nodeType === "wait" && <WaitFields config={config} set={set} />}
-      {nodeType === "call" && <CallFields config={config} set={set} />}
+      {nodeType === "call" && <CallFields config={config} set={set} personaOptions={personaOptions} />}
       {nodeType === "conditionalSplit" && <SplitFields config={config} set={set} />}
       {nodeType === "sms" && <SmsFields config={config} set={set} />}
       {nodeType === "addToDnc" && <DncFields config={config} set={set} />}
@@ -85,20 +93,60 @@ function WaitFields({ config, set }: { config: Record<string, unknown>; set: (k:
   );
 }
 
-function CallFields({ config, set }: { config: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+function CallFields({
+  config,
+  set,
+  personaOptions,
+}: {
+  config: Record<string, unknown>;
+  set: (k: string, v: unknown) => void;
+  personaOptions?: PersonaOption[];
+}) {
   const [mode, setMode] = useState<"flat" | "escalating">(
     typeof config.discountPercent === "object" ? "escalating" : "flat",
   );
 
+  const persona = (config.persona as string) || "";
+  // A persona already on the node that isn't in the current agent list (e.g. an
+  // agent that was since disabled/removed, or a template key from a seeded
+  // graph) — keep it selectable so opening the panel never silently drops it.
+  const hasUnlistedPersona = !!persona && !!personaOptions && !personaOptions.some((o) => o.value === persona);
+
   return (
     <div className="space-y-3">
       <div className="grid gap-1.5">
-        <Label>Persona</Label>
-        <Input
-          value={(config.persona as string) || ""}
-          onChange={(e) => set("persona", e.target.value)}
-          placeholder="shopify-cart-recovery"
-        />
+        <Label>Agent (persona)</Label>
+        {personaOptions && personaOptions.length > 0 ? (
+          <>
+            <select
+              value={persona}
+              onChange={(e) => set("persona", e.target.value)}
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="" disabled>
+                Select an agent…
+              </option>
+              {personaOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+              {hasUnlistedPersona && (
+                <option value={persona}>{persona} (not in your current agents)</option>
+              )}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              Which of your voice agents makes this call. Manage agents under Agents.
+            </p>
+          </>
+        ) : (
+          // No agent list available (admin template editor) — edit the raw key.
+          <Input
+            value={persona}
+            onChange={(e) => set("persona", e.target.value)}
+            placeholder="shopify-cart-recovery"
+          />
+        )}
       </div>
 
       <div className="grid gap-1.5">

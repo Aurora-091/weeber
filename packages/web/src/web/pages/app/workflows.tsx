@@ -43,6 +43,38 @@ function getMergeTagsForVertical(vertical?: string): readonly string[] {
   return MERGE_TAGS[vertical || "shopify"] || MERGE_TAGS.default;
 }
 
+// Persona options for call-node config in the canvas — the org's own agents,
+// so a merchant picks from a dropdown instead of typing a raw templateKey that
+// may not map to anything. Shares the query key with the Agents page so both
+// read from one cache. Disabled agents are still listed (they can be turned on
+// under Agents) but flagged, since a call node pointing at a disabled agent
+// won't fire.
+type AgentConfigRow = {
+  templateKey: string;
+  templateName: string;
+  config: { enabled: boolean } | null;
+};
+
+function useAgentPersonaOptions() {
+  const q = useQuery({
+    queryKey: ["app-agent-configs"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/agent-configs");
+      if (!res.ok) throw new Error(`${res.status}`);
+      return (await res.json()) as { agentConfigs: AgentConfigRow[] };
+    },
+  });
+  const options = useMemo(
+    () =>
+      (q.data?.agentConfigs ?? []).map((a) => ({
+        value: a.templateKey,
+        label: a.config?.enabled === false ? `${a.templateName} · off` : a.templateName,
+      })),
+    [q.data],
+  );
+  return options;
+}
+
 type WorkflowResponse = {
   id: string;
   name: string;
@@ -180,6 +212,7 @@ function UserWorkflowStandardView({
   );
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
   useUnsavedChanges(dirty);
 
   const editingNode = workflow.graph.nodes.find((n) => n.id === editingNodeId);
@@ -218,6 +251,33 @@ function UserWorkflowStandardView({
     },
     onSuccess: (data) => onStartCustomizing(data.graph),
   });
+
+  // Plain-language front door (Workflow Canvas v4 — surfaced at entry, 2026-07-30).
+  // The same /ai-draft endpoint the canvas editor uses, but here it's the first
+  // thing a merchant sees: describe the flow -> generate a draft graph -> drop
+  // straight into the canvas editor to review/edit/save. This is the path most
+  // merchants should take; "Customize from this template" and "Start blank" are
+  // the manual fallbacks for people who'd rather wire nodes by hand.
+  const aiDraft = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(workflow.id)}/ai-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || `${res.status}`);
+      }
+      return (await res.json()) as { graph: WorkflowGraph };
+    },
+    onSuccess: (data) => onStartCustomizing(data.graph),
+  });
+
+  const handleGenerate = useCallback(() => {
+    if (!aiPrompt.trim() || aiDraft.isPending) return;
+    aiDraft.mutate();
+  }, [aiPrompt, aiDraft]);
 
   return (
     <div className="page-enter flex h-full flex-col p-4 sm:p-6">
@@ -259,6 +319,30 @@ function UserWorkflowStandardView({
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Plain-language front door — the primary way to build a custom flow.
+          Type what you want, land in the canvas with a generated draft. The
+          "Customize"/"Start blank" buttons above stay as manual fallbacks. */}
+      <div className="mt-4 rounded-lg border border-border bg-card p-3 sm:p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="size-4 text-primary shrink-0" aria-hidden />
+          <span className="text-sm font-medium">Build your own with plain language</span>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+            placeholder="Describe your flow — e.g. 'call abandoned carts over ₹2000, offer 10% off if no answer twice'"
+            className="flex-1"
+          />
+          <Button size="sm" onClick={handleGenerate} disabled={aiDraft.isPending || !aiPrompt.trim()}>
+            {aiDraft.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Sparkles className="size-3.5" aria-hidden />}
+            Generate flow
+          </Button>
+        </div>
+        {aiDraft.isError && <p className="text-xs text-destructive mt-1.5">{(aiDraft.error as Error).message}</p>}
       </div>
 
       {/* Orientation strip — the read-only graph looks like an editor but only
@@ -425,6 +509,7 @@ function UserWorkflowCanvasEditor({
 }) {
   const qc = useQueryClient();
   useShellFullBleed();
+  const personaOptions = useAgentPersonaOptions();
   const initial = useMemo(() => graphToFlowEditable(startingGraph), [startingGraph]);
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChangeRaw] = useEdgesState(initial.edges);
@@ -690,6 +775,7 @@ function UserWorkflowCanvasEditor({
                 nodeType={selectedNode.data.nodeType as WorkflowNodeType}
                 config={selectedNode.data.config as Record<string, unknown>}
                 onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
+                personaOptions={personaOptions}
               />
             )}
             {selectedEdge && (

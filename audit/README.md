@@ -14,8 +14,10 @@ and are read chronologically, oldest first.
   Postgres/Supabase setup).
 - **`2026-07-15-review-outbox-vault-versioning.md`** — targeted review of the outbox pattern, secrets
   vault, and versioning approach.
-- **`2026-07-17-audit-07-live-infra.md`** — most recent audit, covering live infrastructure as
-  currently deployed.
+- **`2026-07-17-audit-07-live-infra.md`** — audit covering live infrastructure as currently deployed.
+- **`2026-07-30-audit-08-workflow-canvas-ux.md`** — most recent audit: cold UX audit of the merchant
+  workflow builder (Standard view / canvas / AI-draft) + competitive matrix; drove the P0 persona-dropdown
+  and AI-draft-front-door fixes shipped the same day.
 
 See also `docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md` for a source-level audit of
 the Agents UI framework paired with COGS/unit-economics analysis — kept under `docs/` rather than here

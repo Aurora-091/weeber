@@ -12,6 +12,23 @@ updated: 2026-07-30
 
 ## Current focus
 
+- **Workflow builder P0 UX fixes — persona dropdown + AI-draft front door (2026-07-30):** After a cold
+  UX audit of the merchant workflow builder (`audit/2026-07-30-audit-08-workflow-canvas-ux.md`) +
+  competitor matrix. **Decision: keep the canvas** — it's *orchestration* (the Shopify-Flow pattern
+  merchants know), not conversation-flow; the fix is to stop making raw wiring the front door.
+  Shipped two P0s: (1) call-node `persona` is now a **dropdown** of the org's agents instead of raw
+  text (a call node could otherwise point at a non-existent agent — persona = a resolved templateKey).
+  `NodeConfigPanel` took an optional `personaOptions` prop and stays presentational, so the admin
+  template editor keeps the raw input (different auth); merchant canvas feeds it via new
+  `useAgentPersonaOptions` (`GET /api/app/agent-configs`). (2) The AI-draft "describe your flow" bar,
+  previously buried inside the canvas, is now the **primary path on the Standard View entry** →
+  generate → land in canvas to edit/save. Files: `components/canvas/NodeConfigPanel.tsx`,
+  `pages/app/workflows.tsx`. Verified: `packages/web` tsc 0 · build ✓ · root `oxlint` 0/0.
+  **Still open:** P1 graph validation, P2 template gallery, and — flagged highest-value — **no usage
+  analytics exist on this flow**, so all of the above is reasoned from code+competitors, not observed
+  sessions; instrument before tuning. `SENTRY_DSN` is set on Railway (prod+staging) but not yet proven
+  end-to-end. Whether SMBs should ever see a node-graph canvas at all: deferred (canvas kept for now).
+
 - **Workflows Standard View — affordance/legibility fixes (2026-07-30):** Follow-up to a UX audit —
   a tester got lost on the default workflow view because the read-only React Flow graph looks editable
   but only `wait/call/sms` nodes respond to a click, with no signal which. Fixed with pure
