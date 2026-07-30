@@ -4,6 +4,7 @@ import { PhoneIncoming, PhoneOutgoing, Sparkles, Clock, RefreshCw } from "lucide
 import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
+import { formatDateTime } from "../../lib/format";
 
 const STATUS_STYLES: Record<string, string> = {
   "in-progress": "bg-success-soft text-success",
@@ -13,8 +14,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function formatWhen(iso: string | null) {
   if (!iso) return "—";
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(iso);
 }
 
 function formatDuration(startedAt: string | null, endedAt: string | null): string | null {

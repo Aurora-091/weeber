@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, Loader2, Mail, MailX } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { formatDateTime } from "../../lib/format";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
@@ -32,7 +33,7 @@ type ReplyRow = {
 };
 
 function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(iso);
 }
 
 export function SupportPage() {

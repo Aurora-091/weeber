@@ -3,10 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Trash2, Plus, Copy, Check, ChartBar as BarChart3, Loader as Loader2, CircleCheck as CheckCircle2, Circle as XCircle } from "lucide-react";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { formatDateTime } from "../../lib/format";
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(iso);
 }
 
 type PlatformSetting = { key: string; value: string | null; updatedAt: string };

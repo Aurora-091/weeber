@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { formatDateTime } from "../../lib/format";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
@@ -20,7 +21,7 @@ type UserRow = {
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "\u2014";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(iso);
 }
 
 /**

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Store, User, Bot, Users, ChevronDown, ChevronUp, Phone, Loader2 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { formatDate } from "../../lib/format";
 
 type OrgOverviewRow = {
   id: string;
@@ -28,7 +29,7 @@ type OrgDetail = {
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatDate(iso);
 }
 
 type TwilioStatus = {

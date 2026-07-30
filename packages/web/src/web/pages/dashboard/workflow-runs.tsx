@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Clock, CircleCheck as CheckCircle2, Circle as XCircle, Loader as Loader2 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { formatDateTime } from "../../lib/format";
 
 type WorkflowRun = {
   id: string;
@@ -30,12 +31,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function formatDate(iso: string | null) {
   if (!iso) return "\u2014";
-  return new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(iso);
 }
 
 export function WorkflowRunsPage() {

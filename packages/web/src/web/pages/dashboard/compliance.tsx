@@ -4,6 +4,7 @@ import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { blockReasonMeta } from "../../lib/block-reasons";
+import { formatDateTime } from "../../lib/format";
 
 type DncRow = {
   phoneNumber: string;
@@ -62,7 +63,7 @@ type ComplianceOverview = {
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(iso);
 }
 
 function downloadCsv(filename: string, headers: string[], rows: string[][]) {
