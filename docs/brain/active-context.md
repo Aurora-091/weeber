@@ -12,6 +12,27 @@ updated: 2026-07-31
 
 ## Current focus
 
+- **Semantic turn-detection SEAM — Five Bets Phase V (2026-07-31):** Fifth/final phase, and the Five
+  Bets plan is now complete. Ships the pluggable end-of-turn (EOT) **seam + fallback discipline only —
+  NOT a model vendor**, because the model is gated (zero Phase II production health data yet, pre-pilot;
+  staging+prod still share `DATABASE_URL` so no isolation). New module `packages/api/src/voice/turn-detection/`:
+  (1) `types.ts` `TurnEndDetector` interface `decide(input)→{done,by,reason?}`; (2) `heuristic.ts` —
+  `endsMidThought`+pattern MOVED here unchanged from stream.ts, wrapped as `HeuristicTurnDetector` (default
+  + always-available fallback, zero I/O); stream.ts re-exports `endsMidThought` for back-compat;
+  (3) `budgeted.ts` `withLatencyBudget(primary,fallback,budgetMs)` — a slow/throwing model degrades to the
+  heuristic, never adds unbounded latency to the hot path; (4) `composite.ts` — heuristic first, short-circuit
+  (skip model) when it wants to hold, consult refiner ONLY when the turn looks complete; (5) `index.ts`
+  `createTurnDetector(config)` + `SEMANTIC_TURN_DETECTION_FLAG` (`semantic-turn-detection`) +
+  `DEFAULT_REFINER_BUDGET_MS` 300. Wiring: per-call `turnDetector` built in stream.ts start handler from the
+  flag (refiner=null default → plain heuristic, byte-identical to old inline check); call site is now
+  `const d = await turnDetector.decide({text}); if(!d.done){armSilenceTimer;return;}`. **Flag default OFF, no
+  DB column / no migration** (org-flag path). Model wiring correctly deferred — dropping in Smart Turn/OpenAI
+  Realtime/LiveKit later = pass a `refiner` + flip the flag. Verified: api+web tsc 3/3 · web build ✓ · oxlint
+  0/0 · `bun test --isolate src/voice/turn-detection/turn-detection.test.ts src/voice/stream.test.ts` 24/0
+  (StubModelTurnDetector mock, no live vendor, audio path untouched). **NEXT: nothing in Five Bets — model
+  wiring waits on Phase II call-health data + staging isolation. No live-audio/live-server test without
+  explicit go-ahead.**
+
 - **Backchannels — Five Bets Phase IV (2026-07-31):** Fourth phase. Adds short low-latency acks
   ("Mm-hm."/"Right."/"Okay.") played sparingly while the caller is mid-utterance, covering the
   caller-is-talking silence window (pre-tool fillers only covered the agent-is-working window). Shipped:

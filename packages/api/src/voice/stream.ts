@@ -30,6 +30,12 @@ import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } fr
 import type { HighPassFilter } from "./wind-noise-filter";
 import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backchannel";
+import {
+  createTurnDetector,
+  HeuristicTurnDetector,
+  SEMANTIC_TURN_DETECTION_FLAG,
+  type TurnEndDetector,
+} from "./turn-detection";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
@@ -81,22 +87,12 @@ export function looksLikePromptInjection(text: string): boolean {
 }
 
 /**
- * A1b (VAD/endpointing audit, 2026-07-14): Deepgram's `endpointing`/
- * `speech_final` is a single fixed-silence-timeout signal — it has no idea
- * whether the caller's sentence is actually grammatically complete. A
- * caller who pauses mid-thought right after a conjunction/filler ("and...",
- * "so...", "um...") can get cut off and answered on a fragment. This is a
- * cheap, rule-based regex-context check (not a model call) layered on top
- * of the vendor signal, matching the report's "endpointing as rule-based +
- * regex-context, not vendor-signal-alone" recommendation — the caller
- * simply gets treated as still-mid-turn for one more beat; the existing
- * silence-timeout re-prompt is still the backstop if they really did stop.
+ * A1b (VAD/endpointing audit, 2026-07-14): the mid-thought regex check now
+ * lives in `./turn-detection/heuristic` as the default `TurnEndDetector`
+ * (Phase V, 2026-07-31). Re-exported here so existing importers (and
+ * stream.test.ts) keep working unchanged.
  */
-const TRAILING_FILLER_PATTERN = /\b(and|so|but|or|because|um+|uh+|like|well|then)[.,]?$/i;
-
-export function endsMidThought(text: string): boolean {
-  return TRAILING_FILLER_PATTERN.test(text.trim());
-}
+export { endsMidThought } from "./turn-detection/heuristic";
 
 const SILENCE_WARNING_MS = 8000;
 const SILENCE_HANGUP_MS = 7000;
@@ -204,6 +200,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let backchannelsEnabled = false;
   let callerUtteranceStartedAt: number | null = null;
   let lastBackchannelAt: number | null = null;
+  /**
+   * Phase V (2026-07-31): the pluggable end-of-turn detector, built once per
+   * call from SEMANTIC_TURN_DETECTION_FLAG. Default is the plain heuristic
+   * (refiner = null, no vendor wired yet — see turn-detection/index.ts), so
+   * this is byte-identical to the old inline `endsMidThought` call until a
+   * real model is dropped in behind the flag.
+   */
+  let turnDetector: TurnEndDetector = new HeuristicTurnDetector();
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -1354,7 +1358,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // no turn (and therefore no armSilenceTimer call further down)
           // runs on this path — the re-prompt is still the backstop if the
           // caller genuinely stopped here rather than actually continuing.
-          if (endsMidThought(text)) {
+          const turnEnd = await turnDetector.decide({ text });
+          if (!turnEnd.done) {
             armSilenceTimer(ws);
             return;
           }
@@ -1644,6 +1649,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             }
             expressiveDeliveryEnabled = noiseFilterFlags[EXPRESSIVE_DELIVERY_FLAG] === true;
             backchannelsEnabled = noiseFilterFlags[BACKCHANNEL_FLAG] === true;
+            // Phase V: build the per-call end-of-turn detector from the flag.
+            // refiner is null (no model vendor wired — deferred per the
+            // build-plan gate), so today this returns the plain heuristic and
+            // behaves exactly as the old inline endsMidThought check.
+            turnDetector = createTurnDetector({
+              semanticEnabled: noiseFilterFlags[SEMANTIC_TURN_DETECTION_FLAG] === true,
+              refiner: null,
+            });
             // Warm the backchannel clips now (fire-and-forget), only when the
             // feature is on, so the first mid-utterance ack is an instant
             // cache hit rather than a live synth — same warm-on-start pattern
