@@ -12,6 +12,20 @@ updated: 2026-07-31
 
 ## Current focus
 
+- **Synthetic scenario expansion — Five Bets Phase III (2026-07-31):** Third phase. Extended the EXISTING
+  AI-to-AI synthetic-test harness (`packages/api/src/voice/synthetic-scenarios.ts` + `synthetic-test.ts`)
+  from 3 → 8 scenarios — NOT a rebuild. **Honest scope: text-only harness cannot test audio-timing
+  failure modes (dead air/barge-in/mid-thought cut-off/silent STT-TTS); those stay gated on live
+  telephony + Phase II health data.** Phase III locks the behavioral/prompt regressions instead. Added:
+  `escalation-needed` (→`transferToHuman`), `abusive-caller-guardrail` (→`flagGuardrailEvent`, positive
+  counterpart to `angry-customer`), `cod-confirmation` (→`confirmCodOrder`), `unknown-info`
+  (→`lookupInfo`, hallucination guard), `multi-intent` (→`captureField`). All use existing assertion
+  types (no schema change, no migration). New catalog-integrity tests in `synthetic-test.test.ts`: unique
+  keys, ≥1 assertion + positive maxTurns each, and every tool assertion resolves to a real tool (closes
+  the "assertion names a bogus tool → silently passes forever" trap). Verified: api+web tsc 3/3 · web
+  build ✓ · oxlint 0/0 · `bun test --isolate src/voice/synthetic-test.test.ts` 10/0. **NEXT: Phase IV
+  (backchannels), then Phase V gate decision from Phase II health data.**
+
 - **Call health / silent-failure detection — Five Bets Phase II (2026-07-31):** Second phase of the
   approved Five Bets plan. `status` only says how a call ended for the carrier — it counts dead-air /
   STT-never-connected / greeting-only calls as `completed`. This derives a health verdict at call end.
