@@ -12,6 +12,24 @@ updated: 2026-07-31
 
 ## Current focus
 
+- **Backchannels — Five Bets Phase IV (2026-07-31):** Fourth phase. Adds short low-latency acks
+  ("Mm-hm."/"Right."/"Okay.") played sparingly while the caller is mid-utterance, covering the
+  caller-is-talking silence window (pre-tool fillers only covered the agent-is-working window). Shipped:
+  (1) pure `packages/api/src/voice/backchannel.ts` `shouldBackchannel(input)` → bool with all guardrails
+  in one place (off unless org flag on; never while agent speaking; never on speech_final; only after
+  `BACKCHANNEL_MIN_UTTERANCE_MS` 2500; rate-limited to one per `BACKCHANNEL_MIN_GAP_MS` 4000) + 10 tests;
+  (2) `stream.ts` wiring — fires on Deepgram interim partials before the speech_final early-return;
+  `maybePlayBackchannel` renders cached clips only (warm-cached on start via existing `warmFillerCache`);
+  per-call state `callerUtteranceStartedAt` (reset on barge-in + consumed turn) + `lastBackchannelAt`;
+  **NOT a turn** — never sets agentIsSpeaking / enters history / clears, so it can't corrupt
+  turn-taking/barge-in/endsMidThought; (3) org flag `backchannels`, default OFF, **no DB column / no
+  migration** (org-flag path like expressive-delivery). Verified: api+web tsc 3/3 · web build ✓ · oxlint
+  0/0 · `bun test --isolate src/voice/backchannel.test.ts` 10/0 (41/0 across all four phase test files).
+  **Synthetic-harness assert-unchanged check is N/A (text-only, no interim-STT path; backchannels never
+  touch history). Real validation = controlled LIVE-AUDIO test, pending explicit go-ahead. NEXT: Phase V
+  gate decision — build semantic turn-detection ONLY if Phase II call-health data shows a real
+  turn-taking problem in production.**
+
 - **Synthetic scenario expansion — Five Bets Phase III (2026-07-31):** Third phase. Extended the EXISTING
   AI-to-AI synthetic-test harness (`packages/api/src/voice/synthetic-scenarios.ts` + `synthetic-test.ts`)
   from 3 → 8 scenarios — NOT a rebuild. **Honest scope: text-only harness cannot test audio-timing

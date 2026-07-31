@@ -29,6 +29,7 @@ import type { NoiseFilter } from "./audio-noise-filter";
 import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } from "./wind-noise-filter";
 import type { HighPassFilter } from "./wind-noise-filter";
 import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
+import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backchannel";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
@@ -195,6 +196,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * sendTtsTextWithTone below; the tone tag itself is always stripped
    * before reaching TTS regardless of this flag. */
   let expressiveDeliveryEnabled = false;
+  /** Phase IV backchannels (see backchannel.ts) — BACKCHANNEL_FLAG, resolved
+   * once alongside the flags above. Plus the two pieces of per-call state the
+   * pure `shouldBackchannel` decision needs: when the caller's current
+   * utterance started (set on the first interim, cleared when a real turn is
+   * consumed) and when we last played a backchannel (rate-limit anchor). */
+  let backchannelsEnabled = false;
+  let callerUtteranceStartedAt: number | null = null;
+  let lastBackchannelAt: number | null = null;
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back
@@ -827,6 +836,34 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
+  /**
+   * Phase IV: play one short backchannel ("mm-hm"/"right"/"okay") while the
+   * caller is mid-utterance. Cached-only, exactly like maybePlayToolCallFiller
+   * — synthesizing live would add the latency a backchannel exists to avoid,
+   * and would risk overlapping the caller's next words. The `shouldBackchannel`
+   * gate (rate limit, threshold, not-during-agent, not-on-speech_final) is
+   * checked by the caller before we ever get here; this just renders the clip.
+   * Deliberately does NOT set agentIsSpeaking / touch history / clear audio:
+   * a backchannel is not a turn.
+   */
+  function maybePlayBackchannel(ws: Sendable) {
+    if (ended || !streamSid) return;
+    const text = BACKCHANNEL_LINES[Math.floor(Math.random() * BACKCHANNEL_LINES.length)];
+    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
+    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    if (!cached) {
+      // Not warmed yet — skip this one and warm it for next time rather than
+      // stalling the caller with a live synth. Backchannels are best-effort.
+      void warmFillerCache(text);
+      return;
+    }
+    try {
+      ws.send(transport.buildOutboundMedia(streamSid, cached));
+    } catch (err) {
+      console.error(`[voice] failed to forward backchannel audio to ${provider}`, err);
+    }
+  }
+
   function armSilenceTimer(ws: Sendable) {
     if (ended) return;
     clearSilenceTimer();
@@ -1263,9 +1300,39 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             tts?.close();
             tts = null;
             agentIsSpeaking = false;
+            // Caller cut in — a fresh utterance begins; restart the timer so a
+            // backchannel is measured against THIS utterance, not the prior one.
+            callerUtteranceStartedAt = null;
+          }
+
+          // Phase IV: backchannels fire on mid-utterance (interim, not
+          // speech_final) partials while the agent is silent — see
+          // backchannel.ts. Evaluated BEFORE the speech_final early-return
+          // below, since by definition a backchannel never fires on the final.
+          const trimmed = text.trim();
+          if (trimmed && !speechFinal && !agentIsSpeaking) {
+            const now = Date.now();
+            if (callerUtteranceStartedAt === null) callerUtteranceStartedAt = now;
+            if (
+              shouldBackchannel({
+                enabled: backchannelsEnabled,
+                agentIsSpeaking,
+                speechFinal,
+                hasText: true,
+                utteranceMs: now - callerUtteranceStartedAt,
+                msSinceLastBackchannel: lastBackchannelAt === null ? null : now - lastBackchannelAt,
+              })
+            ) {
+              lastBackchannelAt = now;
+              maybePlayBackchannel(ws);
+            }
           }
 
           if (!speechFinal || !isFinal || !text.trim()) return;
+
+          // A real end-of-turn is being consumed — the current utterance is
+          // over, so reset the backchannel utterance timer for the next one.
+          callerUtteranceStartedAt = null;
 
           // Latency benchmark (§2): captured as close as possible to the
           // STT provider's own speechFinal instant — this is the caller's
@@ -1576,6 +1643,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               windFilter = createHighPassFilter();
             }
             expressiveDeliveryEnabled = noiseFilterFlags[EXPRESSIVE_DELIVERY_FLAG] === true;
+            backchannelsEnabled = noiseFilterFlags[BACKCHANNEL_FLAG] === true;
+            // Warm the backchannel clips now (fire-and-forget), only when the
+            // feature is on, so the first mid-utterance ack is an instant
+            // cache hit rather than a live synth — same warm-on-start pattern
+            // as the tool-call fillers. No-op past the first call thanks to
+            // the shared tts-cache.
+            if (backchannelsEnabled) {
+              for (const line of BACKCHANNEL_LINES) void warmFillerCache(line);
+            }
           }
 
           connectSttForCall(ws);
