@@ -941,3 +941,40 @@ export const outboundRateLimitWindows = pgTable("outbound_rate_limit_windows", {
   callCount: integer("call_count").notNull().default(0),
 });
 
+/**
+ * First-party product-usage telemetry (2026-07-31). Append-only stream of
+ * client-emitted UI events — the first thing that tells us how merchants
+ * actually use the product, starting with the workflow canvas / Customize
+ * flow (which was a complete black box before this). NOT marketing analytics
+ * (that's GTM/GA4, injected only on the public site via tracking-scripts.tsx)
+ * and NOT the admin action log (`admin_audit_log`); this is merchant product
+ * behavior, owned first-party so it stays queryable in our own Postgres with
+ * no third-party data processor — a deliberate fit for a compliance-sensitive
+ * product at pre-pilot volume. Chosen over PostHog/Amplitude: zero new vendor
+ * cost, no PII leaving, and the questions are few and known (activation
+ * funnel, is-the-canvas-used, AI-draft usage, validator friction, time-to-
+ * activate). The stream exports to any analytics tool later if volume ever
+ * justifies it.
+ *
+ * `name` is a client-owned event name (canonical typed union lives in the web
+ * package's lib/analytics.ts; the ingest route validates shape defensively
+ * with a regex + size caps rather than a shared runtime allowlist, to keep the
+ * server decoupled from the browser bundle). `props` is the event-specific
+ * payload. `occurredAt` is the client's event time (events are batched and may
+ * be flushed seconds later); `createdAt` is server receipt time.
+ */
+export const productEvents = pgTable("product_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").notNull(),
+  userId: text("user_id"),
+  name: text("name").notNull(),
+  props: jsonb("props").$type<Record<string, unknown>>(),
+  sessionId: text("session_id"),
+  path: text("path"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("product_events_name_created_idx").on(table.name, table.createdAt),
+  index("product_events_org_created_idx").on(table.orgId, table.createdAt),
+]);
+

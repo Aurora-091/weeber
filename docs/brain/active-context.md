@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-07-30
+updated: 2026-07-31
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,28 @@ updated: 2026-07-30
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Canvas product telemetry — first-party event pipe (2026-07-31):** Closed the highest-value gap
+  flagged below — the canvas/Customize flow was unmeasured. Built a **first-party** product-usage event
+  pipe (deliberately NOT PostHog/Amplitude: zero vendor cost, data stays in our Postgres, no PII to a
+  processor, pre-pilot volume is tiny). Three pieces: (1) `product_events` table in `schema.ts` +
+  **offline** migration `drizzle/0044_nostalgic_lilith.sql` — **NOT applied; user runs `db:migrate`
+  (shared DB)**; (2) `packages/api/src/app/events-ingest.ts` (pure `parseEventBatch` — name regex,
+  4KB props cap, batch cap 50, epoch sanity; best-effort `recordEvents` that swallows DB errors) +
+  `POST /api/app/events` after `requireUserOrg` (orgId/userId from session, always 2xx, 429 on flood,
+  limiter `APP_EVENTS_RATE_LIMIT` 120/60s); (3) `packages/web/src/web/lib/analytics.ts` — typed
+  `track()` that **never throws/blocks**, canonical `AppEventName` union (14 names; server validates
+  shape only so new events are client-only), sessionId + batched flush + keepalive on hide. Deleted the
+  dead `window.stonks` shim (`types/analytics.d.ts`). Wired `workflows.tsx` end-to-end: activation funnel
+  (`workflow_list_viewed` → `workflow_customize_started {source: template|blank|ai_draft|reopen}` →
+  save `attempted`/`blocked`/`succeeded` with `activated:true` + `msSinceStart` → list-toggle
+  `activated`/`paused`) + canvas-usage (`node_added {via}`, `node_deleted`, `edge_connected`,
+  `node_config_opened`) + AI-draft (`requested`/`succeeded`/`failed`). Activation not double-counted
+  (save carries `activated:true`; toggle events reserved for list). Verified: api+web tsc 0 · web build
+  ✓ · root oxlint 0/0 · `events-ingest.test.ts` 9/0 · `bun test --isolate src/app/` 45/0.
+  **No funnel UI yet** (the first-party trade-off) — query `product_events` via SQL / small admin view
+  later. Admin `workflow-editor.tsx` intentionally not instrumented (merchant flow only).
+  **Migration 0044 pending user apply.** Pre-existing `src/app` test-isolation issue (below) still open.
 
 - **Workflow graph validation (P1) + Sentry loop closed (2026-07-30):** Shipped a shared,
   authoring-time graph validator and proved the monitoring loop end-to-end.

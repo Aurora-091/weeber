@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
+import { track } from "../../lib/analytics";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -38,6 +39,11 @@ import { NodeConfigPanel } from "../../components/canvas/NodeConfigPanel";
 import { MERGE_TAGS, WORKFLOW_OUTCOMES } from "../../components/canvas/types";
 import { NODE_STYLES } from "../../components/canvas/node-styles";
 import type { WorkflowGraph, WorkflowNodeType } from "../../components/canvas/types";
+
+// Where a Customize session came from — threaded into workflow_customize_started
+// so we can distinguish a template fork from a blank start from an AI draft from
+// a plain reopen of an already-custom graph.
+type CustomizeSource = "template" | "blank" | "ai_draft" | "reopen";
 
 function getMergeTagsForVertical(vertical?: string): readonly string[] {
   return MERGE_TAGS[vertical || "shopify"] || MERGE_TAGS.default;
@@ -207,7 +213,7 @@ function UserWorkflowStandardView({
   onStartCustomizing,
 }: {
   workflow: WorkflowResponse;
-  onStartCustomizing: (startingGraph: WorkflowGraph) => void;
+  onStartCustomizing: (startingGraph: WorkflowGraph, source: CustomizeSource) => void;
 }) {
   const qc = useQueryClient();
   useShellFullBleed();
@@ -235,14 +241,21 @@ function UserWorkflowStandardView({
 
   const save = useMutation({
     mutationFn: async () => {
+      track("workflow_save_attempted", { templateKey: workflow.id, mode: "overrides" });
       const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(workflow.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: true, overrides }),
       });
-      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string; issues?: { code: string }[] };
+        const issueCodes = Array.isArray(err.issues) ? err.issues.map((i) => i.code) : [];
+        track("workflow_save_blocked", { templateKey: workflow.id, mode: "overrides", issueCodes });
+        throw new Error(err.error || `Save failed (${res.status})`);
+      }
     },
     onSuccess: () => {
+      track("workflow_save_succeeded", { templateKey: workflow.id, activated: true, mode: "overrides" });
       setDirty(false);
       qc.invalidateQueries({ queryKey: ["user-workflows"] });
     },
@@ -254,7 +267,7 @@ function UserWorkflowStandardView({
       if (!res.ok) throw new Error(`${res.status}`);
       return (await res.json()) as { graph: WorkflowGraph };
     },
-    onSuccess: (data) => onStartCustomizing(data.graph),
+    onSuccess: (data) => onStartCustomizing(data.graph, "blank"),
   });
 
   // Plain-language front door (Workflow Canvas v4 — surfaced at entry, 2026-07-30).
@@ -265,18 +278,24 @@ function UserWorkflowStandardView({
   // the manual fallbacks for people who'd rather wire nodes by hand.
   const aiDraft = useMutation({
     mutationFn: async () => {
+      track("workflow_ai_draft_requested", { templateKey: workflow.id, promptLen: aiPrompt.trim().length });
       const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(workflow.id)}/ai-draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: aiPrompt }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || `${res.status}`);
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        const reason = err.error || `${res.status}`;
+        track("workflow_ai_draft_failed", { templateKey: workflow.id, reason });
+        throw new Error(reason);
       }
       return (await res.json()) as { graph: WorkflowGraph };
     },
-    onSuccess: (data) => onStartCustomizing(data.graph),
+    onSuccess: (data) => {
+      track("workflow_ai_draft_succeeded", { templateKey: workflow.id, nodeCount: data.graph.nodes.length });
+      onStartCustomizing(data.graph, "ai_draft");
+    },
   });
 
   const handleGenerate = useCallback(() => {
@@ -300,7 +319,7 @@ function UserWorkflowStandardView({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onStartCustomizing(structuredClone(workflow.graph))}
+            onClick={() => onStartCustomizing(structuredClone(workflow.graph), "template")}
           >
             <LayoutTemplate className="size-3.5" aria-hidden />
             Customize from this template
@@ -381,6 +400,7 @@ function UserWorkflowStandardView({
               const nType = node.data.nodeType as WorkflowNodeType;
               if (EDITABLE_TYPES.includes(nType)) {
                 setEditingNodeId(node.id);
+                track("workflow_node_config_opened", { nodeType: nType });
               }
             }}
             onPaneClick={() => setEditingNodeId(null)}
@@ -508,9 +528,11 @@ let merchantNodeCounter = 0;
 function UserWorkflowCanvasEditor({
   workflow,
   startingGraph,
+  source,
 }: {
   workflow: WorkflowResponse;
   startingGraph: WorkflowGraph;
+  source: CustomizeSource;
 }) {
   const qc = useQueryClient();
   useShellFullBleed();
@@ -526,6 +548,15 @@ function UserWorkflowCanvasEditor({
   const [dirty, setDirty] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   useUnsavedChanges(dirty);
+
+  // Start of this Customize session — anchors msSinceStart on save so we can
+  // see how long merchants spend in the canvas before they commit (or bail).
+  const mountedAtRef = useRef(Date.now());
+  useEffect(() => {
+    track("workflow_customize_started", { templateKey: workflow.id, source });
+    // Fire once per canvas mount; deps intentionally omitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onNodesChange = useCallback<typeof onNodesChangeRaw>(
     (changes) => {
@@ -557,6 +588,7 @@ function UserWorkflowCanvasEditor({
       } as Edge;
       setDirty(true);
       setEdges((eds) => addEdge(edge, eds));
+      track("workflow_edge_connected");
     },
     [nodes, setEdges],
   );
@@ -580,6 +612,7 @@ function UserWorkflowCanvasEditor({
       };
       setDirty(true);
       setNodes((nds) => [...nds, newNode]);
+      track("workflow_node_added", { nodeType: type, via: "palette" });
     },
     [reactFlowInstance, setNodes],
   );
@@ -599,6 +632,7 @@ function UserWorkflowCanvasEditor({
       };
       setDirty(true);
       setNodes((nds) => [...nds, newNode]);
+      track("workflow_node_added", { nodeType: type, via: "drag" });
     },
     [reactFlowInstance, setNodes],
   );
@@ -613,6 +647,7 @@ function UserWorkflowCanvasEditor({
       setDirty(true);
       setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
       setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+      track("workflow_node_deleted", { nodeType: target?.data?.nodeType as WorkflowNodeType });
       setSelectedNodeId(null);
     }
     if (selectedEdgeId) {
@@ -641,20 +676,38 @@ function UserWorkflowCanvasEditor({
   const save = useMutation({
     mutationFn: async () => {
       const customGraph = flowToGraphEditable(nodes, edges);
+      track("workflow_save_attempted", {
+        templateKey: workflow.id,
+        mode: "canvas",
+        nodeCount: customGraph.nodes.length,
+        edgeCount: customGraph.edges.length,
+      });
       const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(workflow.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: true, customGraph }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || `Save failed (${res.status})`);
+        const err = (await res.json().catch(() => ({}))) as { error?: string; issues?: { code: string }[] };
+        const issueCodes = Array.isArray(err.issues) ? err.issues.map((i) => i.code) : [];
+        track("workflow_save_blocked", { templateKey: workflow.id, mode: "canvas", issueCodes });
+        throw new Error(err.error || `Save failed (${res.status})`);
       }
       // The save succeeds (no hard errors, no activation blockers) but may
       // return non-blocking warnings (a clamped wait, an unreachable node) —
       // surface them so the merchant can tidy up without being stopped.
       const body = (await res.json().catch(() => ({}))) as { warnings?: GraphWarning[] };
-      return body.warnings ?? [];
+      const warnings = body.warnings ?? [];
+      track("workflow_save_succeeded", {
+        templateKey: workflow.id,
+        activated: true,
+        mode: "canvas",
+        warnings: warnings.map((w) => w.code),
+        nodeCount: customGraph.nodes.length,
+        edgeCount: customGraph.edges.length,
+        msSinceStart: Date.now() - mountedAtRef.current,
+      });
+      return warnings;
     },
     onSuccess: () => {
       setDirty(false);
@@ -668,18 +721,22 @@ function UserWorkflowCanvasEditor({
   // the draft like any other in-progress edit before hitting Save.
   const aiDraft = useMutation({
     mutationFn: async () => {
+      track("workflow_ai_draft_requested", { templateKey: workflow.id, promptLen: aiPrompt.trim().length });
       const res = await appFetch(`/api/app/workflow-configs/${encodeURIComponent(workflow.id)}/ai-draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: aiPrompt }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || `${res.status}`);
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        const reason = err.error || `${res.status}`;
+        track("workflow_ai_draft_failed", { templateKey: workflow.id, reason });
+        throw new Error(reason);
       }
       return (await res.json()) as { graph: WorkflowGraph };
     },
     onSuccess: (data) => {
+      track("workflow_ai_draft_succeeded", { templateKey: workflow.id, nodeCount: data.graph.nodes.length });
       const { nodes: n, edges: e } = graphToFlowEditable(data.graph);
       setDirty(true);
       setNodes(n);
@@ -771,6 +828,9 @@ function UserWorkflowCanvasEditor({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodeClick={(_, node) => {
+              if (node.id !== selectedNodeId) {
+                track("workflow_node_config_opened", { nodeType: node.data.nodeType as WorkflowNodeType });
+              }
               setSelectedNodeId(node.id);
               setSelectedEdgeId(null);
             }}
@@ -859,6 +919,8 @@ export function UserWorkflowsListPage() {
       return res.json();
     },
     onSuccess: (_data, w) => {
+      // w.orgConfig.enabled is the state BEFORE the toggle — enabled→paused.
+      track(w.orgConfig.enabled ? "workflow_paused" : "workflow_activated", { templateKey: w.id });
       queryClient.invalidateQueries({ queryKey: ["user-workflows"] });
       toast.success(w.orgConfig.enabled ? `${w.name} paused` : `${w.name} activated`);
     },
@@ -866,6 +928,15 @@ export function UserWorkflowsListPage() {
   });
 
   const rows = workflows.data?.workflows ?? [];
+
+  // One list-viewed event per successful load — the top of the activation
+  // funnel. vertical is taken from the first row (a merchant's rows are all
+  // one vertical); templateCount tells us how many flows they were offered.
+  useEffect(() => {
+    if (!workflows.data) return;
+    track("workflow_list_viewed", { vertical: rows[0]?.vertical, templateCount: rows.length });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflows.data]);
 
   return (
     <div className="page-enter">
@@ -955,6 +1026,12 @@ export function UserWorkflowDetailPage() {
   // blank" from the standard view — switches this page into the full
   // canvas editor with that starting graph, unsaved until they hit Save.
   const [buildingFrom, setBuildingFrom] = useState<WorkflowGraph | null>(null);
+  const [buildSource, setBuildSource] = useState<CustomizeSource>("reopen");
+
+  const startCustomizing = useCallback((graph: WorkflowGraph, src: CustomizeSource) => {
+    setBuildSource(src);
+    setBuildingFrom(graph);
+  }, []);
 
   const workflows = useQuery<{ workflows: WorkflowResponse[] }>({
     queryKey: ["user-workflows"],
@@ -980,13 +1057,16 @@ export function UserWorkflowDetailPage() {
 
   const alreadyCustom = workflow.orgConfig.customGraph;
   const startingGraph = buildingFrom ?? alreadyCustom ?? null;
+  // A fresh Customize session carries its origin; reopening an already-saved
+  // custom graph (no buildingFrom this session) is a "reopen".
+  const canvasSource: CustomizeSource = buildingFrom ? buildSource : "reopen";
 
   return (
     <ReactFlowProvider>
       {startingGraph ? (
-        <UserWorkflowCanvasEditor workflow={workflow} startingGraph={startingGraph} />
+        <UserWorkflowCanvasEditor workflow={workflow} startingGraph={startingGraph} source={canvasSource} />
       ) : (
-        <UserWorkflowStandardView workflow={workflow} onStartCustomizing={setBuildingFrom} />
+        <UserWorkflowStandardView workflow={workflow} onStartCustomizing={startCustomizing} />
       )}
     </ReactFlowProvider>
   );

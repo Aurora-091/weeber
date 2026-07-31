@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
 import { orgMembers, orgs, workflowTemplates, orgWorkflowConfigs, orgPhoneNumbers, consentRecords, insuranceAdvisors } from "../database/schema";
+import { parseEventBatch, recordEvents } from "./events-ingest";
 import { AgentFrameSchema } from "../voice/agent-frame";
 import { generatePreviewAudio } from "../voice/tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "../voice/voices-catalog";
@@ -175,6 +176,14 @@ const TEST_CALL_WINDOW_MS = 60_000;
 const TEST_CALL_MAX_PER_WINDOW = Number(process.env.AGENT_TEST_CALL_RATE_LIMIT ?? 5);
 const testCallRateLimited = makeFixedWindowLimiter(TEST_CALL_WINDOW_MS, TEST_CALL_MAX_PER_WINDOW);
 
+// Per-org limiter for product-telemetry ingest. Generous — the canvas can emit
+// a handful of events per interaction and the client batches — but capped so a
+// misbehaving/looping client can't flood product_events. Best-effort data, so
+// dropping over-limit batches (429) is fine.
+const EVENTS_WINDOW_MS = 60_000;
+const EVENTS_MAX_PER_WINDOW = Number(process.env.APP_EVENTS_RATE_LIMIT ?? 120);
+const eventsIngestRateLimited = makeFixedWindowLimiter(EVENTS_WINDOW_MS, EVENTS_MAX_PER_WINDOW);
+
 export const userApp = new Hono<UserEnv>()
   .use("*", requireUserSession)
 
@@ -238,6 +247,22 @@ export const userApp = new Hono<UserEnv>()
 
   // Everything below requires a resolved org.
   .use("*", requireUserOrg)
+
+  // Product-usage telemetry ingest (see app/events-ingest.ts). Batched,
+  // best-effort, never fails a user action: malformed events are dropped and
+  // the request still returns 2xx; a DB error is swallowed server-side. orgId
+  // and userId come from the session, never the body.
+  .post("/events", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    if (eventsIngestRateLimited(orgId)) {
+      // Best-effort data — shed load quietly rather than retry-storm.
+      return c.body(null, 429);
+    }
+    const body = await c.req.json().catch(() => null);
+    const { valid, rejected } = parseEventBatch(body);
+    const accepted = await recordEvents(orgId, c.get("userUserId") ?? null, valid);
+    return c.json({ accepted, rejected }, 202);
+  })
 
   .patch("/settings", async (c) => {
     const orgId = c.get("userOrgId")!;
