@@ -22,6 +22,7 @@ updated: 2026-07-19
 | Working on… | Read (in order) |
 |---|---|
 | **The call pipeline** (STT/LLM/TTS, barge-in, streaming) | `../../architecture/voice-orchestration.md` → `../reference/state-engine.md` → `../reference/configuration.md` → code in `packages/api/src/voice/` |
+| **End-of-turn detection / "did the caller finish talking?"** | `../../architecture/voice-orchestration.md` (End-of-turn section) → `../decisions/adr-063-*.md` (seam shipped, model deferred behind a gate) → `packages/api/src/voice/turn-detection/`. Default = heuristic; a real model is NOT wired — check the gate before wiring. |
 | **A new/changed agent persona** | `../agent-prompts/` (the persona files) → `project-brief.md` (STOP-AND-ASK #4) → `packages/api/src/database/seed.ts` (do NOT move the prompts folder — seed resolves it by relative path) |
 | **A new vertical** | `../decisions/adr-031-*.md` (vertical-agnostic seam) → `packages/web/src/web/lib/verticals.ts` → `agentTemplates` in `schema.ts`. Add rows, not code paths. |
 | **A new ecommerce platform** (Woo/BigCommerce/Dukaan) | `project-brief.md` (platform-agnostic rule) → the Shopify integration in `packages/api/src/integrations/shopify/` as the pattern → `../reference/contract.md` |

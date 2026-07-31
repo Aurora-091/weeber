@@ -61,6 +61,54 @@ memory causes agents to re-ask or contradict themselves). **Separately, a real p
 knowledge base is referenced by the persona prompts (`docs/agent-prompts/01`, `04`) but does not exist in
 the schema/backend yet** — see `WEEBER-PLAN.md`'s Phase A tracking for this gap.
 
+## End-of-turn detection (the `speech_final` → `runVoiceAgentTurn` step)
+
+Between "STT emits a final transcript" and "the agent answers" sits one decision: **did the caller
+actually finish their turn, or pause mid-thought?** Answer too eagerly and you cut people off; wait too
+long and the agent feels laggy. Today that decision is Deepgram `speech_final` (a fixed silence timeout)
+refined by an `endsMidThought` regex that holds one more beat on trailing fillers ("so...", "and...", "um").
+
+As of **Five Bets Phase V** this lives behind a pluggable seam in `voice/turn-detection/` rather than an
+inline check in `stream.ts`:
+
+```mermaid
+flowchart LR
+    T["speech_final transcript"] --> C{createTurnDetector<br/>(per call, from flag)}
+    C -->|"flag off OR no refiner<br/>(the default today)"| H["HeuristicTurnDetector<br/>= old endsMidThought, byte-identical"]
+    C -->|"flag on AND refiner wired<br/>(future)"| K["Composite"]
+    K --> H2["heuristic first"]
+    H2 -->|"wants to hold<br/>(mid-thought)"| Hold["hold — skip model call"]
+    H2 -->|"looks complete"| B["withLatencyBudget(refiner, heuristic, 300ms)"]
+    B -->|"answers in budget"| Dec["model decision"]
+    B -->|"slow / throws"| H
+    H --> Turn["runVoiceAgentTurn / arm silence timer"]
+    Dec --> Turn
+    Hold --> Wait["wait one more beat"]
+```
+
+- **`types.ts`** — the `TurnEndDetector` interface (`decide({ text }) → { done, by, reason? }`). Any
+  adapter (heuristic today; Smart Turn / OpenAI Realtime / LiveKit later) implements this one method.
+- **`heuristic.ts`** — `endsMidThought` + `TRAILING_FILLER_PATTERN` **moved here unchanged** from
+  `stream.ts` (which re-exports `endsMidThought` for back-compat), wrapped as `HeuristicTurnDetector`.
+  Zero I/O — it is both the default detector *and* the always-available fallback.
+- **`budgeted.ts`** — `withLatencyBudget(primary, fallback, budgetMs)`: the guarantee that makes a
+  model safe to run inline. A model that can't answer within 300ms (or throws) degrades to the heuristic —
+  it can **never** add unbounded latency to the hottest line in the product. Post-timeout rejections are
+  swallowed so they can't surface as unhandled rejections.
+- **`composite.ts`** — runs the heuristic first; if it wants to *hold* (mid-thought) it short-circuits and
+  **skips the model call** entirely (a model can't legitimately make us hold *more*). A model is consulted
+  **only** when the turn looks complete — the single place semantics can prevent a wrong cut-off.
+- **`index.ts`** — `createTurnDetector(config)` factory + `SEMANTIC_TURN_DETECTION_FLAG`
+  (`"semantic-turn-detection"`, same co-located-constant / no-DB-column org-flag pattern as
+  `expressive-delivery` and backchannels) + `DEFAULT_REFINER_BUDGET_MS` (300).
+
+**No model is wired yet, on purpose.** Phase V ships the seam and fallback discipline only; the refiner
+stays `null` until (a) Phase II call-health data shows real cut-offs to justify it and (b) staging is
+isolated from prod so a model can be rolled out safely — the deferral is documented in
+`docs/decisions/adr-063-*.md`. With the flag off or no refiner (today's default), `createTurnDetector`
+returns a bare `HeuristicTurnDetector` and behavior is byte-identical to the old inline check. Dropping in
+a real model later is one line: pass a `refiner`, flip the flag.
+
 ## Telephony provider abstraction
 
 ```mermaid

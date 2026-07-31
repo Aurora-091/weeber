@@ -48,6 +48,11 @@ packages/
 │           ├── routes.ts          # main /api/voice/* surface — start here
 │           ├── stream.ts          # per-call WebSocket state machine (the pipeline below)
 │           ├── agent.ts           # LLM turn runner + persona + known-facts prompt injection
+│           ├── turn-detection/    # pluggable end-of-turn (EOT) seam — heuristic default, model deferred (Five Bets P5)
+│           ├── backchannel.ts     # cached low-latency mid-utterance acks (Five Bets P4)
+│           ├── call-health.ts     # per-call health classifier — feeds the P5 model-wiring gate (Five Bets P2)
+│           ├── guardrail-events.ts# guardrail_events audit table writer (Five Bets P1)
+│           ├── synthetic-scenarios.ts # offline agent-behavior scenario harness (Five Bets P3)
 │           ├── stt/               # deepgram.ts, sarvam.ts, elevenlabs.ts — STT provider abstraction
 │           ├── tts/               # elevenlabs.ts, cartesia.ts, sarvam.ts — TTS provider abstraction
 │           ├── llm/               # AI Gateway / Groq provider abstraction

@@ -62,6 +62,11 @@ includes `--isolate`); never bare `bun test` for a full run.**
 | Area | File | What it tests |
 |---|---|---|
 | State engine | `packages/api/src/voice/agent.test.ts` | `buildKnownFactsBlock` — empty/populated/multi-field prompt injection, doesn't mutate input |
+| **End-of-turn detection** (Five Bets P5) | `packages/api/src/voice/turn-detection/turn-detection.test.ts` | `HeuristicTurnDetector` = old `endsMidThought`; `withLatencyBudget` fast-path / slow→fallback / throw→fallback; composite short-circuits on mid-thought (no model call) + consults refiner only when turn looks complete; `createTurnDetector` default = bare heuristic (no vendor). Uses a `StubModelTurnDetector` mock — no live model, no audio path |
+| **Backchannels** (Five Bets P4) | `packages/api/src/voice/backchannel.test.ts` | Cached-only mid-utterance ack selection/eligibility; never live-synths on the hot path |
+| **Synthetic scenarios** (Five Bets P3) | `packages/api/src/voice/synthetic-test.test.ts` | 8 offline agent-behavior scenarios + catalog-integrity checks (all scenarios well-formed, no dupes) |
+| **Call-health classifier** (Five Bets P2) | `packages/api/src/voice/call-health.test.ts` | `classifyCallHealth` tiering — the signal the P5 model-wiring gate depends on |
+| **Guardrail events** (Five Bets P1) | `packages/api/src/voice/guardrail-events.test.ts` | `guardrail_events` audit-row shape/writer |
 | `captureField` tool | `packages/api/src/voice/tools/captureField.test.ts` | Tool shape, echoes captured field/value |
 | Session store | `packages/api/src/voice/session-store.test.ts` | Set/get/update/delete, workflow retry metadata |
 | Per-number config | `packages/api/src/voice/number-config.test.ts` | Parses `NUMBER_CONFIG` JSON, handles malformed/non-object input gracefully |

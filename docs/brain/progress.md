@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-07-19
+updated: 2026-07-31
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -12,6 +12,19 @@ updated: 2026-07-19
 
 ## Done (works end-to-end, real-verified)
 
+- **Five Bets build plan — all five phases shipped + pushed (2026-07-31)**
+  (`../product-strategy/five-bets-build-plan-2026-07-31.md`; each phase = green tsc/oxlint/web-build +
+  isolated unit tests):
+  - **P1 — Guardrail events:** `guardrail_events` audit table + writer, migration `0045` (applied).
+  - **P2 — Call-health classifier:** `classifyCallHealth` + call-health columns, migration `0046`
+    (applied). This is the signal that gates the P5 model decision.
+  - **P3 — Synthetic scenarios:** offline agent-behavior harness expanded 3→8 + catalog-integrity tests.
+  - **P4 — Backchannels:** cached-only mid-utterance acks (never live-synth on the hot path).
+  - **P5 — Semantic turn-detection SEAM:** pluggable EOT interface + heuristic adapter + latency-budget
+    guard + composite + flag (`voice/turn-detection/`). Heuristic default, flag OFF, behavior-identical,
+    **no migration**. The EOT *model* is deferred behind a gate (ADR-063) — see known issues.
+    Verified 24/0 unit. Note: none of the five is LIVE-call verified; unit/typecheck/build only, per the
+    plan's "test later" scope.
 - User App UI/UX Restructuring (2026-07-20): Elevated Sonner Toaster z-index (`99999`) across modals/drawers, refactored Integrations page (removed double-background overrides and full-screen blur overlays), and upgraded route fallback to animated page skeletons.
 
 - Core voice pipeline: real inbound + outbound calls, barge-in, streamed tool-calling.
@@ -79,7 +92,11 @@ updated: 2026-07-19
 ## Known issues / debt (open)
 
 - Staging Supabase project has a placeholder `DATABASE_URL` on Railway — **unconfirmed**, don't assume
-  fixed.
+  fixed. This is one of the two gates blocking the Five Bets P5 EOT-model wiring (the other is P2 data).
+- **Five Bets P5 EOT model deferred (by design, ADR-063):** the turn-detection seam is shipped but the
+  refiner stays `null` — no Smart Turn / OpenAI Realtime / LiveKit vendor is wired until (a) P2
+  call-health data shows real cut-offs and (b) staging is isolated from prod. Not debt to "fix"; a
+  documented gate to clear before wiring.
 - Branch protection on `main` not yet enabled in GitHub settings.
 - Provider-side + Twilio concurrency limits unverified (not inferable from an API key).
 
