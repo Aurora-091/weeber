@@ -34,6 +34,7 @@ import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
+import { classifyCallHealth } from "./call-health";
 import { eq } from "drizzle-orm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
@@ -132,6 +133,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   // provider — persisted to calls.providerFailoverCount so it's visible on
   // the call record, same pattern as sttReconnectCount below.
   let providerFailoverCount = 0;
+  // Mirror of the latest STT reconnect count for THIS call (the source of
+  // truth is written to calls.sttReconnectCount from the reconnect callback);
+  // kept in memory too so finalizeCall's health classification can read it
+  // without a DB round-trip.
+  let sttReconnectCount = 0;
   // Remaining STT providers to try if the current one hard-fails, for THIS
   // call — built lazily on the first fatal error (not upfront) since the
   // overwhelming majority of calls never need it. null = "not computed yet",
@@ -336,8 +342,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
+  // Cheap in-memory count of transcript rows written this call — a health
+  // signal (see call-health.ts) so finalizeCall doesn't need an extra COUNT(*)
+  // read just to know whether anything was ever said.
+  let transcriptCount = 0;
+
   async function logTranscript(role: "caller" | "agent", text: string) {
     if (!dbCallId) return;
+    transcriptCount++;
     await db.insert(transcripts).values({ callId: dbCallId, role, text }).catch(() => undefined as unknown);
     void dispatchWebhook(webhookUrl, "call.transcript", { callSid, callId: dbCallId, role, text });
   }
@@ -506,6 +518,26 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         console.error("[voice] failed to compute per-call cost estimate", err);
       }
 
+      // Call-health verdict (Five Bets Phase II) — classify from the signals
+      // already gathered in memory this call. Pure/deterministic (see
+      // call-health.ts); folded into the same finalize update so it's written
+      // atomically with status and never adds an extra write on the hot path.
+      // Best-effort by construction: classifyCallHealth can't throw on valid
+      // inputs, and a null result would just leave the columns null.
+      const health = classifyCallHealth({
+        finalStatus: status,
+        answered: callAnsweredAt !== undefined,
+        turnCount: Math.max(0, turnCounter + 1),
+        transcriptCount,
+        hadDisposition: capturedDisposition !== undefined,
+        sttConnectMs,
+        llmTtftMs,
+        ttsFirstByteMs,
+        pickupToFirstAudioMs,
+        sttReconnectCount,
+        providerFailoverCount,
+      });
+
       await withRetry(
         () =>
           db
@@ -520,6 +552,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               ttsProviderUsed: ttsProviderOverride ?? null,
               llmProviderUsed: llmProviderOverride ?? null,
               estimatedCostUsdCents,
+              healthStatus: health.status,
+              healthReasons: health.reasons,
             })
             .where(eq(calls.twilioCallSid, callSid!)),
         { label: "finalize-call" },
@@ -1304,6 +1338,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         // Surface reconnect counts on the call record so a flaky call is
         // visible in the data, not just buried in logs.
         if (!callSid) return;
+        sttReconnectCount = stats.reconnectCount;
         void withRetry(
           () =>
             db

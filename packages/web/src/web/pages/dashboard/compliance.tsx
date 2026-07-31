@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download, Search, FileCheck, PhoneOff } from "lucide-react";
+import { ShieldCheck, Ban, TriangleAlert as AlertTriangle, ShieldAlert, Download, Search, FileCheck, PhoneOff, Activity } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { blockReasonMeta } from "../../lib/block-reasons";
@@ -78,6 +78,27 @@ type GuardrailEventsResponse = {
   total: number;
 };
 
+type CallHealthRow = {
+  id: number;
+  orgId: string | null;
+  direction: "inbound" | "outbound";
+  fromNumber: string;
+  toNumber: string;
+  status: string;
+  disposition: string | null;
+  healthStatus: "healthy" | "degraded" | "silent-failure" | null;
+  healthReasons: string[] | null;
+  startedAt: string | null;
+  endedAt: string | null;
+};
+
+type CallHealthResponse = {
+  calls: CallHealthRow[];
+  byStatus: Record<string, number>;
+  byReason: Record<string, number>;
+  total: number;
+};
+
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
   return formatDateTime(iso);
@@ -128,6 +149,23 @@ export function CompliancePage() {
     queryFn: async () => {
       const res = await apiFetch("/api/voice/compliance/guardrail-events", { headers: adminHeaders() });
       if (!res.ok) throw new Error("Failed to load guardrail events");
+      return res.json();
+    },
+  });
+
+  // Show unhealthy calls first by default — a silent-failure/degraded call is
+  // the whole point of this view; the healthy majority is available via the
+  // "all" filter but isn't what an operator is scanning for.
+  const [healthFilter, setHealthFilter] = useState<"unhealthy" | "silent-failure" | "degraded" | "all">("unhealthy");
+  const callHealth = useQuery<CallHealthResponse>({
+    queryKey: ["admin-call-health", healthFilter],
+    queryFn: async () => {
+      // "unhealthy" is a UI convenience (silent-failure + degraded) the API
+      // doesn't model directly, so fetch unfiltered and narrow client-side;
+      // the specific single-status filters hit the API's ?status= param.
+      const qs = healthFilter === "silent-failure" || healthFilter === "degraded" ? `?status=${healthFilter}` : "";
+      const res = await apiFetch(`/api/voice/compliance/call-health${qs}`, { headers: adminHeaders() });
+      if (!res.ok) throw new Error("Failed to load call health");
       return res.json();
     },
   });
@@ -382,6 +420,132 @@ export function CompliancePage() {
                 </div>
               )
             )}
+          </div>
+
+          {/* Call Health / silent-failure log (Phase II, 2026-07-31) — the
+              calls whose pipeline verdict is degraded or silent-failure: the
+              caller-visible failures that `status` counts as "completed". Reads
+              the health columns written at finalizeCall. This is the evidence
+              Phase V (semantic turn-detection) is gated on. */}
+          <div className="card-weeber p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Activity className="size-4 text-warning" />
+                <h3 className="text-sm font-semibold">Call Health</h3>
+              </div>
+              {callHealth.data && callHealth.data.calls.length > 0 && (
+                <button
+                  onClick={() =>
+                    downloadCsv(
+                      "call-health.csv",
+                      ["Call ID", "Org", "Direction", "From", "To", "Status", "Health", "Reasons", "Ended At"],
+                      callHealth.data!.calls.map((c) => [
+                        String(c.id),
+                        c.orgId ?? "",
+                        c.direction,
+                        c.fromNumber,
+                        c.toNumber,
+                        c.status,
+                        c.healthStatus ?? "",
+                        (c.healthReasons ?? []).join("; "),
+                        c.endedAt ?? "",
+                      ]),
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <Download className="size-3" />
+                  Export CSV
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              A call's <span className="font-mono">status</span> only says how it ended for the carrier — it counts a
+              call where the caller heard dead air as "completed" all the same. This verdict, derived at call end from
+              latency, turn and transcript signals, surfaces the calls where the caller never got a working agent.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(["unhealthy", "silent-failure", "degraded", "all"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setHealthFilter(f)}
+                  className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                    healthFilter === f
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {f === "unhealthy" ? "degraded + silent" : f}
+                </button>
+              ))}
+              {callHealth.data && (
+                <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+                  {Object.entries(callHealth.data.byStatus)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(" · ") || "no verdicts yet"}
+                </span>
+              )}
+            </div>
+
+            {callHealth.isLoading && <p className="text-xs text-muted-foreground">Loading call health…</p>}
+            {callHealth.isError && <p className="text-xs text-destructive">Failed to load call health.</p>}
+
+            {callHealth.data &&
+              (() => {
+                // "unhealthy" = client-side narrow to non-healthy; the other
+                // filters are already scoped by the API query.
+                const rows =
+                  healthFilter === "unhealthy"
+                    ? callHealth.data.calls.filter((c) => c.healthStatus !== "healthy")
+                    : callHealth.data.calls;
+                if (rows.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      No calls match this filter yet. Verdicts appear once calls finalize after the migration is applied.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="divide-y divide-border border-t border-border text-xs">
+                    {rows.map((c) => (
+                      <div key={c.id} className="py-2.5 flex justify-between items-start gap-4">
+                        <div className="min-w-0">
+                          <div className="text-foreground">
+                            <span className="font-mono">call #{c.id}</span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {c.direction} · {c.fromNumber} → {c.toNumber}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            org {c.orgId ?? "—"} · status {c.status}
+                            {c.disposition ? ` · ${c.disposition}` : ""} · ended {formatWhen(c.endedAt)}
+                          </div>
+                          {c.healthReasons && c.healthReasons.length > 0 && (
+                            <ul className="text-[10px] text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
+                              {c.healthReasons.map((r, i) => (
+                                <li key={i}>{r}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        <span
+                          className={`shrink-0 rounded px-1.5 py-0.5 font-medium ${
+                            c.healthStatus === "silent-failure"
+                              ? "bg-destructive/10 text-destructive"
+                              : c.healthStatus === "degraded"
+                                ? "bg-warning-soft text-warning"
+                                : "bg-primary/10 text-primary"
+                          }`}
+                        >
+                          {c.healthStatus ?? "unknown"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
           </div>
 
           {/* Blocked scheduled calls (2026-07-19) — cross-org view of calls a

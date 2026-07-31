@@ -398,6 +398,55 @@ export const admin = new Hono<AdminEnv>()
     return c.json({ events: rows.slice(0, 200), byOrgCategory, bySource, total: rows.length }, 200);
   })
 
+  // Call-health / silent-failure view (Five Bets Phase II, 2026-07-31, see
+  // voice/call-health.ts). `status` counts every connected call as "completed"
+  // even when the caller heard dead air; this surfaces the calls whose
+  // *pipeline* health verdict is degraded or silent-failure — the failures
+  // that are otherwise invisible. Reads the health columns written at
+  // finalizeCall. Only rows with a computed verdict are returned (a call
+  // finalized before Phase II, or one whose health-write raced, has null and
+  // is excluded rather than shown as a misleading "healthy"). Optional
+  // ?status= filter (degraded|silent-failure|healthy) and ?orgId= filter;
+  // newest-ended first. This is the evidence Phase V is gated on.
+  .get("/compliance/call-health", async (c) => {
+    const statusFilter = c.req.query("status")?.trim();
+    const orgId = c.req.query("orgId")?.trim();
+    const conditions = [isNotNull(calls.healthStatus)];
+    if (statusFilter) conditions.push(eq(calls.healthStatus, statusFilter as never));
+    if (orgId) conditions.push(eq(calls.orgId, orgId));
+
+    const rows = await db
+      .select({
+        id: calls.id,
+        orgId: calls.orgId,
+        direction: calls.direction,
+        fromNumber: calls.fromNumber,
+        toNumber: calls.toNumber,
+        status: calls.status,
+        disposition: calls.disposition,
+        healthStatus: calls.healthStatus,
+        healthReasons: calls.healthReasons,
+        startedAt: calls.startedAt,
+        endedAt: calls.endedAt,
+      })
+      .from(calls)
+      .where(and(...conditions))
+      .orderBy(desc(calls.endedAt))
+      .limit(500);
+
+    const byStatus: Record<string, number> = {};
+    const byReason: Record<string, number> = {};
+    for (const row of rows) {
+      const key = row.healthStatus ?? "unknown";
+      byStatus[key] = (byStatus[key] ?? 0) + 1;
+      for (const reason of row.healthReasons ?? []) {
+        byReason[reason] = (byReason[reason] ?? 0) + 1;
+      }
+    }
+
+    return c.json({ calls: rows.slice(0, 200), byStatus, byReason, total: rows.length }, 200);
+  })
+
   // Cross-org view of scheduled calls a compliance gate blocked (2026-07-19).
   // The merchant Orders page shows each org its own blocked rows; this is the
   // platform-wide oversight version — "which calls got stopped, for which

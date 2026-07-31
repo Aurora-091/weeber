@@ -12,6 +12,24 @@ updated: 2026-07-31
 
 ## Current focus
 
+- **Call health / silent-failure detection — Five Bets Phase II (2026-07-31):** Second phase of the
+  approved Five Bets plan. `status` only says how a call ended for the carrier — it counts dead-air /
+  STT-never-connected / greeting-only calls as `completed`. This derives a health verdict at call end.
+  This is the phase that GENERATES the evidence Phase V (semantic turn-detection) is gated on. Shipped:
+  (1) pure `packages/api/src/voice/call-health.ts` `classifyCallHealth(input)` → `{status, reasons}`,
+  status `healthy|degraded|silent-failure`, judges only answered calls; named threshold constants
+  (`DEAD_AIR_SILENT_MS` 8000, `DEAD_AIR_DEGRADED_MS` 3000, `LLM_TTFT_DEGRADED_MS` 2500,
+  `STT_CONNECT_DEGRADED_MS` 2000) + 14 unit tests; (2) additive nullable `calls.healthStatus` (text) +
+  `calls.healthReasons` (jsonb) + index `calls_health_status_idx` + **offline** migration
+  `drizzle/0046_colorful_robbie_robertson.sql` — **NOT applied; user runs `db:migrate` (shared DB);
+  Call Health view empty until then**; (3) `stream.ts` `finalizeCall` classifies from in-memory signals
+  (added `transcriptCount` counter + local `sttReconnectCount` mirror) and folds the verdict into the
+  SAME finalize `update` (atomic, no extra write); (4) admin `GET /api/voice/compliance/call-health`
+  (`status`/`orgId` filters, only computed verdicts, `{calls, byStatus, byReason, total}`); (5) "Call
+  Health" card in `compliance.tsx` (filter chips + per-call reason lists + CSV export). Verified: api+web
+  tsc 3/3 · web build ✓ · root oxlint 0/0 · `bun test --isolate src/voice/call-health.test.ts` 14/0.
+  **Migration 0046 pending user apply. NEXT: Phase III synthetic scenario expansion (await go-ahead).**
+
 - **Guardrail event log — Five Bets Phase I (2026-07-31):** First phase of the approved Five Bets plan
   (`docs/product-strategy/five-bets-build-plan-2026-07-31.md`). Approved sequencing (inverted from
   research): **I** guardrail-events table (this) → **II** silent-failure/call-health detection → **III**

@@ -218,9 +218,20 @@ export const calls = pgTable("calls", {
   // finalized before this column existed, a call with no resolvable human number, or one whose
   // lead-promotion raced/failed (best-effort, doesn't block finalize) simply has no lead link.
   leadId: integer("lead_id"),
+  // Call-health verdict (Five Bets Phase II, 2026-07-31, see voice/call-health.ts).
+  // `status` alone says how the call ENDED from telephony's view; these say
+  // whether the caller actually got a working agent. Derived at finalizeCall
+  // from latency + turn + transcript signals by classifyCallHealth and written
+  // best-effort (never blocks finalize). Nullable: a call finalized before
+  // these columns existed, or one whose health-write raced/failed, simply has
+  // null here rather than a misleading "healthy". `healthReasons` is the
+  // human-readable list backing the verdict (empty array for a clean call).
+  healthStatus: text("health_status").$type<"healthy" | "degraded" | "silent-failure">(),
+  healthReasons: jsonb("health_reasons").$type<string[]>(),
 }, (table) => [
   index("calls_org_id_idx").on(table.orgId),
   index("calls_lead_id_idx").on(table.leadId),
+  index("calls_health_status_idx").on(table.healthStatus),
 ]);
 
 export const callLatency = pgTable("call_latency", {
