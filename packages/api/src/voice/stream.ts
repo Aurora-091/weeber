@@ -7,6 +7,7 @@ import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
+import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
 import { getNumberConfig } from "./number-config";
@@ -32,7 +33,7 @@ import { getTelephonyTransport, type TelephonyProvider } from "./telephony-trans
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
 import { eq } from "drizzle-orm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
@@ -411,6 +412,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       input,
       output,
     });
+
+    // Phase I (five-bets plan, 2026-07-31): promote guardrail moments to a
+    // first-class row in guardrail_events, alongside the raw tool_calls
+    // breadcrumb above. Both guardrail signals funnel through this single
+    // logToolCall choke point — the agent's own `flagGuardrailEvent` self-report
+    // (input `{ category, detail }`) and stream.ts's independent
+    // `guardrail-heuristic-detector` (input `{ category, callerText }`) — so one
+    // insert here covers both, keyed off `name`. Fire-and-forget: a failure here
+    // never blocks the live call, same pattern as opt_out_events / product_events.
+    const guardrailFields = deriveGuardrailEventFields(name, input);
+    if (guardrailFields) {
+      void db
+        .insert(guardrailEvents)
+        .values({ callId: dbCallId, orgId: humanNumberOrgId ?? null, ...guardrailFields })
+        .catch((err) => console.error("[voice] failed to log guardrail event", err));
+    }
 
     // Workflows (see ./workflows/) key off the call's disposition — capture
     // it here when the agent calls setDisposition, then persist + trigger the

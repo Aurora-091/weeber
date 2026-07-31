@@ -15,6 +15,7 @@ import {
   calls,
   consentRecords,
   doNotCall,
+  guardrailEvents,
   featureFlags,
   orgMembers,
   orgs,
@@ -366,6 +367,35 @@ export const admin = new Hono<AdminEnv>()
       },
       200,
     );
+  })
+
+  // Phase I (five-bets plan, 2026-07-31) — per-event guardrail data from the
+  // dedicated guardrail_events table (not the inferred tool_calls scan that
+  // /compliance/overview uses). This is the exportable compliance artifact:
+  // one row per boundary held, with category, source (agent self-report vs
+  // heuristic detector), the triggering detail, and the call it belongs to.
+  // The overview's guardrailEventsByOrg (tool_calls-derived) is intentionally
+  // left in place — it still counts pre-migration calls that predate this table.
+  .get("/compliance/guardrail-events", async (c) => {
+    const orgId = c.req.query("orgId");
+    const conditions = orgId?.trim() ? [eq(guardrailEvents.orgId, orgId.trim())] : [];
+    const rows = await db
+      .select()
+      .from(guardrailEvents)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(guardrailEvents.firedAt))
+      .limit(500);
+
+    const byOrgCategory: Record<string, Record<string, number>> = {};
+    const bySource: Record<string, number> = {};
+    for (const row of rows) {
+      const orgKey = row.orgId ?? "(no org)";
+      byOrgCategory[orgKey] ??= {};
+      byOrgCategory[orgKey][row.category] = (byOrgCategory[orgKey][row.category] ?? 0) + 1;
+      bySource[row.source] = (bySource[row.source] ?? 0) + 1;
+    }
+
+    return c.json({ events: rows.slice(0, 200), byOrgCategory, bySource, total: rows.length }, 200);
   })
 
   // Cross-org view of scheduled calls a compliance gate blocked (2026-07-19).

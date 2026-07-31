@@ -357,6 +357,38 @@ export const optOutEvents = pgTable("opt_out_events", {
   index("opt_out_events_phone_number_idx").on(table.phoneNumber),
 ]);
 
+/**
+ * Phase I (five-bets build plan, 2026-07-31) — guardrail moments as first-class,
+ * queryable data. Until now a "guardrail held" was only *inferred* by scanning
+ * `toolCalls` for `flagGuardrailEvent` (the agent's own self-report) or
+ * `guardrail-heuristic-detector` (stream.ts's independent prompt-injection
+ * check). That gives a count but no durable per-event record — no exportable
+ * compliance artifact, no trend, no detail column. This table promotes those
+ * moments to a row per event, mirroring the opt_out_events precedent (ADR-062):
+ * the tool-call log stays as-is (unchanged, still the raw breadcrumb), and this
+ * is written best-effort alongside it in stream.ts's logToolCall. Append-only.
+ *
+ * `source` distinguishes the model's own self-report from the heuristic
+ * detector; `detail` is the agent's one-line "what/how" for a self-report, or
+ * the triggering caller text for a heuristic hit (null if neither was captured).
+ */
+export const guardrailEvents = pgTable("guardrail_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
+  orgId: text("org_id"),
+  category: text("category", {
+    enum: ["topic-boundary", "unauthorized-promise", "prompt-injection", "abuse", "unknown"],
+  }).notNull(),
+  source: text("source", { enum: ["agent-self-report", "heuristic-detector"] }).notNull(),
+  /** The agent's one-sentence "what the caller asked / how I handled it" (self-report), or the
+   * triggering caller phrase (heuristic detector) — null when neither was captured. */
+  detail: text("detail"),
+  firedAt: timestamp("fired_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("guardrail_events_call_id_idx").on(table.callId),
+  index("guardrail_events_org_fired_idx").on(table.orgId, table.firedAt),
+]);
+
 export const featureFlags = pgTable("feature_flags", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   key: text("key").notNull(),

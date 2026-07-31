@@ -61,6 +61,23 @@ type ComplianceOverview = {
   undispositionedCalls?: { id: number; fromNumber: string; toNumber: string; startedAt: string }[];
 };
 
+type GuardrailEvent = {
+  id: number;
+  callId: number;
+  orgId: string | null;
+  category: "topic-boundary" | "unauthorized-promise" | "prompt-injection" | "abuse" | "unknown";
+  source: "agent-self-report" | "heuristic-detector";
+  detail: string | null;
+  firedAt: string;
+};
+
+type GuardrailEventsResponse = {
+  events: GuardrailEvent[];
+  byOrgCategory: Record<string, Record<string, number>>;
+  bySource: Record<string, number>;
+  total: number;
+};
+
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
   return formatDateTime(iso);
@@ -102,6 +119,15 @@ export function CompliancePage() {
     queryFn: async () => {
       const res = await apiFetch("/api/voice/compliance/consent/summary", { headers: adminHeaders() });
       if (!res.ok) throw new Error("Failed to load consent summary");
+      return res.json();
+    },
+  });
+
+  const guardrailEvents = useQuery<GuardrailEventsResponse>({
+    queryKey: ["admin-guardrail-events"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/voice/compliance/guardrail-events", { headers: adminHeaders() });
+      if (!res.ok) throw new Error("Failed to load guardrail events");
       return res.json();
     },
   });
@@ -272,6 +298,90 @@ export function CompliancePage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Guardrail Event Log (Phase I, 2026-07-31) — per-event detail from the
+              dedicated guardrail_events table: category, source, the triggering
+              detail, and the call it belongs to. This is the exportable compliance
+              artifact; the by-org counts panel above is the at-a-glance rollup. */}
+          <div className="card-weeber p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <ShieldAlert className="size-4 text-warning" />
+                <h3 className="text-sm font-semibold">Guardrail Event Log</h3>
+              </div>
+              {guardrailEvents.data && guardrailEvents.data.events.length > 0 && (
+                <button
+                  onClick={() =>
+                    downloadCsv(
+                      "guardrail-events.csv",
+                      ["Event ID", "Call ID", "Org", "Category", "Source", "Detail", "Fired At"],
+                      guardrailEvents.data!.events.map((e) => [
+                        String(e.id),
+                        String(e.callId),
+                        e.orgId ?? "",
+                        e.category,
+                        e.source,
+                        e.detail ?? "",
+                        e.firedAt,
+                      ]),
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <Download className="size-3" />
+                  Export CSV
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              Every moment an agent held a boundary — flagged by the agent itself (self-report) or by the
+              independent prompt-injection detector — as a durable, exportable record. Distinct from the raw
+              tool-call log: this is the compliance evidence trail.
+            </p>
+
+            {guardrailEvents.data && Object.keys(guardrailEvents.data.bySource).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(guardrailEvents.data.bySource).map(([source, count]) => (
+                  <span key={source} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground font-mono text-[10px] font-medium">
+                    {source}: {count}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {guardrailEvents.isLoading && <p className="text-xs text-muted-foreground">Loading guardrail events…</p>}
+            {guardrailEvents.isError && <p className="text-xs text-destructive">Failed to load guardrail events.</p>}
+
+            {guardrailEvents.data && guardrailEvents.data.events.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No guardrail events recorded yet.</p>
+            ) : (
+              guardrailEvents.data && (
+                <div className="divide-y divide-border border-t border-border text-xs">
+                  {guardrailEvents.data.events.map((e) => (
+                    <div key={e.id} className="py-2.5 flex justify-between items-start gap-4">
+                      <div className="min-w-0">
+                        <div className="text-foreground">
+                          <span className="font-mono">{e.category}</span>
+                          <span className="text-muted-foreground"> · call #{e.callId}</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                          org {e.orgId ?? "—"} · {e.source} · {formatWhen(e.firedAt)}
+                        </div>
+                        {e.detail && <div className="text-[10px] text-muted-foreground mt-1">{e.detail}</div>}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 font-medium ${
+                          e.source === "heuristic-detector" ? "bg-destructive/10 text-destructive" : "bg-warning-soft text-warning"
+                        }`}
+                      >
+                        {e.source === "heuristic-detector" ? "auto" : "agent"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
 
           {/* Blocked scheduled calls (2026-07-19) — cross-org view of calls a

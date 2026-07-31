@@ -12,6 +12,24 @@ updated: 2026-07-31
 
 ## Current focus
 
+- **Guardrail event log — Five Bets Phase I (2026-07-31):** First phase of the approved Five Bets plan
+  (`docs/product-strategy/five-bets-build-plan-2026-07-31.md`). Approved sequencing (inverted from
+  research): **I** guardrail-events table (this) → **II** silent-failure/call-health detection → **III**
+  synthetic scenario expansion → **IV** backchannels → **V** semantic turn-detection (last, gated on
+  Phase II data showing a real turn-taking problem). Shipped: (1) `guardrail_events` table in `schema.ts`
+  + **offline** migration `drizzle/0045_sour_matthew_murdock.sql` — **NOT applied; user runs `db:migrate`
+  (shared DB); panel empty until then**; (2) pure `packages/api/src/voice/guardrail-events.ts`
+  `deriveGuardrailEventFields(name, input)` → `{category,source,detail}` | null (category enum
+  topic-boundary/unauthorized-promise/prompt-injection/abuse/unknown; source agent-self-report |
+  heuristic-detector) + 7 unit tests; (3) `stream.ts` `logToolCall` fire-and-forget insert after the
+  `toolCalls` insert (both guardrail signals already funnel through this one choke point; best-effort,
+  swallows DB errors, never blocks call — ADR-062); (4) admin `GET /api/voice/compliance/guardrail-events`
+  (`orgId` filter, `{events, byOrgCategory, bySource, total}`); (5) "Guardrail Event Log" card in
+  `compliance.tsx` (per-event list + `bySource` chips + CSV export). Existing `/compliance/overview`
+  tool_calls-scan counts left untouched (cover pre-migration calls). Verified: api+web tsc 3/3 · web
+  build ✓ · root oxlint 0/0 · `bun test --isolate src/voice/guardrail-events.test.ts` 7/0.
+  **Migration 0045 pending user apply. NEXT: Phase II call-health detection (await go-ahead).**
+
 - **Canvas product telemetry — first-party event pipe (2026-07-31):** Closed the highest-value gap
   flagged below — the canvas/Customize flow was unmeasured. Built a **first-party** product-usage event
   pipe (deliberately NOT PostHog/Amplitude: zero vendor cost, data stays in our Postgres, no PII to a
