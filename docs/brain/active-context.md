@@ -83,10 +83,21 @@ updated: 2026-08-01
   runtime injection detector is not wired to that dial and behaves identically at all three levels.
   Making it real is a separate, unstarted decision.
 
-  **NEXT on the editor:** nothing here has been seen in a browser (no dev server booted this session) and
-  the Tools & Guardrails tab has no render test — first visual pass should check the three tool groups and
-  the mono consequence lines against `UI-DESIGN-BRIEF.md`. `D1` (create-agent), `D5` (prompt versioning)
-  and Phase IV (eval/judge) remain deliberately out of scope.
+  **Browser-verified later the same day, and it found two defects.** A DEV-only `phase3` page in
+  `pages/__preview.tsx` mounts `ToolsGuardrailsTab` (now exported for the harness) beside
+  `CompiledPromptPanel` with local state — web-only Vite server, no API, no telephony. Groups, mono
+  consequence lines, layer badges and diff-on-toggle all render as designed, light and dark, zero console
+  errors. **(1)** Reading the call-control layer on screen exposed that `buildCallControlBlock` had been
+  shipping **ragged indentation into every live call** — ``dedent`…` `` computes its minimum indent *after*
+  interpolation and the multi-line constants it interpolates are flush-left, so nothing was ever stripped.
+  Now a flush-left `string[]` + `join("\n")`; content unchanged, whitespace only; `/^ {3,}/` regression test
+  added. **(2)** The "no caller ID" banner (`agents.tsx:712`) hardcoded dark-mode-only `amber-*` and was
+  unreadable in light mode; now semantic `warning`/`foreground` tokens. Both were type-correct, lint-clean
+  and covered by passing tests — *rendering for a human to read is a distinct verification class.*
+
+  **NEXT on the editor:** the Tools & Guardrails tab still has no render test (the harness is a DEV page,
+  not an assertion). `D1` (create-agent), `D5` (prompt versioning) and Phase IV (eval/judge) remain
+  deliberately out of scope.
 
 - **Semantic turn-detection SEAM — Five Bets Phase V (2026-07-31):** Fifth/final phase, and the Five
   Bets plan is now complete. Ships the pluggable end-of-turn (EOT) **seam + fallback discipline only —

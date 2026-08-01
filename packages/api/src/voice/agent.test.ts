@@ -627,6 +627,26 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(withoutFlag.text).not.toContain("flagGuardrailEvent");
   });
 
+  it("indents the call-control block consistently — no line carries stray template indentation", () => {
+    // Regression guard (2026-08-01). This block used to be built with a
+    // dedent`` template whose interpolated constants were flush-left, so
+    // dedent's minimum-indent calculation always came out 0 and stripped
+    // nothing: literal lines shipped with 6 leading spaces while interpolated
+    // continuation lines had none. Nobody noticed until the D2 compiled-prompt
+    // panel rendered it for a human. Bullets use a 2-space hanging indent, so
+    // anything deeper than that is the bug coming back.
+    for (const direction of ["inbound", "outbound"] as const) {
+      const composed = composeSystemPrompt({
+        ...base,
+        direction,
+        identity: { name: "Aria", merchantName: "Preview Store" },
+      });
+      const callControl = composed.segments.find((s) => s.id === "call-control")!;
+      const overIndented = callControl.body.split("\n").filter((l) => /^ {3,}/.test(l));
+      expect(overIndented).toEqual([]);
+    }
+  });
+
   it("changes only the call-control segment when a tool is toggled — the editor's diff highlight depends on this", () => {
     const before = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp", "transferToHuman"] });
     const after = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });

@@ -119,7 +119,25 @@ discovering it during an incident.
 - Verified: api `tsc` ✓ · web `tsc` ✓ · `bun test --isolate src/` in `packages/api` **839 pass / 0 fail**
   (+9: the composition-invariant suite) · `bun test --isolate src/` in `packages/web` **42 pass / 0 fail**
   (+8 panel component tests, +8 tool/guardrail parity tests) · `oxlint` 0 warnings / 0 errors.
-- **Not verified:** the merchant editor's Tools & Guardrails tab is typechecked and lint-clean but has no
-  render test, and nothing here has been seen in a running browser this session — no dev server was
-  booted. First visual pass should check the three tool groups and the mono consequence lines against
+- **Not verified at the time of writing:** the merchant editor's Tools & Guardrails tab is typechecked and
+  lint-clean but has no render test, and nothing here had been seen in a running browser — no dev server
+  was booted. First visual pass should check the three tool groups and the mono consequence lines against
   `UI-DESIGN-BRIEF.md` (12px radius, monochrome accent, JetBrains Mono reserved for technical strings).
+
+**Confirmed 2026-08-01 (same day, after the browser pass).** The visual pass above was done through a
+DEV-only `phase3` page in `pages/__preview.tsx` mounting `ToolsGuardrailsTab` beside `CompiledPromptPanel`
+with local state (web-only Vite server, no API, no telephony). The three groups, the mono consequence
+lines, the layer badges and the line-level diff-on-toggle all render as designed, light and dark, zero
+console errors.
+
+The decision paid for itself on that first render. Displaying the call-control layer as a human reads it
+exposed that `buildCallControlBlock` had been shipping **ragged indentation into every live call since the
+block was written** — ``dedent`…` `` computes its minimum indent *after* interpolation, and the multi-line
+constants it interpolates are flush-left, so nothing was ever stripped. No unit test could have caught it;
+839 of them didn't. Fixed the same day (flush-left `string[]` + `join("\n")`, content unchanged, plus a
+`/^ {3,}/` regression test). A second, smaller defect fell out of the same pass: the "no caller ID" banner
+hardcoded dark-mode-only `amber-*` values and was unreadable in light mode.
+
+The general lesson, worth carrying into future phases: *rendering an artefact for a human to read is a
+distinct verification class from asserting on it in a test.* Both defects were type-correct, lint-clean
+and fully covered by passing tests.

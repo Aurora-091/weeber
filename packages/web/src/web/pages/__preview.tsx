@@ -19,7 +19,9 @@ import { UserContext, type UserContextValue, type UserMe } from "../components/a
 import { getVertical } from "../lib/verticals";
 import { useShellFullBleed } from "../components/shell/app-shell";
 import { UserHomePage } from "./app/home";
-import { UserAgentsPage } from "./app/agents";
+import { UserAgentsPage, ToolsGuardrailsTab } from "./app/agents";
+import { CompiledPromptPanel, type PromptSegment } from "../components/agent-preview/CompiledPromptPanel";
+import { toFormState, type AgentConfigRow, type FormState } from "../lib/agent-config";
 import { UserIntegrationsPage } from "./app/integrations";
 import { UserWorkflowsListPage } from "./app/workflows";
 import { UserCallsPage } from "./app/calls";
@@ -80,8 +82,114 @@ function FullBleedProbe() {
   );
 }
 
+/**
+ * Phase III (ADR-067) probe — the agent editor's Tools & guardrails tab and the
+ * compiled-prompt panel, both mounted with local state so their real pixels can
+ * be inspected without a backend. The real /app/agents page needs a loaded org
+ * and agent row, so under this harness's retry:false client it only ever
+ * renders an empty state, which verifies nothing about D2/D3/D4.
+ *
+ * The segments below are deliberately SHORT SYNTHETIC PLACEHOLDERS, not copies
+ * of real prompt text. Real text lives in exactly one place (the backend's
+ * composeSystemPrompt, join-invariant unit-tested) and duplicating it here
+ * would create the second, drifting source ADR-067 exists to prevent. This
+ * probe answers layout questions only: do the layers collapse, does the
+ * merchant's own layer read as theirs, does the diff appear on a tool toggle,
+ * do the tool groups and guardrail consequence sentences fit.
+ */
+const PROBE_ROW: AgentConfigRow = {
+  templateKey: "shopify-cart-recovery",
+  templateName: "Cart recovery",
+  templateDescription: "Calls customers who left a cart behind.",
+  defaultPersonaPrompt: "You help customers of the store with abandoned carts.",
+  config: null,
+};
+
+function probeSegments(form: FormState): PromptSegment[] {
+  const toolCount = form.toolsEnabled.length;
+  return [
+    {
+      id: "language",
+      label: "Language behaviour",
+      source: "Added automatically from the agent's Language setting.",
+      body: form.language && form.language !== "en" ? `[layout probe] language instruction for "${form.language}".\n\n` : "",
+      editable: false,
+    },
+    {
+      id: "identity",
+      label: "Identity & tone",
+      source: "Built from the agent's name, business name, tone, greeting and closing line.",
+      body: `[layout probe] Your name is ${form.name || "—"}.\n[layout probe] Tone: ${form.toneStyle || "—"}.\n\n`,
+      editable: false,
+    },
+    {
+      id: "persona",
+      label: "Your instructions",
+      source: "The prompt you wrote — the only layer you edit directly.",
+      body: form.personaPrompt || PROBE_ROW.defaultPersonaPrompt || "",
+      editable: true,
+    },
+    {
+      id: "disclosure",
+      label: "Recording disclosure",
+      source: "Compliance requirement — spoken at the very start of every call.",
+      body: "\n\n[layout probe] Recording + AI disclosure line goes here.",
+      editable: false,
+    },
+    {
+      id: "call-control",
+      label: "Call control & guardrails",
+      source: "Generated from the tools and guardrail settings on this page.",
+      body:
+        `\n\n[layout probe] Call control — ${toolCount} tool(s) enabled.\n` +
+        form.toolsEnabled.map((t) => `- instruction line for ${t}`).join("\n") +
+        `\n- topic boundary: ${form.topicBoundaryStrictness}` +
+        `\n- injection: ${form.injectionSensitivity}` +
+        `\n- abuse handling: ${form.abuseHandlingEnabled ? "on" : "off"}`,
+      editable: false,
+    },
+  ];
+}
+
+function PhaseIIIProbe() {
+  const [form, setForm] = useState<FormState>(() => toFormState(PROBE_ROW));
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const configKey = JSON.stringify(form);
+  const fetchFn = () => {
+    const segments = probeSegments(form);
+    return Promise.resolve(
+      new Response(JSON.stringify({ text: segments.map((s) => s.body).join(""), segments }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  };
+
+  return (
+    <div className="page-enter grid gap-6 p-4 sm:p-6 lg:grid-cols-2">
+      <div className="card-weeber card-weeber--editor p-5">
+        <p className="mb-4 text-xs uppercase tracking-wide text-muted-foreground">
+          D3 + D4 · Tools &amp; guardrails tab
+        </p>
+        <ToolsGuardrailsTab row={PROBE_ROW} form={form} set={set} />
+      </div>
+      <div className="card-weeber flex max-h-[80vh] flex-col overflow-hidden p-5">
+        <p className="mb-4 text-xs uppercase tracking-wide text-muted-foreground">
+          D2 · Compiled prompt panel (synthetic segments)
+        </p>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CompiledPromptPanel fetchFn={fetchFn} configKey={configKey} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const PAGES = {
   home: { label: "Home", Comp: UserHomePage },
+  phase3: { label: "Phase III probe", Comp: PhaseIIIProbe },
   fullbleed: { label: "Full-bleed probe", Comp: FullBleedProbe },
   agents: { label: "Agents", Comp: UserAgentsPage },
   workflows: { label: "Workflows (full-bleed)", Comp: UserWorkflowsListPage },
@@ -97,7 +205,7 @@ const PAGES = {
 type PageKey = keyof typeof PAGES;
 
 export function PreviewHarness() {
-  const [page, setPage] = useState<PageKey>("integrations");
+  const [page, setPage] = useState<PageKey>("phase3");
   const vertical = getVertical("shopify");
   const ctx: UserContextValue = {
     me: mockMe,

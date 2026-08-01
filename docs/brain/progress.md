@@ -73,7 +73,11 @@ updated: 2026-08-01
   (`composeSystemPrompt`, join-invariant unit-tested), a compiled-prompt tab in the Preview drawer that
   shows the five layers a merchant actually ships and diffs what each edit changed, tool chips grouped by
   consequence with human labels + descriptions, and guardrail dials that render the exact sentence they
-  inject. Static + test verification only — not yet seen in a browser.
+  inject. Browser-verified the same day via a DEV-only `phase3` harness page (web-only Vite server, no
+  API, no telephony) — which immediately surfaced two defects, both since fixed: the call-control block
+  had been shipping ragged indentation into every live call (`dedent` computes its minimum indent after
+  interpolation; the multi-line constants it interpolates are flush-left, so nothing was ever stripped),
+  and the "no caller ID" banner used dark-mode-only `amber-*` and was unreadable in light mode.
 - Infra: Railway Pro + Supabase Small + Vercel Pro, all confirmed live (Audit #7, 2026-07-17).
 - Hindi/Hinglish STT/TTS foundation, live-verified (2026-07-16).
 - Sentry error monitoring wired (2026-07-18) — no-op until `SENTRY_DSN` is set on Railway (still
@@ -119,8 +123,12 @@ updated: 2026-08-01
   detector (`voice/injection-detection.ts`) is not wired to the dial and behaves identically at all three
   levels. The editor now says so out loud (ADR-067) rather than implying a safety guarantee; making the
   dial real is an open decision, not a bug fix.
-- The Phase III editor changes (tool groups, guardrail consequence copy, compiled-prompt tab) have never
-  been rendered in a browser — typecheck, lint and component tests only. No dev server was booted.
+- The Phase III editor changes have now been rendered in a browser (2026-08-01, DEV `phase3` harness
+  page), but the merchant `ToolsGuardrailsTab` still has **no automated render test** — the harness is a
+  DEV page, not an assertion, so nothing fails the build if that tab regresses. Related: `dedent` remains
+  in use at `voice/agent.ts:41`, `:909`, `:943`, `:964`, where it works only because those templates
+  interpolate single-line values. Interpolating a multi-line constant into any of them will silently
+  reintroduce the indentation defect; the `/^ {3,}/` regression test covers the call-control segment only.
 
 - **"Staging" is not an environment — it is a second front door to production.** Settled 2026-08-01 by
   diffing the Railway variable dumps for both environments (`.railway/vars-staging.json` vs

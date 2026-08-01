@@ -323,7 +323,11 @@ function GuardrailConsequence({ text }: { text: string }) {
   );
 }
 
-function ToolsGuardrailsTab({ row, form, set }: TabProps) {
+/** Exported only so the DEV-only preview harness (`pages/__preview.tsx`) can
+ * mount this tab with local state — the real agents page needs a loaded org and
+ * agent row, which the harness has no backend for. Not used in production code
+ * outside this file. */
+export function ToolsGuardrailsTab({ row, form, set }: TabProps) {
   function toggleTool(name: string) {
     set(
       "toolsEnabled",
@@ -705,11 +709,16 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
           </p>
         </div>
       ) : missingCallerId ? (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs">
-          <PhoneCall className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden />
-          <p className="text-amber-200/90">
-            <span className="font-medium text-amber-300">Live, but no phone number to call from.</span> Assign a
-            caller ID on the <button type="button" onClick={() => setTab("calling")} className="underline underline-offset-2 hover:text-amber-100">Calling &amp; Model</button> tab
+        // Semantic warning tokens, not raw Tailwind `amber-*`. This banner used
+        // to hardcode dark-mode-only values (`text-amber-200/90` on
+        // `bg-amber-500/10`), which rendered as near-white text on a pale
+        // background in the light theme — effectively invisible in the mode
+        // most merchants use. Found 2026-08-01 while verifying Phase III.
+        <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-xs">
+          <PhoneCall className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <p className="text-foreground/80">
+            <span className="font-medium text-foreground">Live, but no phone number to call from.</span> Assign a
+            caller ID on the <button type="button" onClick={() => setTab("calling")} className="underline underline-offset-2 hover:text-foreground">Calling &amp; Model</button> tab
             (or buy one on the Phone Numbers page) — until then this agent can't actually place calls.
           </p>
         </div>
