@@ -63,9 +63,23 @@ export function buildWorkflowFactsBlock(
 ): string {
   const lines: string[] = [];
   if (context.customer_name) lines.push(`Customer: ${context.customer_name}.`);
+  // Producers are inconsistent: the Shopify COD and feedback contexts write
+  // camelCase `orderId` (read by workflows/engine.ts for the post-call
+  // annotate), templates and docs use `order_id`. Accept both — an agent that
+  // cannot name the order cannot confirm it.
+  const orderRef = context.order_id ?? context.orderId;
+  // The amount is emitted even when the producer forgot the currency — a COD
+  // confirmation call that cannot state the amount is useless. Without a
+  // currency the agent says the bare number rather than guessing one.
+  const amountLabel = orderRef ? "Order value" : "Cart value";
   if (context.cart_value && context.currency) {
-    lines.push(`Cart value: ${context.currency}${context.cart_value}.`);
+    lines.push(`${amountLabel}: ${context.currency}${context.cart_value}.`);
+  } else if (context.cart_value) {
+    lines.push(
+      `${amountLabel}: ${context.cart_value} (currency unknown — say the number without naming a currency).`,
+    );
   }
+  if (orderRef) lines.push(`Order reference: #${orderRef}.`);
   if (context.shop_name) lines.push(`Shop: ${context.shop_name}.`);
   if (context.attempt_number) lines.push(`This is call attempt #${context.attempt_number}.`);
   const discount = Number(context.discount_percent);

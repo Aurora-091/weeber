@@ -46,7 +46,14 @@ export const AGENT_TEMPLATES = [
       vertical: "shopify",
       description: "Calls customers after order fulfillment to collect post-delivery feedback.",
       fileName: "03-feedback-agent.md",
-      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your {{product_name}} was delivered recently — do you have a minute to share how it went?",
+      // `{{product_name}}` was removed here in G1.3 (2026-08-01). Nothing in the
+      // codebase ever writes product_name, so renderTemplate always left the
+      // literal tag in place and stream.ts's unresolved-tag guard always
+      // rejected the line — meaning this agent's fast canned-greeting path
+      // never fired once and every feedback call silently paid full LLM
+      // time-to-first-token on its opening line. A seeded greeting tag with no
+      // producer is an invisible permanent latency regression.
+      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your recent order was delivered — do you have a minute to share how it went?",
       defaultTools: ["captureField", "setDisposition", "setIntent"],
       // Confirmed final by the user 2026-07-18 (was drafted without a Bolna reference sample,
       // unlike 01/02 — held inactive pending explicit confirmation per WEEBER-PLAN.md's

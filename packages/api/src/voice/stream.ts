@@ -11,6 +11,7 @@ import {
   resolveCartRecoveryContext,
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
+import { resolveCodOrderContext, type CodOrderContext } from "./tools/confirmCodOrder";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
@@ -170,6 +171,26 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * the discount a caller is offered must not change mid-conversation.
    */
   let cartRecoveryContext: CartRecoveryDiscountContext | undefined;
+  /**
+   * G1.3: the merchant workflow's pre-call context for this call
+   * (`scheduledCalls.metadata`, carried onto the session by
+   * `workflows/scheduler.ts`) — who we're calling, cart value, attempt number,
+   * the authorized discount and code, the recovery link. Rendered into the
+   * system prompt by `buildWorkflowContextBlock`. Until G1.3 this data reached
+   * the session and was read by nothing, so an outbound cart-recovery agent
+   * dialled a customer knowing nothing about the cart. Undefined on inbound and
+   * on any call a workflow didn't place. Captured once for the same reason as
+   * cartRecoveryContext — the facts of the order must not shift mid-call.
+   */
+  let workflowMetadata: Record<string, string | number> | undefined;
+  /**
+   * G1.3: the Shopify order this call is about, for `confirmCodOrder`. Bound
+   * once from the same metadata for the same reason as cartRecoveryContext —
+   * and more urgently, since the decline branch cancels and restocks a real
+   * order. Undefined on any call with no order attached, which removes the
+   * tool from the call entirely rather than letting the model name an order.
+   */
+  let codOrderContext: CodOrderContext | undefined;
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
@@ -1228,6 +1249,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           callerMemory: callerMemoryFacts,
           orgId: humanNumberOrgId,
           cartRecovery: cartRecoveryContext,
+          codOrder: codOrderContext,
+          workflowMetadata,
           onSlowToolCall: (toolName) => {
             if (fillerPlayedThisTurn) return;
             fillerPlayedThisTurn = true;
@@ -1284,6 +1307,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           llmFallbackModels: llmFallbackModelsOverride,
           enabledTools: enabledToolsOverride,
           orgId: humanNumberOrgId,
+          codOrder: codOrderContext,
+          workflowMetadata,
           onLatency: (ms, model) => {
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
@@ -1481,6 +1506,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             metadata: session?.workflowMetadata,
             checkoutToken: session?.checkoutToken,
           });
+          // G1.3: same source, different consumer — the discount context above
+          // authorizes a *tool*, this hands the *model* the order facts it's
+          // calling about.
+          workflowMetadata = session?.workflowMetadata;
+          codOrderContext = resolveCodOrderContext({ metadata: session?.workflowMetadata });
 
           if (callSid) {
             let [row] = await db

@@ -397,6 +397,10 @@ shopify
               shop_name: shop,
               orderId: String(orderId),
               cart_value: totalPrice,
+              // Mirrors the abandoned-checkout context above. Without it the
+              // facts block used to drop the amount entirely, so a COD agent
+              // could not state the total it was calling to confirm.
+              currency: String(body.currency ?? "INR"),
               attempt_number: 0,
               discount_percent: 0,
             },

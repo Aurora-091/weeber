@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { buildKnownFactsBlock, resolveAgentConfig } from "./agent";
+import { buildKnownFactsBlock, buildWorkflowContextBlock, resolveAgentConfig } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
 
 describe("buildKnownFactsBlock", () => {
@@ -477,5 +477,65 @@ describe("buildVoiceTools — cart-recovery discount registration (G1.1)", () =>
 
   it("is not present in the static voiceTools map — it can only ever be built per-call", () => {
     expect("offerCartRecoveryDiscount" in voiceTools).toBe(false);
+  });
+});
+
+describe("buildWorkflowContextBlock — G1.3 pre-call facts from the merchant's workflow", () => {
+  it("renders nothing when the call was not placed by a workflow", () => {
+    // Every inbound call, and any outbound call dialled outside the workflow
+    // engine — the block must be absent entirely, not an empty header.
+    expect(buildWorkflowContextBlock(undefined)).toBe("");
+    expect(buildWorkflowContextBlock({})).toBe("");
+  });
+
+  it("gives the agent the cart facts it is calling about", () => {
+    // The G1.3 bug in one assertion: before this, scheduledCalls.metadata
+    // reached the session and was consumed by nothing, so an outbound
+    // cart-recovery agent dialled a customer knowing nothing about the cart.
+    const block = buildWorkflowContextBlock({
+      customer_name: "Asha",
+      cart_value: 2499,
+      currency: "₹",
+      shop_name: "Kettle & Co",
+      attempt_number: 2,
+    });
+    expect(block).toContain("Asha");
+    expect(block).toContain("2499");
+    expect(block).toContain("Kettle & Co");
+    expect(block).toContain("attempt #2");
+  });
+
+  it("labels the facts as unconfirmed by the caller, separately from buildKnownFactsBlock", () => {
+    // buildKnownFactsBlock = what THIS conversation confirmed (settled truth).
+    // This block = what the workflow supplied going in. Conflating them is how
+    // an agent starts asserting "you told me..." about something nobody said.
+    const block = buildWorkflowContextBlock({ customer_name: "Asha" });
+    expect(block).toContain("hasn't confirmed");
+    expect(block).not.toContain("do not ask for these again");
+  });
+
+  it("carries the merchant-authorized discount and its code", () => {
+    const block = buildWorkflowContextBlock({ discount_percent: 15, discount_code: "SAVE15" });
+    expect(block).toContain("15%");
+    expect(block).toContain("SAVE15");
+  });
+
+  it("says nothing about a discount when the merchant configured none", () => {
+    // Must not emit a 0% line — the persona's instruction is to skip the
+    // discount step entirely, and G1.1 does not even register the tool.
+    const block = buildWorkflowContextBlock({ customer_name: "Asha", discount_percent: 0 });
+    expect(block).not.toContain("discount");
+    expect(block).not.toContain("0%");
+  });
+
+  it("emits no merge tags of its own — it is a values channel, not a template", () => {
+    const block = buildWorkflowContextBlock({
+      customer_name: "Asha",
+      cart_value: 2499,
+      currency: "₹",
+      discount_code: "SAVE15",
+      cart_recovery_url: "https://shop.example/checkout?discount=SAVE15",
+    });
+    expect(block).not.toContain("{{");
   });
 });

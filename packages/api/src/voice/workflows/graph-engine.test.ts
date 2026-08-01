@@ -138,6 +138,44 @@ describe("buildWorkflowFactsBlock", () => {
     expect(result).not.toContain("offering a discount");
     expect(result).toContain("call attempt #1");
   });
+
+  // G1.3: the COD producer (integrations/shopify/routes.ts) writes camelCase
+  // `orderId` and no `currency`. Before this, the block emitted neither, so a
+  // COD confirmation agent never learned the order or the amount it exists to
+  // confirm — it could only ask the customer to supply both.
+  test("emits the order reference from camelCase orderId — what the COD producer actually writes", () => {
+    const result = buildWorkflowFactsBlock({ orderId: 1234, shop_name: "TestShop" });
+    expect(result).toContain("Order reference: #1234.");
+  });
+
+  test("emits the order reference from snake_case order_id too", () => {
+    expect(buildWorkflowFactsBlock({ order_id: "1234" })).toContain("Order reference: #1234.");
+  });
+
+  test("prefers order_id when both spellings are present", () => {
+    const result = buildWorkflowFactsBlock({ order_id: 111, orderId: 222 });
+    expect(result).toContain("Order reference: #111.");
+    expect(result).not.toContain("#222");
+  });
+
+  test("emits the amount even when the producer forgot the currency, and tells the agent not to invent one", () => {
+    const result = buildWorkflowFactsBlock({ orderId: 1234, cart_value: "899.00" });
+    expect(result).toContain("899.00");
+    expect(result).toContain("currency unknown");
+    expect(result).not.toContain("INR");
+  });
+
+  test("labels the amount as an order value once an order exists, and a cart value before one does", () => {
+    expect(buildWorkflowFactsBlock({ orderId: 7, cart_value: "500", currency: "INR" }))
+      .toContain("Order value: INR500.");
+    expect(buildWorkflowFactsBlock({ cart_value: "500", currency: "INR" }))
+      .toContain("Cart value: INR500.");
+  });
+
+  test("emits no order line when there is no order reference — a cart-recovery call has no order yet", () => {
+    expect(buildWorkflowFactsBlock({ customer_name: "Priya", cart_value: "500", currency: "INR" }))
+      .not.toContain("Order reference");
+  });
 });
 
 describe("graph validation (via seed graph structure)", () => {

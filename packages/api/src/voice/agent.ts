@@ -11,7 +11,7 @@ import { sendDtmf } from "./tools/sendDtmf";
 import { hangUp } from "./tools/hangUp";
 import { transferToHuman } from "./tools/transferToHuman";
 import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
-import { confirmCodOrder } from "./tools/confirmCodOrder";
+import { createConfirmCodOrderTool, type CodOrderContext } from "./tools/confirmCodOrder";
 import {
   createOfferCartRecoveryDiscountTool,
   type CartRecoveryDiscountContext,
@@ -19,11 +19,13 @@ import {
 import { withDisclosure, resolveDisclosure } from "@openvent/compliance";
 import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
-import { orgAgentConfigs, agentTemplates } from "../database/schema";
+import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
 import { and, eq } from "drizzle-orm";
 import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
 import { resolveLocalizedGreeting } from "./insurance-greetings";
 import { TONE_INSTRUCTION_BLOCK } from "./tone-tags";
+import { scrubSystemPrompt } from "./merge-tags";
+import { buildWorkflowFactsBlock } from "./workflows/variables";
 
 function languageLabel(code?: string): string {
   if (!code) return "English";
@@ -311,10 +313,26 @@ function buildIdentityBlock(frame?: {
   greetingLine?: string | null;
   closingLine?: string | null;
   toneStyle?: string | null;
+  /** G1.3: the business the agent is calling *on behalf of* (`orgs.name`) — NOT
+   * "Weeber", which is the platform and is never mentioned to an end customer.
+   * The prompt docs used to carry this as a `{{merchant_name}}` /
+   * `{{company_name}}` merge tag that nothing ever rendered, so the agent could
+   * say the literal tag out loud. Identity is stable for the whole call, so it
+   * belongs here next to the agent's own name rather than in a per-call facts
+   * block. Absent = the line is simply omitted; the agent then leans on the
+   * persona's own description of the business instead of asserting a name we
+   * don't have. */
+  merchantName?: string | null;
 }): string {
   if (!frame) return "";
   const lines: string[] = [];
   if (frame.name) lines.push(`Your name is ${frame.name}.`);
+  if (frame.merchantName) {
+    lines.push(
+      `You are calling on behalf of ${frame.merchantName}. That is the business you represent — ` +
+        `use that name whenever you refer to "us", "we", or the store, and never name any other company.`,
+    );
+  }
   if (frame.toneStyle) lines.push(`Speak in a ${frame.toneStyle} tone throughout the call.`);
   if (frame.greetingLine) lines.push(`Open the call with a line like this (adapt naturally, don't recite it robotically): "${frame.greetingLine}"`);
   if (frame.closingLine) lines.push(`When wrapping up, close with a line like this (adapt naturally): "${frame.closingLine}"`);
@@ -460,11 +478,15 @@ export async function resolveAgentConfig(opts: {
 
     if (config) {
       let jobDescription = config.personaPrompt;
-      const [tmpl] = await db
-        .select()
-        .from(agentTemplates)
-        .where(eq(agentTemplates.key, resolvedTemplateKey))
-        .limit(1);
+      // G1.3: the org's display name is read here, alongside the template, so
+      // buildIdentityBlock can state which business the agent represents. It
+      // was previously only fetched in stream.ts (for the greeting's
+      // {{merchant_name}}) — meaning the persona body itself never learned it,
+      // and every other caller of resolveAgentConfig never learned it at all.
+      const [[tmpl], [org]] = await Promise.all([
+        db.select().from(agentTemplates).where(eq(agentTemplates.key, resolvedTemplateKey)).limit(1),
+        db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1),
+      ]);
       if (!jobDescription) {
         jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
       }
@@ -472,7 +494,7 @@ export async function resolveAgentConfig(opts: {
       const disclosure = resolveDisclosure({ language: config.language ?? undefined });
       const systemPrompt = withCallControl(
         buildLanguageInstructionBlock(config.language ?? undefined) +
-          buildIdentityBlock(config) +
+          buildIdentityBlock({ ...config, merchantName: org?.name ?? null }) +
           withDisclosure(jobDescription, { language: config.language ?? undefined }),
         (config.guardrails as GuardrailSettings | null) ?? undefined,
         (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
@@ -615,7 +637,6 @@ export const voiceTools = {
   flagGuardrailEvent,
   sendSms,
   sendDtmf,
-  confirmCodOrder,
 };
 
 /**
@@ -696,12 +717,22 @@ export function withFillerTimer<T extends { execute?: (...args: never[]) => unkn
  * tool, which is correct: neither has a real checkout to discount, and a
  * synthetic run creating live Shopify discount codes would be a real
  * side effect from a test.
+ *
+ * `codOrder` (G1.3, 2026-08-01) is the same contract for `confirmCodOrder`,
+ * and for a stronger reason. That tool's decline branch cancels and restocks
+ * a live Shopify order; it previously took `shop` and `orderId` as
+ * model-authored inputs that the model had no correct way to know, so the
+ * only way to populate them was to guess. Bound here from
+ * `resolveCodOrderContext`, omitted entirely when this call has no order
+ * attached — so the text test-chat and the synthetic harness, which have no
+ * real order, can never cancel one.
  */
 export function buildVoiceTools(
   orgId: string | undefined,
   enabledTools?: AvailableToolName[],
   onSlowToolCall?: (toolName: string) => void,
   cartRecovery?: CartRecoveryDiscountContext,
+  codOrder?: CodOrderContext,
 ) {
   const baseTools = {
     ...voiceTools,
@@ -715,9 +746,16 @@ export function buildVoiceTools(
   // `TypedToolCall<TOOLS>` and makes every `step.toolCalls` element read as
   // possibly-undefined at all four callsites. Same runtime behaviour, and the
   // tool's presence stays a static fact of whichever branch is taken.
-  const allTools = cartRecovery
+  const withDiscount = cartRecovery
     ? { ...baseTools, offerCartRecoveryDiscount: createOfferCartRecoveryDiscountTool(cartRecovery) }
     : baseTools;
+  // Applied sequentially rather than as one 4-way branch: each step still
+  // yields concrete object shapes (no property whose value type includes
+  // `undefined`), which is the property `TypedToolCall<TOOLS>` needs, and it
+  // stays readable as more server-bound tools arrive.
+  const allTools = codOrder
+    ? { ...withDiscount, confirmCodOrder: createConfirmCodOrderTool(codOrder) }
+    : withDiscount;
   const narrowed = enabledTools
     ? Object.fromEntries(
         Object.entries(allTools).filter(([name]) =>
@@ -748,6 +786,41 @@ export function buildKnownFactsBlock(capturedState?: Record<string, string>): st
 
     Known facts about this call — already confirmed, do not ask for these again:
     ${lines}
+  `;
+}
+
+/**
+ * Renders the workflow's per-call context — the facts the *merchant's* workflow
+ * resolved before this call was ever placed (who we're calling, what's in their
+ * cart, what it's worth, which attempt this is, the authorized discount and its
+ * code, the recovery link).
+ *
+ * G1.3 (2026-08-01): `buildWorkflowFactsBlock` has existed and been unit-tested
+ * in `workflows/variables.ts` since the workflow engine landed, and was called
+ * from **nothing**. The data reached `scheduledCalls.metadata`, was carried onto
+ * the session as `workflowMetadata` (`workflows/scheduler.ts`), and stopped
+ * there. The consequence on a live outbound cart-recovery call: `capturedState`
+ * is empty at call start so `buildKnownFactsBlock` renders nothing, the persona
+ * body's `{{cart_items_summary}}`-style tags were never rendered — so the agent
+ * dialled a customer knowing literally nothing about the cart it was calling
+ * about. This wires the existing function up rather than inventing a second
+ * facts mechanism.
+ *
+ * Distinct from `buildKnownFactsBlock` on purpose: that block is what *this
+ * conversation* has confirmed (captured live, treat as settled). This block is
+ * what the *workflow* supplied going in — true about the order, but not yet
+ * acknowledged by the person on the phone, so the agent must still not assume
+ * the caller agrees with it.
+ */
+export function buildWorkflowContextBlock(metadata?: Record<string, string | number>): string {
+  const facts = buildWorkflowFactsBlock(metadata ?? {});
+  if (!facts) return "";
+  return dedent`
+
+
+    Context for this call, from the merchant's workflow — accurate about the order, but the person
+    you're calling hasn't confirmed any of it yet, so don't assert it as something they told you:
+    ${facts}
   `;
 }
 
@@ -804,6 +877,8 @@ export async function runVoiceAgentTurn({
   orgId,
   onSlowToolCall,
   cartRecovery,
+  codOrder,
+  workflowMetadata,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -843,6 +918,16 @@ export async function runVoiceAgentTurn({
    * `offerCartRecoveryDiscount` tool is not registered for this call at all.
    * See buildVoiceTools. */
   cartRecovery?: CartRecoveryDiscountContext;
+  /** G1.3: the Shopify order this COD-confirmation call is about, bound
+   * server-side from `scheduledCalls.metadata`. Absent it, `confirmCodOrder`
+   * is not registered for this call — the model cannot cancel an order it
+   * had to guess the ID of. See buildVoiceTools. */
+  codOrder?: CodOrderContext;
+  /** G1.3: the merchant workflow's pre-call context for this call
+   * (`scheduledCalls.metadata`, carried on the session as `workflowMetadata`).
+   * Rendered by buildWorkflowContextBlock. Undefined on inbound calls and any
+   * call not placed by a workflow — the block is then absent entirely. */
+  workflowMetadata?: Record<string, string | number>;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -853,16 +938,31 @@ export async function runVoiceAgentTurn({
   const turnStartedAt = Date.now();
   let firstTokenAt: number | null = null;
 
+  // G1.3: composed and scrubbed once, here, then reused for both the model call
+  // and the diagnostic below — a diagnostic that measures a different string
+  // than the one actually sent is worse than no diagnostic.
+  //
+  // Scrubbed at this single point rather than at persona resolution, because
+  // every path into the model funnels through here: live calls, the text
+  // test-chat, the synthetic harness and the preview drawer. A `{{tag}}` that
+  // survived a prompt file, a template seed, or a user-typed persona in the
+  // agent editor cannot reach the model from any of them. The blocks appended
+  // below are generated in code and contain no tags, but they're composed first
+  // so the scrub sees the exact string that would otherwise be sent.
+  const systemPrompt = scrubSystemPrompt(
+    (persona ?? DEFAULT_PERSONA) +
+      buildWorkflowContextBlock(workflowMetadata) +
+      buildCallerMemoryBlock(callerMemory) +
+      buildKnownFactsBlock(capturedState),
+  );
+
   try {
     const result = streamText({
       model: resolveVoiceModel(llmProvider, llmModel),
       providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
-      system:
-        (persona ?? DEFAULT_PERSONA) +
-        buildCallerMemoryBlock(callerMemory) +
-        buildKnownFactsBlock(capturedState),
+      system: systemPrompt,
       messages: history,
-      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery),
+      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {
@@ -912,7 +1012,7 @@ export async function runVoiceAgentTurn({
             stepCount: (steps as unknown[]).length,
             toolCallsThisTurn: calledToolNames,
             historyLength: history.length,
-            systemPromptLength: ((persona ?? DEFAULT_PERSONA) + buildCallerMemoryBlock(callerMemory) + buildKnownFactsBlock(capturedState)).length,
+            systemPromptLength: systemPrompt.length,
           },
         );
       } catch (diagErr) {
@@ -954,6 +1054,8 @@ export function runVoiceAgentGreeting({
   llmFallbackModels,
   enabledTools,
   orgId,
+  codOrder,
+  workflowMetadata,
 }: {
   persona?: string;
   onTextDelta: (delta: string) => void;
@@ -975,6 +1077,14 @@ export function runVoiceAgentGreeting({
   enabledTools?: AvailableToolName[];
   /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
   orgId?: string;
+  /** G1.3: see runVoiceAgentTurn. Passed through so the greeting turn has the
+   * same tool set as every later turn — a tool that appears mid-call is a
+   * behaviour difference the model shouldn't have to reason about. */
+  codOrder?: CodOrderContext;
+  /** G1.3: the merchant workflow's pre-call context — matters most here, since
+   * the opening line is exactly where the agent should already know whose cart
+   * it's calling about. See runVoiceAgentTurn. */
+  workflowMetadata?: Record<string, string | number>;
 }) {
   return runVoiceAgentTurn({
     history: [
@@ -994,5 +1104,7 @@ export function runVoiceAgentGreeting({
     llmFallbackModels,
     enabledTools,
     orgId,
+    codOrder,
+    workflowMetadata,
   });
 }
