@@ -46,9 +46,22 @@ updated: 2026-08-01
   confirmed/cancelled and feedback-positive/negative values instead of overloading `booked`/`interested`.
 
   **Still unverified, and the honest gap in all of the above:** no real end-to-end PSTN call has been
-  placed. Every claim here is from static source reading plus `--isolate` tests. Also unresolved:
-  `progress.md` says staging's `DATABASE_URL` is a placeholder while `adr-063` says staging and prod share
-  one — a ~10-minute Railway env check settles it.
+  placed. Every claim here is from static source reading plus `--isolate` tests.
+
+  **G0.1 closed (2026-08-01), badly.** The `progress.md`-vs-`adr-063` contradiction is settled: ADR-063
+  was right, and understated it. Diffing the two Railway variable dumps, **33 of 40 variables are
+  byte-identical** across staging and production — same `DATABASE_URL` (same Supabase project, pooler,
+  db, role), same `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_PHONE_NUMBER`, same
+  `SUPABASE_SERVICE_ROLE_KEY`, same `ADMIN_API_KEY` and internal secrets, same `PUBLIC_*_URL`s. The only
+  real difference is `LLM_PROVIDER` (staging `groq`, prod `gateway`). So "staging" dials from the
+  production phone number, bills the production Twilio account, writes into the production database, and
+  runs a *different* LLM path than prod — it shares prod's blast radius while testing neither prod's data
+  layer nor prod's model layer. **This is the top infra item to fix before a pilot merchant's data exists
+  in that database**, and it converts Five Bets P5 gate (b) from unverified to confirmed unmet.
+
+  Also corrected the same day: `architecture/voice-orchestration.md` claimed the PDF knowledge base
+  "does not exist in the schema/backend yet." It has existed since 2026-07-14 (A3b) — tables, ingestion,
+  retrieval, CRUD routes, merchant UI, and the `lookupInfo` binding are all real.
 
 - **Semantic turn-detection SEAM — Five Bets Phase V (2026-07-31):** Fifth/final phase, and the Five
   Bets plan is now complete. Ships the pluggable end-of-turn (EOT) **seam + fallback discipline only —

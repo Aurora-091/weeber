@@ -21,6 +21,9 @@ Two things argued against wiring a model now, and one argued for building the ab
   problem we can't yet measure.
 - **No safe rollout path.** Staging and prod still share one `DATABASE_URL` (see `progress.md` known
   issues), so there is no isolation to roll a model behind and compare against.
+  *Confirmed 2026-08-01:* a Railway variable diff showed staging and prod share 33 of 40 variables —
+  same `DATABASE_URL`, same Twilio account and phone number, same service-role key. This assumption was
+  not just correct, it was generous. Gate (b) is confirmed unmet.
 - **But the hot path shouldn't be rewritten twice.** EOT sits on the hottest line in the product (every
   caller utterance). Retrofitting a model into an inline regex later means touching `stream.ts` under
   time pressure. Building the seam now — while it's cheap and behavior-neutral — de-risks that.

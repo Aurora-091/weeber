@@ -110,20 +110,32 @@ updated: 2026-08-01
 
 ## Known issues / debt (open)
 
-- Staging Supabase project has a placeholder `DATABASE_URL` on Railway — **unconfirmed**, don't assume
-  fixed. This is one of the two gates blocking the Five Bets P5 EOT-model wiring (the other is P2 data).
+- **"Staging" is not an environment — it is a second front door to production.** Settled 2026-08-01 by
+  diffing the Railway variable dumps for both environments (`.railway/vars-staging.json` vs
+  `vars-production.json`, pulled 2026-07-30). 33 of 40 variables are byte-identical, including
+  `DATABASE_URL` (same Supabase project `wtqohdcghmxuujqyhlkz`, same pooler host, same db, same role),
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `ADMIN_API_KEY`, `WEEBER_INTERNAL_SECRET`, `WEEBER_CALLBACK_SECRET`, and every `PUBLIC_*_URL`. The only
+  meaningful difference is `LLM_PROVIDER` (staging `groq`, prod `gateway`, and only prod sets
+  `AI_GATEWAY_FALLBACK_MODELS`); the rest is Railway's own hostname/ID injection. Consequences worth
+  saying out loud: a call placed "on staging" dials from the production Twilio number, bills the
+  production Twilio account, and writes its `calls`/`guardrail_events`/DNC rows into the production
+  database; a credential leak on staging is a prod leak; and because staging runs a *different* LLM
+  provider than prod, it does not validate the model path either. So staging currently verifies little
+  beyond "the process boots." This must be fixed before a pilot merchant's data is in that database.
+  (Also noise: `SUPABASE_KB_BUCKET` is set on staging only and is referenced nowhere in `packages/` —
+  dead variable, safe to delete.)
 - **Five Bets P5 EOT model deferred (by design, ADR-063):** the turn-detection seam is shipped but the
   refiner stays `null` — no Smart Turn / OpenAI Realtime / LiveKit vendor is wired until (a) P2
   call-health data shows real cut-offs and (b) staging is isolated from prod. Not debt to "fix"; a
-  documented gate to clear before wiring.
+  documented gate to clear before wiring. Gate (b) is now **confirmed unmet**, not merely unverified —
+  see the staging entry above.
 - **No real end-to-end PSTN call has ever been placed.** Every G1 claim above is static source reading
   plus isolated unit tests. This is the single largest unverified assumption in the codebase and needs an
   explicit go-ahead (real telephony cost) to close.
 - **`bookAppointment` and `crmSync` have not been audited against ADR-066** (a tool acting on a real-world
   entity must be bound server-side, never model-named). Do it before the insurance vertical takes a live
   call.
-- **Contradiction, unresolved:** this file says staging's `DATABASE_URL` is a placeholder; `adr-063` says
-  staging and prod still share one. A ~10-minute Railway env check settles which is true.
 - Shopify templates' `defaultTools` omit `lookupInfo`, so those agents cannot query the knowledge base
   even though it is real and wired. Adding it is a live-behaviour + latency change — a product decision.
 - Branch protection on `main` not yet enabled in GitHub settings.

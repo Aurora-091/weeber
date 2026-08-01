@@ -57,9 +57,22 @@ sequenceDiagram
 (`buildKnownFactsBlock`, `buildCallerMemoryBlock` in `voice/agent.ts`, backed by `voice/caller-memory.ts`)
 are a **structured, deterministic** memory system — not a RAG/vector-search layer. This solves a
 different problem than a knowledge base (see `docs/reference/state-engine.md` for why raw-transcript/lossy-summary
-memory causes agents to re-ask or contradict themselves). **Separately, a real per-vertical PDF-upload
-knowledge base is referenced by the persona prompts (`docs/agent-prompts/01`, `04`) but does not exist in
-the schema/backend yet** — see `WEEBER-PLAN.md`'s Phase A tracking for this gap.
+memory causes agents to re-ask or contradict themselves).
+
+**The per-org knowledge base is a separate system, and it does exist** (A3b). Tables `knowledge_documents`
+and `knowledge_chunks` (`packages/api/src/database/schema.ts:803`, `:828`); ingestion for pasted text,
+URLs, and PDFs in `voice/knowledge-base.ts` (`ingestKnowledgeDocument`, `extractTextFromPdf`,
+`extractTextFromUrl`); retrieval via `searchKnowledgeBase`, an in-memory cosine scan per org rather than
+pgvector (deliberate — see the schema comment at `schema.ts:817-826`); CRUD at `GET/POST/DELETE
+/knowledge-base` (`app/routes.ts:1194`, `:1199`, `:1254`, POST rate-limited); merchant UI at
+`packages/web/src/web/pages/app/knowledge-base.tsx`; and the agent reaches it through the `lookupInfo`
+tool, bound per-org in `buildVoiceTools` (`app/routes.ts:448`).
+
+Earlier revisions of this doc claimed the KB "does not exist in the schema/backend yet" and pointed at
+`WEEBER-PLAN.md`'s Phase A. That was true once; it is not true now. What remains open is a **product**
+gap, not an engineering one: the `shopify-cart-recovery` template's `defaultTools` omits `lookupInfo`, so
+that one agent cannot query the KB even though every piece of the KB works. Adding it changes live
+behaviour and per-turn latency, so it is a deliberate decision, not a doc fix.
 
 ## End-of-turn detection (the `speech_final` → `runVoiceAgentTurn` step)
 

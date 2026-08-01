@@ -5,6 +5,6 @@
 
 ## By month
 
-- [2026-08](./2026-08.md) — 4 entries
+- [2026-08](./2026-08.md) — 5 entries
 - [2026-07](./2026-07.md) — 56 entries
 - [reference-sections](./reference-sections.md) — undated summary sections
