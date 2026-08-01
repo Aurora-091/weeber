@@ -3,6 +3,7 @@ import { Play, Loader as Loader2, Sparkles, Phone, PhoneOff, Mic, PhoneCall, Ref
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { AgentTestChat } from "../agent-test-chat";
+import { CompiledPromptPanel } from "./CompiledPromptPanel";
 import { VoiceOrb } from "./VoiceOrb";
 import { useVoiceTestCall } from "../../hooks/useVoiceTestCall";
 
@@ -38,6 +39,13 @@ type PreviewDrawerProps = {
    * section entirely (e.g. self-hosted deployments with no telephony set
    * up yet). */
   testCallPhoneFetchFn?: (phone: string) => Promise<Response>;
+  /** Phase III / D2: POSTs { configOverride } to the compiled-prompt route and
+   * resolves to { text, segments } — the exact prompt this form state ships to
+   * the model, layer by layer. Paired with `configKey` (a serialization of the
+   * same form state) so the panel knows when to re-compile and can diff the
+   * result against the previous compile. Optional: omit both to hide the tab. */
+  compiledPromptFetchFn?: () => Promise<Response>;
+  configKey?: string;
 };
 
 /**
@@ -58,6 +66,8 @@ export function PreviewDrawer({
   previewUrl,
   onPlayPreview,
   testCallPhoneFetchFn,
+  compiledPromptFetchFn,
+  configKey,
 }: PreviewDrawerProps) {
   const [simulateFailover, setSimulateFailover] = useState(false);
   const tokenFetchWithFailoverFlag = useCallback(
@@ -116,9 +126,10 @@ export function PreviewDrawer({
         </SheetHeader>
 
         <Tabs defaultValue="voice" className="flex-1 flex flex-col px-4 pb-4">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className={`grid w-full ${compiledPromptFetchFn ? "grid-cols-3" : "grid-cols-2"}`}>
             <TabsTrigger value="voice">Voice</TabsTrigger>
             <TabsTrigger value="text">Text</TabsTrigger>
+            {compiledPromptFetchFn && <TabsTrigger value="prompt">Prompt</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="voice" className="flex-1 flex flex-col items-center justify-center gap-6 pt-6">
@@ -269,6 +280,12 @@ export function PreviewDrawer({
           <TabsContent value="text" className="flex-1 flex flex-col pt-4">
             <AgentTestChat fetchFn={chatFetchFn} templateName={templateName} />
           </TabsContent>
+
+          {compiledPromptFetchFn && (
+            <TabsContent value="prompt" className="flex-1 flex flex-col pt-4 overflow-hidden">
+              <CompiledPromptPanel fetchFn={compiledPromptFetchFn} configKey={configKey ?? ""} />
+            </TabsContent>
+          )}
         </Tabs>
       </SheetContent>
     </Sheet>

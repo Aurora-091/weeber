@@ -69,6 +69,11 @@ updated: 2026-08-01
   regulated-key rejection, idempotent), intake-schema editor, public hosted form `/f/:orgId`
   (orgId = write-only form token), on-demand "Sync to CRM" mirror (HubSpot/Salesforce/GHL). 621
   tests pass. ADR-061.
+- Agent editor Phase III / Visibility (2026-08-01, ADR-067): one system-prompt composition path
+  (`composeSystemPrompt`, join-invariant unit-tested), a compiled-prompt tab in the Preview drawer that
+  shows the five layers a merchant actually ships and diffs what each edit changed, tool chips grouped by
+  consequence with human labels + descriptions, and guardrail dials that render the exact sentence they
+  inject. Static + test verification only — not yet seen in a browser.
 - Infra: Railway Pro + Supabase Small + Vercel Pro, all confirmed live (Audit #7, 2026-07-17).
 - Hindi/Hinglish STT/TTS foundation, live-verified (2026-07-16).
 - Sentry error monitoring wired (2026-07-18) — no-op until `SENTRY_DSN` is set on Railway (still
@@ -109,6 +114,13 @@ updated: 2026-08-01
 - Actually set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the project + env var).
 
 ## Known issues / debt (open)
+
+- `injectionSensitivity` (agent guardrails) changes **prompt wording only** — the runtime injection
+  detector (`voice/injection-detection.ts`) is not wired to the dial and behaves identically at all three
+  levels. The editor now says so out loud (ADR-067) rather than implying a safety guarantee; making the
+  dial real is an open decision, not a bug fix.
+- The Phase III editor changes (tool groups, guardrail consequence copy, compiled-prompt tab) have never
+  been rendered in a browser — typecheck, lint and component tests only. No dev server was booted.
 
 - **"Staging" is not an environment — it is a second front door to production.** Settled 2026-08-01 by
   diffing the Railway variable dumps for both environments (`.railway/vars-staging.json` vs

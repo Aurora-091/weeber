@@ -214,7 +214,7 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
     async onOpen(ws: Sendable) {
       try {
         const agentConfig = payload.configOverride
-          ? await buildPreviewAgentConfig(payload.templateKey, payload.configOverride)
+          ? await buildPreviewAgentConfig(payload.templateKey, payload.configOverride, payload.orgId)
           : await resolveAgentConfig({ orgId: payload.orgId, templateKey: payload.templateKey });
 
         persona = agentConfig.systemPrompt;

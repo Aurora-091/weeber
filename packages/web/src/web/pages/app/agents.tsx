@@ -27,6 +27,8 @@ import {
   DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
   type AgentConfigRow, type FormState,
   toFormState, formToAgentFrame, fieldCls, labelCls,
+  TOOL_GROUPS, TOOL_EDITOR_META,
+  GUARDRAIL_TOPIC_LINES, GUARDRAIL_INJECTION_LINES, guardrailAbuseLine,
 } from "../../lib/agent-config";
 
 type OrgPhoneNumber = { id: number; phoneNumber: string; status: "active" | "released" };
@@ -310,6 +312,17 @@ function VoiceTab({ row, form, set }: TabProps) {
   );
 }
 
+/** The literal instruction line a guardrail control produces, rendered under it.
+ * Mono because it is a technical string that ships verbatim to the model — the
+ * design brief reserves JetBrains Mono for exactly this. */
+function GuardrailConsequence({ text }: { text: string }) {
+  return (
+    <p className="mt-2 border-l-2 border-border pl-2.5 font-mono text-[11px] leading-snug text-muted-foreground">
+      {text}
+    </p>
+  );
+}
+
 function ToolsGuardrailsTab({ row, form, set }: TabProps) {
   function toggleTool(name: string) {
     set(
@@ -326,54 +339,120 @@ function ToolsGuardrailsTab({ row, form, set }: TabProps) {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-2">
           <Settings className="size-4 text-muted-foreground" /> Abilities
         </div>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Only tools checked here are available to this agent — the instructions it's given never reference
-          a tool that isn't checked, so unchecking one doesn't cause a broken turn mid-call.
-          <span className="text-muted-foreground/60"> (hangUp always stays on)</span>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Only abilities switched on here are available to this agent — the instructions it's given never
+          reference one that's off, so turning something off doesn't cause a broken turn mid-call.
+          <span className="text-muted-foreground/60"> (Ending the call always stays on.)</span>
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {AVAILABLE_TOOL_NAMES.map((name) => {
-            const checked = name === "hangUp" || form.toolsEnabled.includes(name);
-            const disabled = name === "hangUp";
+
+        {/* D4: grouped by consequence, not alphabetically — the three tools
+            that spend money or change an order state should not sit in the
+            same undifferentiated grid as "record the caller's intent". */}
+        <div className="space-y-5">
+          {TOOL_GROUPS.map((group) => {
+            const members = AVAILABLE_TOOL_NAMES.filter((n) => TOOL_EDITOR_META[n].group === group.key);
+            if (members.length === 0) return null;
+            const heavy = group.key === "side-effects";
             return (
-              <label
-                key={name}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-mono cursor-pointer transition-all duration-150 select-none ${
-                  checked
-                    ? "border-primary/50 bg-primary/15 text-foreground"
-                    : "border-border bg-muted/40 text-muted-foreground hover:border-primary/30 hover:bg-muted/60"
-                } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                <input type="checkbox" aria-label={name} checked={checked} disabled={disabled} onChange={() => toggleTool(name)} className="sr-only" />
-                {name}
-              </label>
+              <div key={group.key}>
+                <div className="mb-2 flex items-baseline gap-2">
+                  <span className={`text-xs font-medium ${heavy ? "text-warning" : "text-foreground/70"}`}>
+                    {group.label}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{group.hint}</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {members.map((name) => {
+                    const meta = TOOL_EDITOR_META[name];
+                    const checked = name === "hangUp" || form.toolsEnabled.includes(name);
+                    const disabled = name === "hangUp";
+                    return (
+                      <label
+                        key={name}
+                        // Raw identifier kept reachable on hover — it's what
+                        // appears in call logs and API payloads, so hiding it
+                        // outright would break the trail from UI to timeline.
+                        title={name}
+                        className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-150 select-none ${
+                          disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+                        } ${
+                          checked
+                            ? heavy
+                              ? "border-warning/40 bg-warning/10"
+                              : "border-primary/50 bg-primary/10"
+                            : "border-border bg-muted/30 hover:border-primary/30 hover:bg-muted/50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={meta.label}
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={() => toggleTool(name)}
+                          className="mt-0.5 size-3.5 shrink-0 accent-primary"
+                        />
+                        <span className="min-w-0">
+                          <span className={`block text-xs font-medium ${checked ? "text-foreground" : "text-foreground/70"}`}>
+                            {meta.label}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                            {meta.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>
       </div>
 
       <div className="border-t border-border/50 pt-6">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-1">
           <Shield className="size-4 text-muted-foreground" /> Guardrails
         </div>
-        <div className="grid gap-6 sm:grid-cols-3">
+        {/* D3: each dial shows the sentence it actually writes into the prompt,
+            live. A "low / medium / high" select with no consequence text is a
+            control a merchant can only set by superstition. */}
+        <p className="mb-4 text-xs text-muted-foreground">
+          Each setting rewrites one line of your agent's instructions. The exact line it sends is shown
+          underneath.
+        </p>
+        <div className="space-y-5">
           <div>
             <label htmlFor={`ts-${row.templateKey}`} className={labelCls}>Stay-on-topic strictness</label>
-            <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={fieldCls}>
+            <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
               {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
+            <GuardrailConsequence text={GUARDRAIL_TOPIC_LINES[form.topicBoundaryStrictness] ?? ""} />
           </div>
           <div>
             <label htmlFor={`is-${row.templateKey}`} className={labelCls}>Manipulation sensitivity</label>
-            <select id={`is-${row.templateKey}`} value={form.injectionSensitivity} onChange={(e) => set("injectionSensitivity", e.target.value)} className={fieldCls}>
+            <select id={`is-${row.templateKey}`} value={form.injectionSensitivity} onChange={(e) => set("injectionSensitivity", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
               {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
+            <GuardrailConsequence text={GUARDRAIL_INJECTION_LINES[form.injectionSensitivity] ?? ""} />
+            {/* Stated plainly because the name implies more than the code does:
+                the runtime injection detector is not wired to this dial and
+                behaves identically at all three levels. */}
+            <p className="mt-1.5 text-[11px] text-muted-foreground/80">
+              This changes the wording your agent is given. It does not change the separate
+              injection detector that runs on every call — that is always on, at full sensitivity.
+            </p>
           </div>
-          <div className="flex items-end pb-2">
+          <div>
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={form.abuseHandlingEnabled} onCheckedChange={(v) => set("abuseHandlingEnabled", v)} aria-label="End call on sustained abuse" />
               End call on sustained abuse
             </label>
+            <GuardrailConsequence
+              text={guardrailAbuseLine(
+                form.abuseHandlingEnabled,
+                form.toolsEnabled.includes("flagGuardrailEvent"),
+              )}
+            />
           </div>
         </div>
       </div>
@@ -528,6 +607,16 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
     });
 
+  // Phase III / D2: the compiled-prompt panel re-compiles whenever this key
+  // changes, so it always reflects the unsaved form rather than the saved row.
+  const configKey = JSON.stringify(formToAgentFrame(form));
+  const compiledPromptFetchFn = () =>
+    appFetch(`/api/app/agent-configs/${encodeURIComponent(row.templateKey)}/compiled-prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+    });
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setDirty(true);
     setForm((f) => ({ ...f, [key]: value }));
@@ -633,6 +722,8 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
         chatFetchFn={chatFetchFn}
         testCallTokenFetchFn={testCallTokenFetchFn}
         testCallPhoneFetchFn={testCallPhoneFetchFn}
+        compiledPromptFetchFn={compiledPromptFetchFn}
+        configKey={configKey}
       />
 
       {/* Tabs — everything reachable by one click, nothing behind "Advanced" */}

@@ -26,7 +26,12 @@ Fix 3 classes of complaints, verified in real render:
 - typecheck (tsc --noEmit) = 0 errors. lint (oxlint --deny-warnings) = 0 warnings/errors.
 - NOT committed/pushed (awaiting user's clean-commit ritual). Preview harness is DEV-gated (import.meta.env.DEV) -> tree-shaken from prod build; kept as reusable UI-verification tool (user to decide keep/drop).
 
-## Fix #3 broad sweep (card-primitive) — user-approved "B" [IN PROGRESS]
+## Fix #3 broad sweep (card-primitive) — user-approved "B" [DONE — shipped in `c374b71`]
+Status corrected 2026-08-01: the header below said `[IN PROGRESS]` long after the work shipped as
+`c374b71` ("fix(ui): unify raw card clones to card-weeber primitive", 17 files). The only remaining
+`rounded-lg border border-border` hit from the CONVERT list is `dashboard/compliance.tsx:203`, which
+matches the documented EXCLUDE rule (`p-6 text-center text-muted-foreground` empty-state box) — i.e.
+nothing left to convert. The list below is kept as the record of what was swept.
 Root justification: `rounded-lg` = 8px corners + no shadow; `card-weeber` = `--radius` 12px + `var(--card)` bg + `--weeber-shadow-card`. Loading skeletons ALREADY carry shadow-weeber-card, real frames don't -> visible skeleton->loaded "pop" + tighter corners on clones. Box model (border 1px, padding) unchanged -> no reflow risk.
 
 CONVERT -> card-weeber (solid content panels + table/list frames):

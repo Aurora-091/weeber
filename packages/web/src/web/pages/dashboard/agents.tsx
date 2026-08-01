@@ -196,6 +196,15 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       body: JSON.stringify({ phone, configOverride: formToAgentFrame(form) }),
     });
 
+  // Phase III / D2 — admin twin of the merchant page's compiled-prompt panel.
+  const configKey = JSON.stringify(formToAgentFrame(form));
+  const compiledPromptFetchFn = () =>
+    apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/compiled-prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      body: JSON.stringify({ configOverride: formToAgentFrame(form) }),
+    });
+
   function toggleTool(name: string) {
     setForm((f) => ({
       ...f,
@@ -229,6 +238,8 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         chatFetchFn={chatFetchFn}
         testCallTokenFetchFn={testCallTokenFetchFn}
         testCallPhoneFetchFn={testCallPhoneFetchFn}
+        compiledPromptFetchFn={compiledPromptFetchFn}
+        configKey={configKey}
         previewState={previewState}
         previewUrl={previewUrl}
         onPlayPreview={playPreview}

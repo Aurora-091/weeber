@@ -438,7 +438,7 @@ export const userApp = new Hono<UserEnv>()
       if (!parsedOverride.success) {
         return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
       }
-      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data, orgId);
     } else {
       agentConfig = await resolveAgentConfig({ orgId, templateKey });
     }
@@ -499,6 +499,35 @@ export const userApp = new Hono<UserEnv>()
     }
   })
 
+  // Phase III / D2 (ADR-067): the compiled prompt for the CURRENT, unsaved form
+  // state, broken into the layers it's made of. A merchant edits one textarea
+  // and ships five layers; this is the only place they can see the other four.
+  // No LLM call, no telephony, no writes — pure composition, so no rate limit
+  // beyond the shared app-route auth. Same `configOverride` contract as
+  // test-chat/test-call-token; omitting it compiles the saved row instead.
+  .post("/agent-configs/:templateKey/compiled-prompt", async (c) => {
+    const orgId = c.get("userOrgId")!;
+    const templateKey = c.req.param("templateKey");
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+
+    const { resolveAgentConfig, buildPreviewAgentConfig } = await import("../voice/agent");
+    let agentConfig;
+    if (body && typeof body === "object" && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data, orgId);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
+
+    return c.json(
+      { text: agentConfig.systemPrompt, segments: agentConfig.promptSegments ?? [] },
+      200,
+    );
+  })
+
   .post("/agent-configs/:templateKey/test-call-token", async (c) => {
     const orgId = c.get("userOrgId")!;
     const templateKey = c.req.param("templateKey");
@@ -554,7 +583,7 @@ export const userApp = new Hono<UserEnv>()
     }
 
     const { buildPreviewAgentConfig } = await import("../voice/agent");
-    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
+    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride, orgId);
     const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 

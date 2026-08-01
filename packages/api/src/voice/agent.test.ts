@@ -539,3 +539,100 @@ describe("buildWorkflowContextBlock — G1.3 pre-call facts from the merchant's 
     expect(block).not.toContain("{{");
   });
 });
+
+import { composeSystemPrompt } from "./agent";
+import { TOPIC_BOUNDARY_LINES, INJECTION_LINES, abuseHandlingLine } from "./prompt-lines";
+
+/**
+ * Phase III / D2 (ADR-067). The compiled-prompt panel in the agent editor is
+ * only worth shipping if it shows the *actual* prompt — so the load-bearing
+ * test here is the join invariant, not the labels. If a future layer gets
+ * added to composition but not to `segments` (or vice versa), the panel starts
+ * quietly lying to merchants about what their agent is told; this fails first.
+ */
+describe("composeSystemPrompt — one composition path, segmented", () => {
+  const base = { jobDescription: "You help customers with their orders." };
+
+  it("joins its segments back into exactly the compiled prompt, byte for byte", () => {
+    const composed = composeSystemPrompt({
+      ...base,
+      identity: { name: "Aria", merchantName: "Kalyani Sarees", toneStyle: "friendly", greetingLine: "Hi!" },
+      language: "hi",
+      guardrails: { topicBoundaryStrictness: "high", injectionSensitivity: "low", abuseHandlingEnabled: false },
+      toolsEnabled: ["hangUp", "captureField"],
+      direction: "outbound",
+    });
+    expect(composed.segments.map((s) => s.body).join("")).toBe(composed.text);
+  });
+
+  it("holds the join invariant for the emptiest possible config too (no identity, no language, no guardrails)", () => {
+    const composed = composeSystemPrompt(base);
+    expect(composed.segments.map((s) => s.body).join("")).toBe(composed.text);
+  });
+
+  it("keeps layers that resolved to nothing in the array with an empty body, instead of dropping them", () => {
+    // An English agent with no identity fields adds neither block — the panel
+    // still needs to be able to say "not applied" rather than hide a layer.
+    const composed = composeSystemPrompt({ ...base, language: "en" });
+    const ids = composed.segments.map((s) => s.id);
+    expect(ids).toEqual(["language", "identity", "persona", "disclosure", "call-control"]);
+    expect(composed.segments.find((s) => s.id === "language")!.body).toBe("");
+    expect(composed.segments.find((s) => s.id === "identity")!.body).toBe("");
+  });
+
+  it("marks exactly one segment editable — the merchant's own prompt — and that segment is their text verbatim", () => {
+    const composed = composeSystemPrompt(base);
+    const editable = composed.segments.filter((s) => s.editable);
+    expect(editable).toHaveLength(1);
+    expect(editable[0]!.id).toBe("persona");
+    expect(editable[0]!.body).toBe(base.jobDescription);
+  });
+
+  it("isolates the disclosure into its own segment rather than blending it into the merchant's prompt", () => {
+    const composed = composeSystemPrompt(base);
+    const persona = composed.segments.find((s) => s.id === "persona")!;
+    const disclosure = composed.segments.find((s) => s.id === "disclosure")!;
+    expect(persona.body).not.toContain("At the very start of the call");
+    expect(disclosure.body).toContain("At the very start of the call");
+  });
+
+  it("produces the same string the previous hand-rolled composition did (regression guard on the refactor)", () => {
+    const composed = composeSystemPrompt({
+      ...base,
+      identity: { name: "Aria" },
+      guardrails: { topicBoundaryStrictness: "medium" },
+    });
+    expect(composed.text.startsWith("Your name is Aria.")).toBe(true);
+    expect(composed.text).toContain("You help customers with their orders.");
+    expect(composed.text).toContain("Call control:");
+    expect(composed.text).toContain(TOPIC_BOUNDARY_LINES.medium);
+  });
+
+  it("puts the guardrail dial's resulting sentence in the prompt, so the editor can show that same sentence", () => {
+    for (const level of ["low", "medium", "high"] as const) {
+      const composed = composeSystemPrompt({
+        ...base,
+        guardrails: { topicBoundaryStrictness: level, injectionSensitivity: level },
+      });
+      expect(composed.text).toContain(TOPIC_BOUNDARY_LINES[level]);
+      expect(composed.text).toContain(INJECTION_LINES[level]);
+    }
+  });
+
+  it("swaps the abuse sentence for the flagGuardrailEvent-free variant when that tool is off", () => {
+    const withFlag = composeSystemPrompt({ ...base, toolsEnabled: ["flagGuardrailEvent", "hangUp"] });
+    const withoutFlag = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });
+    expect(withFlag.text).toContain(abuseHandlingLine(true, true));
+    expect(withoutFlag.text).toContain(abuseHandlingLine(true, false));
+    expect(withoutFlag.text).not.toContain("flagGuardrailEvent");
+  });
+
+  it("changes only the call-control segment when a tool is toggled — the editor's diff highlight depends on this", () => {
+    const before = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp", "transferToHuman"] });
+    const after = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });
+    const changed = before.segments
+      .filter((s, i) => s.body !== after.segments[i]!.body)
+      .map((s) => s.id);
+    expect(changed).toEqual(["call-control"]);
+  });
+});

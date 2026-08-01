@@ -63,6 +63,31 @@ updated: 2026-08-01
   "does not exist in the schema/backend yet." It has existed since 2026-07-14 (A3b) — tables, ingestion,
   retrieval, CRUD routes, merchant UI, and the `lookupInfo` binding are all real.
 
+- **Phase III (Visibility) shipped — 2026-08-01, ADR-067.** The agent-editor case study's three
+  visibility gaps, closed together. **D2:** new `composeSystemPrompt()` in `voice/agent.ts` is now the
+  *single* system-prompt composition path (both `resolveAgentConfig`'s DB-row branch and
+  `buildPreviewAgentConfig` call it) and returns the labelled layers alongside the final string; two new
+  pure `compiled-prompt` endpoints serve them; a "Prompt" tab in the Preview drawer renders the layers,
+  highlights the merchant's own text, and line-level diffs whatever the last edit changed. Invariant
+  `segments.join("") === text` is unit-tested byte for byte, so the panel cannot drift from a live call.
+  **D4:** tool chips carry a human label, a one-line description, and a consequence group
+  (*Conversation control* / *Data capture* / *Acts outside the call*, the last one weighted) instead of a
+  raw camelCase identifier. **D3:** each guardrail dial renders the exact sentence it injects, sourced
+  from a dependency-free `voice/prompt-lines.ts` with a web parity test.
+
+  Fixed in passing: `buildPreviewAgentConfig` never fetched `orgs.name`, so **every previewed prompt was
+  missing the "You are calling on behalf of X" line a real call ships**. It now takes an optional `orgId`;
+  all five call sites pass it.
+
+  Stated in the UI rather than papered over: **`injectionSensitivity` changes prompt wording only** — the
+  runtime injection detector is not wired to that dial and behaves identically at all three levels.
+  Making it real is a separate, unstarted decision.
+
+  **NEXT on the editor:** nothing here has been seen in a browser (no dev server booted this session) and
+  the Tools & Guardrails tab has no render test — first visual pass should check the three tool groups and
+  the mono consequence lines against `UI-DESIGN-BRIEF.md`. `D1` (create-agent), `D5` (prompt versioning)
+  and Phase IV (eval/judge) remain deliberately out of scope.
+
 - **Semantic turn-detection SEAM — Five Bets Phase V (2026-07-31):** Fifth/final phase, and the Five
   Bets plan is now complete. Ships the pluggable end-of-turn (EOT) **seam + fallback discipline only —
   NOT a model vendor**, because the model is gated (zero Phase II production health data yet, pre-pilot;

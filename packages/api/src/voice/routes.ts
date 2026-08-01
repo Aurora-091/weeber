@@ -650,7 +650,7 @@ export const voice = new Hono()
       if (!parsedOverride.success) {
         return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
       }
-      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data);
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data, orgId);
     } else {
       agentConfig = await resolveAgentConfig({ orgId, templateKey });
     }
@@ -714,6 +714,32 @@ export const voice = new Hono()
     }
   })
 
+  // Phase III / D2 (ADR-067), admin twin of the merchant route in app/routes.ts:
+  // the compiled system prompt for the in-progress config, split into its
+  // labelled layers. Pure composition — no LLM, no telephony, no writes.
+  .post("/orgs/:orgId/agent-configs/:templateKey/compiled-prompt", requireAdminKey, async (c) => {
+    const orgId = c.req.param("orgId");
+    const templateKey = c.req.param("templateKey");
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+
+    const { resolveAgentConfig, buildPreviewAgentConfig } = await import("./agent");
+    let agentConfig;
+    if (body && typeof body === "object" && body.configOverride && typeof body.configOverride === "object") {
+      const parsedOverride = AgentFrameSchema.safeParse(body.configOverride);
+      if (!parsedOverride.success) {
+        return c.json({ error: "Invalid configOverride", details: parsedOverride.error.issues }, 400);
+      }
+      agentConfig = await buildPreviewAgentConfig(templateKey, parsedOverride.data, orgId);
+    } else {
+      agentConfig = await resolveAgentConfig({ orgId, templateKey });
+    }
+
+    return c.json(
+      { text: agentConfig.systemPrompt, segments: agentConfig.promptSegments ?? [] },
+      200,
+    );
+  })
+
   // Issues a short-lived, single-use token for the admin dashboard's live
   // voice test call (Preview drawer's Voice tab) — see test-call-tokens.ts's
   // doc comment for the full two-step handshake this feeds into.
@@ -773,7 +799,7 @@ export const voice = new Hono()
     }
 
     const { buildPreviewAgentConfig } = await import("./agent");
-    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride);
+    const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride, orgId);
     const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
@@ -838,7 +864,7 @@ export const voice = new Hono()
 
     const { buildPreviewAgentConfig } = await import("./agent");
     const { runSyntheticTest } = await import("./synthetic-test");
-    const agentConfig = await buildPreviewAgentConfig(templateKey, configOverride);
+    const agentConfig = await buildPreviewAgentConfig(templateKey, configOverride, orgId);
 
     try {
       const result = await runSyntheticTest(agentConfig, scenario, orgId);
