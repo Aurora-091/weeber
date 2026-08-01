@@ -16,6 +16,7 @@ import { useUser } from "../../components/app/user-shell";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Breadcrumbs } from "../../components/shell/breadcrumbs";
+import { PageHeader } from "../../components/shell/page-header";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
@@ -46,21 +47,121 @@ function useAgentConfigs() {
   });
 }
 
-/** Bare `/app/agents` — no agent in the URL yet. Redirects to the first
- * agent's own page (dedicated-URL-per-agent, matching ElevenLabs/Vapi/
- * Retell's pattern) or shows an empty state if the org has none. */
+// ---------------------------------------------------------------------------
+// Readiness — one place that answers "is this agent actually going to work?"
+//
+// The detail page has always computed this inline for the single agent it
+// renders. Extracted here (2026-08-01) so the overview grid can show the same
+// verdict for every agent without duplicating (and eventually drifting from)
+// the rule. "Live" in the DB only means the toggle is on; an agent with no
+// caller ID is enabled and still cannot place a call, which is precisely the
+// failure a merchant cannot see from a dropdown.
+// ---------------------------------------------------------------------------
+
+export type AgentReadiness = {
+  state: "live" | "needs-number" | "paused";
+  label: string;
+  /** Semantic token classes — never raw Tailwind colours on product surfaces. */
+  pillCls: string;
+  dotCls: string;
+};
+
+/** The classification itself, on plain booleans. The detail page passes live
+ * form state (so the banner tracks an unsaved toggle); the grid passes what's
+ * saved. Both go through here so they can't disagree. */
+export function classifyReadiness(enabled: boolean, hasCallerId: boolean): AgentReadiness {
+  if (!enabled) {
+    return { state: "paused", label: "Paused", pillCls: "bg-muted text-muted-foreground", dotCls: "bg-muted-foreground/60" };
+  }
+  if (!hasCallerId) {
+    return { state: "needs-number", label: "Needs a number", pillCls: "bg-warning-soft text-warning", dotCls: "bg-warning" };
+  }
+  return { state: "live", label: "Live", pillCls: "bg-success-soft text-success", dotCls: "bg-success" };
+}
+
+export function agentReadiness(row: AgentConfigRow, hasOrgFallbackNumber: boolean): AgentReadiness {
+  // `config` is null until the merchant saves once — an unsaved agent still
+  // runs on template defaults, and toFormState defaults `enabled` to true.
+  return classifyReadiness(
+    row.config?.enabled ?? true,
+    row.config?.phoneNumberId != null || hasOrgFallbackNumber,
+  );
+}
+
+/** True when the merchant has edited the persona away from the seeded default. */
+function isPersonaCustomised(row: AgentConfigRow): boolean {
+  const persona = row.config?.personaPrompt;
+  if (!persona) return false;
+  return persona.trim() !== (row.defaultPersonaPrompt ?? "").trim();
+}
+
+function AgentCard({ row, readiness }: { row: AgentConfigRow; readiness: AgentReadiness }) {
+  const name = row.config?.name || row.templateName;
+  const toolCount = (row.config?.toolsEnabled ?? AVAILABLE_TOOL_NAMES).length;
+
+  return (
+    <a
+      href={appPath(`/agents/${row.templateKey}`)}
+      className="card-weeber flex flex-col gap-3 p-5 no-underline text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold leading-snug">{name}</h3>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground leading-relaxed">
+            {row.templateDescription ?? "No description."}
+          </p>
+        </div>
+        <span
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${readiness.pillCls}`}
+        >
+          <span className={`size-1.5 rounded-full ${readiness.dotCls}`} />
+          {readiness.label}
+        </span>
+      </div>
+
+      {readiness.state === "needs-number" && (
+        <p className="text-[11px] text-warning leading-relaxed">
+          Turned on, but no caller ID — it can't place calls yet.
+        </p>
+      )}
+
+      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground">
+        <span>{toolCount} {toolCount === 1 ? "ability" : "abilities"}</span>
+        {row.config?.language && <span>· {row.config.language}</span>}
+        {isPersonaCustomised(row) && <span>· Edited</span>}
+      </div>
+    </a>
+  );
+}
+
+/** Bare `/app/agents` — the overview grid.
+ *
+ * Until 2026-08-01 this route immediately redirected to the first agent's
+ * detail page, so an org with nine provisioned agents had no screen that
+ * listed them: the only way to see or switch agents was a `<Select>` in the
+ * detail header, and the detail page's own "Agents" breadcrumb pointed here
+ * and bounced straight back. Frontend-only change — `GET /agent-configs`
+ * already returns every agent merged with its template. */
 export function UserAgentsPage() {
   const { vertical } = useUser();
-  const [, setLocation] = useLocation();
   const configs = useAgentConfigs();
   const rows = configs.data?.agentConfigs ?? [];
 
-  const firstKey = rows[0]?.templateKey;
-  useEffect(() => {
-    if (firstKey) setLocation(appPath(`/agents/${firstKey}`), { replace: true });
-  }, [firstKey, setLocation]);
+  // Same org-level fallback the detail page uses: an agent with no number of
+  // its own still dials from the org's outbound number if one exists.
+  const telephony = useQuery<{ telephony: { outboundNumber: string | null } }>({
+    queryKey: ["app-telephony-status"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/telephony/status");
+      if (!res.ok) throw new Error(`telephony failed (${res.status})`);
+      return (await res.json()) as { telephony: { outboundNumber: string | null } };
+    },
+  });
+  // Don't accuse an agent of missing a caller ID before telephony resolves —
+  // assume the fallback exists until we actually know it doesn't.
+  const hasOrgFallbackNumber = !telephony.isSuccess || Boolean(telephony.data?.telephony?.outboundNumber);
 
-  if (configs.isLoading) return <SkeletonCards count={1} lines={6} />;
+  if (configs.isLoading) return <SkeletonCards count={6} lines={3} />;
   if (configs.isError) {
     return <EmptyState title="Couldn't load your agents" description="Something went wrong reaching the server — try refreshing." />;
   }
@@ -72,7 +173,36 @@ export function UserAgentsPage() {
       />
     );
   }
-  return <SkeletonCards count={1} lines={6} />; // brief flash while the redirect above fires
+
+  const readiness = rows.map((r) => ({ row: r, readiness: agentReadiness(r, hasOrgFallbackNumber) }));
+  const liveCount = readiness.filter((r) => r.readiness.state === "live").length;
+  const attentionCount = readiness.filter((r) => r.readiness.state === "needs-number").length;
+  const pausedCount = readiness.filter((r) => r.readiness.state === "paused").length;
+
+  return (
+    <div className="page-enter">
+      <PageHeader
+        title="Agents"
+        description={`Your ${vertical.integrationLabel} voice agents. Open one to change what it says, how it sounds, and what it's allowed to do.`}
+      />
+
+      <div className="mb-shell-section flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span><span className="font-medium text-foreground">{liveCount}</span> live</span>
+        <span><span className="font-medium text-foreground">{pausedCount}</span> paused</span>
+        {attentionCount > 0 && (
+          <span className="text-warning">
+            <span className="font-medium">{attentionCount}</span> need a phone number
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-[var(--shell-card-gap)] sm:grid-cols-2 xl:grid-cols-3">
+        {readiness.map(({ row, readiness: r }) => (
+          <AgentCard key={row.templateKey} row={row} readiness={r} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -637,10 +767,14 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       return res.json();
     },
   });
-  const hasCallerId = row.config?.phoneNumberId != null || Boolean(telephony.data?.telephony?.outboundNumber);
   // Only trust the "no caller ID" state once telephony has actually loaded, so
   // we don't flash a false warning before the query resolves.
-  const missingCallerId = form.enabled && telephony.isSuccess && !hasCallerId;
+  const hasOrgFallbackNumber = !telephony.isSuccess || Boolean(telephony.data?.telephony?.outboundNumber);
+  // Classified by the same helper the overview grid uses, so the two surfaces
+  // can never disagree about when an agent is really callable. `form.enabled`
+  // (not `row.config.enabled`) so the banner tracks the unsaved toggle.
+  const hasCallerId = row.config?.phoneNumberId != null || hasOrgFallbackNumber;
+  const missingCallerId = classifyReadiness(form.enabled, hasCallerId).state === "needs-number";
 
   const tabProps: TabProps = { row, form, set };
 

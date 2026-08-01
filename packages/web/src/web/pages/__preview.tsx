@@ -187,8 +187,59 @@ function PhaseIIIProbe() {
   );
 }
 
+/** Agents overview grid (2026-08-01) with seeded data.
+ *
+ * The plain `agents` entry below renders the same component against no
+ * backend, which only ever shows the error state. This seeds the two queries
+ * the page reads so the actual grid — and each readiness state — is visible:
+ * one live agent, one live-but-unnumbered, one paused, one never-saved. */
+function AgentsGridProbe() {
+  useState(() => {
+    const mk = (
+      templateKey: string,
+      templateName: string,
+      templateDescription: string,
+      config: AgentConfigRow["config"],
+    ): AgentConfigRow => ({
+      templateKey,
+      templateName,
+      templateDescription,
+      defaultPersonaPrompt: "Seeded persona body.",
+      config,
+    });
+    const base = {
+      name: null, greetingLine: null, closingLine: null, toneStyle: null, personaPrompt: null,
+      voiceProvider: null, voiceId: null, language: null, sttProvider: null, llmProvider: null,
+      llmModel: null, sttFallbackOrder: null, ttsFallbackOrder: null, llmFallbackModels: null,
+      toolsEnabled: null, guardrails: null, enabled: true,
+      firstCallDelayMinutes: null, retryDelayMinutes: null, maxAttempts: null, phoneNumberId: null,
+    } satisfies NonNullable<AgentConfigRow["config"]>;
+
+    previewClient.setQueryData(["app-agent-configs"], {
+      agentConfigs: [
+        mk("shopify-cart-recovery", "Cart recovery", "Calls customers who left a cart behind and offers to help them finish.", {
+          ...base, phoneNumberId: 1, toolsEnabled: ["offerCartRecoveryDiscount", "captureField", "setDisposition"],
+          language: "en-IN", personaPrompt: "A persona the merchant has edited.",
+        }),
+        mk("shopify-cod-confirmation", "COD confirmation", "Confirms cash-on-delivery orders before they ship to cut RTO.", {
+          ...base, phoneNumberId: null, toolsEnabled: ["confirmCodOrder", "setDisposition"], language: "hi-IN",
+        }),
+        mk("shopify-order-status", "Order status", "Answers inbound 'where is my order' calls using your store data.", {
+          ...base, enabled: false, phoneNumberId: 1,
+        }),
+        mk("shopify-winback", "Win-back", "Reaches lapsed customers with a reason to come back.", null),
+      ] satisfies AgentConfigRow[],
+    });
+    // No org-level outbound number → the unnumbered agent must show a warning.
+    previewClient.setQueryData(["app-telephony-status"], { telephony: { outboundNumber: null } });
+    return true;
+  });
+  return <UserAgentsPage />;
+}
+
 const PAGES = {
   home: { label: "Home", Comp: UserHomePage },
+  agentsgrid: { label: "Agents grid", Comp: AgentsGridProbe },
   phase3: { label: "Phase III probe", Comp: PhaseIIIProbe },
   fullbleed: { label: "Full-bleed probe", Comp: FullBleedProbe },
   agents: { label: "Agents", Comp: UserAgentsPage },
@@ -205,7 +256,7 @@ const PAGES = {
 type PageKey = keyof typeof PAGES;
 
 export function PreviewHarness() {
-  const [page, setPage] = useState<PageKey>("phase3");
+  const [page, setPage] = useState<PageKey>("agentsgrid");
   const vertical = getVertical("shopify");
   const ctx: UserContextValue = {
     me: mockMe,

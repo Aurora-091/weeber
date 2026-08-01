@@ -78,6 +78,14 @@ updated: 2026-08-01
   had been shipping ragged indentation into every live call (`dedent` computes its minimum indent after
   interpolation; the multi-line constants it interpolates are flush-left, so nothing was ever stripped),
   and the "no caller ID" banner used dark-mode-only `amber-*` and was unreadable in light mode.
+- Agents overview grid (2026-08-01, `changelog/2026-08.md`): `/app/agents` renders a card per agent with
+  a readiness pill, the specific blocker, and a live/paused/needs-a-number counts strip. It was previously
+  a pure redirect to whichever agent came back first, so the nine seeded agents were reachable only via a
+  `<Select>` and the detail page's "Agents" breadcrumb linked back to itself. Readiness now lives in one
+  shared `classifyReadiness`/`agentReadiness` pair the detail-page banner also calls, so the two cannot
+  drift; 8 unit tests, including a guard against raw Tailwind colours in place of `.theme-weeber` tokens.
+  Browser-verified via `AgentsGridProbe` in `__preview.tsx` (four synthetic states, light + dark, zero
+  console errors). Create-agent deliberately not built — see the changelog for why.
 - Infra: Railway Pro + Supabase Small + Vercel Pro, all confirmed live (Audit #7, 2026-07-17).
 - Hindi/Hinglish STT/TTS foundation, live-verified (2026-07-16).
 - Sentry error monitoring wired (2026-07-18) — no-op until `SENTRY_DSN` is set on Railway (still
@@ -119,6 +127,18 @@ updated: 2026-08-01
 
 ## Known issues / debt (open)
 
+- **`crmSync` lets the model name the contact it writes to — ADR-066 violation, unfixed.**
+  `phoneNumber: z.string()` (`voice/tools/crmSync.ts:15`) is model-supplied, required, and is the upsert
+  key sent to the merchant's CRM (`integrations/gohighlevel.ts:23`). A hallucinated number files this
+  call's notes on someone else's contact record. The caller's real number is already resolved server-side
+  as `humanNumber` (`voice/stream.ts:1561`). Fix = a `CrmSyncContext` bound at `buildVoiceTools`, model
+  input narrowed to `{ callerName?, notes }` — ADR-scale, awaiting a decision. `bookAppointment` was
+  audited in the same pass and is compliant (it creates, never mutates a named entity); its only note is
+  that `dateTimeIso` is unbounded.
+- **`lookupInfo` reaches new orgs only.** It was added to the three Shopify templates' `defaultTools` in
+  `database/seed.ts`, which is the registry consulted at seed time. Orgs with existing `agent_configs`
+  rows keep their stored `enabledTools` and still cannot answer a policy question. A backfill changes what
+  a live agent can do, so it is an explicit call, not a migration to run quietly.
 - `injectionSensitivity` (agent guardrails) changes **prompt wording only** — the runtime injection
   detector (`voice/injection-detection.ts`) is not wired to the dial and behaves identically at all three
   levels. The editor now says so out loud (ADR-067) rather than implying a safety guarantee; making the

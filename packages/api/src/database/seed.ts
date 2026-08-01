@@ -27,7 +27,16 @@ export const AGENT_TEMPLATES = [
       description: "Recovers abandoned checkouts by calling customers after they abandon their cart.",
       fileName: "01-cart-recovery-agent.md",
       literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{merchant_name}}. Do you have a quick minute?",
-      defaultTools: ["offerCartRecoveryDiscount", "captureField", "setDisposition", "setIntent"],
+      // `lookupInfo` added 2026-08-01. All three Shopify agents talk to real
+      // customers who ask real questions ("what's your return window?",
+      // "when does this ship?") and, without KB access, the model's only
+      // options were to refuse or to invent — and the personas explicitly
+      // promise answers come from the merchant's knowledge base. The tool is
+      // safe for orgs that have no KB configured: createLookupInfoTool
+      // (tools/lookupInfo.ts) returns an explicit "no knowledge base is
+      // configured" note rather than erroring, and its description forbids
+      // guessing when nothing comes back.
+      defaultTools: ["offerCartRecoveryDiscount", "lookupInfo", "captureField", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -37,7 +46,7 @@ export const AGENT_TEMPLATES = [
       description: "Confirms Cash on Delivery orders to reduce RTO (Return to Origin) rates.",
       fileName: "02-cod-confirmation-agent.md",
       literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{merchant_name}}. Can I have two minutes of your time?",
-      defaultTools: ["confirmCodOrder", "captureField", "setDisposition", "setIntent"],
+      defaultTools: ["confirmCodOrder", "lookupInfo", "captureField", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -54,7 +63,7 @@ export const AGENT_TEMPLATES = [
       // time-to-first-token on its opening line. A seeded greeting tag with no
       // producer is an invisible permanent latency regression.
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your recent order was delivered — do you have a minute to share how it went?",
-      defaultTools: ["captureField", "setDisposition", "setIntent"],
+      defaultTools: ["lookupInfo", "captureField", "setDisposition", "setIntent"],
       // Confirmed final by the user 2026-07-18 (was drafted without a Bolna reference sample,
       // unlike 01/02 — held inactive pending explicit confirmation per WEEBER-PLAN.md's
       // STOP-AND-ASK gate #4 / project-brief.md item 4). Flipping to active makes it selectable

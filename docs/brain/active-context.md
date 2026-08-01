@@ -39,11 +39,38 @@ updated: 2026-08-01
     and every feedback call paid full LLM time-to-first-token.
 
   **NEXT on G1:** insurance personas `04`–`09` are still templated (tracked in
-  `MERGE_TAG_MIGRATION_BACKLOG`, which may only shrink). `bookAppointment` and `crmSync` have **not** been
-  audited against ADR-066 — do that before the insurance vertical takes a live call. Two open product
-  decisions, not doc fixes: adding `lookupInfo` to the Shopify templates' `defaultTools` (the KB is real
-  and wired, the agents just can't reach it), and whether the disposition enum should gain
-  confirmed/cancelled and feedback-positive/negative values instead of overloading `booked`/`interested`.
+  `MERGE_TAG_MIGRATION_BACKLOG`, which may only shrink). One open product decision, not a doc fix: whether
+  the disposition enum should gain confirmed/cancelled and feedback-positive/negative values instead of
+  overloading `booked`/`interested`.
+
+  **ADR-066 audit of the two remaining tools — done (2026-08-01), one violation found.**
+  - `bookAppointment` (`voice/tools/bookAppointment.ts`) is **compliant**. `orgId` is bound by the factory;
+    `calendarId` and `accessToken` resolve from `orgIntegrations` (vault-first). The model supplies
+    `callerName`/`dateTimeIso`/`notes`, which *create* a new event — it never names an existing entity, and
+    cannot reach another org's calendar. Minor, non-blocking: `dateTimeIso` is unbounded, so a past or
+    far-future slot is bookable.
+  - `crmSync` (`voice/tools/crmSync.ts:15`) is a **violation of the same shape as `confirmCodOrder`**.
+    `phoneNumber: z.string()` is model-supplied and required, and it is the **upsert key** —
+    `syncToGoHighLevel` POSTs it as `phone` to `/contacts/upsert` (`integrations/gohighlevel.ts:23`). A
+    hallucinated or caller-dictated number writes this call's notes onto a *different* contact in the
+    merchant's CRM. The model has no legitimate reason to supply it: the caller's real number is already
+    resolved server-side in the `"start"` handler as `humanNumber`
+    (`voice/stream.ts:1561`, via `resolveHumanNumber`) and is already trusted for DNC opt-out (`:515`) and
+    caller memory (`:611`). Fix is the established pattern — a `CrmSyncContext` carrying `humanNumber`,
+    bound at `buildVoiceTools` (`voice/agent.ts:869`) alongside `cartRecovery`/`codOrder`, model input
+    narrowed to `{ callerName?, notes }`. **Not implemented: it is an ADR-scale schema change and needs a
+    decision, not a drive-by edit.** Lower blast radius than `confirmCodOrder` (a wrong write, not an
+    irreversible cancellation), but the same class.
+
+- **Agent console UI (2026-08-01).** Overview grid shipped at `/app/agents` — the route was previously a
+  pure redirect to the first agent, so nine agents were reachable only through a `<Select>` and the detail
+  page's own "Agents" breadcrumb linked back to itself. Readiness logic deduped into
+  `classifyReadiness`/`agentReadiness` so the grid and the detail page's caller-ID banner cannot drift.
+  Browser-verified through an `AgentsGridProbe` in `__preview.tsx` (four synthetic states, no backend).
+  A create-agent flow was considered and **rejected** — no POST route exists, the registry is curated, and
+  the real complaint was seeing the agents that exist. Full reasoning in `changelog/2026-08.md`.
+  Same round: `lookupInfo` added to the three Shopify templates' `defaultTools` (`database/seed.ts`) —
+  **newly seeded orgs only**, existing `agent_configs` rows are untouched and a backfill is an open call.
 
   **Still unverified, and the honest gap in all of the above:** no real end-to-end PSTN call has been
   placed. Every claim here is from static source reading plus `--isolate` tests.
