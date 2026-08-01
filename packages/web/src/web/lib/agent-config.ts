@@ -20,6 +20,7 @@ export const AVAILABLE_TOOL_NAMES = [
   "lookupInfo",
   "bookAppointment",
   "setDisposition",
+  "setIntent",
   "crmSync",
   "captureField",
   "hangUp",
@@ -30,6 +31,30 @@ export const AVAILABLE_TOOL_NAMES = [
   "confirmCodOrder",
   "offerCartRecoveryDiscount",
 ] as const;
+export type AvailableToolName = (typeof AVAILABLE_TOOL_NAMES)[number];
+
+/** Merchant-friendly labels for internal tool names, rendered on the call
+ * detail timeline. Lives here (not in the page) so it sits next to
+ * AVAILABLE_TOOL_NAMES and is covered by the same parity test — a tool added
+ * to the backend but never labelled here used to surface to merchants as a
+ * raw camelCase identifier. Consumers should still fall back to the raw name
+ * so a brand-new tool renders unstyled rather than disappearing. */
+export const TOOL_LABELS: Record<AvailableToolName, string> = {
+  lookupInfo: "Looked up info",
+  bookAppointment: "Booked appointment",
+  setDisposition: "Set call outcome",
+  setIntent: "Identified caller intent",
+  crmSync: "Synced to CRM",
+  captureField: "Captured info",
+  hangUp: "Ended call",
+  transferToHuman: "Transferred to human",
+  flagGuardrailEvent: "Flagged compliance event",
+  sendSms: "Sent a text message",
+  sendDtmf: "Pressed keys on a phone menu",
+  confirmCodOrder: "Confirmed COD order",
+  offerCartRecoveryDiscount: "Offered discount",
+};
+
 export const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
   { provider: "gateway", model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },

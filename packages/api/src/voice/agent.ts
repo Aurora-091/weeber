@@ -12,7 +12,10 @@ import { hangUp } from "./tools/hangUp";
 import { transferToHuman } from "./tools/transferToHuman";
 import { flagGuardrailEvent } from "./tools/flagGuardrailEvent";
 import { confirmCodOrder } from "./tools/confirmCodOrder";
-import { offerCartRecoveryDiscount } from "./tools/offerCartRecoveryDiscount";
+import {
+  createOfferCartRecoveryDiscountTool,
+  type CartRecoveryDiscountContext,
+} from "./tools/offerCartRecoveryDiscount";
 import { withDisclosure, resolveDisclosure } from "@openvent/compliance";
 import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
@@ -587,10 +590,20 @@ export async function buildPreviewAgentConfig(templateKey: string, override: Age
   };
 }
 
-// `lookupInfo` deliberately excluded — it's org-dependent (A3b's knowledge-
-// base search) and only ever constructed dynamically by `buildVoiceTools`,
-// never as a shared static instance. Every other tool here has no
-// per-call/per-org state, so a single shared object is safe.
+// Two tools are deliberately excluded here and only ever constructed
+// dynamically by `buildVoiceTools`, never as shared static instances:
+//
+//   - `lookupInfo` — org-dependent (A3b's knowledge-base search).
+//   - `offerCartRecoveryDiscount` — call-dependent (G1.1, 2026-08-01). Its
+//     shop, checkout ref, and discount percentage are bound from the call's
+//     own `scheduledCalls.metadata`, and a call with no merchant-configured
+//     discount doesn't get the tool at all. A shared static instance here
+//     would mean either a model-chosen percentage (the bug this replaced) or
+//     a tool that's registered on every call regardless of whether the
+//     merchant authorized a discount for it.
+//
+// Every other tool here has no per-call/per-org state, so a single shared
+// object is safe.
 export const voiceTools = {
   bookAppointment: createBookAppointmentTool(undefined),
   setDisposition,
@@ -603,7 +616,6 @@ export const voiceTools = {
   sendSms,
   sendDtmf,
   confirmCodOrder,
-  offerCartRecoveryDiscount,
 };
 
 /**
@@ -670,18 +682,42 @@ export function withFillerTimer<T extends { execute?: (...args: never[]) => unkn
  * a slow tool call can be covered with cached filler audio; every other
  * caller (text test-chat, synthetic-test) omits it and gets tools
  * completely unwrapped, unchanged from before this existed.
+ *
+ * `cartRecovery` (G1.1, 2026-08-01) is the merchant-authorized discount for
+ * THIS call, resolved from `scheduledCalls.metadata` by
+ * `resolveCartRecoveryContext`. It is the *only* way
+ * `offerCartRecoveryDiscount` enters a tool set: omit it (or pass undefined,
+ * which is what happens whenever the merchant configured no discount for
+ * this attempt) and the tool is not registered at all, so the model has no
+ * mechanism to offer a discount it wasn't authorized to offer. Listing the
+ * tool in the agent's `toolsEnabled` is necessary but not sufficient — the
+ * merchant's per-call configuration is the second, binding gate. Note this
+ * also means the text test-chat and synthetic-test callers never get the
+ * tool, which is correct: neither has a real checkout to discount, and a
+ * synthetic run creating live Shopify discount codes would be a real
+ * side effect from a test.
  */
 export function buildVoiceTools(
   orgId: string | undefined,
   enabledTools?: AvailableToolName[],
   onSlowToolCall?: (toolName: string) => void,
+  cartRecovery?: CartRecoveryDiscountContext,
 ) {
-  const allTools = {
+  const baseTools = {
     ...voiceTools,
     lookupInfo: createLookupInfoTool(orgId),
     bookAppointment: createBookAppointmentTool(orgId),
     crmSync: createCrmSyncTool(orgId),
   };
+  // Two concrete object shapes rather than an inline conditional spread or an
+  // optional property. Both of those give `offerCartRecoveryDiscount` a value
+  // type that includes `undefined`, which propagates into the AI SDK's
+  // `TypedToolCall<TOOLS>` and makes every `step.toolCalls` element read as
+  // possibly-undefined at all four callsites. Same runtime behaviour, and the
+  // tool's presence stays a static fact of whichever branch is taken.
+  const allTools = cartRecovery
+    ? { ...baseTools, offerCartRecoveryDiscount: createOfferCartRecoveryDiscountTool(cartRecovery) }
+    : baseTools;
   const narrowed = enabledTools
     ? Object.fromEntries(
         Object.entries(allTools).filter(([name]) =>
@@ -767,6 +803,7 @@ export async function runVoiceAgentTurn({
   callerMemory,
   orgId,
   onSlowToolCall,
+  cartRecovery,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -801,6 +838,11 @@ export async function runVoiceAgentTurn({
    * (lookupInfo, bookAppointment, crmSync) doesn't leave the caller in dead
    * air. See buildVoiceTools/withFillerTimer above for the wrapping. */
   onSlowToolCall?: (toolName: string) => void;
+  /** G1.1: the merchant's authorized discount for this call, bound from
+   * `scheduledCalls.metadata`. Undefined = no discount configured = the
+   * `offerCartRecoveryDiscount` tool is not registered for this call at all.
+   * See buildVoiceTools. */
+  cartRecovery?: CartRecoveryDiscountContext;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -820,7 +862,7 @@ export async function runVoiceAgentTurn({
         buildCallerMemoryBlock(callerMemory) +
         buildKnownFactsBlock(capturedState),
       messages: history,
-      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall),
+      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {

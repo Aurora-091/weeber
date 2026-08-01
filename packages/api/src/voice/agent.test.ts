@@ -365,7 +365,7 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
   });
 });
 
-import { withFillerTimer, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools } from "./agent";
+import { withFillerTimer, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools, voiceTools } from "./agent";
 
 describe("withFillerTimer — §3a tool-call filler audio", () => {
   it("does not fire onSlowToolCall for a tool that resolves well under the threshold", async () => {
@@ -433,5 +433,49 @@ describe("buildVoiceTools — §3a wiring", () => {
   it("still includes hangUp and respects enabledTools narrowing with onSlowToolCall wired", () => {
     const tools = buildVoiceTools(undefined, ["captureField"], () => undefined);
     expect(Object.keys(tools).sort()).toEqual(["captureField", "hangUp"]);
+  });
+});
+
+/**
+ * G1.1 (2026-08-01) — registration is the enforcement mechanism.
+ *
+ * The merchant configures the discount in the workflow canvas; the model
+ * only decides when to offer it. The way that's guaranteed is not a prompt
+ * instruction and not a schema default — it's that a call with no
+ * merchant-configured discount is never handed the tool in the first place.
+ * A tool absent from the request cannot be called, however the model is
+ * jailbroken or however the persona drifts. These tests pin exactly that.
+ */
+describe("buildVoiceTools — cart-recovery discount registration (G1.1)", () => {
+  const CTX = { shop: "acme.myshopify.com", checkoutTokenOrOrderRef: "tok_1", percentOff: 15 };
+
+  it("does not register offerCartRecoveryDiscount when no cart-recovery context is bound", () => {
+    const tools = buildVoiceTools(undefined, undefined);
+    expect("offerCartRecoveryDiscount" in tools).toBe(false);
+  });
+
+  it("registers it only once a merchant-authorized discount is bound to the call", () => {
+    const tools = buildVoiceTools(undefined, undefined, undefined, CTX);
+    expect("offerCartRecoveryDiscount" in tools).toBe(true);
+  });
+
+  it("does NOT register it just because the agent lists it in toolsEnabled — the per-call config is a second, binding gate", () => {
+    const tools = buildVoiceTools(undefined, ["offerCartRecoveryDiscount", "captureField"]);
+    expect("offerCartRecoveryDiscount" in tools).toBe(false);
+    expect(Object.keys(tools).sort()).toEqual(["captureField", "hangUp"]);
+  });
+
+  it("still honours toolsEnabled narrowing when a discount IS bound — a merchant who turned the tool off doesn't get it back", () => {
+    const tools = buildVoiceTools(undefined, ["captureField"], undefined, CTX);
+    expect("offerCartRecoveryDiscount" in tools).toBe(false);
+  });
+
+  it("registers it when both gates pass", () => {
+    const tools = buildVoiceTools(undefined, ["offerCartRecoveryDiscount"], undefined, CTX);
+    expect(Object.keys(tools).sort()).toEqual(["hangUp", "offerCartRecoveryDiscount"]);
+  });
+
+  it("is not present in the static voiceTools map — it can only ever be built per-call", () => {
+    expect("offerCartRecoveryDiscount" in voiceTools).toBe(false);
   });
 });

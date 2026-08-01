@@ -7,6 +7,7 @@ import { appPath } from "../../lib/route-base";
 import { EmptyState } from "../../components/shell/empty-state";
 import { PageHeader } from "../../components/shell/page-header";
 import { SkeletonCards } from "../../components/shell/skeletons";
+import { TOOL_LABELS } from "../../lib/agent-config";
 
 type CallRow = {
   id: number;
@@ -24,24 +25,6 @@ type CallRow = {
 
 type TranscriptRow = { id: number; role: "caller" | "agent"; text: string };
 type ToolCallRow = { id: number; toolName: string; input: unknown };
-
-/** Merchant-friendly labels for internal tool names — falls back to the raw
- * name for anything not in this list (new tools show up immediately, just
- * unstyled, rather than being hidden). */
-const TOOL_LABELS: Record<string, string> = {
-  captureField: "Captured info",
-  confirmCodOrder: "Confirmed COD order",
-  bookAppointment: "Booked appointment",
-  crmSync: "Synced to CRM",
-  lookupInfo: "Looked up info",
-  offerCartRecoveryDiscount: "Offered discount",
-  setDisposition: "Set call outcome",
-  transferToHuman: "Transferred to human",
-  hangUp: "Ended call",
-  flagGuardrailEvent: "Flagged compliance event",
-  sendSms: "Sent a text message",
-  sendDtmf: "Pressed keys on a phone menu",
-};
 
 /** Only rendered when a call actually fell back off its configured primary
  * STT/TTS provider mid-call (voice/failover.ts) — most calls never see this. */
@@ -307,7 +290,7 @@ export function UserCallDetailPage() {
                 )}
                 {toolCallRows.map((tc) => (
                   <div key={tc.id} className="px-4 py-2.5 text-sm">
-                    {TOOL_LABELS[tc.toolName] ?? tc.toolName}
+                    {TOOL_LABELS[tc.toolName as keyof typeof TOOL_LABELS] ?? tc.toolName}
                   </div>
                 ))}
               </div>

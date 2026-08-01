@@ -7,6 +7,10 @@ import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
+import {
+  resolveCartRecoveryContext,
+  type CartRecoveryDiscountContext,
+} from "./tools/offerCartRecoveryDiscount";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
@@ -154,6 +158,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let ttsVoiceIdOverride: string | undefined;
   let llmModelOverride: string | undefined;
   let enabledToolsOverride: AvailableToolName[] | undefined;
+  /**
+   * G1.1 (2026-08-01): the merchant's authorized cart-recovery discount for
+   * this specific call — shop, checkout ref, and percentage, all resolved
+   * from the session's workflow metadata at "start" and then fixed for the
+   * life of the call. Stays `undefined` for every call the merchant didn't
+   * configure a discount on (which is most of them: any inbound call, any
+   * non-cart-recovery workflow, and any cart-recovery attempt whose
+   * configured percentage is 0), and `buildVoiceTools` responds by not
+   * registering the discount tool at all. Deliberately NOT re-read per turn:
+   * the discount a caller is offered must not change mid-conversation.
+   */
+  let cartRecoveryContext: CartRecoveryDiscountContext | undefined;
   let toNumber: string | undefined;
   let capturedDisposition: string | undefined;
   let capturedSentiment: string | undefined;
@@ -1211,6 +1227,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           capturedState,
           callerMemory: callerMemoryFacts,
           orgId: humanNumberOrgId,
+          cartRecovery: cartRecoveryContext,
           onSlowToolCall: (toolName) => {
             if (fillerPlayedThisTurn) return;
             fillerPlayedThisTurn = true;
@@ -1452,6 +1469,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           streamSid = event.streamId;
           callSid = event.callId;
           const session = callSid ? await sessionStore.get(callSid) : undefined;
+
+          // G1.1: bind the merchant's discount for this call once, here.
+          // Returns undefined unless this call carries a shop, a stable
+          // checkout ref, AND a configured percentage > 0 — in which case
+          // the agent simply never gets the discount tool (see
+          // buildVoiceTools), which is the behaviour the cart-recovery
+          // persona already documents ("if not configured, skip Step 2
+          // entirely, do not invent a coupon").
+          cartRecoveryContext = resolveCartRecoveryContext({
+            metadata: session?.workflowMetadata,
+            checkoutToken: session?.checkoutToken,
+          });
 
           if (callSid) {
             let [row] = await db

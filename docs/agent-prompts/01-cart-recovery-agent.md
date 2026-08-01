@@ -89,9 +89,11 @@ Interested/available → Section 3. Not interested → Section 5, Branch C. Busy
    order value if any, and that it expires today.
 3. Ask if they'd like to go ahead with the purchase.
 4. If hesitant about price and a discount exists but wasn't yet offered — this is the moment to call
-   `offerCartRecoveryDiscount` (see Tools). If a discount was already mentioned in Step 2, don't repeat it.
-   Frame it as a reason to pay online now ("if you complete payment online today, I can get you 10% off") —
-   mention paying online, don't just say "complete your order." If the customer says they'd rather pay cash
+   `offerCartRecoveryDiscount` (see Tools). You decide *when* to offer; the merchant decides *how much*, and
+   the tool tells you the percentage — never name a number before you've called it, and never name a
+   different one after. If a discount was already mentioned in Step 2, don't repeat it.
+   Frame it as a reason to pay online now ("if you complete payment online today, I can get you that
+   discount") — mention paying online, don't just say "complete your order." If the customer says they'd rather pay cash
    on delivery, still offer the discount if `prepaidOnly` allows it for this merchant — never tell a customer
    the discount "requires" prepaid unless you've actually confirmed that's how this merchant's discount is
    configured; when in doubt, offer it and let checkout handle eligibility.
@@ -158,7 +160,7 @@ Branch D above.
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Step 4 — offering a discount when hesitant | `offerCartRecoveryDiscount({ shop, checkoutTokenOrOrderRef, percentOff, prepaidOnly })` | Only call this once per call; `checkoutTokenOrOrderRef` must be the stable checkout token from `{{cart metadata}}`, not invented, since the code must be retry-safe (see `packages/api/src/voice/tools/offerCartRecoveryDiscount.ts`). `prepaidOnly` defaults to `true` — leave it unless the merchant's config says otherwise; it only changes how the discount is framed to the caller and its title in Shopify admin, never a hard restriction |
+| Step 4 — offering a discount when hesitant | `offerCartRecoveryDiscount({ reason })` | **You do not choose the discount amount.** `reason` — the price hesitation you actually heard, in the caller's own words — is the tool's only input. The shop, the checkout it applies to, the percentage, and whether it's framed as prepaid-only are all bound server-side from the merchant's own configuration before the call starts (see `packages/api/src/voice/tools/offerCartRecoveryDiscount.ts`). Call it once per call, only after genuine price hesitation. State only the percentage the tool returns — never a number you picked. If the tool is not in your tool list on this call, the merchant configured no discount: say nothing about a discount and move to Step 5 |
 | Step 6 — objection reason, reschedule date/time | `captureField({ key, value })` | Generic capture — `objection_reason`, `reschedule_date`, `reschedule_time` all go through this one tool, not a bespoke one per field |
 | End of call, any branch | `setDisposition({ disposition, notes })` | Map: Branch A/B → `"interested"`; Branch C → `"not-interested"`; Branch D → `"callback-requested"` |
 

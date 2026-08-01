@@ -3,10 +3,17 @@ import { checkAssertion, type SyntheticTurn } from "./synthetic-test";
 import { SYNTHETIC_SCENARIOS } from "./synthetic-scenarios";
 import { voiceTools } from "./agent";
 
-// `lookupInfo` is the one tool never present in the static `voiceTools`
-// object — it's constructed per-org by buildVoiceTools (A3b) — so add it to
-// the valid set explicitly.
-const VALID_TOOL_NAMES = new Set([...Object.keys(voiceTools), "lookupInfo"]);
+// Two tools are never present in the static `voiceTools` object because
+// they're constructed dynamically by buildVoiceTools — `lookupInfo` (per-org,
+// A3b) and `offerCartRecoveryDiscount` (per-call, G1.1) — so add them to the
+// valid set explicitly.
+//
+// `offerCartRecoveryDiscount` is valid to *name* in a scenario but can never
+// actually fire in a synthetic run: synthetic-test.ts calls buildVoiceTools
+// without a cartRecovery context, deliberately, so an AI-to-AI test run can't
+// create live Shopify discount codes. A scenario asserting it would always
+// fail; none does today.
+const VALID_TOOL_NAMES = new Set([...Object.keys(voiceTools), "lookupInfo", "offerCartRecoveryDiscount"]);
 
 const transcript: SyntheticTurn[] = [
   { role: "caller", text: "I'm calling about order ORD-48213" },
