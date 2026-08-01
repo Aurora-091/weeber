@@ -492,7 +492,7 @@ export function UserIntegrationsPage() {
       {/* Connected platforms grid */}
       <div>
         <h2 className="text-sm font-semibold mb-3">Platforms</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
           <PlatformTile icon={Store} name="Shopify" status={activeShop ? "connected" : "not-connected"} />
           <PlatformTile icon={ShoppingBag} name="WooCommerce" status="coming-soon" />
           <PlatformTile icon={Building2} name="BigCommerce" status="coming-soon" />
@@ -645,7 +645,7 @@ export function UserIntegrationsPage() {
 
           {/* Connection Details & Scopes */}
           {activeShop && (
-            <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-6 @xl:grid-cols-2">
               <div className="card-weeber card-lift p-5">
                 <h3 className="text-sm font-semibold">Connection Details</h3>
                 <div className="mt-4 space-y-3 text-xs text-muted-foreground">
@@ -731,7 +731,7 @@ export function UserIntegrationsPage() {
         <p className="text-xs text-muted-foreground mb-3">
           Every org gets its own dedicated number or brings its own — never a number shared across orgs.
         </p>
-        <div className="grid gap-4 sm:grid-cols-3 mb-4">
+        <div className="grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3 mb-4">
           <TelephonyProviderTile
             name="Twilio"
             connected={telephonyStatusQuery.data?.provider === "twilio" && Boolean(telephonyStatusQuery.data?.outboundNumber)}
@@ -1042,7 +1042,7 @@ export function UserIntegrationsPage() {
         <p className="text-xs text-muted-foreground mb-3">
           Download a spreadsheet snapshot any time — no live sync, just an on-demand .xlsx.
         </p>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
           <ExportCard
             icon={ClipboardList}
             title="Orders"

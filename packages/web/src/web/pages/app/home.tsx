@@ -511,7 +511,7 @@ export function UserHomePage() {
                 />
               </div>
               <div className="px-5 py-4">
-                <ul className="grid gap-2.5 sm:grid-cols-2">
+                <ul className="grid gap-2.5 @xl:grid-cols-2">
                   {stepEntries.map(([key, done]) => (
                     <li key={key} className="flex items-center gap-3">
                       <span
@@ -541,7 +541,7 @@ export function UserHomePage() {
 
       {/* ── KPIs ── */}
       {analytics.isLoading && (
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="card-weeber h-20 animate-pulse bg-muted/40" />
           ))}
@@ -567,7 +567,7 @@ export function UserHomePage() {
               .filter((m) => m.resolved != null);
             if (resolved.length === 0) return null;
             return (
-              <div className="grid gap-4 sm:grid-cols-4">
+              <div className="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-4">
                 {resolved.map((m) => (
                   <StatCard
                     key={m.key}
@@ -594,7 +594,7 @@ export function UserHomePage() {
            * reliability, side by side. Each hides itself when it has no data,
            * so a fresh org sees neither rather than empty shells. */}
           {(vertical.dashboard.funnel || data.reliability?.failoverRate != null) && (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 @xl:grid-cols-2">
               {vertical.dashboard.funnel && <FunnelCard funnel={vertical.dashboard.funnel} data={data} />}
               <ReliabilityCard reliability={data.reliability} />
             </div>
@@ -605,7 +605,7 @@ export function UserHomePage() {
            * AI-pipeline latency numbers, an ops/engineering concern, not a
            * merchant-facing metric. They still exist on the admin
            * dashboard (pages/dashboard/analytics.tsx), unchanged. */}
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-4">
             <StatCard
               label="Total calls"
               value={String(data.totalCalls)}
@@ -735,7 +735,7 @@ export function UserHomePage() {
             );
           })()}
 
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid @xl:grid-cols-2 gap-4">
             <div>
               <div className="flex items-center gap-1.5 text-sm font-medium mb-3">
                 <Wrench className="size-3.5" aria-hidden />

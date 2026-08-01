@@ -364,10 +364,10 @@ export function AppShell({
               {banner}
 
               {fullBleed ? (
-                <main className="min-h-0 w-full flex-1 overflow-hidden">{children}</main>
+                <main className="@container min-h-0 w-full flex-1 overflow-hidden">{children}</main>
               ) : (
                 <main
-                  className="mx-auto w-full"
+                  className="@container mx-auto w-full"
                   style={{
                     maxWidth: "var(--shell-page-max-w)",
                     padding: "var(--shell-page-py) var(--shell-page-px)",

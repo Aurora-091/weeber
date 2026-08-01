@@ -123,7 +123,7 @@ export function UserBillingPage() {
       )}
 
       {usage && (
-        <div className="grid gap-5 sm:grid-cols-3 content-fade-in">
+        <div className="grid gap-5 @xl:grid-cols-2 @4xl:grid-cols-3 content-fade-in">
           {/* Active plan card */}
           <div className="card-weeber flex flex-col justify-between p-5">
             <div>
@@ -184,7 +184,7 @@ export function UserBillingPage() {
           </p>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-3 content-fade-in">
+        <div className="grid gap-5 @xl:grid-cols-2 @4xl:grid-cols-3 content-fade-in">
           {tiers.map((tier) => (
             <div
               key={tier.name}

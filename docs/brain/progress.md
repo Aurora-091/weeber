@@ -78,6 +78,15 @@ updated: 2026-08-01
   had been shipping ragged indentation into every live call (`dedent` computes its minimum indent after
   interpolation; the multi-line constants it interpolates are flush-left, so nothing was ever stripped),
   and the "no caller ID" banner used dark-mode-only `amber-*` and was unreadable in light mode.
+- Container-query product layout (2026-08-01, ADR-068): `@container` on both `AppShell` `<main>`s and 26
+  in-flow grids across 8 files moved from viewport breakpoints (`sm:`) to container variants (`@xl:` etc).
+  The sidebar is `hidden md:flex w-56`, so it appears at 768px and takes 224px of a column the grids were
+  still sizing against the full viewport — at 768px `sm:grid-cols-3` produced 149px cards with letter-per-line
+  text, while document `scrollWidth` stayed correct so no scrollbar ever revealed it. Overflow sweep
+  (8 pages × 10 widths) went 3/40 flagged → 0/80; sidebar collapse now reflows the agents grid 2→3 columns.
+  Guarded by `pages/app/responsive-grid.test.ts` (24 tests), which bans bare `sm:grid-cols-*` in `pages/app/`
+  and `components/shell/` — the two portalled Dialog/Sheet surfaces keep viewport breakpoints on purpose.
+  `/app/home`'s metric strips are the one unverified surface (empty without a backend).
 - Agents overview grid (2026-08-01, `changelog/2026-08.md`): `/app/agents` renders a card per agent with
   a readiness pill, the specific blocker, and a live/paused/needs-a-number counts strip. It was previously
   a pure redirect to whichever agent came back first, so the nine seeded agents were reachable only via a

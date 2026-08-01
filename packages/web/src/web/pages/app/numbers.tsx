@@ -160,7 +160,7 @@ export function UserNumbersPage() {
               <p className="text-sm text-muted-foreground">No available numbers found — try a different area code or country.</p>
             )}
             {available.data && available.data.numbers.length > 0 && (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-2 @lg:grid-cols-2 @3xl:grid-cols-3">
                 {available.data.numbers.map((n) => (
                   <div key={n.phoneNumber} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                     <div>

@@ -271,7 +271,7 @@ export function UserSettingsPage() {
 
       <div className="space-y-6 mt-6">
         <Section icon={User} title="Account">
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-5 @xl:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Email</Label>
               <Input value={me.user?.email ?? ""} disabled className="bg-muted/40" />
@@ -285,7 +285,7 @@ export function UserSettingsPage() {
 
           <div className="mt-6 border-t border-border pt-5">
             <h3 className="text-xs font-medium text-muted-foreground mb-4">Change password</h3>
-            <div className="grid gap-4 sm:grid-cols-2 max-w-lg">
+            <div className="grid gap-4 @xl:grid-cols-2 max-w-lg">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">New password</Label>
                 <Input
@@ -319,7 +319,7 @@ export function UserSettingsPage() {
         </Section>
 
         <Section icon={Building2} title="Organization">
-          <div className="grid gap-5 sm:grid-cols-2 max-w-2xl">
+          <div className="grid gap-5 @xl:grid-cols-2 max-w-2xl">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Organization name</Label>
               <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="My Store" />

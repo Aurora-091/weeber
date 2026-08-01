@@ -106,7 +106,11 @@ function AgentCard({ row, readiness }: { row: AgentConfigRow; readiness: AgentRe
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold leading-snug">{name}</h3>
+          {/* Wraps rather than truncates: the readiness pill sits beside it, and
+              at a narrow card width `truncate` clipped "COD confirmation" down to
+              "COD co…" — the agent's name is the one thing on the card that must
+              stay readable. */}
+          <h3 className="line-clamp-2 break-words text-sm font-semibold leading-snug">{name}</h3>
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground leading-relaxed">
             {row.templateDescription ?? "No description."}
           </p>
@@ -196,7 +200,7 @@ export function UserAgentsPage() {
         )}
       </div>
 
-      <div className="grid gap-[var(--shell-card-gap)] sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-[var(--shell-card-gap)] @xl:grid-cols-2 @4xl:grid-cols-3">
         {readiness.map(({ row, readiness: r }) => (
           <AgentCard key={row.templateKey} row={row} readiness={r} />
         ))}
@@ -295,7 +299,7 @@ function IdentityTab({ row, form, set }: TabProps) {
       <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
         <User className="size-4 text-muted-foreground" /> Agent Identity
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 @xl:grid-cols-2">
         <div>
           <label htmlFor={`name-${row.templateKey}`} className={labelCls}>Agent name</label>
           <input id={`name-${row.templateKey}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Aria" className={fieldCls} />
@@ -308,7 +312,7 @@ function IdentityTab({ row, form, set }: TabProps) {
           </select>
         </div>
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 @xl:grid-cols-2">
         <div>
           <label htmlFor={`greeting-${row.templateKey}`} className={labelCls}>Greeting line</label>
           <input id={`greeting-${row.templateKey}`} value={form.greetingLine} onChange={(e) => set("greetingLine", e.target.value)} placeholder="Hi, how can I help?" className={fieldCls} />
@@ -340,7 +344,7 @@ function VoiceTab({ row, form, set }: TabProps) {
       <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
         <Mic className="size-4 text-muted-foreground" /> Voice Provider & Language
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 @xl:grid-cols-2">
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Voice provider</label>
           <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
@@ -495,7 +499,7 @@ export function ToolsGuardrailsTab({ row, form, set }: TabProps) {
                   </span>
                   <span className="text-[11px] text-muted-foreground">{group.hint}</span>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 @xl:grid-cols-2">
                   {members.map((name) => {
                     const meta = TOOL_EDITOR_META[name];
                     const checked = name === "hangUp" || form.toolsEnabled.includes(name);
@@ -607,7 +611,7 @@ function CallingModelTab({ row, form, set }: TabProps) {
           <Settings className="size-4 text-muted-foreground" /> Retry Cadence
         </div>
         <p className="mb-3 text-xs text-muted-foreground">Leave blank to use the platform default. Max attempts capped at 20.</p>
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-6 @xl:grid-cols-2 @4xl:grid-cols-3">
           <div>
             <label htmlFor={`fd-${row.templateKey}`} className={labelCls}>Delay before first call (min)</label>
             <input id={`fd-${row.templateKey}`} type="number" min={0} max={43200} value={form.firstCallDelayMinutes} onChange={(e) => set("firstCallDelayMinutes", e.target.value)} placeholder="Platform default" className={fieldCls} />
@@ -627,7 +631,7 @@ function CallingModelTab({ row, form, set }: TabProps) {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-4">
           <Settings className="size-4 text-muted-foreground" /> LLM Provider
         </div>
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 @xl:grid-cols-2">
           <div>
             <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>
             <select id={`llmp-${row.templateKey}`} value={form.llmProvider} onChange={(e) => set("llmProvider", e.target.value)} className={fieldCls}>
@@ -871,7 +875,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
 
       {/* Tabs — everything reachable by one click, nothing behind "Advanced" */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 rounded-full bg-muted/40 p-1 h-auto">
+        <TabsList className="grid w-full grid-cols-2 @2xl:grid-cols-4 rounded-full bg-muted/40 p-1 h-auto">
           {TABS.map((t) => (
             <TabsTrigger key={t.key} value={t.key} className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all duration-200">
               <t.icon className="size-3.5" />

@@ -12,6 +12,31 @@ updated: 2026-08-01
 
 ## Current focus
 
+- **Product layout responds to the content column, not the viewport (2026-08-01, ADR-068).** Every grid
+  in `pages/app/` used viewport breakpoints while `AppShell`'s sidebar is `hidden md:flex` at `w-56`
+  (`components/shell/app-shell.tsx:307,315`) — so it *appears* at 768px and immediately takes 224px, and
+  with `--shell-page-px: 2rem` (`styles.css:478`) the content column at that width is 480px. `sm:` fires
+  at 640px viewport, so `sm:grid-cols-3` was laying out 149px cards. Document `scrollWidth` was correct at
+  every width, which is why this never produced a page scrollbar and was never caught: **the overflow was
+  inside the cards, not on the page.** Screenshot at 768px showed `/app/integrations` telephony cards
+  rendering "Not connected" one letter per line, "Download as Excel" escaping its card, and `/app/agents`
+  truncated to `"COD co…"`.
+  Fix: `@container` on both `<main>`s (`app-shell.tsx:367`, `:370`) and **26 in-flow grids** converted to
+  container variants across 8 files. Two deliberate exceptions keep viewport breakpoints because they
+  render *outside* `<main>` and so have no query container — `pages/app/leads.tsx:725` (Dialog) and
+  `components/app/setup-modal.tsx:257` (Sheet); container variants there would silently never match.
+  Marketing pages have no sidebar and were untouched. Agent card titles went `truncate` →
+  `line-clamp-2 break-words`.
+  Verified: overflow sweep over 8 product pages × 10 widths `[390…1440]` went **3 of 40 flagged → 0 of 80**;
+  sidebar collapse at viewport 1180 reflows the agents grid **2 → 3 columns** (224px → 52px), which is the
+  whole point and is something viewport breakpoints structurally cannot do. New
+  `pages/app/responsive-grid.test.ts` (24 tests) fails the build on any bare `sm:grid-cols-*` in
+  `pages/app/` or `components/shell/` and asserts `@container` on both `<main>`s; `leads.tsx` is the single
+  allowlist entry. Gates: api tsc 0 · web tsc 0 · api 840 pass · web 74 pass · oxlint 0/0.
+  **Caveat, stated rather than hidden:** `/app/home`'s three metric strips are data-driven and render empty
+  in the backend-free preview harness, so their `sm:grid-cols-4` → `@md:grid-cols-2 @4xl:grid-cols-4` change
+  passed the sweep with no tiles present. It is reasoned-correct, not eyes-on-verified.
+
 - **G1 pilot gate — build round (2026-08-01).** Working the pilot-blocking list in
   `audit/pilot-readiness-checklist-2026-08-01.md` so Shopify merchant conversations can start. Four items
   shipped across two commits, all pre-pilot so no merchant was ever affected:

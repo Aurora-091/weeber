@@ -21,7 +21,7 @@ export function SkeletonTable({ columns = 4, rows = 6 }: { columns?: number; row
 
 export function SkeletonCards({ count = 3, lines = 3 }: { count?: number; lines?: number }) {
   return (
-    <div className="grid gap-[var(--shell-card-gap)] sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
+    <div className="grid gap-[var(--shell-card-gap)] @xl:grid-cols-2 @4xl:grid-cols-3" aria-hidden>
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="rounded-lg border border-border bg-card p-4 shadow-weeber-card">
           <Skeleton className="mb-3 h-4 w-2/5" />
