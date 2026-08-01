@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-07-31
+updated: 2026-08-01
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,44 @@ updated: 2026-07-31
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **G1 pilot gate — build round (2026-08-01).** Working the pilot-blocking list in
+  `audit/pilot-readiness-checklist-2026-08-01.md` so Shopify merchant conversations can start. Four items
+  shipped across two commits, all pre-pilot so no merchant was ever affected:
+  - **G1.1/G1.2** (`f8c2ba1`, ADR-064) — the LLM chose `percentOff` on `offerCartRecoveryDiscount` and
+    silently issued 10% by schema default while the merchant's configured discount was ignored. Now a
+    server-bound factory; model input is `{ reason }`; **non-registration is the enforcement** (no discount
+    configured → the tool is absent from that call's tool set).
+  - **G1.3/G1.4** (`9990a54`, ADR-065 + ADR-066) — every seeded persona was a `{{merge_tag}}` template and
+    **nothing rendered it**; `renderTemplate` only ever touched `literalGreetingTemplate`. Rendering was
+    rejected (two drifted tag vocabularies; `cart_items_summary`/`product_name`/`delivery_days_estimate`
+    have no producer anywhere). Personas 01–03 rewritten tag-free as *instructions*; values now arrive via
+    fact blocks that emit a line only when the fact is known; `voice/merge-tags.ts` scrubs any surviving
+    tag at the single `streamText({ system })` call site; `database/prompt-hygiene.test.ts` enforces it
+    with a shrink-only insurance backlog. Same commit: `confirmCodOrder` was letting the model name the
+    `orderId` of an order it **cancels irreversibly**, while (per a separate defect) never having been told
+    the order reference — now server-bound, model input `{ confirmed, notes }` (ADR-066).
+  - **G1.5** (this round) — `looksLikePromptInjection` was nine English `verb…object` regexes; Hindi and
+    Hinglish are verb-final so none could ever fire. Extracted to `voice/injection-detection.ts` with
+    order-independent verb/noun co-occurrence, Devanagari stem matching and nukta normalization. Still
+    log-only.
+  - Three silent producer defects fixed in passing: COD context never wrote `currency` (so the COD agent
+    could not state the amount it exists to confirm); the facts block emitted no order reference at all
+    (producers write `orderId`, the block read `order_id`); `03`'s seeded greeting carried
+    `{{product_name}}`, which has no producer, so its fast canned-greeting path had **never once fired**
+    and every feedback call paid full LLM time-to-first-token.
+
+  **NEXT on G1:** insurance personas `04`–`09` are still templated (tracked in
+  `MERGE_TAG_MIGRATION_BACKLOG`, which may only shrink). `bookAppointment` and `crmSync` have **not** been
+  audited against ADR-066 — do that before the insurance vertical takes a live call. Two open product
+  decisions, not doc fixes: adding `lookupInfo` to the Shopify templates' `defaultTools` (the KB is real
+  and wired, the agents just can't reach it), and whether the disposition enum should gain
+  confirmed/cancelled and feedback-positive/negative values instead of overloading `booked`/`interested`.
+
+  **Still unverified, and the honest gap in all of the above:** no real end-to-end PSTN call has been
+  placed. Every claim here is from static source reading plus `--isolate` tests. Also unresolved:
+  `progress.md` says staging's `DATABASE_URL` is a placeholder while `adr-063` says staging and prod share
+  one — a ~10-minute Railway env check settles it.
 
 - **Semantic turn-detection SEAM — Five Bets Phase V (2026-07-31):** Fifth/final phase, and the Five
   Bets plan is now complete. Ships the pluggable end-of-turn (EOT) **seam + fallback discipline only —

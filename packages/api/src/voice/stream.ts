@@ -74,22 +74,13 @@ export function estimateRemainingPlaybackMs(text: string): number {
  * instructions). Not a filter/blocker — the model still decides how to
  * respond — this only guarantees the attempt is logged for dashboard
  * review even if the model doesn't self-report it.
+ *
+ * G1.5 (2026-08-01): moved to `./injection-detection` when it gained
+ * Hinglish + Devanagari coverage — the same extract-and-re-export pattern
+ * `endsMidThought` uses below, so existing importers keep working.
  */
-const INJECTION_PHRASE_PATTERNS = [
-  /ignore\s+(all|your|the|any)?\s*(previous|prior|above)?\s*instructions?/i,
-  /disregard\s+(your|the|any)?\s*(previous|prior)?\s*instructions?/i,
-  /forget\s+(your|the)?\s*(rules|instructions|prompt|guidelines)/i,
-  /you('re| are)\s+now\s+(a|an)\b/i,
-  /pretend\s+(you'?re|to be|you are)/i,
-  /act\s+as\s+(if|a|an)\b/i,
-  /reveal\s+your\s+(system\s+)?(prompt|instructions)/i,
-  /what\s+(is|are)\s+your\s+(system\s+)?(prompt|instructions)/i,
-  /i('m| am)\s+(the\s+|a\s+)?(developer|admin|administrator)\b/i,
-];
-
-export function looksLikePromptInjection(text: string): boolean {
-  return INJECTION_PHRASE_PATTERNS.some((pattern) => pattern.test(text));
-}
+export { looksLikePromptInjection } from "./injection-detection";
+import { looksLikePromptInjection } from "./injection-detection";
 
 /**
  * A1b (VAD/endpointing audit, 2026-07-14): the mid-thought regex check now

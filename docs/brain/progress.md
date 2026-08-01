@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-07-31
+updated: 2026-08-01
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,25 @@ updated: 2026-07-31
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **G1 pilot-gate hardening — the agent layer no longer trusts the model with things it shouldn't
+  (2026-08-01)** (`f8c2ba1`, `9990a54`; ADR-064/065/066; `../changelog/2026-08.md`). Four structural
+  authority fixes plus three silent producer defects, all found by static audit before any merchant call:
+  - `offerCartRecoveryDiscount` and `confirmCodOrder` are now **server-bound factories**. The model no
+    longer chooses a discount percentage (it was defaulting to 10% nobody configured) nor the `orderId` of
+    an order it cancels irreversibly. Non-registration is the enforcement: no bound context → the tool is
+    not in that call's tool set at all.
+  - Seeded personas were `{{merge_tag}}` templates that **nothing rendered**. Personas 01–03 rewritten
+    tag-free; values arrive via fact blocks that emit only known facts; `voice/merge-tags.ts` scrubs
+    survivors at the single `streamText({ system })` call site; `database/prompt-hygiene.test.ts` enforces
+    it. Insurance 04–09 tracked in a shrink-only backlog.
+  - `buildWorkflowFactsBlock` was written, unit-tested, and **never called from the live path** — workflow
+    metadata sat in the session and never reached a prompt. Now wired through `runVoiceAgentTurn` and
+    `runVoiceAgentGreeting`.
+  - Prompt-injection detection extended past English-only `verb…object` regexes to Hinglish + Devanagari
+    via order-independent co-occurrence (`voice/injection-detection.ts`). Still log-only.
+  - Verified: api tsc ✓ · web tsc ✓ · oxlint 0/0 (409 files) · 830 api + 23 web tests, `--isolate`.
+    **Not verified by a live call** — see known issues.
 
 - **Five Bets build plan — all five phases shipped + pushed (2026-07-31)**
   (`../product-strategy/five-bets-build-plan-2026-07-31.md`; each phase = green tsc/oxlint/web-build +
@@ -97,6 +116,16 @@ updated: 2026-07-31
   refiner stays `null` — no Smart Turn / OpenAI Realtime / LiveKit vendor is wired until (a) P2
   call-health data shows real cut-offs and (b) staging is isolated from prod. Not debt to "fix"; a
   documented gate to clear before wiring.
+- **No real end-to-end PSTN call has ever been placed.** Every G1 claim above is static source reading
+  plus isolated unit tests. This is the single largest unverified assumption in the codebase and needs an
+  explicit go-ahead (real telephony cost) to close.
+- **`bookAppointment` and `crmSync` have not been audited against ADR-066** (a tool acting on a real-world
+  entity must be bound server-side, never model-named). Do it before the insurance vertical takes a live
+  call.
+- **Contradiction, unresolved:** this file says staging's `DATABASE_URL` is a placeholder; `adr-063` says
+  staging and prod still share one. A ~10-minute Railway env check settles which is true.
+- Shopify templates' `defaultTools` omit `lookupInfo`, so those agents cannot query the knowledge base
+  even though it is real and wired. Adding it is a live-behaviour + latency change — a product decision.
 - Branch protection on `main` not yet enabled in GitHub settings.
 - Provider-side + Twilio concurrency limits unverified (not inferable from an API key).
 
