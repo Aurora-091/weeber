@@ -65,13 +65,12 @@ mock.module("../integrations/hubspot", () => ({
   },
 }));
 
-import { createCrmSyncTool } from "./crmSync";
+import { createCrmSyncTool, resolveCrmSyncContext } from "./crmSync";
 
-function callTool(orgId: string | undefined) {
-  const tool = createCrmSyncTool(orgId);
+function callTool(orgId: string, phoneNumber = "+15551234567") {
+  const tool = createCrmSyncTool({ orgId, phoneNumber });
   return (tool.execute as (input: unknown) => Promise<unknown>)({
     callerName: "Jamie",
-    phoneNumber: "+15551234567",
     notes: "asked about pricing",
   });
 }
@@ -83,18 +82,6 @@ describe("createCrmSyncTool — §P0 multi-tenant CRM isolation", () => {
     lastSalesforceArgs = null;
     lastHubspotArgs = null;
     queryCallIndex = 0;
-  });
-
-  it("refuses immediately when no orgId is captured — never falls back to a global/shared credential", async () => {
-    const result = (await callTool(undefined)) as { crm: null; synced: false; message: string };
-    expect(result.synced).toBe(false);
-    expect(result.crm).toBeNull();
-    expect(result.message).toContain("No org context");
-    // Confirms it short-circuits before ever querying org_integrations —
-    // not just that it happens to return the same "not configured" shape.
-    expect(lastGoHighLevelArgs).toBeNull();
-    expect(lastSalesforceArgs).toBeNull();
-    expect(lastHubspotArgs).toBeNull();
   });
 
   it("returns a clear not-configured result when the org has no CRM connected", async () => {
@@ -129,5 +116,74 @@ describe("createCrmSyncTool — §P0 multi-tenant CRM isolation", () => {
     const result = (await callTool("org-c")) as { crm: string; synced: true; contactId: string };
     expect(result).toEqual({ crm: "hubspot", synced: true, contactId: "hs-1" });
     expect(lastHubspotArgs).toEqual(["+15551234567", "Jamie", "asked about pricing", "org-c-key"]);
+  });
+});
+
+/**
+ * G1.4 / ADR-069 (2026-08-01) — the caller's phone number is the CRM *upsert
+ * key*, so whoever authors it decides which contact record this call's notes
+ * land on. It used to be a required, model-authored input. These tests pin the
+ * two halves of the fix: the model can no longer name the contact, and the
+ * context that binds it refuses anything that isn't a real, carrier-reported
+ * number rather than upserting on a placeholder.
+ */
+describe("createCrmSyncTool — the model cannot choose whose CRM record this writes to (ADR-069)", () => {
+  beforeEach(() => {
+    orgIntegrationRows = [{ provider: "gohighlevel", credentials: { api_key: "k", location_id: "l" }, enabled: true }];
+    lastGoHighLevelArgs = null;
+    queryCallIndex = 0;
+  });
+
+  it("does not expose phoneNumber as a model-supplied input at all", () => {
+    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567" });
+    // The JSON Schema the model actually sees. If `phoneNumber` reappears here,
+    // the upsert key is model-authored again and this whole ADR is undone.
+    const schema = tool.inputSchema as { shape?: Record<string, unknown> };
+    const fields = Object.keys(schema.shape ?? {});
+    expect(fields.sort()).toEqual(["callerName", "notes"]);
+    expect(fields).not.toContain("phoneNumber");
+  });
+
+  it("upserts on the bound number, ignoring anything extra the model tries to pass", async () => {
+    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567" });
+    await (tool.execute as (input: unknown) => Promise<unknown>)({
+      callerName: "Jamie",
+      notes: "asked about pricing",
+      // A model that has seen the old schema (or is being steered by a caller
+      // saying "log this under …") may still emit this field. It must have no
+      // effect whatsoever.
+      phoneNumber: "+919999999999",
+    });
+    expect((lastGoHighLevelArgs ?? [])[0]).toBe("+15551234567");
+  });
+});
+
+describe("resolveCrmSyncContext — non-registration is the gate (ADR-069)", () => {
+  it("binds the carrier-reported number when both org and number are present", () => {
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567" })).toEqual({
+      orgId: "org-a",
+      phoneNumber: "+15551234567",
+    });
+  });
+
+  it("returns undefined with no org — an unattributed call must not reach any CRM", () => {
+    expect(resolveCrmSyncContext({ orgId: undefined, humanNumber: "+15551234567" })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "   ", humanNumber: "+15551234567" })).toBeUndefined();
+  });
+
+  it("returns undefined when caller ID was withheld — the tool is omitted, not called with a guess", () => {
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: undefined })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "" })).toBeUndefined();
+  });
+
+  it("rejects placeholder values a provider may send instead of a number", () => {
+    for (const placeholder of ["unknown", "anonymous", "Anonymous", "restricted", "+"]) {
+      expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: placeholder })).toBeUndefined();
+    }
+  });
+
+  it("accepts formatted numbers the providers actually emit", () => {
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+91 98765 43210" })?.phoneNumber).toBe("+91 98765 43210");
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "(555) 123-4567" })?.phoneNumber).toBe("(555) 123-4567");
   });
 });

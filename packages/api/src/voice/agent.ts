@@ -4,7 +4,7 @@ import { createLookupInfoTool } from "./tools/lookupInfo";
 import { createBookAppointmentTool } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
 import { setIntent } from "./tools/setIntent";
-import { createCrmSyncTool } from "./tools/crmSync";
+import { createCrmSyncTool, type CrmSyncContext } from "./tools/crmSync";
 import { captureField } from "./tools/captureField";
 import { sendSms } from "./tools/sendSms";
 import { sendDtmf } from "./tools/sendDtmf";
@@ -751,7 +751,7 @@ export async function buildPreviewAgentConfig(
   };
 }
 
-// Two tools are deliberately excluded here and only ever constructed
+// Four tools are deliberately excluded here and only ever constructed
 // dynamically by `buildVoiceTools`, never as shared static instances:
 //
 //   - `lookupInfo` — org-dependent (A3b's knowledge-base search).
@@ -762,6 +762,13 @@ export async function buildPreviewAgentConfig(
 //     would mean either a model-chosen percentage (the bug this replaced) or
 //     a tool that's registered on every call regardless of whether the
 //     merchant authorized a discount for it.
+//   - `confirmCodOrder` — call-dependent (G1.3, 2026-08-01). Its shop and
+//     order ID are bound from the same metadata; its decline branch cancels
+//     a live order, so a call with no order attached must not have the tool.
+//   - `crmSync` — call-dependent (G1.4 / ADR-069, 2026-08-01). The caller's
+//     phone number is the CRM upsert key and is bound from the telephony
+//     provider's own call record, not authored by the model. No human on a
+//     real number → no tool.
 //
 // Every other tool here has no per-call/per-org state, so a single shared
 // object is safe.
@@ -769,7 +776,6 @@ export const voiceTools = {
   bookAppointment: createBookAppointmentTool(undefined),
   setDisposition,
   setIntent,
-  crmSync: createCrmSyncTool(undefined),
   captureField,
   hangUp,
   transferToHuman,
@@ -865,6 +871,16 @@ export function withFillerTimer<T extends { execute?: (...args: never[]) => unkn
  * `resolveCodOrderContext`, omitted entirely when this call has no order
  * attached — so the text test-chat and the synthetic harness, which have no
  * real order, can never cancel one.
+ *
+ * `crmSync` (G1.4 / ADR-069, 2026-08-01) is the same contract again, for the
+ * last tool that still let the model author the identity of the record it
+ * writes. The caller's phone number is the CRM upsert key; it is now bound
+ * from the telephony provider's own call record via `resolveCrmSyncContext`,
+ * not from a model-supplied string the model had no reliable source for.
+ * Omitted entirely when there's no org or no resolvable human number — which
+ * is exactly the text test-chat, the synthetic harness and the preview
+ * drawer, none of which should be writing contacts into a merchant's live
+ * CRM.
  */
 export function buildVoiceTools(
   orgId: string | undefined,
@@ -872,12 +888,12 @@ export function buildVoiceTools(
   onSlowToolCall?: (toolName: string) => void,
   cartRecovery?: CartRecoveryDiscountContext,
   codOrder?: CodOrderContext,
+  crmSync?: CrmSyncContext,
 ) {
   const baseTools = {
     ...voiceTools,
     lookupInfo: createLookupInfoTool(orgId),
     bookAppointment: createBookAppointmentTool(orgId),
-    crmSync: createCrmSyncTool(orgId),
   };
   // Two concrete object shapes rather than an inline conditional spread or an
   // optional property. Both of those give `offerCartRecoveryDiscount` a value
@@ -892,9 +908,12 @@ export function buildVoiceTools(
   // yields concrete object shapes (no property whose value type includes
   // `undefined`), which is the property `TypedToolCall<TOOLS>` needs, and it
   // stays readable as more server-bound tools arrive.
-  const allTools = codOrder
+  const withCodOrder = codOrder
     ? { ...withDiscount, confirmCodOrder: createConfirmCodOrderTool(codOrder) }
     : withDiscount;
+  const allTools = crmSync
+    ? { ...withCodOrder, crmSync: createCrmSyncTool(crmSync) }
+    : withCodOrder;
   const narrowed = enabledTools
     ? Object.fromEntries(
         Object.entries(allTools).filter(([name]) =>
@@ -1017,6 +1036,7 @@ export async function runVoiceAgentTurn({
   onSlowToolCall,
   cartRecovery,
   codOrder,
+  crmSync,
   workflowMetadata,
 }: {
   history: ModelMessage[];
@@ -1062,6 +1082,11 @@ export async function runVoiceAgentTurn({
    * is not registered for this call — the model cannot cancel an order it
    * had to guess the ID of. See buildVoiceTools. */
   codOrder?: CodOrderContext;
+  /** G1.4 (ADR-069): whose CRM contact this call writes to — orgId plus the
+   * caller's number as resolved from the telephony provider's own call record.
+   * Absent it, `crmSync` is not registered for this call, so the model cannot
+   * append this call's notes to a contact it named itself. See buildVoiceTools. */
+  crmSync?: CrmSyncContext;
   /** G1.3: the merchant workflow's pre-call context for this call
    * (`scheduledCalls.metadata`, carried on the session as `workflowMetadata`).
    * Rendered by buildWorkflowContextBlock. Undefined on inbound calls and any
@@ -1101,7 +1126,7 @@ export async function runVoiceAgentTurn({
       providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
       system: systemPrompt,
       messages: history,
-      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder),
+      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {
@@ -1194,6 +1219,7 @@ export function runVoiceAgentGreeting({
   enabledTools,
   orgId,
   codOrder,
+  crmSync,
   workflowMetadata,
 }: {
   persona?: string;
@@ -1220,6 +1246,9 @@ export function runVoiceAgentGreeting({
    * same tool set as every later turn — a tool that appears mid-call is a
    * behaviour difference the model shouldn't have to reason about. */
   codOrder?: CodOrderContext;
+  /** G1.4 (ADR-069): see runVoiceAgentTurn. Passed through for the same reason
+   * as `codOrder` — the greeting turn gets the identical tool set. */
+  crmSync?: CrmSyncContext;
   /** G1.3: the merchant workflow's pre-call context — matters most here, since
    * the opening line is exactly where the agent should already know whose cart
    * it's calling about. See runVoiceAgentTurn. */
@@ -1244,6 +1273,7 @@ export function runVoiceAgentGreeting({
     enabledTools,
     orgId,
     codOrder,
+    crmSync,
     workflowMetadata,
   });
 }

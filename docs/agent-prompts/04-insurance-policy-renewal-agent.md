@@ -171,4 +171,4 @@ full words. Close via Branch C.
 | Section 3 — confirms renewing | `setDisposition({ disposition: "booked", notes })` | Closest existing enum value to "renewal confirmed" — same overload noted in the COD-confirmation prompt, flag if a dedicated value is worth adding once this vertical has real usage data. |
 | Section 3/4 — declines, undecided, or needs licensed follow-up | `transferToHuman` or, if no live agent is available, `setDisposition({ disposition: "not-interested", notes })` + `crmSync` so a human follow-up is queued, not lost | Never let an "I need to talk to someone about X" moment silently end with no record. |
 | Section 6 — reschedule day/time | `captureField({ key: "reschedule_date"/"reschedule_time", value })` | Same generic tool as other verticals. |
-| End of call, any branch | `crmSync({ phoneNumber, notes })` | Logs the outcome so the insurer's own CRM/policy system reflects what happened on this call, regardless of channel. |
+| End of call, any branch | `crmSync({ notes })` | Logs the outcome so the insurer's own CRM/policy system reflects what happened on this call, regardless of channel. |

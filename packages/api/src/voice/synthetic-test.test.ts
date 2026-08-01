@@ -3,22 +3,24 @@ import { checkAssertion, type SyntheticTurn } from "./synthetic-test";
 import { SYNTHETIC_SCENARIOS } from "./synthetic-scenarios";
 import { voiceTools } from "./agent";
 
-// Three tools are never present in the static `voiceTools` object because
+// Four tools are never present in the static `voiceTools` object because
 // they're constructed dynamically by buildVoiceTools — `lookupInfo` (per-org,
-// A3b), `offerCartRecoveryDiscount` (per-call, G1.1) and `confirmCodOrder`
-// (per-call, G1.3) — so add them to the valid set explicitly.
+// A3b), `offerCartRecoveryDiscount` (per-call, G1.1), `confirmCodOrder`
+// (per-call, G1.3) and `crmSync` (per-call, G1.4/ADR-069) — so add them to the
+// valid set explicitly.
 //
-// `offerCartRecoveryDiscount` and `confirmCodOrder` are valid to *name* in a
-// scenario but can never actually fire in a synthetic run: synthetic-test.ts
-// calls buildVoiceTools without a cartRecovery or codOrder context,
-// deliberately, so an AI-to-AI test run can neither create live Shopify
-// discount codes nor cancel a real order. A scenario asserting either would
-// always fail; none does today.
+// All three per-call tools are valid to *name* in a scenario but can never
+// actually fire in a synthetic run: synthetic-test.ts calls buildVoiceTools
+// without a cartRecovery, codOrder or crmSync context, deliberately, so an
+// AI-to-AI test run can neither create live Shopify discount codes, nor cancel
+// a real order, nor write a contact into a merchant's production CRM. A
+// scenario asserting any of them would always fail; none does today.
 const VALID_TOOL_NAMES = new Set([
   ...Object.keys(voiceTools),
   "lookupInfo",
   "offerCartRecoveryDiscount",
   "confirmCodOrder",
+  "crmSync",
 ]);
 
 const transcript: SyntheticTurn[] = [

@@ -28,8 +28,19 @@ updated: 2026-08-01
     `runVoiceAgentGreeting`.
   - Prompt-injection detection extended past English-only `verb…object` regexes to Hinglish + Devanagari
     via order-independent co-occurrence (`voice/injection-detection.ts`). Still log-only.
-  - Verified: api tsc ✓ · web tsc ✓ · oxlint 0/0 (409 files) · 830 api + 23 web tests, `--isolate`.
-    **Not verified by a live call** — see known issues.
+  - **G1.4 (2026-08-01, ADR-069)** — the last ADR-066 violation, closed. `crmSync` took the contact's
+    `phoneNumber` from the model and used it as the CRM **upsert key**
+    (`integrations/gohighlevel.ts:23-32` matches on phone), so a hallucinated or mis-transcribed number
+    wrote this call's notes onto a *different* person's contact. Now bound from the carrier's
+    `humanNumber` at `"start"` (`voice/stream.ts:1580`); model input is `{ callerName?, notes }`;
+    `phoneNumber` is out of the JSON Schema entirely; non-registration is the gate. Side effect kept on
+    purpose: text test-chat, the synthetic harness and the preview drawer no longer get the tool, so a
+    test can no longer write into a merchant's production CRM. Five seeded insurance personas' tool
+    tables corrected to the new signature.
+  - Verified: api tsc ✓ · web tsc ✓ · oxlint 0/0 (414 files) · 852 api + 74 web tests, `--isolate`.
+    **Not verified by a live call** — see known issues. Open on ADR-069 specifically: whether
+    `humanNumber` is populated at `"start"` on Exotel's WS-only path (fails *closed* — a missing write,
+    not a wrong one).
 
 - **Five Bets build plan — all five phases shipped + pushed (2026-07-31)**
   (`../product-strategy/five-bets-build-plan-2026-07-31.md`; each phase = green tsc/oxlint/web-build +
@@ -136,18 +147,15 @@ updated: 2026-08-01
 
 ## Known issues / debt (open)
 
-- **`crmSync` lets the model name the contact it writes to — ADR-066 violation, unfixed.**
-  `phoneNumber: z.string()` (`voice/tools/crmSync.ts:15`) is model-supplied, required, and is the upsert
-  key sent to the merchant's CRM (`integrations/gohighlevel.ts:23`). A hallucinated number files this
-  call's notes on someone else's contact record. The caller's real number is already resolved server-side
-  as `humanNumber` (`voice/stream.ts:1561`). Fix = a `CrmSyncContext` bound at `buildVoiceTools`, model
-  input narrowed to `{ callerName?, notes }` — ADR-scale, awaiting a decision. `bookAppointment` was
-  audited in the same pass and is compliant (it creates, never mutates a named entity); its only note is
-  that `dateTimeIso` is unbounded.
-- **`lookupInfo` reaches new orgs only.** It was added to the three Shopify templates' `defaultTools` in
-  `database/seed.ts`, which is the registry consulted at seed time. Orgs with existing `agent_configs`
-  rows keep their stored `enabledTools` and still cannot answer a policy question. A backfill changes what
-  a live agent can do, so it is an explicit call, not a migration to run quietly.
+- **`bookAppointment`'s `dateTimeIso` is unbounded.** The ADR-066 tool audit cleared the tool otherwise
+  (it *creates* an event, never mutates a model-named entity, and `orgId` + calendar creds are bound
+  server-side), but nothing stops the model booking a slot in the past or years out. Low severity,
+  unfixed, and a product call rather than a security one — what *is* the valid window?
+- **`lookupInfo` reaches new orgs only, and that is now the accepted state.** It was added to the three
+  Shopify templates' `defaultTools` in `database/seed.ts`, consulted at seed time only; orgs with existing
+  `agent_configs` rows keep their stored `enabledTools`. **Backfill declined 2026-08-01** — every existing
+  org is the founder's own or a test org, so the migration would change live rows to no benefit. Revisit
+  if a real org ever predates the seed change.
 - `injectionSensitivity` (agent guardrails) changes **prompt wording only** — the runtime injection
   detector (`voice/injection-detection.ts`) is not wired to the dial and behaves identically at all three
   levels. The editor now says so out loud (ADR-067) rather than implying a safety guarantee; making the
@@ -179,14 +187,11 @@ updated: 2026-08-01
   call-health data shows real cut-offs and (b) staging is isolated from prod. Not debt to "fix"; a
   documented gate to clear before wiring. Gate (b) is now **confirmed unmet**, not merely unverified —
   see the staging entry above.
-- **No real end-to-end PSTN call has ever been placed.** Every G1 claim above is static source reading
-  plus isolated unit tests. This is the single largest unverified assumption in the codebase and needs an
-  explicit go-ahead (real telephony cost) to close.
-- **`bookAppointment` and `crmSync` have not been audited against ADR-066** (a tool acting on a real-world
-  entity must be bound server-side, never model-named). Do it before the insurance vertical takes a live
-  call.
-- Shopify templates' `defaultTools` omit `lookupInfo`, so those agents cannot query the knowledge base
-  even though it is real and wired. Adding it is a live-behaviour + latency change — a product decision.
+- **No real end-to-end PSTN call has ever been placed (G0.4).** Every G1 claim above is static source
+  reading plus isolated unit tests. Single largest unverified assumption in the codebase. The protocol to
+  close it is now written — `../reference/live-call-test-protocol.md`, nine steps — but **Step 0 blocks
+  it**: staging shares prod's Twilio account and Supabase database, so a test call bills prod and writes
+  prod rows. G0.1 first, then G0.4.
 - Branch protection on `main` not yet enabled in GitHub settings.
 - Provider-side + Twilio concurrency limits unverified (not inferable from an API key).
 

@@ -166,7 +166,7 @@ Close via Branch C.
 | Any coverage/claims/change/cancel ask | `transferToHuman` (if a live servicing desk exists) or `flagGuardrailEvent` + `crmSync` to queue human follow-up | Never let a "talk to someone about my coverage" moment silently end |
 | Reschedule day/time | `captureField({ key: "reschedule_date" / "reschedule_time", value })` | — |
 | End of call, any branch | `setDisposition({ disposition, notes })` | **Enum overload:** Branch A → `booked` (closest fit for "confirmed/handled"); Branch B → `not-interested` or `no-decision`; flag that a `serviced` / `welcome-complete` value would be cleaner once usage data exists |
-| End of call | `crmSync({ phoneNumber, notes })` | Writes the outcome to the insurer's CRM/policy system |
+| End of call | `crmSync({ notes })` | Writes the outcome to the insurer's CRM/policy system |
 
 **Known gap, flagged not hidden:** "I'll have the team resend your documents" / "your advisor will reach
 out" is only true if someone reads the resulting `capturedState` / CRM note. There is no automated resend

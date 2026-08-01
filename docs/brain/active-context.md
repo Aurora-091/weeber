@@ -12,6 +12,38 @@ updated: 2026-08-01
 
 ## Current focus
 
+- **The caller identity a tool writes to comes from the carrier, not the model (2026-08-01, ADR-069).**
+  Closes the one ADR-066 violation the tool audit found. `crmSync` took `phoneNumber: z.string()` as a
+  required *model-authored* input and used it as the **upsert key** — `syncToGoHighLevel` POSTs it as
+  `phone` to `/contacts/upsert` (`integrations/gohighlevel.ts:23-32`), which matches on phone, so a wrong
+  number does not error: it writes this call's notes onto **someone else's contact** in the merchant's live
+  CRM. Three routes there (LLM invents digits it was never given; STT digit errors on Indian accents; the
+  caller just says a number that isn't theirs). Meanwhile the real number was already resolved server-side
+  at `voice/stream.ts:1561` and already trusted for DNC (`:515`) and caller memory (`:611`).
+  Fix is the ADR-064/066 pattern: `CrmSyncContext = { orgId, phoneNumber }`, `resolveCrmSyncContext()`,
+  `createCrmSyncTool(ctx)`, resolved once in the `"start"` handler (`stream.ts:1580`) and fixed for the
+  call's life; model input narrows to `{ callerName?, notes }` with `phoneNumber` **removed from the JSON
+  Schema** (optional-with-a-default was rejected — a field in the schema is a field the model fills).
+  **Non-registration is the gate:** `crmSync` is out of the static `voiceTools` map, `buildVoiceTools` took
+  a 6th `crmSync?: CrmSyncContext`, and the tool only exists on calls where the context resolved.
+  Intended side effect, kept deliberately: **test-chat, the synthetic harness and the preview drawer now
+  get no `crmSync`** — a text test could previously write a live contact into a production CRM.
+  Also fixed: five seeded insurance personas still documented `crmSync({ phoneNumber, notes })` in their
+  tool tables, and those markdown files *are* the shipped prompts.
+  Gates: api tsc 0 · web tsc 0 · api 852 pass · web 74 pass · oxlint 0/0. 13 new tests.
+  **Not live-verified.** Open question: is `humanNumber` populated at `"start"` on *every* provider —
+  Exotel's WS-only path inserts the `calls` row later than Twilio/Plivo. Failure mode is a *missing* CRM
+  write, not a wrong one. Step 7 of the call-test protocol covers it.
+
+- **G0.4 protocol written; the call itself is blocked on G0.1 (2026-08-01).**
+  `docs/reference/live-call-test-protocol.md` — nine steps: environment isolation as a blocking
+  prerequisite, three test numbers incl. a DNC negative control, instrumentation captured before dialling,
+  four scripted calls, post-run DB verification, a same-day write-up, and an explicit list of what four
+  calls do **not** cover. Deliberately no call was placed: staging bills prod's Twilio and writes prod's
+  database. **Step 0 is the G0.1 infra work** (separate Twilio subaccount + number, separate Supabase
+  project, `LLM_PROVIDER` matched to prod) and it is not doable in this sandbox — no `railway` CLI, and it
+  is the user's billing.
+
 - **Product layout responds to the content column, not the viewport (2026-08-01, ADR-068).** Every grid
   in `pages/app/` used viewport breakpoints while `AppShell`'s sidebar is `hidden md:flex` at `w-56`
   (`components/shell/app-shell.tsx:307,315`) — so it *appears* at 768px and immediately takes 224px, and
@@ -83,9 +115,10 @@ updated: 2026-08-01
     (`voice/stream.ts:1561`, via `resolveHumanNumber`) and is already trusted for DNC opt-out (`:515`) and
     caller memory (`:611`). Fix is the established pattern — a `CrmSyncContext` carrying `humanNumber`,
     bound at `buildVoiceTools` (`voice/agent.ts:869`) alongside `cartRecovery`/`codOrder`, model input
-    narrowed to `{ callerName?, notes }`. **Not implemented: it is an ADR-scale schema change and needs a
-    decision, not a drive-by edit.** Lower blast radius than `confirmCodOrder` (a wrong write, not an
+    narrowed to `{ callerName?, notes }`. Lower blast radius than `confirmCodOrder` (a wrong write, not an
     irreversible cancellation), but the same class.
+    **SHIPPED the same day as ADR-069** — see the top of this file. This audit note is kept for the
+    reasoning trail.
 
 - **Agent console UI (2026-08-01).** Overview grid shipped at `/app/agents` — the route was previously a
   pure redirect to the first agent, so nine agents were reachable only through a `<Select>` and the detail
@@ -95,7 +128,9 @@ updated: 2026-08-01
   A create-agent flow was considered and **rejected** — no POST route exists, the registry is curated, and
   the real complaint was seeing the agents that exist. Full reasoning in `changelog/2026-08.md`.
   Same round: `lookupInfo` added to the three Shopify templates' `defaultTools` (`database/seed.ts`) —
-  **newly seeded orgs only**, existing `agent_configs` rows are untouched and a backfill is an open call.
+  **newly seeded orgs only**, existing `agent_configs` rows are untouched. **Backfill declined
+  (2026-08-01):** every existing org is the founder's own or a test org, so a data migration would buy
+  nothing and touch live rows for no reason. Revisit only if a real org predates the seed change.
 
   **Still unverified, and the honest gap in all of the above:** no real end-to-end PSTN call has been
   placed. Every claim here is from static source reading plus `--isolate` tests.

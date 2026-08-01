@@ -480,6 +480,55 @@ describe("buildVoiceTools — cart-recovery discount registration (G1.1)", () =>
   });
 });
 
+/**
+ * G1.4 / ADR-069 (2026-08-01). `crmSync` was the last tool that let the model
+ * author the identity of the real-world record it writes: `phoneNumber` was a
+ * required model input AND the CRM upsert key, so a hallucinated, mistranscribed
+ * or caller-injected number appended this call's notes to somebody else's
+ * contact — silently, because upsert never fails on a wrong key, it just matches
+ * a different row. Same enforcement as the two tools above: the number is bound
+ * server-side from the carrier's own call record, and a call with no resolvable
+ * human number doesn't get the tool at all.
+ */
+describe("buildVoiceTools — CRM sync registration (G1.4 / ADR-069)", () => {
+  const CRM = { orgId: "org-a", phoneNumber: "+15551234567" };
+
+  it("does not register crmSync when no caller identity is bound", () => {
+    const tools = buildVoiceTools(undefined, undefined);
+    expect("crmSync" in tools).toBe(false);
+  });
+
+  it("registers it once the call's own org + carrier-reported number are bound", () => {
+    const tools = buildVoiceTools("org-a", undefined, undefined, undefined, undefined, CRM);
+    expect("crmSync" in tools).toBe(true);
+  });
+
+  it("does NOT register it just because the agent lists it in toolsEnabled", () => {
+    // This is the case that matters in production: every seeded template lists
+    // crmSync in defaultTools, so toolsEnabled alone must not be sufficient.
+    const tools = buildVoiceTools("org-a", ["crmSync", "captureField"]);
+    expect("crmSync" in tools).toBe(false);
+    expect(Object.keys(tools).sort()).toEqual(["captureField", "hangUp"]);
+  });
+
+  it("still honours toolsEnabled narrowing when a caller IS bound", () => {
+    const tools = buildVoiceTools("org-a", ["captureField"], undefined, undefined, undefined, CRM);
+    expect("crmSync" in tools).toBe(false);
+  });
+
+  it("registers it when both gates pass", () => {
+    const tools = buildVoiceTools("org-a", ["crmSync"], undefined, undefined, undefined, CRM);
+    expect(Object.keys(tools).sort()).toEqual(["crmSync", "hangUp"]);
+  });
+
+  it("is not present in the static voiceTools map — it can only ever be built per-call", () => {
+    // The text test-chat and the synthetic harness read the tool set through
+    // buildVoiceTools with no CRM context, so this is also what keeps a test run
+    // from writing contacts into a merchant's live CRM.
+    expect("crmSync" in voiceTools).toBe(false);
+  });
+});
+
 describe("buildWorkflowContextBlock — G1.3 pre-call facts from the merchant's workflow", () => {
   it("renders nothing when the call was not placed by a workflow", () => {
     // Every inbound call, and any outbound call dialled outside the workflow

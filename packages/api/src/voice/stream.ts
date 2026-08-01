@@ -12,6 +12,7 @@ import {
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
 import { resolveCodOrderContext, type CodOrderContext } from "./tools/confirmCodOrder";
+import { resolveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
@@ -346,6 +347,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /** Cross-call memory (ADR-023) — the human's number for this call, and their rolling facts, if any. */
   let humanNumber: string | undefined;
   let humanNumberOrgId: string | undefined;
+  /**
+   * G1.4 (ADR-069): whose CRM contact this call may write to — the org, plus
+   * the human's number as the telephony provider reported it. Derived from
+   * `humanNumber`/`humanNumberOrgId` once at "start" and then fixed for the
+   * life of the call, for the same reason `cartRecoveryContext` is: the
+   * identity of the record being written must not shift mid-conversation.
+   * Stays `undefined` when caller ID was withheld or the call has no org, and
+   * `buildVoiceTools` then omits `crmSync` entirely rather than letting the
+   * model name a contact.
+   */
+  let crmSyncContext: CrmSyncContext | undefined;
   let callerMemoryFacts: Record<string, string> = {};
   /** Latency fix (2026-07-16): the fully-rendered, ready-to-speak literal
    * greeting text for this call (every {{merge_tag}} resolved), or
@@ -1241,6 +1253,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           orgId: humanNumberOrgId,
           cartRecovery: cartRecoveryContext,
           codOrder: codOrderContext,
+          crmSync: crmSyncContext,
           workflowMetadata,
           onSlowToolCall: (toolName) => {
             if (fillerPlayedThisTurn) return;
@@ -1299,6 +1312,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           enabledTools: enabledToolsOverride,
           orgId: humanNumberOrgId,
           codOrder: codOrderContext,
+          crmSync: crmSyncContext,
           workflowMetadata,
           onLatency: (ms, model) => {
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
@@ -1560,6 +1574,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (row) {
               humanNumber = resolveHumanNumber(row.direction, row.fromNumber, row.toNumber);
               humanNumberOrgId = row.orgId ?? undefined;
+              // G1.4 (ADR-069): bound here, from the same carrier-reported
+              // numbers cross-call memory already trusts — not from anything
+              // the model says.
+              crmSyncContext = resolveCrmSyncContext({ orgId: humanNumberOrgId, humanNumber });
             }
 
             // Per-number config (see number-config.ts) applies to every call

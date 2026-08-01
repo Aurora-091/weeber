@@ -167,7 +167,7 @@ Confirm back in full words. Close via Branch C.
 | Any regulated ask (price / carrier / plan / qualification) | `flagGuardrailEvent({ category: "unauthorized-promise" \| "topic-boundary", detail })` | Every refusal leaves a breadcrumb |
 | Not interested | `setDisposition({ disposition: "not-interested", notes })` | — |
 | Live transfer succeeded | `setDisposition({ disposition: "booked", notes })` | **Enum overload:** `booked` is the closest existing value for "connected to advisor" — flag whether a dedicated `transferred` value is worth adding once there's usage data |
-| End of call, any branch | `crmSync({ phoneNumber, notes })` | So the outcome reflects in the agency's CRM regardless of branch |
+| End of call, any branch | `crmSync({ notes })` | So the outcome reflects in the agency's CRM regardless of branch |
 
 **Known gap, flagged not hidden:** a live warm transfer depends on `orgs.humanTransferNumber` being set and
 a human actually answering. There is no "advisor availability" check today — the agent attempts the

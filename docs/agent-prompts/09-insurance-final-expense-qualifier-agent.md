@@ -186,7 +186,7 @@ Deliver exactly, then end the call — no further waiting, any branch.
 | Not interested | `setDisposition({ disposition: "not-interested", notes })` | — |
 | Live transfer succeeded | `setDisposition({ disposition: "booked", notes })` | **Enum overload:** `booked` is the closest existing value for "connected to advisor" — worth a dedicated `transferred` value once there's usage data |
 | Lead intent detected | `setIntent({ intent, notes })` | e.g. interested / callback / not-interested |
-| End of call, any branch | `crmSync({ phoneNumber, notes })` | Pushes the pre-qual + outcome to the agency CRM so the advisor is prepped |
+| End of call, any branch | `crmSync({ notes })` | Pushes the pre-qual + outcome to the agency CRM so the advisor is prepped |
 
 **Known gap, flagged not hidden:** like agent #5, a live warm transfer depends on `orgs.humanTransferNumber`
 being set and a human answering — there is no advisor-presence check today, so the agent only discovers
