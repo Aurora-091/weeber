@@ -27,6 +27,10 @@ const PORT = 4174;
 
 export default defineConfig({
   testDir: "./e2e-visual",
+  // Run-scoped, main-process hooks. The a11y artifact CANNOT be assembled in an
+  // `afterAll` — that fires per worker and each worker would overwrite the file.
+  globalSetup: "./e2e-visual/_global-setup.ts",
+  globalTeardown: "./e2e-visual/_global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // No retries. A screenshot comparison is deterministic by construction here;
