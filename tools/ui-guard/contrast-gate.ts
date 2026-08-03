@@ -21,16 +21,27 @@
  * here. One implementation, used by both the gate and by hand during design
  * work, so a value can never pass the gate and fail a manual check.
  *
- * Usage:
- *   bun run contrast:gate            # table + exit 1 on any failure
- *   bun run contrast:gate --json     # machine-readable, for CI artifacts
+ * KNOWN FAILURES, AND WHY THIS IS A RATCHET
+ * Nine pairs fail today. A gate that goes red on its first commit has to be
+ * switched off on its first commit, and a switched-off gate protects nothing —
+ * the same reasoning that made the design budget a ratchet instead of a lint
+ * rule. So `tokens.json` declares those nine with their measured ratio, and the
+ * default mode fails only on a NEW failure or on a known one that got WORSE.
+ * The list only tightens: a pair that now passes fails the gate until it is
+ * deleted from the list, so the backlog cannot quietly become permanent.
  *
- * Exit codes: 0 all pairs at or above floor · 1 one or more failures · 2 gate
- * itself is broken (missing file, unresolvable token, contrast.py absent).
+ * Usage:
+ *   bun run contrast:gate            # ratchet — exit 1 on new/worsened failures
+ *   bun run contrast:gate --strict   # ignore knownFailures; the real state today
+ *   bun run contrast:gate --json     # machine-readable, for CI artifacts
+ *   bun run contrast:gate --update   # prune resolved entries / record improvements
+ *
+ * Exit codes: 0 at or above the ratchet · 1 regression (or --strict failure) · 2
+ * gate itself is broken (missing file, unresolvable token, contrast.py absent).
  */
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
@@ -38,12 +49,23 @@ const REPO_ROOT = resolve(HERE, "../..");
 const TOKENS_PATH = resolve(HERE, "tokens.json");
 const CONTRAST_PY = resolve(HERE, "contrast.py");
 const JSON_OUT = process.argv.includes("--json");
+const STRICT = process.argv.includes("--strict");
+const UPDATE = process.argv.includes("--update");
+
+/**
+ * Tolerance on a known failure's recorded ratio. contrast.py is deterministic,
+ * so this is not measurement noise — it is the two-decimal rounding in the
+ * recorded value. Anything beyond it is a real regression.
+ */
+const RATIO_EPSILON = 0.01;
 
 type Pair = { label: string; fg: string; bg: string; floor: number };
+type KnownFailure = { scope: string; label: string; ratio: number; phase: string; why: string };
 type TokensFile = {
   cssFile: string;
   scopes: Record<string, string>;
   pairs: Pair[];
+  knownFailures?: KnownFailure[];
 };
 
 function die(msg: string): never {
@@ -194,10 +216,80 @@ for (const [scopeName, tokens] of Object.entries(scopeTokens)) {
 
 const failures = results.filter((r) => !r.pass);
 
+// ── ratchet ──────────────────────────────────────────────────────────────────
+
+const known = new Map<string, KnownFailure>(
+  (spec.knownFailures ?? []).map((k) => [`${k.scope}\u0000${k.label}`, k]),
+);
+const key = (r: Result) => `${r.scope}\u0000${r.label}`;
+
+/** A failure nobody has declared. This is the case the gate exists to catch. */
+const newFailures = failures.filter((r) => !known.has(key(r)));
+
+/** A declared failure that measures worse than it did when it was recorded. */
+const worsened = failures.filter((r) => {
+  const k = known.get(key(r));
+  return k !== undefined && r.ratio < k.ratio - RATIO_EPSILON;
+});
+
+/**
+ * A declared failure that now passes. Fails the gate on purpose: leaving a fixed
+ * pair on the list means the next real regression on it would be excused. One
+ * line to delete, or run --update.
+ */
+const resolved = results.filter((r) => r.pass && known.has(key(r)));
+
+/** Declared failures that improved but still fail — --update records the gain. */
+const improved = failures.filter((r) => {
+  const k = known.get(key(r));
+  return k !== undefined && r.ratio > k.ratio + RATIO_EPSILON;
+});
+
+/** A list entry with no matching measured pair — the list has gone stale. */
+const measuredKeys = new Set(results.map(key));
+const orphaned = [...known.values()].filter(
+  (k) => !measuredKeys.has(`${k.scope}\u0000${k.label}`),
+);
+
+if (UPDATE) {
+  const remaining = (spec.knownFailures ?? [])
+    .filter((k) => {
+      const hit = results.find((r) => r.scope === k.scope && r.label === k.label);
+      return hit !== undefined && !hit.pass;
+    })
+    .map((k) => {
+      const hit = results.find((r) => r.scope === k.scope && r.label === k.label)!;
+      // Only ever tighten. A worsened ratio is a regression to fix, not a new
+      // baseline to accept — recording it would let the gate ratchet backwards.
+      return hit.ratio > k.ratio ? { ...k, ratio: hit.ratio } : k;
+    });
+  const next = { ...spec, knownFailures: remaining };
+  writeFileSync(TOKENS_PATH, `${JSON.stringify(next, null, 2)}\n`);
+  console.log(
+    `contrast-gate: knownFailures ${spec.knownFailures?.length ?? 0} -> ${remaining.length}` +
+      `${improved.length > 0 ? ` (${improved.length} improved ratio recorded)` : ""}`,
+  );
+  process.exit(0);
+}
+
 if (JSON_OUT) {
   console.log(
     JSON.stringify(
-      { results, unresolved, failing: failures.length, total: results.length },
+      {
+        results,
+        unresolved,
+        failing: failures.length,
+        total: results.length,
+        strict: STRICT,
+        ratchet: {
+          known: known.size,
+          newFailures: newFailures.map((r) => `${r.scope}: ${r.label}`),
+          worsened: worsened.map((r) => `${r.scope}: ${r.label}`),
+          resolved: resolved.map((r) => `${r.scope}: ${r.label}`),
+          improved: improved.map((r) => `${r.scope}: ${r.label}`),
+          orphaned: orphaned.map((k) => `${k.scope}: ${k.label}`),
+        },
+      },
       null,
       2,
     ),
@@ -229,16 +321,55 @@ if (JSON_OUT) {
   console.log(
     `\n  ${results.length - failures.length}/${results.length} pairs at or above floor.`,
   );
-  if (failures.length > 0) {
+
+  if (STRICT) {
+    if (failures.length > 0) {
+      console.log(
+        `  ${failures.length} FAILING (--strict: knownFailures ignored) — see ui-audit.md §A`,
+      );
+      console.log(
+        `  and the §D measured ramp for replacement values. Note that removing hue makes`,
+      );
+      console.log(
+        `  borders HARDER, not easier: you lose chroma as a differentiation channel and`,
+      );
+      console.log(`  lightness must carry all of it. Measure every value.`);
+    }
+  } else {
+    const declared = failures.length - newFailures.length;
     console.log(
-      `  ${failures.length} FAILING — see ui-audit.md §A and the §D measured ramp for replacement values.`,
+      `  ratchet: ${declared} of ${failures.length} failures are declared in knownFailures (Phase B backlog).`,
     );
-    console.log(
-      `  Note: removing hue makes borders HARDER, not easier — you lose chroma as a`,
-    );
-    console.log(
-      `  differentiation channel and lightness must carry all of it. Measure every value.`,
-    );
+    for (const r of newFailures) {
+      console.log(
+        `  NEW FAILURE  ${r.scope}: ${r.label} — ${r.ratio.toFixed(2)}:1 (floor ${r.floor}:1, ${r.fg} = ${r.fgValue})`,
+      );
+    }
+    for (const r of worsened) {
+      const k = known.get(key(r))!;
+      console.log(
+        `  WORSENED     ${r.scope}: ${r.label} — ${k.ratio.toFixed(2)}:1 -> ${r.ratio.toFixed(2)}:1`,
+      );
+    }
+    for (const r of resolved) {
+      console.log(
+        `  RESOLVED     ${r.scope}: ${r.label} now ${r.ratio.toFixed(2)}:1 — delete it from`,
+      );
+      console.log(
+        `               tokens.json knownFailures (or run --update). Leaving it there would`,
+      );
+      console.log(`               excuse the next real regression on this pair.`);
+    }
+    for (const k of orphaned) {
+      console.log(
+        `  STALE ENTRY  ${k.scope}: ${k.label} is in knownFailures but no such pair is measured.`,
+      );
+    }
+    if (improved.length > 0) {
+      console.log(
+        `  ${improved.length} declared failure(s) improved but still fail — run --update to record.`,
+      );
+    }
   }
 }
 
@@ -246,4 +377,10 @@ if (JSON_OUT) {
 // That is a broken gate (exit 2), not a contrast failure (exit 1) — a silent
 // "0 pairs checked, all green" is the one outcome this script must never print.
 if (unresolved.length > 0) process.exit(2);
-process.exit(failures.length > 0 ? 1 : 0);
+
+// A stale knownFailures entry is also a broken contract, not a design problem:
+// the label it excuses no longer exists, so it is silently excusing nothing.
+if (orphaned.length > 0) process.exit(2);
+
+if (STRICT) process.exit(failures.length > 0 ? 1 : 0);
+process.exit(newFailures.length + worsened.length + resolved.length > 0 ? 1 : 0);
