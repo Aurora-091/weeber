@@ -43,6 +43,7 @@ import { DashboardShell } from "../../components/dashboard/dashboard-shell";
 import { UserContext, type UserContextValue } from "../../components/app/user-shell";
 import { getVertical } from "../../lib/verticals";
 import { makeHarnessClient, mockMe } from "./fixtures";
+import { HARNESS_KEYS, type HarnessKey } from "./keys";
 
 // ---------------------------------------------------------------- /app pages
 import { UserHomePage } from "../app/home";
@@ -75,10 +76,11 @@ type Surface = "app" | "dashboard";
 type Entry = { surface: Surface; Comp: React.ComponentType };
 
 /**
- * The screenshot inventory. Keys are stable and appear in baseline filenames,
- * so renaming a key orphans its baseline — add, don't rename.
+ * The page map. Typed as `Record<HarnessKey, Entry>` against keys.ts, so adding
+ * a page here without adding its key there (or the reverse) is a typecheck
+ * error rather than a silently missing baseline.
  */
-export const HARNESS_PAGES: Record<string, Entry> = {
+export const HARNESS_PAGES: Record<HarnessKey, Entry> = {
   "app-home": { surface: "app", Comp: UserHomePage },
   "app-agents": { surface: "app", Comp: UserAgentsPage },
   "app-calls": { surface: "app", Comp: UserCallsPage },
@@ -104,9 +106,6 @@ export const HARNESS_PAGES: Record<string, Entry> = {
   "dash-templates": { surface: "dashboard", Comp: TemplatesPage },
   "dash-flags": { surface: "dashboard", Comp: FlagsPage },
 };
-
-/** Stable list for the spec to iterate — sorted so baseline order never shifts. */
-export const HARNESS_KEYS = Object.keys(HARNESS_PAGES).sort();
 
 // One client for the whole harness lifetime. Created at module scope, not in
 // the component, so a React StrictMode double-render cannot hand two different
@@ -137,7 +136,7 @@ function AppSurface({ Comp }: { Comp: React.ComponentType }) {
 
 export function VisualHarness() {
   const { key } = useParams<{ key: string }>();
-  const entry = key ? HARNESS_PAGES[key] : undefined;
+  const entry = key ? HARNESS_PAGES[key as HarnessKey] : undefined;
 
   if (!entry) {
     // Loud, not blank. A silent blank page here would be screenshotted as a

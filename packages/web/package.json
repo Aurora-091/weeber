@@ -10,7 +10,9 @@
     "test:coverage": "bun test --isolate src/ --coverage",
     "test:e2e": "playwright test",
     "lint": "cd ../.. && oxlint packages/web --deny-warnings --no-error-on-unmatched-pattern",
-    "preview": "bun run build && vite preview"
+    "preview": "bun run build && vite preview",
+    "test:visual": "playwright test -c playwright.visual.config.ts",
+    "test:visual:update": "playwright test -c playwright.visual.config.ts --update-snapshots"
   },
   "dependencies": {
     "@runablehq/website-runtime": "^0.10.0",
