@@ -77,6 +77,7 @@ Phase G  Harden + QA + gaps ─────┘  (needs all)
 ### Result to look for
 - `bun run design:guard` prints a table of current violation counts and exits 0.
 - `bun run contrast:gate` exits **non-zero today** — it should report the known `--border` 1.37:1 and 1.57:1 failures. If it exits 0 on day one, the gate is broken, not the tokens.
+  - **As built (2026-08-04):** `--strict` exits 1 and lists **9 failures**, which is the honest signal. The default (ratchet) mode exits 0 only because all 9 are declared in `tokens.json` `knownFailures` with a phase tag — that is what makes it CI-safe today while still failing on any *new* regression. The 9: light control border on page 1.37 / card 1.42 / muted fill 1.24; dark control border on page 1.57 / card 1.35 / muted fill 1.35; light warning text on page 3.54; dark focus ring on card 2.85; dark error text on card 4.26. Phase B has to empty this list.
 - CI on a no-op PR: all jobs green, `visual` reports 0 diffs, `a11y` reports a non-zero baseline count.
 - Every subsequent phase's PR shows a visual diff image per changed surface.
 
@@ -144,9 +145,10 @@ The full design-partner path (signup → vertical → onboarding → first agent
 
 | # | Change | Where |
 | --- | --- | --- |
-| B1 | **Split the border token.** `--border` (decorative, no floor) vs `--border-control` (inputs, bordered buttons, ≥3:1). Biggest a11y win in the codebase, one token, ~40 pages | `styles.css:411, 449, 672` |
+| B1 | **Split the border token.** `--border` (decorative, no floor) vs `--border-control` (inputs, bordered buttons, ≥3:1). Biggest a11y win in the codebase, one token, ~40 pages | `styles.css:408` (`--weeber-border`), `444` (`--border`), `445` (`--input`), `447` (`--sidebar`); dark `679, 713, 714, 716` |
+| B1b | **Fix dark `--ring` on cards.** `oklch(0.5 0 0)` is 3.32:1 on the page but **2.85:1 on a card** — and cards, dialogs and popovers are where focus rings actually land. Was recorded as passing in the audit's "what passes" list; retracted 2026-08-04. Do it with B1, same measurement pass | `styles.css:715` (dark `--ring`); light `446` already passes everywhere |
 | B2 | Install the measured chroma-0 ramp (`--n-000` … `--n-900`, light + dark) from `ui-audit.md` §D. Every value already contrast-verified | `styles.css` `.theme-weeber` / `.theme-weeber.dark` |
-| B3 | Delete the four cool-hue-240 leftovers colliding with the warm surfaces | `styles.css:569, 575, 676, 719` |
+| B3 | Delete the four cool-hue-240 leftovers colliding with the warm surfaces | `styles.css:570, 575, 682, 716` |
 | B4 | Delete the `:root` / `.dark` Vent "paper/ink/ember" palette; promote `.theme-weeber` to `:root` | `styles.css:68-146` |
 | B5 | **Status without hue** — 4 non-hue channels (fill weight, border presence, icon glyph, text label), never fewer than 3. Ranked by fill darkness = ranked by urgency. All four states measured 5.66:1 → 17.09:1 | new `components/ui/status-badge.tsx` |
 | B6 | **The scoped hue exception you chose.** Semantic colour survives *only* inside `/dashboard` compliance + call-outcome tables, behind `[data-surface="ops"]`, at re-measured values (current dark error is 4.26:1 — failing). Never on `/app`, never on marketing | `styles.css` + `pages/dashboard/compliance.tsx`, `calls-list.tsx`, `dnc.tsx` |
@@ -193,6 +195,7 @@ The full design-partner path (signup → vertical → onboarding → first agent
 | C3 | `components/ui/list-toolbar.tsx` — search + filter chips + date range. **Search exists on 1 of 23 admin pages** | new |
 | C4 | `EmptyState` gains a required `action` slot. Three different admin empty-state shapes today, **none with a next action** | `components/*/empty-state.tsx` |
 | C5 | `PageHeader` gains `action`, `icon`, `context` slots — used on all admin pages or none | `components/*/page-header.tsx` |
+| C5b | **Adopt `PageHeader` on the 8 `/dashboard` routes that hand-roll their heading** (found via the Phase 0 exit-gate probe, 2026-08-04). `PageHeader` renders `<h1 class="font-display text-2xl font-semibold tracking-tight">`; these render a bare `<h1 class="text-2xl font-semibold">` — same size, **wrong typeface, no tracking**. Worse: **`dashboard/settings.tsx` has no `<h1>` at all**, its first heading is an `<h2 class="text-xl">`, so that page has no page-level heading and its heading order starts at level 2 (a real a11y defect, not just a style one) | `dashboard/`: `billing.tsx:37`, `calls-list.tsx:48`, `compliance.tsx:193`, `dnc.tsx:57`, `flags.tsx:101`, `orgs.tsx:265`, `templates.tsx:145`, `settings.tsx:96` (no h1) |
 | C6 | `components/ui/progress.tsx` — `scaleX`, not animated `width` | new |
 | C7 | **111 raw `<button>` → `ui/button`**, starting `FallbackControls.tsx` (8), `dashboard/compliance.tsx` (7), `app/login.tsx` (7) | ~40 files |
 | C8 | Delete dead code: `components/canvas/index.ts` barrel; dedupe `Breadcrumbs`, `<Grain />`, `<VoiceOrb />` (each defined more than once) | various |

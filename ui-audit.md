@@ -49,11 +49,17 @@ Every row below was produced by `scripts/contrast.py`. Nothing here is eyeballed
 | --- | --- | --- | --- | --- | --- |
 | `--border` / `--input` (light) | `oklch(0.88 0.004 80)` | page `oklch(0.985 0.003 80)` | **1.37:1** | 3:1 | FAIL — invisible |
 | `--border` / `--input` (light) | `oklch(0.88 0.004 80)` | card `oklch(0.995 0.001 80)` | **1.42:1** | 3:1 | FAIL — invisible |
+| `--border` / `--input` (light) | `oklch(0.88 0.004 80)` | muted fill | **1.24:1** | 3:1 | FAIL — invisible |
 | `--border` / `--input` (dark) | `oklch(0.32 0.006 80)` | page `oklch(0.14 0.006 80)` | **1.57:1** | 3:1 | FAIL — invisible |
+| `--border` / `--input` (dark) | `oklch(0.32 0.006 80)` | card | **1.35:1** | 3:1 | FAIL — invisible |
+| `--border` / `--input` (dark) | `oklch(0.32 0.006 80)` | muted fill | **1.35:1** | 3:1 | FAIL — invisible |
+| `--ring` (dark) | `oklch(0.5 0 0)` | card | **2.85:1** | 3:1 | FAIL — see note below |
 | `--m-input-border` (marketing) | `#B7B6B1` | `#FFFFFF` | **2.03:1** | 3:1 | FAIL |
 | `--m-border` (marketing) | `#E6E5E2` | `#FCFCFB` | **1.23:1** | 3:1 | FAIL — invisible |
 
-> **[Critical] Every input, select and textarea border in the product is below the 3:1 UI floor** — `packages/web/src/web/styles.css:411` (`--weeber-border`), `:449` (`--input: var(--border)`), `:672` (dark `--weeber-border`), `styles-marketing.css:21` (`--m-input-border`), `:15` (`--m-border`).
+> **Amended 2026-08-04, from `bun run contrast:gate`.** The three extra control-border rows and the `--ring` row above were not in the original audit — the audit measured each token against the page background only. Six of the nine failures the gate now ratchets are card and muted-fill surfaces the audit never checked, so the real blast radius is wider than "page bg" suggested. Most importantly, **dark `--ring` on a card measures 2.85:1, a fail** (§ later in this doc records it as 3.32:1 passing, which is correct *against the page* and wrong on every card, dialog, and popover — i.e. most places a focus ring actually lands). All nine are declared in `tools/ui-guard/tokens.json` `knownFailures` and are Phase B work.
+
+> **[Critical] Every input, select and textarea border in the product is below the 3:1 UI floor** — `packages/web/src/web/styles.css:408` (`--weeber-border`), `:444` (`--border`), `:445` (`--input: var(--border)`), `:446` (`--ring`), `:447` (`--sidebar`); dark `:679` (`--weeber-border`), `:713` (`--border`), `:714` (`--input`), `:715` (`--ring`), `:716` (`--sidebar`); `styles-marketing.css:21` (`--m-input-border`), `:15` (`--m-border`). *(Line numbers re-verified 2026-08-04; the originals — 411/449/672 — had drifted.)*
 > WCAG 2.1 SC 1.4.11 requires 3:1 for the boundary of any component whose shape communicates its function. A text field whose edge is at 1.4:1 is a field a low-vision user cannot locate. This also affects card edges, table row dividers used as structure, and the `1px` outlines on the pricing comparison table.
 > **Fix:** split the single `--border` token into two. `--border` (decorative dividers, no floor) stays light. Introduce `--border-control` used by `--input` and by any bordered interactive surface, at `oklch(0.62 0 0)` light / `oklch(0.56 0 0)` dark. **Verified:** 3.64:1 on card, 3.44:1 on page, 4.32:1 / 3.97:1 / 3.53:1 across all three dark surfaces. Marketing's `--m-input-border` → `#7F7F84` or darker.
 
@@ -101,7 +107,7 @@ Every row below was produced by `scripts/contrast.py`. Nothing here is eyeballed
 ### What passes (verified, not assumed)
 
 - `prefers-reduced-motion` is honoured properly — `styles.css:360-367` plus the reduced-motion full-page capture confirms **all `[data-reveal]` content still renders**. This is the check most sites fail. You pass it.
-- `--ring` light `oklch(0.55 0 0)` = 4.65:1, dark `oklch(0.5 0 0)` = 3.32:1 — both clear the 3:1 focus-ring floor.
+- ~~`--ring` light `oklch(0.55 0 0)` = 4.65:1, dark `oklch(0.5 0 0)` = 3.32:1 — both clear the 3:1 focus-ring floor.~~ **Retracted 2026-08-04.** Only true against the *page* background. `contrast:gate` measures dark `--ring` on a **card at 2.85:1 — a fail**, and cards, dialogs and popovers are where most focus rings actually land. Light ring still passes on every surface. Moved to §A's critical table and to `knownFailures`.
 - Status badges pair their dot with a text label ("Live", "Paused", "Needs a number") — meaning is not encoded in colour alone. Keep this discipline through the monochrome migration.
 - `lang="en"`, canonical, single `h1` per marketing page, real `<label>`s, `aria-invalid` + `aria-describedby` wired on the waitlist fields, `SkipToContent` present, `overflow-x: clip` guard on `html`.
 

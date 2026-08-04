@@ -70,11 +70,27 @@ Only 14 surfaces moved (x3 viewports = 42). These 9 did not:
 The 8 `dash-*` pages have no `PageHeader` import — they hand-roll page headings,
 so page title type scale, breadcrumbs and header spacing are inconsistent across
 `/dashboard`. Feed this into **Phase C** as a named consistency item; it was not
-in `ui-audit.md`.
+in `ui-audit.md`. Now tracked as **plan item C5b**, with the specific defects:
+7 of them render `<h1 class="text-2xl font-semibold">` where `PageHeader` renders
+`<h1 class="font-display text-2xl font-semibold tracking-tight">` — same size,
+wrong typeface, no tracking — and **`dashboard/settings.tsx` has no `<h1>` at
+all**, its first heading being an `<h2 class="text-xl">` at line 96. That page
+therefore has no page-level heading and its heading order starts at level 2,
+which is an a11y defect rather than a styling one.
 
-`app-agents` DOES import `PageHeader` yet did not move — worth 10 minutes before
-Phase C to find out whether the harness renders it down an early-return branch
-(which would mean that baseline covers less than it appears to).
+### Resolved: why `app-agents` did not move
+It DOES import `PageHeader`, but it never renders it in the harness.
+`pages/app/agents.tsx:172` early-returns an `EmptyState` when `rows.length === 0`,
+and the harness seeds no agent rows — so the `PageHeader` at `:188` is
+unreachable in every one of the three `app-agents` baselines.
+
+This is not a `PageHeader` problem, it is a **baseline coverage** problem, and it
+generalises: the harness renders empty states only, so any surface that
+early-returns on empty data has its populated layout completely unprotected by
+the visual suite. `app-agents` is simply the case the probe happened to expose.
+Before Phase C7 (111 raw buttons) that gap matters — extend
+`packages/web/src/web/pages/__harness/index.tsx` with per-page query seeds so at
+least the data-bearing routes capture a populated shot.
 
 ## Also added
 - `.github/workflows/visual-baselines.yml` — manual `workflow_dispatch` baseline
