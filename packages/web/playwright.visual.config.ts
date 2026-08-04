@@ -102,8 +102,34 @@ export default defineConfig({
           // gate into 78 lies. If the browser is missing, failing loudly with
           // "run playwright install" is the correct outcome.
           //
-          // srgb + no hinting remove two further sources of machine drift.
-          args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--no-sandbox"],
+          // srgb + no hinting + no LCD text remove three further sources of
+          // machine drift. Each is an OS-level setting Chromium inherits, so
+          // leaving any of them unpinned makes the baselines a function of the
+          // machine no matter how well the browser build is pinned.
+          //
+          // --disable-lcd-text was added after measuring the SECOND CI run. 12 of
+          // the 48 remaining failures (app-agents, app-billing, app-settings and
+          // pricing, x3 viewports) were pure antialiasing MODE: the committed
+          // baseline rendered "RECOMMENDED", "Couldn't load your agents" etc. with
+          // greyscale AA, and the runner rendered the identical glyphs at the
+          // identical positions with subpixel AA — visible as blue/orange fringes
+          // on the glyph edges. Layout was pixel-identical; only the fringe colour
+          // differed. That is fontconfig's `rgba` setting, which ubuntu-24.04 and
+          // Debian trixie do not agree on.
+          //
+          // It is only ever SOME elements because Blink already drops to greyscale
+          // on any layer whose background it cannot prove opaque, so the two modes
+          // coexist on one page and the drift looks arbitrary. Forcing greyscale
+          // everywhere makes it uniform, and cheaper to rasterise.
+          //
+          // Regenerating the baselines would NOT have fixed this — it would only
+          // have moved the 12 failures from CI to every local run.
+          args: [
+            "--force-color-profile=srgb",
+            "--font-render-hinting=none",
+            "--disable-lcd-text",
+            "--no-sandbox",
+          ],
         },
       },
     },

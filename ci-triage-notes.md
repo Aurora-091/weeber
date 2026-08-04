@@ -162,6 +162,86 @@ documented at the function.
   `visual-baselines.yml`, and the product CSS/font stack changed here. Regenerate
   on the runner, review the diff, then commit.
 
+---
+
+# Second CI run (commit 5a506a1)
+
+| check | run 1 | run 2 |
+|---|---|---|
+| Design drift ratchet + contrast gate | failure | **success** |
+| Accessibility baseline (axe) | failure | **success** |
+| Font provenance (new gate) | — | **success** |
+| Visual regression (78 baselines) | 51 failed / 27 passed | 48 failed / 30 passed |
+
+F1, F2, F4 and F5 are confirmed fixed *on the runner*, not just locally. Font
+provenance passing on ubuntu-24.04 is the direct evidence that the font stack is
+no longer machine-dependent. `app-login` (3 shots) and `landing` went from failing
+to passing, which is the `.env.visual` pinning working.
+
+## F6 — the last 48 visual failures were exactly two causes, both now measured
+
+Downloaded the diff artifact (run 30894696207, artifact 8886634499) and computed
+the differing-pixel bounding box for all 48 expected/actual pairs rather than
+eyeballing them:
+
+- **36 shots — every `dash-*` page x 3 viewports.** bbox is *identical* on all 36:
+  `(16,19)-(116,34)` at 1440, i.e. one 100x15 px box at the top-left. That is the
+  sidebar wordmark and nothing else. This is the INTENDED `font-serif` ->
+  `font-display` fix. The baselines were legitimately stale. Verified by cropping
+  the old and new PNG: Caladea (thin Cambria-metric serif) -> Fraunces (the brand
+  display face). "ADMIN" (mono) unchanged.
+
+- **12 shots — `app-agents`, `app-billing`, `app-settings`, `pricing` x 3.** 3-134
+  differing px, bboxes scattered mid-page, nowhere near the wordmark. Cropped and
+  compared at 4x: **the glyphs are at identical positions with identical shapes,
+  and only the antialiasing MODE differs** — baseline greyscale, runner subpixel,
+  visible as blue/orange fringing on glyph edges of "RECOMMENDED", "Couldn't load
+  your agents", "SINGLE-STORE OWNERS".
+
+That is fontconfig's `rgba` setting: an OS-level knob Chromium inherits.
+`--font-render-hinting=none` and `--force-color-profile=srgb` were already pinned
+in `playwright.visual.config.ts`; AA *mode* was the one that was not. Fixed by
+adding `--disable-lcd-text`.
+
+**Regenerating the baselines would not have fixed these 12 — it would only have
+moved the failures from CI to every local run.** That distinction is the whole
+reason to measure a diff instead of accepting it.
+
+Why only some elements: Blink already drops to greyscale on any layer whose
+background it cannot prove opaque, so both modes coexist on a single page and the
+drift looks arbitrary until you know what you are looking at.
+
+### Falsifiable prediction, then the test
+If this sandbox was already rendering greyscale, `--disable-lcd-text` is a no-op
+locally and *exactly* the 36 intended `dash-*` shots should fail. Measured:
+**36 failed / 42 passed**, all 36 `dash-*`. Prediction held, so the 12 were purely
+CI-side and the flag closes the divergence rather than papering over it.
+After `test:visual:update`: **78 passed**, and `git status` shows **exactly 36**
+PNGs modified — no collateral.
+
+## Blocker — `visual-baselines.yml` cannot be dispatched from a branch
+`POST /actions/workflows/visual-baselines.yml/dispatches` returns **404**, and
+`GET /actions/workflows` lists only `ci.yml` + the two code-scanning workflows.
+Cause: GitHub only registers `workflow_dispatch` from a workflow file that exists
+on the **default branch**, and `visual-baselines.yml` was added on
+`ui/phase-0-guardrails` and has never been merged. Confirmed:
+`git ls-tree origin/main .github/workflows/` lists `ci.yml` only.
+
+So the documented "regenerate only via the workflow" rule is **unusable on the PR
+that introduces it** — chicken-and-egg. The 36 baselines here were therefore
+regenerated locally, which is a deliberate, recorded exception, and CI is the
+authority that checks it. With `--disable-lcd-text` the rasteriser should no longer
+be environment-dependent at all; **if run 3's visual job is green, that claim is
+proven and the rule can be relaxed to "regenerate anywhere, CI verifies"**. Do not
+relax it before then.
+
+## Also noticed, not fixed
+The `app-agents` harness page screenshots an ERROR state — "Couldn't load your
+agents / Something went wrong reaching the server". `blockApi` aborts the query and
+the harness has no seed for it, so this baseline locks the error path, not the
+page. It compounds the known coverage gap that `agents.tsx:172` early-returns
+before its `PageHeader`. Add per-page harness seeds before Phase C7.
+
 ## Status
 - [x] F1 diagnosed
 - [x] F2 diagnosed
