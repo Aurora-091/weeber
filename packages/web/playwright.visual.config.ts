@@ -111,7 +111,14 @@ export default defineConfig({
   webServer: {
     // VITE_UI_HARNESS=1 is set HERE and nowhere else — vite.config.ts pins it to
     // "0" otherwise so the harness folds out of every real build.
-    command: `VITE_UI_HARNESS=1 bun run build && bunx vite preview --port ${PORT} --strictPort`,
+    //
+    // build:visual = `vite build --mode visual`, which loads the committed
+    // /.env.visual on top of any local .env. Without it this build inherited the
+    // developer's environment and the baselines became a function of it: CI has
+    // no .env, so VITE_SUPABASE_* were unset and /app/login screenshotted its
+    // "not configured" notice instead of the sign-in form. Baselines must not
+    // depend on who ran the build.
+    command: `VITE_UI_HARNESS=1 bun run build:visual && bunx vite preview --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,

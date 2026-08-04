@@ -41,6 +41,11 @@ jobs:
       - name: Install Playwright browser (chromium)
         run: cd packages/web && bunx playwright install --with-deps chromium
       - name: Regenerate snapshots
+        # No env wiring needed here: playwright.visual.config.ts builds with
+        # `vite build --mode visual`, which loads the committed, secret-free
+        # .env.visual. So the bundle under test is byte-identical to the one the
+        # `visual` job in ci.yml verifies — baselines can no longer be a function
+        # of whichever VITE_* happened to be set on the machine that made them.
         run: cd packages/web && bun run test:visual:update
       - name: Report what moved
         # A regeneration that changes nothing means the diff was never

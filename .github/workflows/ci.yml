@@ -219,10 +219,37 @@ jobs:
           path: packages/web/a11y-out/a11y-baseline.json
           retention-days: 30
 
+  fonts:
+    name: Font provenance (webfont-only rasterisation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browser (chromium)
+        run: cd packages/web && bunx playwright install --with-deps chromium
+      - name: Font provenance
+        # Asserts via CDP CSS.getPlatformFontsForNode that every glyph on all 26
+        # routes came from a webfont this repo controls — not from a family
+        # fontconfig picked off the runner image.
+        #
+        # This job exists because the `visual` job cannot tell you WHY. The first
+        # CI run failed 51 of 78 baselines; 36 of them traced to one className
+        # (dashboard-shell.tsx used Tailwind's stock `font-serif`, which contains
+        # no webfont, so the admin wordmark rasterised from Caladea on Debian).
+        # A pixel diff only ever said "290 pixels changed" — it could not say that
+        # the baselines had quietly become a function of the build machine, nor
+        # that the admin panel was not using the brand typeface at all. This gate
+        # names both, and fails BEFORE 78 images move.
+        run: cd packages/web && bun run test:fonts
+
   ci-success:
     name: CI success
     if: always()
-    needs: [typecheck, test, build, lint, migration-drift, e2e, design-guard, visual, a11y]
+    needs: [typecheck, test, build, lint, migration-drift, e2e, design-guard, visual, a11y, fonts]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependent job failed

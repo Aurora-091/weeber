@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
+    "build:visual": "tsc -b && vite build --mode visual",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "bun test --isolate src/",
@@ -13,7 +14,8 @@
     "preview": "bun run build && vite preview",
     "test:visual": "playwright test -c playwright.visual.config.ts visual.spec.ts",
     "test:visual:update": "playwright test -c playwright.visual.config.ts visual.spec.ts --update-snapshots",
-    "test:a11y": "playwright test -c playwright.visual.config.ts a11y.spec.ts"
+    "test:a11y": "playwright test -c playwright.visual.config.ts a11y.spec.ts",
+    "test:fonts": "playwright test -c playwright.visual.config.ts font-provenance.spec.ts"
   },
   "dependencies": {
     "@runablehq/website-runtime": "^0.10.0",

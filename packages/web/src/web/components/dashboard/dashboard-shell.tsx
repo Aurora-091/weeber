@@ -32,7 +32,13 @@ const NAV: NavItem[] = [
 function Brand() {
   return (
     <span className="flex items-baseline gap-1.5">
-      <span className="font-serif text-lg font-medium tracking-tight">Weeber</span>
+      {/* font-display, not font-serif. `font-serif` is Tailwind's STOCK stack
+          (ui-serif, Georgia, Cambria, "Times New Roman", Times, serif) — no
+          webfont in it — so the admin wordmark was never rendered in the brand
+          typeface. Measured via CDP CSS.getPlatformFontsForNode: it rasterised
+          from Caladea, a Debian Cambria substitute. `font-display` is the theme
+          token for "Fraunces", ui-serif, serif (styles.css @theme). */}
+      <span className="font-display text-lg font-medium tracking-tight">Weeber</span>
       <span className="text-[10px] font-mono uppercase tracking-wider text-sidebar-foreground/60">admin</span>
     </span>
   );

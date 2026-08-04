@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { blockApi, presetTheme, settle, settleHarness } from "./_settle";
+import { blockApi, blockOffOrigin, presetTheme, settle, settleHarness } from "./_settle";
 import { writeRouteResult, type RouteResult } from "./_a11y-report";
 import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
 
@@ -77,6 +77,7 @@ test.describe("a11y — private surfaces (report-only)", () => {
   for (const key of HARNESS_KEYS) {
     test(`${key}`, async ({ page }) => {
       await blockApi(page);
+      await blockOffOrigin(page);
       await presetTheme(page, "light");
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(`/__harness/${key}`);
@@ -98,6 +99,7 @@ test.describe("a11y — public surfaces (report-only)", () => {
   for (const route of PUBLIC_ROUTES) {
     test(`${route.name}`, async ({ page }) => {
       await blockApi(page);
+      await blockOffOrigin(page);
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(route.path);
       await settle(page);

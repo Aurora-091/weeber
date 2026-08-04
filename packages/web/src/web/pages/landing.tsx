@@ -266,7 +266,8 @@ function LandingContent() {
             </div>
             <p className="mt-6 text-[14px] text-[var(--m-text-secondary)]" data-reveal>
               <a href="/compliance" className="link-grow font-semibold text-[var(--m-text)]">
-                See the full compliance breakdown (India + US/EU) →
+                See the full compliance breakdown (India + US/EU){" "}
+                <ArrowRight className="inline size-[1em] align-[-0.15em]" aria-hidden />
               </a>
             </p>
           </div>
@@ -363,10 +364,12 @@ function LandingContent() {
             <p className="mt-5 text-[14.5px] text-[var(--m-text-secondary)]" data-reveal>
               <strong className="text-[var(--m-text)]">Shopify self-serve, CRM sync assisted, more connectors on the way.</strong> Don't see the one you need?{" "}
               <a href="mailto:hello@weeber.ai" className="link-grow font-semibold text-[var(--m-text)]">
-                Request a connector →
+                Request a connector{" "}
+                <ArrowRight className="inline size-[1em] align-[-0.15em]" aria-hidden />
               </a>{" "}
               <a href="/roadmap" className="link-grow font-semibold text-[var(--m-text)]">
-                See the full roadmap →
+                See the full roadmap{" "}
+                <ArrowRight className="inline size-[1em] align-[-0.15em]" aria-hidden />
               </a>
             </p>
           </div>

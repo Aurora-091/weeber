@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { blockApi, presetTheme, settle, settleHarness } from "./_settle";
+import { blockApi, blockOffOrigin, presetTheme, settle, settleHarness } from "./_settle";
 
 /**
  * Visual-regression baselines (Phase 0.5).
@@ -57,6 +57,7 @@ test.describe("private surfaces", () => {
     for (const shot of PRIVATE_SHOTS) {
       test(`${key} @ ${shot.label}`, async ({ page }) => {
         await blockApi(page);
+        await blockOffOrigin(page);
         await presetTheme(page, shot.theme);
         await page.setViewportSize({ width: shot.w, height: shot.h });
         await page.goto(`/__harness/${key}`);
@@ -78,6 +79,7 @@ test.describe("public surfaces", () => {
     for (const vp of PUBLIC_VIEWPORTS) {
       test(`${route.name} @ ${vp.w}`, async ({ page }) => {
         await blockApi(page);
+        await blockOffOrigin(page);
         await page.setViewportSize({ width: vp.w, height: vp.h });
         await page.goto(route.path);
         await settle(page);
