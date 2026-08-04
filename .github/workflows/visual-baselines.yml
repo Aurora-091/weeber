@@ -13,6 +13,21 @@ name: Visual baselines (manual regenerate)
 # environmental, regenerate here — on the same runner image that verifies them —
 # rather than locally.
 #
+# STATUS UPDATE (PR #2, run 3): that is no longer the only safe option. Since
+# --disable-lcd-text pinned the last unpinned OS rasteriser knob, 36 baselines
+# regenerated on Debian trixie passed unmodified on ubuntu-24.04. Any Linux
+# machine may now regenerate; see the header of playwright.visual.config.ts for
+# the four pins that make that true and for what to check when it stops being.
+# This workflow stays as the tie-breaker for when CI and a local run disagree.
+#
+# TWO THINGS TO KNOW BEFORE RELYING ON IT
+# 1. workflow_dispatch is only registered for workflow files that exist on the
+#    DEFAULT branch. Until this file is merged to main, dispatching it 404s — so
+#    it is unavailable on the very PR that introduces it. That is why PR #2
+#    regenerated locally instead.
+# 2. It inherits .env.visual automatically via `vite build --mode visual`, so it
+#    builds the same bundle the `visual` job verifies.
+#
 # It deliberately does NOT commit or push. It uploads the regenerated snapshot
 # folder as an artifact; a human downloads it, eyeballs the diff (this is a
 # DESIGN gate, the whole point is that a person looks), and commits it. Auto-

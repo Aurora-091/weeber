@@ -19,9 +19,27 @@ import { defineConfig, devices } from "@playwright/test";
  * Still secret-free: no SUPABASE_JWT_SECRET, no admin key, no database. The
  * harness supplies mock context (see src/web/pages/__harness/index.tsx).
  *
- * Baselines are Linux + headless Chromium artifacts. They will NOT match a run
- * on macOS — font rasterisation differs. Update them from CI, or from a Linux
- * container, never from a laptop.
+ * Baselines are Linux + headless Chromium artifacts. Playwright suffixes them
+ * `-chromium-linux`, so a macOS run does not compare against them at all — it
+ * writes a new `-chromium-darwin` set. Do not commit one.
+ *
+ * ANY LINUX MACHINE MAY NOW REGENERATE THEM, and this is a deliberate change from
+ * the original "regenerate only from CI" rule. That rule existed because the
+ * baselines were an artifact of the OS as well as of the browser, and it was
+ * dropped only once that stopped being true and the claim was tested:
+ *   - the browser build is pinned (bundled chromium via --frozen-lockfile, no
+ *     executablePath escape hatch)
+ *   - the build inputs are pinned (.env.visual via `vite build --mode visual`)
+ *   - the three OS-level rasteriser knobs are pinned (srgb, no hinting, no LCD
+ *     text — see launchOptions.args)
+ *   - the font FILES are pinned to webfonts, enforced by font-provenance.spec.ts
+ * Proof: 36 baselines regenerated on Debian trixie passed unmodified on
+ * ubuntu-24.04 in CI (run 3 of PR #2, all 13 checks green). Before that flag was
+ * added, 12 shots differed between the two machines on antialiasing mode alone.
+ *
+ * CI remains the authority. If it disagrees with a locally regenerated baseline,
+ * believe CI and find out which of the four pins above has sprung — do not raise
+ * maxDiffPixels.
  */
 const PORT = 4174;
 
@@ -65,18 +83,29 @@ export default defineConfig({
       // The number: with the hero waveform respecting prefers-reduced-motion
       // (styles-marketing.css), measured flake across all 78 baselines is 0
       // differing pixels on two consecutive local runs at `maxDiffPixels: 0`.
-      // 100 is therefore pure headroom, not a measured flake budget. It is kept
-      // for exactly one unmeasurable risk: the baselines were generated on Debian
-      // trixie and CI runs ubuntu-latest, so freetype/fontconfig may rasterise
-      // glyph edges slightly differently even though the browser build is now
-      // identical on both sides. That term cannot be measured from here.
+      // 100 is therefore pure headroom, not a measured flake budget.
+      //
+      // It used to be justified here as cover for "one unmeasurable risk":
+      // Debian-trixie-vs-ubuntu freetype/fontconfig glyph-edge differences, with
+      // the note "that term cannot be measured from here". That was wrong on both
+      // counts. It WAS measurable — CI measured it — and the answer was 3-134 px
+      // across 12 shots, caused by antialiasing MODE (fontconfig `rgba`), now
+      // pinned away with --disable-lcd-text. So this headroom no longer covers a
+      // known risk at all.
+      //
+      // FOLLOW-UP, not done here: with that term eliminated the honest value is
+      // probably 0, which is what the local flake measurement already supports.
+      // Lowering it needs one clean CI run at 0 as evidence, and this commit is
+      // already the commit that turned the gate green — do not bundle a
+      // tightening into it.
+      //
       // A 4px padding change moves far more than 100 px. Measured, Phase 0 exit
       // gate: `PageHeader` `pb-5` -> `pb-6` reddened 42 of 78 shots (every one of
       // the 14 surfaces that render the shared header, at all three viewports);
       // reverting returned all 78 to green. Nothing real hides under 100.
       // If CI reports diffs in the low hundreds on a PR that changed no styling,
-      // the fix is to regenerate the baselines FROM CI
-      // (.github/workflows/visual-baselines.yml), never to raise this number.
+      // regenerate the baselines and check the four pins listed in the file
+      // header — never raise this number.
       threshold: 0.15,
       maxDiffPixels: 100,
       animations: "disabled",

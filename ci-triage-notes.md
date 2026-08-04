@@ -242,6 +242,28 @@ the harness has no seed for it, so this baseline locks the error path, not the
 page. It compounds the known coverage gap that `agents.tsx:172` early-returns
 before its `PageHeader`. Add per-page harness seeds before Phase C7.
 
+---
+
+# Third CI run (commit 68df93f) — GREEN
+
+All 13 checks success, including `CI success`, `Visual regression (78 baselines)`,
+`Design drift ratchet + contrast gate`, `Accessibility baseline` and the new
+`Font provenance`. PR #2 is mergeable.
+
+Two things this run *proved*, rather than assumed:
+1. **`--disable-lcd-text` closed the machine gap.** 36 baselines regenerated on
+   Debian trixie passed unmodified on ubuntu-24.04. So the rasteriser is now
+   environment-independent, and per the condition recorded above, the
+   "regenerate only from CI" rule is relaxed to "any Linux may regenerate, CI is
+   the authority". Documented in the header of `playwright.visual.config.ts`
+   together with the four pins the claim depends on.
+2. **The `maxDiffPixels: 100` justification was wrong.** It described the
+   Debian-vs-ubuntu term as "unmeasurable from here". CI measured it: 3-134 px on
+   12 shots, from antialiasing mode. That headroom now covers no known risk, so
+   the honest value is probably 0. NOT changed here — tightening a gate in the
+   same commit that turns it green is how you get a gate nobody trusts. Left as a
+   recorded follow-up needing one clean CI run at 0 as evidence.
+
 ## Status
 - [x] F1 diagnosed
 - [x] F2 diagnosed
