@@ -74,6 +74,46 @@ export async function createSubaccountForOrg(orgId: string, friendlyName: string
   return { ok: true, accountSid: account.sid };
 }
 
+export type EnsureSubaccountResult =
+  | { ok: true; accountSid: string; reused: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Idempotent "make sure this org has a sub-account". Returns the existing SID
+ * with `reused: true` instead of erroring, and only calls Twilio when there
+ * genuinely isn't one yet.
+ *
+ * WHY THIS EXISTS (bug, 2026-08-04)
+ * Getting a dedicated number is two Twilio calls: create the sub-account, then
+ * buy a number into it. The client ran them back to back and the sub-account
+ * route answered 409 "already provisioned — reset first" whenever one existed.
+ * So the moment step 1 succeeded and step 2 failed — no numbers in the area
+ * code, parent account out of funds, a dropped connection — the org was stuck
+ * in a state where it HAD a sub-account but no number, and every retry died on
+ * step 1 before it could ever reach step 2. The 409 was protecting against
+ * creating a second sub-account, which is a real risk, but it was doing it by
+ * making the retry path impossible rather than by making the step idempotent.
+ *
+ * `createSubaccountForOrg` is left non-idempotent on purpose: it is the honest
+ * "create one now" primitive. Callers that mean "ensure one exists" want this.
+ */
+export async function ensureSubaccountForOrg(orgId: string, friendlyName: string): Promise<EnsureSubaccountResult> {
+  const existing = await getTwilioStatus(orgId);
+  if (!existing) return { ok: false, error: "org not found" };
+
+  // BYO orgs already have working credentials that are not ours to replace —
+  // silently provisioning a platform sub-account over the top would hijack
+  // their telephony and start billing us for it.
+  if (existing.mode === "byo") {
+    return { ok: false, error: "This org is on its own Twilio credentials (BYO) — reset to platform mode first." };
+  }
+  if (existing.accountSid) return { ok: true, accountSid: existing.accountSid, reused: true };
+
+  const created = await createSubaccountForOrg(orgId, friendlyName);
+  if (!created.ok) return created;
+  return { ok: true, accountSid: created.accountSid, reused: false };
+}
+
 export type BuyNumberResult = { ok: true; phoneNumber: string } | { ok: false; error: string };
 export type AvailableNumbersResult =
   | { ok: true; numbers: { phoneNumber: string; locality: string | null; region: string | null }[] }
@@ -84,7 +124,12 @@ async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.T
   // in twilio-client.ts — never read orgs.twilioAuthToken directly here.
   const creds = await resolveOrgTwilioCreds(orgId);
   if (!creds) {
-    return { ok: false, error: "No Twilio sub-account provisioned for this org yet — call createSubaccountForOrg first" };
+    // This string reaches the user as a toast, so it names the user-facing
+    // step ("get a dedicated number") rather than an internal function.
+    return {
+      ok: false,
+      error: "No Twilio sub-account provisioned for this org yet — start the dedicated-number setup first.",
+    };
   }
   return { ok: true, client: Twilio(creds.accountSid, creds.authToken) };
 }

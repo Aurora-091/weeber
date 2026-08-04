@@ -388,14 +388,23 @@ export function UserIntegrationsPage() {
         body: JSON.stringify({ countryCode: numberCountryCode, areaCode: numberAreaCode || undefined }),
       });
       const numData = await numRes.json().catch(() => ({}));
-      if (!numRes.ok) throw new Error(numData.error ?? "Failed to purchase a number");
+      if (!numRes.ok) {
+        // Step 1 already succeeded, so the org now HAS a sub-account and no
+        // number. Say so — otherwise a bare "couldn't buy a number" reads as
+        // "nothing happened" and the user has no idea Reset is now relevant.
+        const detail = numData.error ?? "Failed to purchase a number";
+        throw new Error(`${detail} Your Twilio sub-account is set up, so you can retry, or Reset telephony to start over.`);
+      }
       return numData;
     },
     onSuccess: (data) => {
       toast.success(`Dedicated number provisioned: ${data.phoneNumber}`);
-      void invalidateTelephony();
     },
     onError: (err: Error) => toast.error(err.message),
+    // Refetch on failure too, not just success: a failed number purchase still
+    // changes server state (the sub-account exists now), and the Reset escape
+    // hatch only renders once the client knows that.
+    onSettled: () => void invalidateTelephony(),
   });
 
   const telephonyResetMutation = useMutation({
@@ -810,8 +819,17 @@ export function UserIntegrationsPage() {
                     </Button>
                   </>
                 )}
+                {/* Show Reset whenever there is org-specific telephony state to
+                    clear. The old condition (non-Twilio provider, OR BYO, OR a
+                    number) hid it in precisely the state where it was the only
+                    way out: platform Twilio, sub-account provisioned, number
+                    purchase failed. That state offered exactly one button, and
+                    it always failed. `usingGlobalDefault` is false as soon as a
+                    sub-account exists, which is the real "something to reset"
+                    signal. */}
                 {(telephonyStatusQuery.data.provider !== "twilio" ||
                   telephonyStatusQuery.data.twilio.mode === "byo" ||
+                  !telephonyStatusQuery.data.twilio.usingGlobalDefault ||
                   telephonyStatusQuery.data.outboundNumber) && (
                   <Button
                     variant="outline"

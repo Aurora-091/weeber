@@ -36,7 +36,7 @@ import { listSupportTickets, updateSupportTicketStatus, listSupportReplies, repl
 import { logAdminAction, listAdminAuditLog } from "../app/audit-log";
 import {
   getTwilioStatus,
-  createSubaccountForOrg,
+  ensureSubaccountForOrg,
   buyNumberForOrg,
   listAvailableNumbers,
   setByoCredentials,
@@ -168,10 +168,19 @@ export const admin = new Hono<AdminEnv>()
     const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
     if (!org) return c.json({ error: "org not found" }, 404);
 
-    const result = await createSubaccountForOrg(orgId, org.name ?? orgId);
+    // ensureSubaccountForOrg, not createSubaccountForOrg: a second POST here
+    // used to mint a second Twilio sub-account and overwrite
+    // orgs.twilioAccountSid, orphaning the first one — which still exists on
+    // Twilio, may still hold a paid number, and is no longer reachable by this
+    // system. Reusing the existing SID is the only safe response.
+    const result = await ensureSubaccountForOrg(orgId, org.name ?? orgId);
     if (!result.ok) return c.json({ error: result.error }, 400);
-    await logAdminAction(c.get("adminActor"), "twilio.subaccount.created", { orgId, accountSid: result.accountSid });
-    return c.json({ accountSid: result.accountSid }, 201);
+    // Only audit-log an actual creation. Logging a reuse as "created" would
+    // make the admin audit trail claim sub-accounts that were never minted.
+    if (!result.reused) {
+      await logAdminAction(c.get("adminActor"), "twilio.subaccount.created", { orgId, accountSid: result.accountSid });
+    }
+    return c.json({ accountSid: result.accountSid, reused: result.reused }, result.reused ? 200 : 201);
   })
 
   .post("/orgs/:orgId/twilio/number", async (c) => {

@@ -67,7 +67,7 @@ import { validateWorkflowGraph } from "../voice/workflows/graph-validation";
 import type { WorkflowGraph } from "../voice/workflows/graph-types";
 import {
   getTwilioStatus,
-  createSubaccountForOrg,
+  ensureSubaccountForOrg,
   buyNumberForOrg,
   listAvailableNumbers,
   releaseNumberForOrg,
@@ -1000,18 +1000,19 @@ export const userApp = new Hono<UserEnv>()
     );
   })
 
+  // Idempotent by design — see ensureSubaccountForOrg's docstring. This used to
+  // 409 when a sub-account already existed, which bricked the retry path of the
+  // two-step "get a dedicated number" flow (create sub-account, then buy the
+  // number): any failure at the number step left the org permanently unable to
+  // retry, because step 1 refused before step 2 could run.
   .post("/telephony/subaccount", async (c) => {
     const orgId = c.get("userOrgId")!;
-    const existing = await getTwilioStatus(orgId);
-    if (existing?.accountSid) {
-      return c.json({ error: "This org already has a Twilio sub-account provisioned — reset first to start over." }, 409);
-    }
     const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
     if (!org) return c.json({ error: "org not found" }, 404);
 
-    const result = await createSubaccountForOrg(orgId, org.name ?? orgId);
+    const result = await ensureSubaccountForOrg(orgId, org.name ?? orgId);
     if (!result.ok) return c.json({ error: result.error }, 400);
-    return c.json({ accountSid: result.accountSid }, 201);
+    return c.json({ accountSid: result.accountSid, reused: result.reused }, result.reused ? 200 : 201);
   })
 
   .post("/telephony/number", async (c) => {
