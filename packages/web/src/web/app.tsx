@@ -88,9 +88,49 @@ const UserWorkflowsListPage = lazy(() => import("./pages/app/workflows").then((m
 const UserWorkflowDetailPage = lazy(() => import("./pages/app/workflows").then((m) => ({ default: m.UserWorkflowDetailPage })));
 const UserShell = lazy(() => import("./components/app/user-shell").then((m) => ({ default: m.UserShell })));
 
-// DEV-only preview harness — gated at the route level by import.meta.env.DEV,
-// so this lazy import is dead code in production and dropped at build time.
-const PreviewHarness = lazy(() => import("./pages/__preview").then((m) => ({ default: m.PreviewHarness })));
+/**
+ * Non-production harnesses. Both are declared as a CONDITIONAL, not as a bare
+ * `lazy(() => import(...))`, and that shape is load-bearing.
+ *
+ * A route-level `{import.meta.env.DEV && <Route .../>}` guard does drop the
+ * <Route>, but it does NOT drop the chunk: `lazy(...)` is a call expression at
+ * module scope and no minifier can prove it side-effect-free, so the arrow —
+ * and the `import()` inside it — survives, and Rollup emits the whole harness
+ * plus every page it imports as a chunk in the production bundle. Measured:
+ * before this change a production build still contained
+ * `dist/assets/__preview-*.js`, contradicting the old comment here that claimed
+ * it was "dropped at build time".
+ *
+ * Wrapping the `lazy()` in a ternary whose test folds to a literal false lets
+ * esbuild collapse it to `null` and the dynamic import disappears with it.
+ */
+/**
+ * The test is written inline as `import.meta.env.DEV` on purpose. Hoisting it to
+ * a shared `const DEV_ONLY` breaks the elimination: esbuild only inlines a
+ * primitive const at a SINGLE use site, and two harnesses reading one const is
+ * two uses, so the identifier survives, the ternary cannot fold, and the chunk
+ * ships again. Verified both ways.
+ */
+
+/** Interactive structural preview, hand-driven (pages/__preview.tsx). */
+const PreviewHarness = import.meta.env.DEV
+  ? lazy(() => import("./pages/__preview").then((m) => ({ default: m.PreviewHarness })))
+  : null;
+
+/**
+ * Visual-regression harness (Phase 0.6) — renders any private page with mock
+ * context and no auth, so the screenshot + axe suites need no secrets.
+ *
+ * Gated on DEV *or* an explicit build flag, unlike __preview, because the visual
+ * suite serves a PRODUCTION build (playwright.visual.config.ts → `vite preview`,
+ * matching the existing e2e suite's "test the shipped artifact" rule) where DEV
+ * is false. `VITE_UI_HARNESS` is set in exactly one place — that config's
+ * webServer command — and vite.config.ts pins it to "0" otherwise so this test
+ * folds to a literal false in every real build.
+ */
+const VisualHarness = import.meta.env.DEV || import.meta.env.VITE_UI_HARNESS === "1"
+  ? lazy(() => import("./pages/__harness").then((m) => ({ default: m.VisualHarness })))
+  : null;
 
 // Warm each in-shell page's chunk on nav intent (hover/focus) so the inner
 // <Suspense fallback> never flashes on click — see lib/route-prefetch.ts. Keys
@@ -234,7 +274,8 @@ function App() {
       <Suspense fallback={<RouteFallback />}>
         <Switch>
           {/* DEV-only structural preview harness (tree-shaken from prod builds). */}
-          {import.meta.env.DEV && <Route path="/__preview" component={PreviewHarness} />}
+          {PreviewHarness && <Route path="/__preview" component={PreviewHarness} />}
+          {VisualHarness && <Route path="/__harness/:key" component={VisualHarness} />}
 
           {/* Public pages */}
           {showPublic && <Route path="/" component={LandingPage} />}

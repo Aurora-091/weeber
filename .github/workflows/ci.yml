@@ -132,10 +132,124 @@ jobs:
         # it can't go false-red on a missing key.
         run: cd packages/web && bun run test:e2e
 
+  design-guard:
+    name: Design drift ratchet + contrast gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Design drift ratchet
+        # Counts the hand-rolled buttons, native <select>s, arbitrary px values,
+        # raw hex and cloned card markup that the design system is supposed to
+        # own, and fails if any count went UP. Not a lint rule: 365 arbitrary px
+        # values cannot be fixed in one commit, so a binary rule would have to be
+        # disabled on day one. A ratchet cannot be. Budgets in
+        # tools/ui-guard/design-budget.json come down as each phase lands.
+        run: bun run design:guard
+      - name: Contrast gate
+        # Measures every declared token pair against its WCAG floor via
+        # tools/ui-guard/contrast.py. Ratchet mode: the 9 pairs the audit already
+        # found are declared in tokens.json, so this fails on a NEW contrast
+        # failure or a declared one that got worse. Nothing here needs a browser
+        # or a secret — it reads styles.css and does maths.
+        run: bun run contrast:gate
+      - name: Real contrast state (informational)
+        # Prints the un-excused number so the Phase B backlog stays visible in
+        # every CI log instead of only in tokens.json. Cannot fail the job.
+        if: always()
+        continue-on-error: true
+        run: bun run contrast:gate --strict
+
+  visual:
+    name: Visual regression (78 baselines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browser (chromium)
+        run: cd packages/web && bunx playwright install --with-deps chromium
+      - name: Visual regression
+        # Secret-free: the /__harness routes supply mock auth + query context, so
+        # there is no SUPABASE_JWT_SECRET and no admin key here (see
+        # src/web/pages/__harness/index.tsx). Baselines are Linux + headless
+        # Chromium and are committed, so this job is the authority on them — a
+        # macOS run will differ on font rasterisation and must not update them.
+        run: cd packages/web && bun run test:visual
+      - name: Upload diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          retention-days: 14
+
+  a11y:
+    name: Accessibility baseline (axe, report-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browser (chromium)
+        run: cd packages/web && bunx playwright install --with-deps chromium
+      - name: axe over every route
+        # REPORT-ONLY until Phase G converts it to a ratchet. It does still fail
+        # on two things: a route that did not mount, and a route where axe could
+        # apply fewer than 12 rules — because "0 violations" on a blank page is
+        # the most dangerous possible green.
+        run: cd packages/web && bun run test:a11y
+      - name: Upload a11y baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-baseline
+          path: packages/web/a11y-out/a11y-baseline.json
+          retention-days: 30
+
+  fonts:
+    name: Font provenance (webfont-only rasterisation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browser (chromium)
+        run: cd packages/web && bunx playwright install --with-deps chromium
+      - name: Font provenance
+        # Asserts via CDP CSS.getPlatformFontsForNode that every glyph on all 26
+        # routes came from a webfont this repo controls — not from a family
+        # fontconfig picked off the runner image.
+        #
+        # This job exists because the `visual` job cannot tell you WHY. The first
+        # CI run failed 51 of 78 baselines; 36 of them traced to one className
+        # (dashboard-shell.tsx used Tailwind's stock `font-serif`, which contains
+        # no webfont, so the admin wordmark rasterised from Caladea on Debian).
+        # A pixel diff only ever said "290 pixels changed" — it could not say that
+        # the baselines had quietly become a function of the build machine, nor
+        # that the admin panel was not using the brand typeface at all. This gate
+        # names both, and fails BEFORE 78 images move.
+        run: cd packages/web && bun run test:fonts
+
   ci-success:
     name: CI success
     if: always()
-    needs: [typecheck, test, build, lint, migration-drift, e2e]
+    needs: [typecheck, test, build, lint, migration-drift, e2e, design-guard, visual, a11y, fonts]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependent job failed

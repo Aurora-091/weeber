@@ -74,6 +74,46 @@ export async function createSubaccountForOrg(orgId: string, friendlyName: string
   return { ok: true, accountSid: account.sid };
 }
 
+export type EnsureSubaccountResult =
+  | { ok: true; accountSid: string; reused: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Idempotent "make sure this org has a sub-account". Returns the existing SID
+ * with `reused: true` instead of erroring, and only calls Twilio when there
+ * genuinely isn't one yet.
+ *
+ * WHY THIS EXISTS (bug, 2026-08-04)
+ * Getting a dedicated number is two Twilio calls: create the sub-account, then
+ * buy a number into it. The client ran them back to back and the sub-account
+ * route answered 409 "already provisioned — reset first" whenever one existed.
+ * So the moment step 1 succeeded and step 2 failed — no numbers in the area
+ * code, parent account out of funds, a dropped connection — the org was stuck
+ * in a state where it HAD a sub-account but no number, and every retry died on
+ * step 1 before it could ever reach step 2. The 409 was protecting against
+ * creating a second sub-account, which is a real risk, but it was doing it by
+ * making the retry path impossible rather than by making the step idempotent.
+ *
+ * `createSubaccountForOrg` is left non-idempotent on purpose: it is the honest
+ * "create one now" primitive. Callers that mean "ensure one exists" want this.
+ */
+export async function ensureSubaccountForOrg(orgId: string, friendlyName: string): Promise<EnsureSubaccountResult> {
+  const existing = await getTwilioStatus(orgId);
+  if (!existing) return { ok: false, error: "org not found" };
+
+  // BYO orgs already have working credentials that are not ours to replace —
+  // silently provisioning a platform sub-account over the top would hijack
+  // their telephony and start billing us for it.
+  if (existing.mode === "byo") {
+    return { ok: false, error: "This org is on its own Twilio credentials (BYO) — reset to platform mode first." };
+  }
+  if (existing.accountSid) return { ok: true, accountSid: existing.accountSid, reused: true };
+
+  const created = await createSubaccountForOrg(orgId, friendlyName);
+  if (!created.ok) return created;
+  return { ok: true, accountSid: created.accountSid, reused: false };
+}
+
 export type BuyNumberResult = { ok: true; phoneNumber: string } | { ok: false; error: string };
 export type AvailableNumbersResult =
   | { ok: true; numbers: { phoneNumber: string; locality: string | null; region: string | null }[] }
@@ -84,9 +124,69 @@ async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.T
   // in twilio-client.ts — never read orgs.twilioAuthToken directly here.
   const creds = await resolveOrgTwilioCreds(orgId);
   if (!creds) {
-    return { ok: false, error: "No Twilio sub-account provisioned for this org yet — call createSubaccountForOrg first" };
+    // This string reaches the user as a toast, so it names the user-facing
+    // step ("get a dedicated number") rather than an internal function.
+    return {
+      ok: false,
+      error: "No Twilio sub-account provisioned for this org yet — start the dedicated-number setup first.",
+    };
   }
   return { ok: true, client: Twilio(creds.accountSid, creds.authToken) };
+}
+
+/**
+ * getSubClient, but provisions the sub-account first when the org hasn't got
+ * one yet. For the number paths this is what the caller always meant.
+ *
+ * WHY THIS EXISTS (bug, 2026-08-04)
+ * Every number operation needs a sub-account, but creating one was left to the
+ * client as a separate first request — and only ONE of the three surfaces that
+ * buy numbers actually made it. The onboarding setup modal
+ * (components/app/setup-modal.tsx, "get a number" / autoProvisionMutation) and
+ * the Phone Numbers page (pages/app/numbers.tsx, search + buy) both went
+ * straight to the number step, so on any org that had never visited
+ * Integrations they failed with "No Twilio sub-account provisioned for this org
+ * yet" — from a first-run modal and a top-level nav page, neither of which
+ * offers a button that would fix it. Dead end, and the error blamed a step the
+ * user was never shown.
+ *
+ * Fixing it at the three route call sites would have left the same trap set for
+ * the fourth surface, so the precondition lives here instead, in the primitives
+ * that actually need it. Safe to do implicitly because an idle sub-account with
+ * no numbers costs nothing (same reasoning closeOrgTelephony documents) and
+ * ensureSubaccountForOrg never creates a second one — the *number* is the
+ * chargeable step, and that stays an explicit user action.
+ *
+ * releaseNumberForOrg deliberately does NOT use this: if there's no
+ * sub-account there is no number to release, so provisioning one to service a
+ * release would be pure waste and its plain "no sub-account" error is honest.
+ */
+async function getSubClientEnsuring(orgId: string): Promise<{ ok: true; client: Twilio.Twilio } | { ok: false; error: string }> {
+  const direct = await getSubClient(orgId);
+  if (direct.ok) return direct;
+
+  const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  if (!org) return { ok: false, error: "org not found" };
+
+  // Refuses BYO orgs and reuses an existing SID rather than minting a second.
+  const ensured = await ensureSubaccountForOrg(orgId, org.name ?? orgId);
+  if (!ensured.ok) return { ok: false, error: ensured.error };
+
+  const retry = await getSubClient(orgId);
+  if (retry.ok) return retry;
+
+  // Reached only when the org row claims a sub-account SID that ensure happily
+  // reused, yet the credential resolver still can't produce a usable pair —
+  // i.e. the auth token is missing or unreadable while the SID is set. Retrying
+  // can never clear that (ensure keeps reusing the same SID), so say what the
+  // state actually is instead of repeating "no sub-account provisioned" and
+  // sending the user back around the same loop.
+  return {
+    ok: false,
+    error: ensured.reused
+      ? "This org's Twilio sub-account credentials are stored but unreadable — reset telephony and provision a dedicated number again."
+      : retry.error,
+  };
 }
 
 /**
@@ -96,7 +196,7 @@ async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.T
  * this module silently auto-picking one for them.
  */
 export async function listAvailableNumbers(orgId: string, countryCode: string, areaCode?: string): Promise<AvailableNumbersResult> {
-  const sub = await getSubClient(orgId);
+  const sub = await getSubClientEnsuring(orgId);
   if (!sub.ok) return sub;
 
   let candidates: { phoneNumber: string; locality: string | null; region: string | null }[];
@@ -124,7 +224,7 @@ export async function listAvailableNumbers(orgId: string, countryCode: string, a
  * (one per agent) instead of a single shared one.
  */
 export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promise<BuyNumberResult> {
-  const sub = await getSubClient(orgId);
+  const sub = await getSubClientEnsuring(orgId);
   if (!sub.ok) return sub;
 
   try {

@@ -13,9 +13,12 @@
  * production build. Do not import it from production code.
  */
 import { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { AppShell } from "../components/shell/app-shell";
-import { UserContext, type UserContextValue, type UserMe } from "../components/app/user-shell";
+import { UserContext, type UserContextValue } from "../components/app/user-shell";
+// Shared with pages/__harness so the two harnesses cannot disagree about what
+// the mock org contains.
+import { makeHarnessClient, mockMe } from "./__harness/fixtures";
 import { getVertical } from "../lib/verticals";
 import { useShellFullBleed } from "../components/shell/app-shell";
 import { UserHomePage } from "./app/home";
@@ -35,29 +38,8 @@ import { CompliancePage } from "./dashboard/compliance";
 import { TemplatesPage } from "./dashboard/templates";
 import { FlagsPage } from "./dashboard/flags";
 
-const previewClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: Infinity } },
-});
+const previewClient = makeHarnessClient();
 
-const mockMe: UserMe = {
-  user: { id: "preview-user", email: "preview@weeber.ai" },
-  role: "owner",
-  needsOnboarding: false,
-  org: {
-    id: "preview-org",
-    name: "Preview Store",
-    status: "active",
-    vertical: "shopify",
-    planName: "Growth",
-    currency: "USD",
-    countryCode: "US",
-    timezone: "UTC",
-    contactEmail: "preview@weeber.ai",
-    webhookUrl: null,
-    humanTransferNumber: null,
-    callingWindowTestModeUntil: null,
-  },
-};
 
 /** Synthetic full-bleed probe — verifies AppShell's full-bleed <main> variant
  * fills the viewport edge-to-edge with no overflow/scroll (same mechanism the

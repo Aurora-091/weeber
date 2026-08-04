@@ -1,0 +1,75 @@
+{
+  "$comment": [
+    "Design-system drift budget — a RATCHET, not a pass/fail rule.",
+    "",
+    "WHY A RATCHET INSTEAD OF A LINT RULE",
+    "oxlint (this repo's linter) has no custom-rule plugin API, so these cannot be",
+    "written as lint rules. More importantly, a binary rule would be wrong here even if",
+    "it were possible: 365 arbitrary px values cannot be fixed in one commit, so a",
+    "pass/fail rule would have to be disabled on day one and would then never come back.",
+    "A ratchet cannot be disabled — it only ever allows the number to go DOWN.",
+    "",
+    "HOW TO USE IT",
+    "Counts below are the real measured state of `main` at the start of the UI",
+    "implementation plan (2026-08-03). When a phase reduces a count, run",
+    "`bun run design:guard --update` and commit the new budget WITH that phase's work.",
+    "Never raise a number to make CI pass — that is the one edit this file exists to",
+    "make visible in review.",
+    "",
+    "Marketing files are counted even though marketing is out of scope for the current",
+    "plan. Fixing them is deferred; REGRESSING them is still blocked."
+  ],
+  "recordedAt": "2026-08-03",
+  "recordedOn": "branch main, HEAD b5a1fb6",
+  "scanRoot": "packages/web/src/web",
+  "budget": {
+    "rawButton": {
+      "limit": 111,
+      "target": 10,
+      "why": "Raw <button> bypasses ui/button: loses focus-visible ring, disabled semantics, size scale and the Phase A no-greyed-primary invariant. Audit §C.",
+      "phase": "C7"
+    },
+    "rawSelect": {
+      "limit": 32,
+      "target": 0,
+      "why": "A native <select> paints the OPERATING SYSTEM accent colour into its open dropdown. No amount of chroma:0 in the stylesheet overrides it. This is a hard blocker for the monochrome mandate, not a style preference. Audit §D step 6.",
+      "phase": "B8"
+    },
+    "arbitraryPx": {
+      "limit": 365,
+      "target": 20,
+      "why": "365 one-off [Npx] values instead of a scale. Top offenders [10px]x70, [11px]x43, [15px]x33, [14px]x29. NOTE [1100px]x20 is a CONTAINER WIDTH and needs a --container-* token, not a spacing-scale entry — do not let a regex flatten that distinction.",
+      "phase": "F1"
+    },
+    "rawHex": {
+      "limit": 25,
+      "target": 0,
+      "why": "Raw hex in TSX cannot respond to light/dark or to the monochrome migration. Concentrated in WaitlistForm.tsx, EnterpriseDialog.tsx, contact.tsx. Includes #22C55E x16.",
+      "phase": "B7"
+    },
+    "cardLift": {
+      "limit": 15,
+      "target": 0,
+      "why": "Third overlapping card treatment alongside .card-weeber and .card-action. Collapses into ui/card variant='interactive'.",
+      "phase": "C1"
+    },
+    "cardAction": {
+      "limit": 2,
+      "target": 0,
+      "why": "Second overlapping card treatment. Same collapse as cardLift.",
+      "phase": "C1"
+    },
+    "transitionAll": {
+      "limit": 20,
+      "target": 0,
+      "why": "transition-all animates layout-affecting properties and forces reflow. Name the properties, and animate transform/opacity where possible.",
+      "phase": "F4"
+    },
+    "inlineCardClone": {
+      "limit": 46,
+      "target": 5,
+      "why": "Files hand-rolling a card as rounded-*+border+bg-* instead of using the card primitive. Count is FILES, not occurrences. Was recorded as 50 because the original ripgrep call passed `-g '!components/ui/**'` — a glob containing a slash is anchored to the search root, so ripgrep silently never applied it and counted dialog/input/select/textarea.tsx as clones of a card. Ratcheted DOWN to the real excluded count when the counter stopped shelling out to rg. rawButton/rawSelect were unaffected: components/ui/ contains zero `<button`/`<select` matches either way.",
+      "phase": "C1"
+    }
+  }
+}
