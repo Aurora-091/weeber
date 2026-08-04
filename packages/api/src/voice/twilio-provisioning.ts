@@ -135,13 +135,68 @@ async function getSubClient(orgId: string): Promise<{ ok: true; client: Twilio.T
 }
 
 /**
+ * getSubClient, but provisions the sub-account first when the org hasn't got
+ * one yet. For the number paths this is what the caller always meant.
+ *
+ * WHY THIS EXISTS (bug, 2026-08-04)
+ * Every number operation needs a sub-account, but creating one was left to the
+ * client as a separate first request — and only ONE of the three surfaces that
+ * buy numbers actually made it. The onboarding setup modal
+ * (components/app/setup-modal.tsx, "get a number" / autoProvisionMutation) and
+ * the Phone Numbers page (pages/app/numbers.tsx, search + buy) both went
+ * straight to the number step, so on any org that had never visited
+ * Integrations they failed with "No Twilio sub-account provisioned for this org
+ * yet" — from a first-run modal and a top-level nav page, neither of which
+ * offers a button that would fix it. Dead end, and the error blamed a step the
+ * user was never shown.
+ *
+ * Fixing it at the three route call sites would have left the same trap set for
+ * the fourth surface, so the precondition lives here instead, in the primitives
+ * that actually need it. Safe to do implicitly because an idle sub-account with
+ * no numbers costs nothing (same reasoning closeOrgTelephony documents) and
+ * ensureSubaccountForOrg never creates a second one — the *number* is the
+ * chargeable step, and that stays an explicit user action.
+ *
+ * releaseNumberForOrg deliberately does NOT use this: if there's no
+ * sub-account there is no number to release, so provisioning one to service a
+ * release would be pure waste and its plain "no sub-account" error is honest.
+ */
+async function getSubClientEnsuring(orgId: string): Promise<{ ok: true; client: Twilio.Twilio } | { ok: false; error: string }> {
+  const direct = await getSubClient(orgId);
+  if (direct.ok) return direct;
+
+  const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  if (!org) return { ok: false, error: "org not found" };
+
+  // Refuses BYO orgs and reuses an existing SID rather than minting a second.
+  const ensured = await ensureSubaccountForOrg(orgId, org.name ?? orgId);
+  if (!ensured.ok) return { ok: false, error: ensured.error };
+
+  const retry = await getSubClient(orgId);
+  if (retry.ok) return retry;
+
+  // Reached only when the org row claims a sub-account SID that ensure happily
+  // reused, yet the credential resolver still can't produce a usable pair —
+  // i.e. the auth token is missing or unreadable while the SID is set. Retrying
+  // can never clear that (ensure keeps reusing the same SID), so say what the
+  // state actually is instead of repeating "no sub-account provisioned" and
+  // sending the user back around the same loop.
+  return {
+    ok: false,
+    error: ensured.reused
+      ? "This org's Twilio sub-account credentials are stored but unreadable — reset telephony and provision a dedicated number again."
+      : retry.error,
+  };
+}
+
+/**
  * Searches for local numbers available to buy, scoped to the org's own
  * sub-account — does NOT purchase anything. Returns a candidate list so
  * the caller (the numbers picker UI) can let the user choose, rather than
  * this module silently auto-picking one for them.
  */
 export async function listAvailableNumbers(orgId: string, countryCode: string, areaCode?: string): Promise<AvailableNumbersResult> {
-  const sub = await getSubClient(orgId);
+  const sub = await getSubClientEnsuring(orgId);
   if (!sub.ok) return sub;
 
   let candidates: { phoneNumber: string; locality: string | null; region: string | null }[];
@@ -169,7 +224,7 @@ export async function listAvailableNumbers(orgId: string, countryCode: string, a
  * (one per agent) instead of a single shared one.
  */
 export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promise<BuyNumberResult> {
-  const sub = await getSubClient(orgId);
+  const sub = await getSubClientEnsuring(orgId);
   if (!sub.ok) return sub;
 
   try {

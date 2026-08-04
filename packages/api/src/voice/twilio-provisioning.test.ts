@@ -129,11 +129,16 @@ describe("C2b number provisioning", () => {
       }
     });
 
-    it("errors when no sub-account has been provisioned for the org", async () => {
+    // An org with no sub-account no longer errors here — it gets one
+    // provisioned on the spot (see "number provisioning bootstraps its own
+    // sub-account" in twilio-subaccount-idempotency.test.ts). A missing org ROW
+    // is the only remaining hard stop, and it must say so rather than blaming a
+    // sub-account that was never the problem.
+    it("errors with the actual cause when the org row does not exist at all", async () => {
       mockOrgRow = undefined;
-      const result = await listAvailableNumbers("org-no-subaccount", "US");
+      const result = await listAvailableNumbers("org-does-not-exist", "US");
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/No Twilio sub-account/);
+      if (!result.ok) expect(result.error).toMatch(/org not found/i);
     });
 
     it("errors when the search returns nothing", async () => {
