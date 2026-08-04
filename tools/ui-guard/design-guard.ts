@@ -18,8 +18,7 @@
  * Exit: 0 at or under budget · 1 a count rose · 2 the guard itself is broken.
  */
 
-import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
@@ -33,28 +32,80 @@ function die(msg: string): never {
   process.exit(2);
 }
 
-/** Run ripgrep and count matches. mode 'occurrences' = -o, 'files' = -l. */
+/**
+ * WHY THIS DOES NOT SHELL OUT TO RIPGREP
+ * It used to. `spawnSync("rg", ...)` worked on every dev machine and failed on
+ * the very first CI run, because the ubuntu-latest runner image does not ship
+ * ripgrep — and a missing binary makes spawnSync return `status: null`, so the
+ * error read `rg failed for /<button/: exit undefined`. A gate that only works
+ * where its author happens to have a tool installed is not a gate. Counting is
+ * a dozen lines of Bun, so it now has no external dependency at all and gives
+ * byte-identical numbers on any machine.
+ *
+ * PARITY WITH THE OLD RIPGREP BEHAVIOUR — the counts in design-budget.json were
+ * measured with rg, so this must reproduce them exactly:
+ *   - only *.tsx, matching the old `--glob '*.tsx'`
+ *   - matching is LINE BY LINE, because rg searches a line at a time. This is
+ *     load-bearing, not cosmetic: `inlineCardClone`'s `[^"]*` also matches \n in
+ *     JS, so running it over whole-file text would join unrelated lines and
+ *     inflate the count. Do not "simplify" this into one whole-file regex.
+ *   - 'occurrences' counts every non-overlapping match (rg -o), 'files' counts
+ *     files with at least one match (rg -l).
+ */
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", "coverage"]);
+
+/** Every *.tsx under `dir`, as slash-separated paths relative to `dir`. */
+function listTsx(dir: string, relBase = ""): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+      out.push(...listTsx(resolve(dir, entry.name), rel));
+    } else if (entry.isFile() && entry.name.endsWith(".tsx")) {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
+/**
+ * Directory exclusions, as path fragments relative to scanRoot. Replaces rg's
+ * `-g '!components/ui/**'`. Kept deliberately dumb — a real glob engine here
+ * would be a second thing to distrust.
+ */
+function isExcluded(rel: string, exclude: string[]): boolean {
+  return exclude.some((frag) => rel.startsWith(frag) || rel.includes(`/${frag}`));
+}
+
+/** Count matches of `pattern`. mode 'occurrences' = rg -o, 'files' = rg -l. */
 function count(
   pattern: string,
   root: string,
   mode: "occurrences" | "files",
-  extraArgs: string[] = [],
+  exclude: string[] = [],
 ): number {
-  const args = [
-    mode === "occurrences" ? "-o" : "-l",
-    "--glob",
-    "*.tsx",
-    ...extraArgs,
-    pattern,
-    root,
-  ];
-  const res = spawnSync("rg", args, { encoding: "utf8" });
-  // rg exits 1 on "no matches" — that is a legitimate zero, not an error.
-  if (res.status !== 0 && res.status !== 1) {
-    die(`rg failed for /${pattern}/: ${res.stderr || `exit ${res.status}`}`);
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, "g");
+  } catch (err) {
+    die(`invalid pattern /${pattern}/: ${(err as Error).message}`);
   }
-  if (!res.stdout.trim()) return 0;
-  return res.stdout.trim().split("\n").length;
+  let total = 0;
+  for (const rel of listTsx(root)) {
+    if (isExcluded(rel, exclude)) continue;
+    const text = readFileSync(resolve(root, rel), "utf8");
+    let hits = 0;
+    for (const line of text.split("\n")) {
+      hits += line.match(re)?.length ?? 0;
+    }
+    if (mode === "files") {
+      if (hits > 0) total += 1;
+    } else {
+      total += hits;
+    }
+  }
+  return total;
 }
 
 if (!existsSync(BUDGET_PATH)) die("tools/ui-guard/design-budget.json is missing");
@@ -62,15 +113,22 @@ const spec = JSON.parse(readFileSync(BUDGET_PATH, "utf8"));
 const root = resolve(REPO_ROOT, spec.scanRoot);
 if (!existsSync(root)) die(`scanRoot not found: ${spec.scanRoot}`);
 
-const EXCLUDE_UI = ["-g", "!components/ui/**"];
+const EXCLUDE_UI = ["components/ui/"];
 
 /**
  * Each metric is a named counter. Patterns are deliberately simple and
  * over-inclusive rather than clever — a guard that is hard to reason about gets
- * distrusted and then ignored. If a count looks wrong, run the same rg by hand.
+ * distrusted and then ignored. If a count looks wrong, reproduce it with
+ * `rg -o --glob '*.tsx' -g '!components/ui/**' '<pattern>' packages/web/src/web | wc -l`
+ * — the counter is a faithful reimplementation of exactly that.
  */
 const METRICS: Record<string, () => number> = {
-  // ui/ is excluded: ui/button.tsx is *supposed* to render a raw <button>.
+  // components/ui/ is excluded on principle — a primitive is allowed to be the
+  // one place a raw element is rendered. In practice it changes nothing for these
+  // two: ui/button.tsx renders `const Comp = asChild ? Slot.Root : "button"`, a
+  // STRING, and ui/select.tsx is Radix, so `<button` / `<select` match zero times
+  // in that directory (measured). Keeping the exclusion so the metric stays
+  // honest if a primitive ever does use JSX for its own element.
   rawButton: () => count("<button", root, "occurrences", EXCLUDE_UI),
   rawSelect: () => count("<select", root, "occurrences", EXCLUDE_UI),
   arbitraryPx: () => count("\\[[0-9]+px\\]", root, "occurrences"),
