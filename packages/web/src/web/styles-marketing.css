@@ -640,6 +640,22 @@ button.marketing .demo-orb-wrapper--clickable,
   .marketing .demo-bubble {
     animation: none !important;
   }
+  /* Hero decoration was missed when this block was written (2026-08-03).
+     The hero renders 64 `.hero-wave-bar` spans each running a 3.5s infinite
+     scaleY/opacity loop with a staggered delay, plus a pulsing status dot —
+     the largest continuous motion on the site, above the fold, purely
+     decorative, and exactly what a vestibular-disorder user sets this
+     preference to stop. Frozen to the un-animated base state (full-height
+     bars at opacity 0.35), so the waveform silhouette survives.
+     Side effect this was found through: an unfrozen 64-bar loop also made the
+     landing visual-regression baseline non-deterministic (~1174 px of drift
+     every run, riding just under the tolerance), because Playwright's
+     reducedMotion emulation only sets the media query — the CSS has to
+     actually answer it. */
+  .marketing .hero-wave-bar,
+  .marketing .hero-pulse-dot {
+    animation: none !important;
+  }
 }
 
 /* ─── Live waveform — audio-reactive bars (AgentDemoWidget), light-blue accent ────────────────── */

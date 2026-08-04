@@ -51,12 +51,34 @@ export default defineConfig({
   },
   expect: {
     toHaveScreenshot: {
-      // Deliberate, not the default. Per-pixel `threshold` absorbs font
-      // antialiasing noise; `maxDiffPixelRatio` is tight enough that a 4px
-      // padding change (thousands of shifted pixels) cannot slip through.
-      // Verified by the Phase 0 exit-gate probe.
+      // Deliberate, not the default, and measured rather than guessed.
+      //
+      // `threshold: 0.15` is per-pixel: a pixel only counts as different when
+      // it exceeds 15% YIQ distance, which is what absorbs font antialiasing.
+      //
+      // `maxDiffPixels` is ABSOLUTE, deliberately not `maxDiffPixelRatio`. A
+      // ratio scales the allowance with image area, so the tall `fullPage`
+      // dashboard shots (1440 x ~2500) were being handed ~5,400 forgiven
+      // pixels — enough to hide a genuine 1px border or radius change on a
+      // small component, which is precisely the class of change Phase B makes.
+      //
+      // The number: with the hero waveform respecting prefers-reduced-motion
+      // (styles-marketing.css), measured flake across all 78 baselines is 0
+      // differing pixels on two consecutive local runs at `maxDiffPixels: 0`.
+      // 100 is therefore pure headroom, not a measured flake budget. It is kept
+      // for exactly one unmeasurable risk: the baselines were generated on Debian
+      // trixie and CI runs ubuntu-latest, so freetype/fontconfig may rasterise
+      // glyph edges slightly differently even though the browser build is now
+      // identical on both sides. That term cannot be measured from here.
+      // A 4px padding change moves far more than 100 px. Measured, Phase 0 exit
+      // gate: `PageHeader` `pb-5` -> `pb-6` reddened 42 of 78 shots (every one of
+      // the 14 surfaces that render the shared header, at all three viewports);
+      // reverting returned all 78 to green. Nothing real hides under 100.
+      // If CI reports diffs in the low hundreds on a PR that changed no styling,
+      // the fix is to regenerate the baselines FROM CI
+      // (.github/workflows/visual-baselines.yml), never to raise this number.
       threshold: 0.15,
-      maxDiffPixelRatio: 0.0015,
+      maxDiffPixels: 100,
       animations: "disabled",
       caret: "hide",
       scale: "css",
@@ -68,10 +90,19 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         launchOptions: {
-          // The bundled Playwright browser is not installed in this sandbox and
-          // the srgb/hinting flags remove two sources of cross-machine pixel
-          // drift.
-          executablePath: process.env.PLAYWRIGHT_CHROME_PATH || undefined,
+          // No `executablePath` escape hatch, deliberately. An earlier revision
+          // honoured PLAYWRIGHT_CHROME_PATH so the suite could run against the
+          // system Chrome. That was measured and it is not equivalent: the same
+          // 78 pages rendered by the system Chrome vs Playwright's bundled
+          // chromium-headless-shell differ by 192 px at best, ~839 px median and
+          // 18,671 px at worst. Baselines are a browser-build artifact. Every
+          // committed PNG here comes from the bundled build that CI installs
+          // (`bunx playwright install --with-deps chromium`, resolved through
+          // --frozen-lockfile), so pointing this at anything else turns a green
+          // gate into 78 lies. If the browser is missing, failing loudly with
+          // "run playwright install" is the correct outcome.
+          //
+          // srgb + no hinting remove two further sources of machine drift.
           args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--no-sandbox"],
         },
       },
