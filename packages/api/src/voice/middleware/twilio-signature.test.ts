@@ -66,8 +66,8 @@ function signTwilioRequest(authToken: string, url: string, params: Record<string
   return createHmac("sha1", authToken).update(Buffer.from(data, "utf-8")).digest("base64");
 }
 
-function signedRequest(params: Record<string, string>, authToken: string) {
-  const url = "https://example.test/hook";
+function signedRequest(params: Record<string, string>, authToken: string, query = "") {
+  const url = `https://example.test/hook${query}`;
   const body = new URLSearchParams(params).toString();
   const sig = signTwilioRequest(authToken, url, params);
   return new Request(url, {
@@ -155,6 +155,38 @@ describe("requireTwilioSignature — org-aware token resolution", () => {
 
     const res = await app.request(signedRequest(params, "org-specific-token"));
     expect(res.status).toBe(200);
+  });
+
+  // The signed URL must include the query string. place-outbound-call.ts puts
+  // the org in the answer URL (`/api/voice/incoming?orgId=...`) so an outbound
+  // call is self-describing before our session write lands; that only works if
+  // validation signs what Twilio actually signed. Reconstructing path-only
+  // silently passed for query-less inbound voiceUrls and 403'd every outbound
+  // call.
+  it("validates a webhook URL that carries a query string, as Twilio signed it", async () => {
+    const app = buildApp();
+    const params = { CallSid: "CAoutbound3", From: "+15407923044", To: "+917499291834" };
+
+    const res = await app.request(signedRequest(params, "global-token", "?orgId=org_abc"));
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a tampered query string, which is what lets /incoming trust `?orgId=`", async () => {
+    const app = buildApp();
+    const params = { CallSid: "CAoutbound4", From: "+15407923044", To: "+917499291834" };
+    const signed = signedRequest(params, "global-token", "?orgId=org_abc");
+
+    // Same body, same signature, someone else's org swapped into the URL.
+    const tampered = new Request("https://example.test/hook?orgId=org_victim", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Twilio-Signature": signed.headers.get("X-Twilio-Signature")!,
+      },
+      body: new URLSearchParams(params).toString(),
+    });
+
+    expect((await app.request(tampered)).status).toBe(403);
   });
 
   // Audit 2026-07-19 finding #4: used to fail OPEN (skip validation, warn) when no token could

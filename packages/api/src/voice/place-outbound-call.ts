@@ -143,10 +143,23 @@ export async function placeOutboundCall(input: {
     return { ok: true, provider, sessionKey: result.callSid, status: "in-progress" };
   }
 
+  // The org rides along in the answer URL, exactly like the Plivo branch
+  // above. Without it, /incoming can only learn the org from the session —
+  // and the session is written by our *callers*, after this function returns
+  // (voice/routes.ts, workflows/scheduler.ts). Ringing time normally means
+  // that write wins the race, but an instantly-answered call or a slow
+  // (Redis-backed) session store makes an outbound call arrive at /incoming
+  // as a plain inbound one: no org, no persona, wrong direction. Twilio signs
+  // the full URL it was given including this query string, so /incoming can
+  // trust it (see middleware/twilio-signature.ts).
+  const twilioIncomingUrl = orgId
+    ? `${getPublicUrl()}/api/voice/incoming?orgId=${encodeURIComponent(orgId)}`
+    : `${getPublicUrl()}/api/voice/incoming`;
+
   const call = await (await getTwilioClientForOrg(orgId)).calls.create({
     to,
     from,
-    url: `${getPublicUrl()}/api/voice/incoming`,
+    url: twilioIncomingUrl,
     statusCallback: `${getPublicUrl()}/api/voice/status-callback`,
     statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     record: true,

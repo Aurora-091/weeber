@@ -92,9 +92,19 @@ export const voice = new Hono()
     const callSid = String(body.CallSid ?? "");
     const from = String(body.From ?? "");
     const to = String(body.To ?? "");
+    // Only ever present on a call we placed ourselves (place-outbound-call.ts
+    // appends it; a number's inbound voiceUrl never carries a query). It is
+    // signature-covered, so it can be trusted, and it is what makes an
+    // outbound call self-describing even if our own session write hasn't
+    // landed yet — the same race Plivo's `?orgId=` answer URL already avoids.
+    const urlOrgId = c.req.query("orgId") || undefined;
 
     if (callSid && !(await sessionStore.get(callSid))) {
-      await sessionStore.set(callSid, { callSid, direction: "inbound" });
+      await sessionStore.set(callSid, {
+        callSid,
+        direction: urlOrgId ? "outbound" : "inbound",
+        orgId: urlOrgId,
+      });
     }
     const session = callSid ? await sessionStore.get(callSid) : undefined;
     const webhookUrl = resolveWebhookUrl(session?.webhookUrl);
@@ -121,7 +131,7 @@ export const voice = new Hono()
         // caller memory, feature flags, persona resolution and CRM sync, not
         // just call-history reporting. Best-effort by construction: the helper
         // swallows its own failures and returns null.
-        const orgId = session?.orgId ?? (await resolveOrgIdForNumbers(to, from));
+        const orgId = session?.orgId ?? urlOrgId ?? (await resolveOrgIdForNumbers(to, from));
 
         // Activity heartbeat for the inactivity lifecycle sweep (no-ops if
         // orgId null). Runs before the insert so a failed insert can't also
@@ -132,7 +142,7 @@ export const voice = new Hono()
           .insert(calls)
           .values({
             twilioCallSid: callSid,
-            direction: session?.direction ?? "inbound",
+            direction: session?.direction ?? (urlOrgId ? "outbound" : "inbound"),
             fromNumber: from,
             toNumber: to,
             status: "in-progress",

@@ -92,8 +92,8 @@ const { sessionStore } = await import("./session-store");
 const ORG_NUMBER = "+15551110000";
 const CALLER = "+919999999999";
 
-async function postIncoming(callSid: string, to = ORG_NUMBER, from = CALLER) {
-  const res = await voice.request("/incoming", {
+async function postIncoming(callSid: string, to = ORG_NUMBER, from = CALLER, query = "") {
+  const res = await voice.request(`/incoming${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ CallSid: callSid, From: from, To: to }).toString(),
@@ -148,6 +148,30 @@ describe("/incoming — inbound call org attribution", () => {
 
     expect(row).toBeDefined();
     expect(row!.orgId).toBeNull();
+  });
+
+  it("trusts a signature-covered ?orgId= from an outbound call's answer URL when the session write lost the race", async () => {
+    // place-outbound-call.ts stamps the org into the Twilio answer URL, but
+    // our callers only write the session *after* placeOutboundCall returns.
+    // On an instant answer this webhook can arrive first — with no session at
+    // all — and the call must still be attributed and marked outbound.
+    phoneRows = [];
+
+    const row = await postIncoming("CA_url_org", "+15557776666", ORG_NUMBER, "?orgId=org-placed");
+
+    expect(row!.orgId).toBe("org-placed");
+    expect(row!.direction).toBe("outbound");
+  });
+
+  it("prefers ?orgId= over a number lookup that would attribute the call to the customer's org", async () => {
+    // Worst case of relying on the number alone: we dial a customer who
+    // themselves happen to be one of our orgs, so `To` resolves to *their*
+    // org rather than the one that placed the call.
+    phoneRows = [{ orgId: "org-customer", number: "+15557776666", status: "active" }];
+
+    const row = await postIncoming("CA_url_org_wins", "+15557776666", ORG_NUMBER, "?orgId=org-placed");
+
+    expect(row!.orgId).toBe("org-placed");
   });
 
   it("lets an outbound call's session org win over the number lookup", async () => {

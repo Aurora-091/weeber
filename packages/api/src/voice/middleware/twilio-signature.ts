@@ -115,10 +115,17 @@ export const requireTwilioSignature = createMiddleware<{
   // Twilio signs the exact public URL it called plus the parsed form body.
   // Reconstruct the URL from PUBLIC_APP_URL (not the request itself) since
   // requests may arrive via a proxy/tunnel with a different Host header.
+  //
+  // The query string is part of what Twilio signed and must be included:
+  // dropping it (as this did until the outbound `?orgId=` change) silently
+  // works only for URLs that have no query at all — a number's inbound
+  // voiceUrl — and 403s every webhook for a URL that does carry one. The
+  // upside of signing it is that a query param on a Twilio webhook URL is
+  // then tamper-proof, which is what lets /incoming trust `?orgId=`.
   let url: string;
   try {
-    const path = new URL(c.req.url).pathname;
-    url = `${getPublicUrl()}${path}`;
+    const requestUrl = new URL(c.req.url);
+    url = `${getPublicUrl()}${requestUrl.pathname}${requestUrl.search}`;
   } catch {
     return c.json({ error: "Unable to resolve public URL for signature validation" }, 500);
   }
