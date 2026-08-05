@@ -4,7 +4,8 @@ const { VoiceResponse } = twilioPkg.twiml;
 import { connectStt, resolveSttProvider } from "./stt";
 import type { SttConnection } from "./stt";
 import { connectTts, resolveTtsProvider } from "./tts";
-import type { TtsConnection } from "./tts";
+import type { TtsConnection, TtsProvider } from "./tts";
+import { voiceIdForProvider } from "./tts-voice-identity";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
 import {
@@ -150,6 +151,24 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /** Per-agent frame overrides (see agent-frame.ts, agent.ts's resolveAgentConfig) — all
    * undefined unless the call's org+template has a configured agent config row. */
   let ttsVoiceIdOverride: string | undefined;
+  /**
+   * Voice identity (see tts-voice-identity.ts). `ttsVoiceIdOverride` is only
+   * legal for the provider it was picked from, so the provider is tracked
+   * alongside it and the ID is dropped whenever a turn is synthesized by
+   * anyone else.
+   *
+   * `activeTtsProvider` is the provider the caller is *currently* hearing —
+   * the resolved primary at call start, then updated (for the rest of the
+   * call, deliberately) the first time a cross-provider TTS failover fires.
+   * Failover used to be rebuilt from the primary on every turn, so one
+   * transient error made a single turn speak in the fallback provider's voice
+   * and the next turn flip straight back: the agent audibly became a
+   * different person and then changed back again. Sticky means the voice can
+   * change at most once per call, which is the same voice-identity reasoning
+   * ADR-060 used to reject mid-call language switching.
+   */
+  let ttsVoiceIdProvider: TtsProvider | undefined;
+  let activeTtsProvider: TtsProvider | undefined;
   let llmModelOverride: string | undefined;
   let enabledToolsOverride: AvailableToolName[] | undefined;
   /**
@@ -564,7 +583,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           estimatedCostUsdCents = estimateCallCostCents({
             telephonyProvider: provider,
             sttProvider: sttProviderOverride,
-            ttsProvider: ttsProviderOverride,
+            // The provider that actually synthesized this call's audio, which
+            // is not the same thing as the configured override: it reflects the
+            // smart Indic default (ADR-060) and any mid-call failover, both of
+            // which change what this call really cost.
+            ttsProvider: activeTtsProvider ?? ttsProviderOverride,
             durationSeconds,
           });
         }
@@ -603,7 +626,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               ...(capturedSentiment ? { sentiment: capturedSentiment } : {}),
               ...(capturedIntent ? { intent: capturedIntent } : {}),
               sttProviderUsed: sttProviderOverride ?? null,
-              ttsProviderUsed: ttsProviderOverride ?? null,
+              ttsProviderUsed: activeTtsProvider ?? ttsProviderOverride ?? null,
               llmProviderUsed: llmProviderOverride ?? null,
               estimatedCostUsdCents,
               healthStatus: health.status,
@@ -771,6 +794,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     await finalizeCall("transferred");
   }
 
+  /**
+   * The (provider, voiceId) pair the caller is actually hearing right now.
+   *
+   * Every tts-cache read/write must be keyed on this rather than on the
+   * *intended* provider: the cache is a process-global Map (see tts-cache.ts),
+   * so storing audio a fallback provider produced under the primary provider's
+   * key means later canned/filler/backchannel lines replay in a voice that
+   * doesn't match the live turns — for the rest of that call and for every
+   * later call in the same process.
+   */
+  function currentTtsVoice(): { provider: TtsProvider; voiceId: string | undefined } {
+    const provider = activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride);
+    return { provider, voiceId: voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, provider) };
+  }
+
   /** Speaks a fixed line with no LLM call involved — used for the silence
    * re-prompt/goodbye so a flaky LLM turn can't compound an already-quiet
    * caller into an even longer wait.
@@ -799,8 +837,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
-    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    const lookup = currentTtsVoice();
+    const cached = getCachedTtsAudio(lookup.provider, lookup.voiceId, languageOverride, text);
     if (cached) {
       await speak(ws, async () => text, { cachedAudioBase64: cached });
       return;
@@ -815,7 +853,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       },
       { onAudioChunk: (base64Audio) => chunks.push(base64Audio) },
     );
-    setCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text, chunks);
+    // Re-read after speaking, not before: this very line may have failed over
+    // to another provider, in which case `chunks` is that provider's voice and
+    // must be stored under its key, never the primary's.
+    const stored = currentTtsVoice();
+    setCachedTtsAudio(stored.provider, stored.voiceId, languageOverride, text, chunks);
   }
 
   /**
@@ -838,8 +880,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   const TOOL_CALL_FILLER_LINES = ["One moment, let me check that.", "Let me look into that for you."];
 
   async function warmFillerCache(text: string) {
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
-    if (getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text)) return;
+    // Warm against the voice the caller is hearing right now (post-failover if
+    // one already happened), not the primary this call started on — otherwise
+    // the warmed clip is a different voice than the live turns it interleaves
+    // with.
+    const { provider, voiceId } = currentTtsVoice();
+    if (getCachedTtsAudio(provider, voiceId, languageOverride, text)) return;
     const chunks: string[] = [];
     await new Promise<void>((resolve) => {
       const warmupTts = connectTts(
@@ -849,14 +895,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           console.error("[voice] failed to warm filler-audio cache", err);
           resolve();
         },
-        ttsProviderOverride,
-        ttsVoiceIdOverride,
+        provider,
+        voiceId,
         languageOverride,
       );
       warmupTts.sendText(text);
       warmupTts.endTurn();
     });
-    setCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text, chunks);
+    setCachedTtsAudio(provider, voiceId, languageOverride, text, chunks);
   }
 
   async function maybePlayToolCallFiller(ws: Sendable) {
@@ -868,8 +914,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     if (ended || !streamSid) return;
 
     const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
-    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    const { provider: resolvedProvider, voiceId: resolvedVoiceId } = currentTtsVoice();
+    const cached = getCachedTtsAudio(resolvedProvider, resolvedVoiceId, languageOverride, text);
     if (!cached) {
       void warmFillerCache(text);
       return;
@@ -894,8 +940,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   function maybePlayBackchannel(ws: Sendable) {
     if (ended || !streamSid) return;
     const text = BACKCHANNEL_LINES[Math.floor(Math.random() * BACKCHANNEL_LINES.length)];
-    const resolvedProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
-    const cached = getCachedTtsAudio(resolvedProvider, ttsVoiceIdOverride, languageOverride, text);
+    const { provider: resolvedProvider, voiceId: resolvedVoiceId } = currentTtsVoice();
+    const cached = getCachedTtsAudio(resolvedProvider, resolvedVoiceId, languageOverride, text);
     if (!cached) {
       // Not warmed yet — skip this one and warm it for next time rather than
       // stalling the caller with a live synth. Backchannels are best-effort.
@@ -1057,10 +1103,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // captures every sendText call so far so it can be replayed to a
       // fallback provider's connection if we do fail over before any audio
       // played — nothing is lost by retrying at that point.
-      const ttsFailoverChain = resolveTtsFailoverChain(resolveTtsProvider(ttsProviderOverride, languageOverride), ttsFallbackOrderOverride);
+      //
+      // Voice identity (see tts-voice-identity.ts): a failover is sticky for
+      // the rest of the call (`activeTtsProvider`), because the alternative —
+      // rebuilding the chain from the primary on every turn, as this did
+      // before — makes a single transient error flip the agent's voice for one
+      // turn and then flip it back. The configured voice ID travels only to
+      // the provider it belongs to; a fallback provider uses its own default
+      // voice instead of being handed an ID that means nothing to it.
+      const primaryTtsProvider = activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride);
+      const ttsFailoverChain = resolveTtsFailoverChain(primaryTtsProvider, ttsFallbackOrderOverride);
       const sentTextBuffer: string[] = [];
 
-      const attemptTts = (providerOverride: string | undefined, replayText: string[] = []): TtsConnection => {
+      const attemptTts = (attemptProvider: TtsProvider, replayText: string[] = []): TtsConnection => {
+        activeTtsProvider = attemptProvider;
         const real = connectTts(
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
@@ -1103,8 +1159,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // failover in the same turn.
             tts = attemptTts(next, [...sentTextBuffer]);
           },
-          providerOverride,
-          ttsVoiceIdOverride,
+          attemptProvider,
+          voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider),
           languageOverride,
           (word) => spokenWords.push(word),
         );
@@ -1119,7 +1175,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         };
       };
 
-      tts = attemptTts(ttsProviderOverride);
+      tts = attemptTts(primaryTtsProvider);
     }
 
     let fullText = "";
@@ -1699,6 +1755,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             ttsFallbackOrderOverride = agentConfig.ttsFallbackOrder;
             llmFallbackModelsOverride = agentConfig.llmFallbackModels;
             languageOverride = agentConfig.language ?? session?.language ?? numberConfig.language;
+            // Voice identity (see tts-voice-identity.ts) — resolved once, here,
+            // so every later turn/canned line/cache key agrees on which
+            // provider owns `ttsVoiceIdOverride` and which provider the caller
+            // is currently hearing. `voiceId` and `voiceProvider` are saved as
+            // a pair on the agent config, so the provider resolved from this
+            // call's overrides right now is the one that voice was picked for.
+            activeTtsProvider = resolveTtsProvider(ttsProviderOverride, languageOverride);
+            ttsVoiceIdProvider = ttsVoiceIdOverride ? activeTtsProvider : undefined;
 
             // Control: optional hard cap on call length (per-call override or
             // per-number config).

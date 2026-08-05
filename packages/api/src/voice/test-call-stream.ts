@@ -42,6 +42,7 @@ import { connectStt, resolveSttProvider } from "./stt";
 import type { SttConnection } from "./stt";
 import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
+import { voiceIdForProvider } from "./tts-voice-identity";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, buildPreviewAgentConfig } from "./agent";
 import type { TestCallTokenPayload } from "./test-call-tokens";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
@@ -243,11 +244,21 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
             failoverEvents.push({ channel: "stt", from: sttPrimary, to: sttChain[0] });
             sttProviderOverride = sttChain[0];
           }
-          const ttsPrimary = resolveTtsProvider(ttsProviderOverride);
+          // `languageOverride` is passed here for the same reason it is on the
+          // STT line above: without it this resolves the English-first default
+          // and the preview would report a failover chain the real call would
+          // never take for an Indic-language agent (ADR-060's smart default).
+          const ttsPrimary = resolveTtsProvider(ttsProviderOverride, languageOverride);
           const ttsChain = resolveTtsFailoverChain(ttsPrimary, agentConfig.ttsFallbackOrder);
           if (ttsChain.length > 0) {
             failoverEvents.push({ channel: "tts", from: ttsPrimary, to: ttsChain[0] });
             ttsProviderOverride = ttsChain[0];
+            // Voice identity (see tts-voice-identity.ts): the configured voice
+            // ID belongs to the primary provider, so it must not travel to the
+            // fallback — the preview would either error or silently synthesize
+            // in the fallback's env-default voice, neither of which is what a
+            // real failover sounds like.
+            ttsVoiceIdOverride = voiceIdForProvider(ttsVoiceIdOverride, ttsPrimary, ttsChain[0]);
           }
         }
 
