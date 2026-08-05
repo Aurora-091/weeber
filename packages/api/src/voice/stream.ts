@@ -29,6 +29,7 @@ import { sendSmsForOrg } from "./send-sms";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
 import { getEffectiveFlags } from "./org-queries";
+import { resolveOrgIdForNumbers } from "./org-attribution";
 import { renderTemplate } from "./workflows/variables";
 import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTER_FLAG } from "./audio-noise-filter";
 import type { NoiseFilter } from "./audio-noise-filter";
@@ -1546,6 +1547,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // whichever insert (this one, or the webhook's) lands second is
             // a harmless no-op.
             if (!row && event.from && event.to) {
+              // Same org attribution as /incoming's insert (org-attribution.ts):
+              // this branch only runs for a genuinely inbound call whose
+              // webhook insert hasn't landed yet, i.e. exactly the case where
+              // there is no session orgId to inherit. Resolving it from the
+              // dialled number here — not just in the route — is what stops
+              // the two insert paths from disagreeing about the org, and is
+              // what makes humanNumberOrgId below non-undefined for inbound
+              // (feeding caller memory, feature flags, persona and CRM sync).
+              // Costs one extra round-trip, and only in this race case.
+              const fallbackOrgId = session?.orgId ?? (await resolveOrgIdForNumbers(event.to, event.from));
               const [inserted] = await db
                 .insert(calls)
                 .values({
@@ -1557,7 +1568,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                   status: "in-progress",
                   agentPersona: session?.persona ?? null,
                   webhookUrl: session?.webhookUrl ?? null,
-                  orgId: session?.orgId ?? null,
+                  orgId: fallbackOrgId,
                 })
                 .onConflictDoNothing()
                 .returning();

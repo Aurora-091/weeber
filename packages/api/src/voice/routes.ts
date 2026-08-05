@@ -30,6 +30,7 @@ import { AgentFrameSchema } from "./agent-frame";
 import { makeFixedWindowLimiter } from "./fixed-window-limiter";
 import { issueTestCallToken } from "./test-call-tokens";
 import { getOrg, getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics } from "./org-queries";
+import { resolveOrgIdForNumbers } from "./org-attribution";
 import { bumpOrgActivity } from "../app/org-activity";
 import { generatePreviewAudio } from "./tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
@@ -111,27 +112,36 @@ export const voice = new Hono()
       // this insert lands still resolves org/persona context correctly,
       // it just runs the insert itself a beat later (onConflictDoNothing
       // on both sides makes the eventual duplicate a no-op either way).
-      void db
-        .insert(calls)
-        .values({
-          twilioCallSid: callSid,
-          direction: session?.direction ?? "inbound",
-          fromNumber: from,
-          toNumber: to,
-          status: "in-progress",
-          agentPersona: session?.persona ?? null,
-          webhookUrl: session?.webhookUrl ?? null,
-          // Weeber org-lite scoping (additive, ADR-030) — populated when
-          // this call originated from a scheduled call the scheduler
-          // stamped with orgId (e.g. a Shopify vertical workflow); null
-          // for plain inbound calls or self-hosted OpenVent usage.
-          orgId: session?.orgId ?? null,
-        })
-        .onConflictDoNothing()
-        .catch((err) => console.error("[voice] failed to insert call row from /incoming", err));
+      void (async () => {
+        // Weeber org-lite scoping (additive, ADR-030). An outbound call we
+        // placed ourselves already carries its org in the session (stamped at
+        // placement time). A genuinely inbound call has no session to read, so
+        // the org is resolved from the number that was dialled instead — see
+        // org-attribution.ts for why leaving this null silently degraded
+        // caller memory, feature flags, persona resolution and CRM sync, not
+        // just call-history reporting. Best-effort by construction: the helper
+        // swallows its own failures and returns null.
+        const orgId = session?.orgId ?? (await resolveOrgIdForNumbers(to, from));
 
-      // Activity heartbeat for the inactivity lifecycle sweep (no-ops if orgId null).
-      bumpOrgActivity(session?.orgId);
+        // Activity heartbeat for the inactivity lifecycle sweep (no-ops if
+        // orgId null). Runs before the insert so a failed insert can't also
+        // cost the org its heartbeat.
+        bumpOrgActivity(orgId);
+
+        await db
+          .insert(calls)
+          .values({
+            twilioCallSid: callSid,
+            direction: session?.direction ?? "inbound",
+            fromNumber: from,
+            toNumber: to,
+            status: "in-progress",
+            agentPersona: session?.persona ?? null,
+            webhookUrl: session?.webhookUrl ?? null,
+            orgId,
+          })
+          .onConflictDoNothing();
+      })().catch((err) => console.error("[voice] failed to insert call row from /incoming", err));
 
       void dispatchWebhook(webhookUrl, "call.started", {
         callSid,
@@ -168,7 +178,13 @@ export const voice = new Hono()
       // on why the outbound trigger's own request_uuid isn't relied on for
       // this instead.
       const priorSession = direction === "outbound" ? await sessionStore.get(callUuid) : undefined;
-      await sessionStore.set(callUuid, { ...priorSession, callSid: callUuid, direction, orgId: priorSession?.orgId ?? orgId });
+      // `?orgId=` on the Answer URL is a manual step a BYO-Plivo merchant
+      // configures in their own Plivo console (ADR-048), so it can simply be
+      // missing on an inbound call. Fall back to the same number → org lookup
+      // Twilio's /incoming uses rather than dropping the org entirely.
+      const resolvedOrgId =
+        priorSession?.orgId ?? orgId ?? (await resolveOrgIdForNumbers(to, from)) ?? undefined;
+      await sessionStore.set(callUuid, { ...priorSession, callSid: callUuid, direction, orgId: resolvedOrgId });
 
       await db
         .insert(calls)
@@ -179,7 +195,7 @@ export const voice = new Hono()
           fromNumber: from,
           toNumber: to,
           status: "in-progress",
-          orgId: priorSession?.orgId ?? orgId ?? null,
+          orgId: resolvedOrgId ?? null,
           agentPersona: priorSession?.persona ?? null,
           webhookUrl: priorSession?.webhookUrl ?? null,
         })
