@@ -42,7 +42,7 @@ describe("telephony-transport: per-provider wire format parsing", () => {
   it("twilio: parses start/media/stop and builds media/clear frames with streamSid", () => {
     const t = getTelephonyTransport("twilio");
     const start = t.parseInbound(JSON.stringify({ event: "start", start: { streamSid: "MZ1", callSid: "CA1" } }));
-    expect(start).toEqual({ type: "start", streamId: "MZ1", callId: "CA1" });
+    expect(start).toEqual({ type: "start", streamId: "MZ1", callId: "CA1", from: undefined, to: undefined });
 
     const media = t.parseInbound(JSON.stringify({ event: "media", media: { payload: "abc123" } }));
     expect(media).toEqual({ type: "media", mulawBase64: "abc123" });
@@ -54,6 +54,32 @@ describe("telephony-transport: per-provider wire format parsing", () => {
 
     const clear = JSON.parse(t.buildClear("MZ1"));
     expect(clear).toEqual({ event: "clear", streamSid: "MZ1" });
+  });
+
+  // Twilio's start event has no From/To of its own, so /incoming passes them
+  // as <Parameter> children of <Stream>. Without them stream.ts's
+  // fallback-insert-if-missing branch (`!row && event.from && event.to`) can
+  // never fire for Twilio, and a call whose media stream connects before the
+  // fire-and-forget webhook insert lands gets no `calls` row at all.
+  it("twilio: lifts from/to out of the <Stream> custom parameters on start", () => {
+    const t = getTelephonyTransport("twilio");
+    const start = t.parseInbound(
+      JSON.stringify({
+        event: "start",
+        start: {
+          streamSid: "MZ1",
+          callSid: "CA1",
+          customParameters: { from: "+919999999999", to: "+15551110000" },
+        },
+      }),
+    );
+    expect(start).toEqual({
+      type: "start",
+      streamId: "MZ1",
+      callId: "CA1",
+      from: "+919999999999",
+      to: "+15551110000",
+    });
   });
 
   it("plivo: uses streamId/callId naming and a streamId-less playAudio/clearAudio frame shape", () => {

@@ -92,6 +92,8 @@ const { sessionStore } = await import("./session-store");
 const ORG_NUMBER = "+15551110000";
 const CALLER = "+919999999999";
 
+let lastTwiml = "";
+
 async function postIncoming(callSid: string, to = ORG_NUMBER, from = CALLER, query = "") {
   const res = await voice.request(`/incoming${query}`, {
     method: "POST",
@@ -99,6 +101,7 @@ async function postIncoming(callSid: string, to = ORG_NUMBER, from = CALLER, que
     body: new URLSearchParams({ CallSid: callSid, From: from, To: to }).toString(),
   });
   expect(res.status).toBe(200);
+  lastTwiml = await res.text();
   // The `calls` insert is deliberately fire-and-forget so it can't delay the
   // TwiML response (and therefore Twilio's <Connect><Stream> handshake) —
   // give that deferred chain its microtasks before asserting on it.
@@ -148,6 +151,19 @@ describe("/incoming — inbound call org attribution", () => {
 
     expect(row).toBeDefined();
     expect(row!.orgId).toBeNull();
+  });
+
+  it("passes From/To to the media stream as <Parameter>s, since Twilio's start event carries neither", async () => {
+    // stream.ts's fallback-insert-if-missing branch is gated on
+    // `event.from && event.to`, and Twilio's own start event has neither — so
+    // without these the branch is unreachable and a call whose WS connects
+    // before the deferred insert above lands gets no `calls` row at all.
+    phoneRows = [{ orgId: "org-shop", number: ORG_NUMBER, status: "active" }];
+
+    await postIncoming("CA_twiml_params");
+
+    expect(lastTwiml).toContain(`<Parameter name="from" value="${CALLER}"/>`);
+    expect(lastTwiml).toContain(`<Parameter name="to" value="${ORG_NUMBER}"/>`);
   });
 
   it("trusts a signature-covered ?orgId= from an outbound call's answer URL when the session write lost the race", async () => {

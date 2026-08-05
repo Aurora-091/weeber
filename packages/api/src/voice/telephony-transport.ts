@@ -63,7 +63,23 @@ const twilioTransport: TelephonyTransport = {
     } catch {
       return { type: "unknown" };
     }
-    if (msg.event === "start") return { type: "start", streamId: msg.start.streamSid, callId: msg.start.callSid };
+    if (msg.event === "start") {
+      // from/to ride along as <Parameter> children of <Stream> (see
+      // voice/routes.ts's /incoming TwiML). Twilio's start event carries no
+      // From/To of its own — which is why stream.ts's
+      // fallback-insert-if-missing branch (`!row && event.from && event.to`)
+      // was unreachable for Twilio, so a call whose media stream connected
+      // before the fire-and-forget webhook insert landed got no `calls` row
+      // at all: no dbCallId, no transcripts, no org, generic persona.
+      const custom = msg.start.customParameters ?? {};
+      return {
+        type: "start",
+        streamId: msg.start.streamSid,
+        callId: msg.start.callSid,
+        from: custom.from ? String(custom.from) : undefined,
+        to: custom.to ? String(custom.to) : undefined,
+      };
+    }
     if (msg.event === "media") return { type: "media", mulawBase64: msg.media.payload };
     if (msg.event === "stop") return { type: "stop" };
     return { type: "unknown" };

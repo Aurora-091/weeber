@@ -163,7 +163,14 @@ export const voice = new Hono()
 
     const twiml = new VoiceResponse();
     const connect = twiml.connect();
-    connect.stream({ url: `${getWsUrl()}/api/voice/stream` });
+    const stream = connect.stream({ url: `${getWsUrl()}/api/voice/stream` });
+    // Twilio's WS "start" event carries no From/To (unlike Exotel's), so the
+    // media stream had no way to know which numbers a call was between if it
+    // connected before the insert above landed — leaving stream.ts's
+    // fallback-insert branch unreachable and the call with no `calls` row at
+    // all. Passing them as <Parameter>s costs nothing and closes that hole.
+    if (from) stream.parameter({ name: "from", value: from });
+    if (to) stream.parameter({ name: "to", value: to });
 
     return c.text(twiml.toString(), 200, { "Content-Type": "text/xml" });
   })
