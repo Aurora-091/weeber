@@ -6,6 +6,7 @@ import type { SttConnection } from "./stt";
 import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection, TtsProvider } from "./tts";
 import { voiceIdForProvider } from "./tts-voice-identity";
+import { toolCallReason } from "./call-control";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
 import {
@@ -450,11 +451,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
     // hangUp/transferToHuman only *signal intent* (see their tool definitions) —
     // acted on in speak(), once the same-turn closing/handoff line is spoken.
-    if (name === "hangUp" && input && typeof input === "object" && "reason" in input) {
-      pendingHangUp = { reason: String((input as { reason: unknown }).reason) };
+    //
+    // The intent is registered on the tool NAME alone. `reason` is a required
+    // field on both schemas, but this used to gate on `"reason" in input`, so a
+    // model that called `hangUp` with no arguments (or arguments the SDK could
+    // not parse into an object) silently ended nothing: the caller heard the
+    // goodbye line and then sat on a live call that never hung up. A missing
+    // reason costs a log line, not the hangup.
+    if (name === "hangUp") {
+      pendingHangUp = { reason: toolCallReason(input, "hangUp called without a reason") };
     }
-    if (name === "transferToHuman" && input && typeof input === "object" && "reason" in input) {
-      pendingTransfer = { reason: String((input as { reason: unknown }).reason) };
+    if (name === "transferToHuman") {
+      pendingTransfer = { reason: toolCallReason(input, "transferToHuman called without a reason") };
     }
     // sendDtmf (Misc-2): generate the tone audio and play it straight into
     // the live media stream, same channel/format as TTS speech — see
@@ -725,25 +733,81 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   async function performHangUp(ws: Sendable, reason: string) {
     console.log(`[voice] hangUp requested: ${reason}`);
     clearSilenceTimer();
-    if (callSid && provider === "twilio") {
-      await (await getTwilioClientForOrg(humanNumberOrgId))
-        .calls(callSid)
-        .update({ status: "completed" })
-        .catch((err) => console.error("[voice] failed to end Twilio call via REST API", err));
-    } else if (callSid && provider === "plivo" && humanNumberOrgId) {
-      // Plivo hangup (2026-07-17, closing the gap flagged in docs/india-telephony.md) — see
-      // plivo-client.ts's hangupPlivoCall doc comment for the API this calls.
-      const result = await hangupPlivoCall(humanNumberOrgId, callSid);
-      if (!result.ok) console.error(`[voice] failed to end Plivo call via REST API: ${result.error}`);
-    } else if (callSid) {
-      console.warn(`[voice] hangUp on ${provider} call ${callSid} — closing the WebSocket only, no REST hangup wired up for this provider yet`);
-    }
+    // Never allowed to throw (see its doc comment) — closing the WebSocket
+    // below is what actually ends a <Connect><Stream> call, so nothing in the
+    // provider REST path may pre-empt it.
+    await endProviderCallLeg();
     try {
       ws.close?.();
     } catch {
       // socket may already be closed — ignore
     }
     await finalizeCall("completed");
+  }
+
+  /**
+   * Terminates the live call leg at the telephony provider. Best-effort by
+   * design, and — critically — **it cannot throw**.
+   *
+   * It used to be inlined in performHangUp as
+   * `await (await getTwilioClientForOrg(orgId)).calls(sid).update(...).catch(log)`,
+   * where the `.catch` covered only the `update()` promise. Everything before
+   * it did not: `getTwilioClientForOrg` does a DB + credential-vault read and
+   * then constructs a client (`Twilio(sid, token)` throws on a malformed SID),
+   * so an org in the half-provisioned state twilio-provisioning.ts's
+   * `getSubClientEnsuring` explicitly documents — sub-account SID stored, auth
+   * token unreadable — made the whole function throw. The rejection surfaced
+   * as a generic "[voice] error handling transcript event" from the STT
+   * handler's catch, and `ws.close()` / `finalizeCall()` never ran: the caller
+   * was left on a live, silent call that never hung up, which is the reported
+   * "call is not ending" defect.
+   *
+   * The Twilio REST call also gets one retry. It is the single API call that
+   * ends the PSTN leg, and its most likely failure is not transient: when this
+   * call has no org attributed to it, `getTwilioClientForOrg(undefined)` falls
+   * back to the *parent* platform client, while a call on an org's dedicated
+   * number belongs to that org's **sub-account** — the parent's
+   * `calls(sid).update()` then 404s. That has to be loud, not swallowed, so
+   * it's diagnosable from the logs; closing the WebSocket is the backstop that
+   * still ends the call (Twilio: "Twilio executes the remaining TwiML
+   * instructions only after your server closes the WebSocket connection" — and
+   * our answer TwiML has no verb after `<Connect>`).
+   */
+  async function endProviderCallLeg(): Promise<void> {
+    if (!callSid) return;
+    try {
+      if (provider === "twilio") {
+        const attempts = 2;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+          try {
+            const client = await getTwilioClientForOrg(humanNumberOrgId);
+            await client.calls(callSid).update({ status: "completed" });
+            return;
+          } catch (err) {
+            const isLast = attempt === attempts;
+            console.error(
+              `[voice] failed to end Twilio call ${callSid} via REST API (attempt ${attempt}/${attempts}, org ${humanNumberOrgId ?? "unattributed"})` +
+                (isLast
+                  ? " — falling back to closing the media stream, which ends a <Connect><Stream> call"
+                  : " — retrying"),
+              err,
+            );
+            if (!isLast) await sleep(250);
+          }
+        }
+        return;
+      }
+      if (provider === "plivo" && humanNumberOrgId) {
+        // Plivo hangup (2026-07-17, closing the gap flagged in docs/india-telephony.md) — see
+        // plivo-client.ts's hangupPlivoCall doc comment for the API this calls.
+        const result = await hangupPlivoCall(humanNumberOrgId, callSid);
+        if (!result.ok) console.error(`[voice] failed to end Plivo call via REST API: ${result.error}`);
+        return;
+      }
+      console.warn(`[voice] hangUp on ${provider} call ${callSid} — closing the WebSocket only, no REST hangup wired up for this provider yet`);
+    } catch (err) {
+      console.error(`[voice] unexpected error ending the ${provider} call leg for ${callSid}`, err);
+    }
   }
 
   /** Redirects the live call out of the media stream into a real transfer to a human — the call
@@ -779,17 +843,40 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
+    // A redirect that fails must NOT fall through to finalizeCall("transferred"):
+    // finalize marks the call transferred, closes STT/TTS and stops the silence
+    // timer, but performTransfer deliberately leaves the WebSocket open (the
+    // call is supposed to continue on the <Dial>). So a failed redirect used to
+    // leave the caller on a live call with no agent listening and no timer left
+    // to end it — a zombie leg that only the caller hanging up could clear.
+    // Hanging up is the honest outcome, same as the "no transfer number
+    // configured" branch above.
+    let redirected = false;
+    let redirectError: string | undefined;
     if (callSid && provider === "twilio") {
-      const twiml = new VoiceResponse();
-      twiml.dial(transferNumber);
-      await (await getTwilioClientForOrg(humanNumberOrgId))
-        .calls(callSid)
-        .update({ twiml: twiml.toString() })
-        .catch((err) => console.error("[voice] failed to redirect call for transfer", err));
+      try {
+        const twiml = new VoiceResponse();
+        twiml.dial(transferNumber);
+        const client = await getTwilioClientForOrg(humanNumberOrgId);
+        await client.calls(callSid).update({ twiml: twiml.toString() });
+        redirected = true;
+      } catch (err) {
+        redirectError = (err as Error).message;
+        console.error("[voice] failed to redirect call for transfer", err);
+      }
     } else if (callSid && provider === "plivo" && humanNumberOrgId) {
       const alegUrl = `${getPublicUrl()}/api/voice/transfer-xml/plivo?to=${encodeURIComponent(transferNumber)}`;
       const result = await transferPlivoCall(humanNumberOrgId, callSid, alegUrl);
-      if (!result.ok) console.error(`[voice] failed to redirect Plivo call for transfer: ${result.error}`);
+      redirected = result.ok;
+      if (!result.ok) {
+        redirectError = result.error;
+        console.error(`[voice] failed to redirect Plivo call for transfer: ${result.error}`);
+      }
+    }
+
+    if (!redirected) {
+      await performHangUp(ws, `transfer failed (${redirectError ?? "no redirect path for this provider"})`);
+      return;
     }
     await finalizeCall("transferred");
   }

@@ -43,6 +43,7 @@ import type { SttConnection } from "./stt";
 import { connectTts, resolveTtsProvider } from "./tts";
 import type { TtsConnection } from "./tts";
 import { voiceIdForProvider } from "./tts-voice-identity";
+import { toolCallReason } from "./call-control";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, buildPreviewAgentConfig } from "./agent";
 import type { TestCallTokenPayload } from "./test-call-tokens";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
@@ -72,6 +73,24 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
   let ttsVoiceIdOverride: string | undefined;
   let llmModelOverride: string | undefined;
   let enabledToolsOverride: import("./agent-frame").AvailableToolName[] | undefined;
+  /**
+   * Call-control intent from the current turn — same contract as stream.ts's
+   * `pendingHangUp`/`pendingTransfer`: `hangUp` and `transferToHuman` only
+   * *signal* intent, they never end anything themselves.
+   *
+   * This module used to ignore both: `onToolCall` logged `[tool: hangUp]` as a
+   * caption and nothing else. `buildVoiceTools` always re-adds `hangUp`
+   * (`new Set([...enabledTools, "hangUp"])`), so every preview agent has it and
+   * will use it the moment the conversation is genuinely over — at which point
+   * the test call kept the mic open and kept billing STT/LLM/TTS until the
+   * 5-minute cap or the user closed the drawer. That is the "call is not
+   * ending" defect on the surface most likely to be tested first.
+   *
+   * A transfer can only be *reported* here: there is no PSTN leg to redirect in
+   * a browser test call, so it ends the call and says so rather than pretending
+   * a handoff happened.
+   */
+  let pendingCallControl: { tool: "hangUp" | "transferToHuman"; reason: string } | undefined;
 
   function endCall(ws: Sendable, reason: string) {
     if (ended) return;
@@ -134,6 +153,35 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
         // ignore — socket may be closing
       }
     }
+
+    if (pendingCallControl) {
+      const { tool, reason } = pendingCallControl;
+      pendingCallControl = undefined;
+      await waitForClosingLine();
+      endCall(
+        ws,
+        tool === "hangUp"
+          ? `agent ended the call: ${reason}`
+          : `agent asked to transfer (no human leg exists in a test call): ${reason}`,
+      );
+    }
+  }
+
+  /**
+   * Waits (bounded) for the closing line to actually reach the browser before
+   * the socket is closed underneath it. `agentIsSpeaking` flips false from
+   * connectTts's `onDone`, i.e. "the provider has sent every chunk for this
+   * turn" — the same signal stream.ts's `ttsDone` carries, and the same caveat:
+   * sent is not played, hence the fixed grace period for audio already buffered
+   * in the browser. Bounded so a provider that never reports done cannot wedge
+   * the call open, which is the failure this whole path exists to end.
+   */
+  async function waitForClosingLine() {
+    const deadline = Date.now() + 8000;
+    while (agentIsSpeaking && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1200));
   }
 
   async function runTurn(ws: Sendable) {
@@ -151,7 +199,13 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
           try {
             ws.send(JSON.stringify({ type: "transcript", role: "agent", text: `[tool: ${name}]` }));
           } catch {
-            void input; // ignore — socket may be closing
+            // ignore — socket may be closing
+          }
+          // ...and the two call-control tools are acted on, not just captioned
+          // (see pendingCallControl). Registered on the tool NAME alone: a
+          // missing `reason` must never be what decides whether a call ends.
+          if (name === "hangUp" || name === "transferToHuman") {
+            pendingCallControl = { tool: name, reason: toolCallReason(input, "no reason given") };
           }
         },
         llmProvider: llmProviderOverride,
