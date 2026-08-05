@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
-import { connectDeepgram } from "./deepgram";
+import { connectDeepgram, toDeepgramNova3Language } from "./deepgram";
 
 /**
  * A1b (VAD/endpointing audit): tests the UtteranceEnd fallback added
@@ -168,5 +168,57 @@ describe("connectDeepgram — A1b VAD/endpointing audit", () => {
     lastSocket!.emit("message", { data: JSON.stringify({ type: "UtteranceEnd" }) });
     // Only interim text ever arrived — nothing to replay.
     expect(onTranscript).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Defect 3 (2026-08-05, ADR-072): a `language` value nova-3 doesn't accept
+ * makes the handshake fail with HTTP 400, so the socket never opens, the
+ * bounded reconnect burns all 3 attempts and the call goes deaf. Verified live
+ * against the real endpoint: `hi`, `mr`, `ta`, `te`, `kn`, `bn`, `gu`, `pa`
+ * and `multi` return 101; `hinglish`, `ml` and `hi-IN` return 400. "hinglish"
+ * ships in RECOMMENDED_LANGUAGES, so this was reachable from the UI.
+ */
+describe("toDeepgramNova3Language", () => {
+  test("omits the param entirely for English / no language", () => {
+    expect(toDeepgramNova3Language(undefined)).toBeUndefined();
+    expect(toDeepgramNova3Language("en")).toBeUndefined();
+  });
+
+  test("passes through the Indic codes nova-3 actually accepts", () => {
+    for (const code of ["hi", "mr", "ta", "te", "kn", "bn", "gu", "pa", "multi"]) {
+      expect(toDeepgramNova3Language(code)).toBe(code);
+    }
+  });
+
+  test("routes hinglish to multi instead of a code nova-3 rejects with 400", () => {
+    expect(toDeepgramNova3Language("hinglish")).toBe("multi");
+  });
+
+  test("routes Malayalam to multi — nova-3 rejects 'ml' outright", () => {
+    expect(toDeepgramNova3Language("ml")).toBe("multi");
+  });
+
+  test("strips a region suffix rather than sending the rejected hi-IN form", () => {
+    expect(toDeepgramNova3Language("hi-IN")).toBe("hi");
+  });
+
+  test("falls back to multi for anything unrecognized", () => {
+    expect(toDeepgramNova3Language("klingon")).toBe("multi");
+  });
+});
+
+describe("connectDeepgram — language param", () => {
+  test("never puts a nova-3-rejected language on the connection URL", () => {
+    connectDeepgram(() => {}, undefined, undefined, undefined, "hinglish");
+    open();
+    expect(lastSocket!.url).toContain("language=multi");
+    expect(lastSocket!.url).not.toContain("language=hinglish");
+  });
+
+  test("leaves the URL language-free for English", () => {
+    connectDeepgram(() => {}, undefined, undefined, undefined, "en");
+    open();
+    expect(lastSocket!.url).not.toContain("language=");
   });
 });

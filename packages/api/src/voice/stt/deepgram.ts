@@ -13,17 +13,41 @@ import type { ConnectStt } from "./types";
  * whatever the caller said during the gap — this was the root cause of a
  * mid-call "went blank" incident during testing.
  *
- * Language (2026-07-10): defaults to Deepgram's own default (English) when
- * omitted. nova-3 supports most single Indian languages directly (e.g. "hi",
- * "mr", "ta") and also a "multi" code-switching mode (English + one other
- * language auto-detected per utterance) — pass language="multi" for mixed
- * Hindi/English calls instead of guessing a single code.
+ * Language (2026-08-05, ADR-072): defaults to Deepgram's own default
+ * (English) when omitted. Live handshakes against `model=nova-3` accepted the
+ * app's shipped Indic codes `hi`, `mr`, `ta`, `te`, `kn`, `bn`, `gu`, `pa`
+ * plus `multi`, but rejected `hinglish`, `ml`, and region-suffixed forms like
+ * `hi-IN` with HTTP 400. Normalize those before constructing the URL: a bad
+ * language param prevents the WebSocket from opening at all, leaving the call
+ * deaf until failover exhausts.
  */
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_BASE_DELAY_MS = 500;
 // ~2s of audio at 8kHz mu-law (1 byte/sample) — enough to cover the typical
 // reconnect window without buffering unbounded memory if Deepgram is down.
 const MAX_BUFFERED_BYTES = 16_000;
+
+/** Codes `model=nova-3` accepts as a single `language` value, confirmed by live
+ * handshake (101 vs 400) rather than from docs — `hinglish` and `ml` are NOT in
+ * this set despite both shipping in RECOMMENDED_LANGUAGES. */
+const DEEPGRAM_NOVA3_LANGUAGE_CODES = new Set(["hi", "mr", "ta", "te", "kn", "bn", "gu", "pa", "multi"]);
+
+/** agent-frame language code -> a `language` value nova-3 will actually accept,
+ * or undefined to omit the param entirely (Deepgram's English default).
+ *
+ * Anything nova-3 rejects is routed to `multi` (English + one auto-detected
+ * other language) instead: degraded recognition beats a socket that never
+ * opens. Indic languages Deepgram can't do at all — Malayalam being the one in
+ * our own list — are better served by Sarvam, which `resolveSttProvider`
+ * already prefers for them whenever SARVAM_API_KEY is set; this path is the
+ * no-Sarvam-key fallback. */
+export function toDeepgramNova3Language(language?: string): string | undefined {
+  if (!language || language.toLowerCase() === "en") return undefined;
+  const normalized = language.toLowerCase().split("-")[0]!;
+  if (DEEPGRAM_NOVA3_LANGUAGE_CODES.has(normalized)) return normalized;
+  console.warn(`[deepgram] language "${language}" is not accepted by nova-3 — using multi-language mode instead`);
+  return "multi";
+}
 
 export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsUpdate, onConnected, language) => {
   let ws: WebSocket;
@@ -85,8 +109,9 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
   });
   // Omit entirely for English default — only set when a non-English/"multi"
   // language is actually configured on the agent frame.
-  if (language && language !== "en") {
-    params.set("language", language);
+  const deepgramLanguage = toDeepgramNova3Language(language);
+  if (deepgramLanguage) {
+    params.set("language", deepgramLanguage);
   }
 
   function open() {

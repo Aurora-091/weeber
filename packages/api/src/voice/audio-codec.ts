@@ -5,10 +5,10 @@
  * and ElevenLabs all accept/emit mu-law natively (zero-conversion path).
  * Sarvam does not: its STT input only accepts wav/pcm, and while its TTS
  * output can be configured to emit mulaw directly (no conversion needed on
- * that side), the STT side needs mu-law decoded to 16-bit PCM and wrapped in
- * a WAV header before it's sent. This file is the one place that logic
- * lives, so any future non-mulaw-native provider can reuse it instead of
- * re-deriving the G.711 table.
+ * that side), the STT side needs mu-law decoded to 16-bit PCM before it's
+ * sent. This file is the one place that logic lives, so any future
+ * non-mulaw-native provider can reuse it instead of re-deriving the G.711
+ * table.
  */
 
 // Standard G.711 mu-law decode table (256 entries -> 16-bit signed PCM).
@@ -101,6 +101,13 @@ export function pcm16ToWav(pcm16: Uint8Array, sampleRate: number): Uint8Array {
 
 function writeAscii(view: DataView, offset: number, text: string) {
   for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+}
+
+/** Convenience: Twilio mu-law chunk -> base64 raw PCM16LE, ready for JSON APIs
+ * whose connection-level params declare the audio codec. Sarvam STT needs this
+ * shape — per-frame WAV headers make a 20ms Twilio stream silently deaf. */
+export function mulawChunkToPcm16Base64(mulaw: Uint8Array): string {
+  return Buffer.from(mulawToPcm16(mulaw)).toString("base64");
 }
 
 /** Convenience: Twilio mu-law chunk -> base64 WAV, ready to drop into a JSON message. */
