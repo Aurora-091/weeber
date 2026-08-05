@@ -80,7 +80,10 @@ const SYNTHETIC_TEST_MAX_PER_WINDOW = Number(process.env.SYNTHETIC_TEST_RATE_LIM
 const syntheticTestRateLimited = makeFixedWindowLimiter(SYNTHETIC_TEST_WINDOW_MS, SYNTHETIC_TEST_MAX_PER_WINDOW);
 
 export const voice = new Hono()
-  // Twilio webhook — set this as the phone number's "A call comes in" Voice URL.
+  // Twilio webhook — the phone number's "A call comes in" Voice URL. Set
+  // automatically at purchase time by twilio-provisioning.ts's
+  // inboundVoiceWebhooks(); it is NOT a manual console step (merchants have no
+  // console login for a number living in a sub-account under our parent).
   // Also reused as the TwiML endpoint for outbound calls we place ourselves.
   // Signature-validated: only genuine Twilio requests are accepted.
   .post("/incoming", requireTwilioSignature, async (c) => {

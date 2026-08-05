@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../database";
 import { orgs, orgPhoneNumbers } from "../database/schema";
 import { storeCredential, deleteCredential, TWILIO_FIELDS, TELEPHONY_VAULT_FIELDS } from "../database/credential-vault";
-import { twilioClient, resolveOrgTwilioCreds } from "./twilio-client";
+import { twilioClient, resolveOrgTwilioCreds, getPublicUrl } from "./twilio-client";
 
 export type TwilioStatus = {
   mode: "platform" | "byo";
@@ -216,6 +216,91 @@ export async function listAvailableNumbers(orgId: string, countryCode: string, a
   return { ok: true, numbers: candidates.map((c) => ({ phoneNumber: c.phoneNumber, locality: c.locality ?? null, region: c.region ?? null })) };
 }
 
+/** The voice webhook config every Weeber-owned number must carry. */
+export type NumberVoiceWebhooks = {
+  voiceUrl: string;
+  voiceMethod: "POST";
+  statusCallback: string;
+  statusCallbackMethod: "POST";
+};
+
+/**
+ * Inbound calls are dead unless the number itself points back at us.
+ *
+ * Outbound doesn't need this — place-outbound-call.ts passes `url` per call
+ * on `calls.create`, which Twilio uses in preference to anything configured
+ * on the number. Inbound has no such per-call hook: Twilio reads the
+ * number's own `voiceUrl`, and an unset one means the caller hears Twilio's
+ * default "not in service" message and no webhook ever reaches us.
+ *
+ * This used to be a manual step in the Twilio console (see the comment this
+ * replaces in voice/routes.ts) which merchants structurally cannot do: their
+ * number lives in a sub-account under Weeber's parent account, so they have
+ * no console login for it.
+ *
+ * Baked per number rather than via a shared voiceApplicationSid. A TwiML App
+ * would let us re-point every number at once, but it's a second Twilio
+ * resource to provision, version and reconcile per sub-account. Since the URL
+ * is derived from PUBLIC_APP_URL and only changes on a domain move,
+ * syncNumberWebhooksForOrg below covers that case without the extra
+ * indirection. Revisit if the URL ever becomes per-agent.
+ */
+export function inboundVoiceWebhooks(): NumberVoiceWebhooks {
+  const base = getPublicUrl();
+  return {
+    voiceUrl: `${base}/api/voice/incoming`,
+    voiceMethod: "POST",
+    statusCallback: `${base}/api/voice/status-callback`,
+    statusCallbackMethod: "POST",
+  };
+}
+
+export type SyncWebhooksResult =
+  | { ok: true; checked: number; repaired: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Re-applies inboundVoiceWebhooks() to every active number an org holds.
+ *
+ * Two jobs: back-filling numbers bought before the purchase path set a
+ * voiceUrl at all (those are inert — they ring and drop), and re-pointing
+ * every number after a PUBLIC_APP_URL change. Idempotent, so it's safe to
+ * run repeatedly; only numbers whose voiceUrl actually differs get written,
+ * and the returned `repaired` list names them so a caller can tell "all fine"
+ * from "fixed 3".
+ */
+export async function syncNumberWebhooksForOrg(orgId: string): Promise<SyncWebhooksResult> {
+  let webhooks: NumberVoiceWebhooks;
+  try {
+    webhooks = inboundVoiceWebhooks();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+
+  const sub = await getSubClient(orgId);
+  if (!sub.ok) return sub;
+
+  const rows = await db
+    .select({ phoneNumber: orgPhoneNumbers.phoneNumber })
+    .from(orgPhoneNumbers)
+    .where(and(eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")));
+
+  const repaired: string[] = [];
+  for (const row of rows) {
+    try {
+      const [remote] = await sub.client.incomingPhoneNumbers.list({ phoneNumber: row.phoneNumber, limit: 1 });
+      if (!remote) continue;
+      if (remote.voiceUrl === webhooks.voiceUrl) continue;
+      await sub.client.incomingPhoneNumbers(remote.sid).update(webhooks);
+      repaired.push(row.phoneNumber);
+    } catch (err) {
+      return { ok: false, error: `Failed to sync webhooks for ${row.phoneNumber}: ${(err as Error).message}` };
+    }
+  }
+
+  return { ok: true, checked: rows.length, repaired };
+}
+
 /**
  * Purchases a specific number the caller already chose from
  * listAvailableNumbers — this function no longer searches or auto-picks.
@@ -227,8 +312,19 @@ export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promi
   const sub = await getSubClientEnsuring(orgId);
   if (!sub.ok) return sub;
 
+  // Resolved BEFORE the purchase on purpose. getPublicUrl() throws when
+  // PUBLIC_APP_URL is unset, and buying first would leave the org paying
+  // monthly for a number we then failed to make answerable — the exact
+  // orphan shape 61c25a4 removed from sub-account provisioning.
+  let webhooks: NumberVoiceWebhooks;
   try {
-    await sub.client.incomingPhoneNumbers.create({ phoneNumber });
+    webhooks = inboundVoiceWebhooks();
+  } catch (err) {
+    return { ok: false, error: `Refusing to purchase ${phoneNumber}: ${(err as Error).message}` };
+  }
+
+  try {
+    await sub.client.incomingPhoneNumbers.create({ phoneNumber, ...webhooks });
   } catch (err) {
     return { ok: false, error: `Failed to purchase ${phoneNumber}: ${(err as Error).message}` };
   }

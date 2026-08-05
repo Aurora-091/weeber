@@ -95,6 +95,9 @@ mock.module("./twilio-client", () => ({
   twilioClient: {
     api: { v2010: { accounts: () => ({ update: async () => ({}) }) } },
   },
+  // mock.module replaces the whole module, so every export twilio-provisioning
+  // imports has to be present here or the import fails at load time.
+  getPublicUrl: () => "https://api.weeber.test",
   resolveOrgTwilioCreds: async () =>
     mockOrgRow?.accountSid && mockOrgRow?.authToken
       ? { accountSid: mockOrgRow.accountSid, authToken: mockOrgRow.authToken }

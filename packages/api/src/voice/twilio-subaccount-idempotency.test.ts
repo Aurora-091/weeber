@@ -38,6 +38,17 @@ let mockResolvedCreds: { accountSid: string; authToken: string } | null | undefi
 
 let availableNumbers: { phoneNumber: string; locality: string | null; region: string | null }[] = [];
 let purchasedNumbers: string[] = [];
+/** Full argument object handed to incomingPhoneNumbers.create, so tests can
+ * assert the inbound voice webhook travels with the purchase (not just that
+ * some number got bought). */
+let purchaseArgs: Record<string, unknown>[] = [];
+/** Numbers that already exist in the sub-account, for the webhook back-fill
+ * path. `voiceUrl: null` models a number bought before we set one. */
+let remoteNumbers: { sid: string; phoneNumber: string; voiceUrl: string | null }[] = [];
+let webhookUpdates: { sid: string; args: Record<string, unknown> }[] = [];
+/** Mutable so a test can model an unset PUBLIC_APP_URL, which getPublicUrl
+ * throws on in production. */
+let mockPublicUrl: string | null = "https://api.weeber.test";
 
 function getTableName(table: unknown): string | undefined {
   if (!table) return undefined;
@@ -49,13 +60,18 @@ mock.module("../database", () => ({
   db: {
     select: () => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: () => {
-            const name = getTableName(table);
-            if (name === "org_phone_numbers") return mockPhoneNumberRows;
-            return mockOrgRow ? [mockOrgRow] : [];
-          },
-        }),
+        // Mirrors drizzle: .where() is itself awaitable (returns all matching
+        // rows) AND chainable into .limit(). The original mock only supported
+        // the .limit() form, so an un-limited query silently awaited the
+        // builder object instead of rows.
+        where: () => {
+          const name = getTableName(table);
+          const rows: unknown[] = name === "org_phone_numbers" ? mockPhoneNumberRows : mockOrgRow ? [mockOrgRow] : [];
+          // Returned as a real array carrying .limit(), so both shapes work:
+          // `await q.where(...)` yields the rows (awaiting a plain array is a
+          // no-op) and `await q.where(...).limit(1)` still chains.
+          return Object.assign(rows, { limit: () => rows });
+        },
       }),
     }),
     update: () => ({
@@ -85,13 +101,24 @@ mock.module("twilio", () => {
   function Twilio() {
     return {
       availablePhoneNumbers: () => ({ local: { list: async () => availableNumbers } }),
-      incomingPhoneNumbers: Object.assign((sid: string) => ({ remove: async () => void sid }), {
-        create: async ({ phoneNumber }: { phoneNumber: string }) => {
-          purchasedNumbers.push(phoneNumber);
-          return { sid: `PN_${phoneNumber}` };
+      incomingPhoneNumbers: Object.assign(
+        (sid: string) => ({
+          remove: async () => void sid,
+          update: async (args: Record<string, unknown>) => {
+            webhookUpdates.push({ sid, args });
+            return { sid };
+          },
+        }),
+        {
+          create: async (args: { phoneNumber: string }) => {
+            purchasedNumbers.push(args.phoneNumber);
+            purchaseArgs.push(args);
+            return { sid: `PN_${args.phoneNumber}` };
+          },
+          list: async ({ phoneNumber }: { phoneNumber?: string } = {}) =>
+            remoteNumbers.filter((n) => !phoneNumber || n.phoneNumber === phoneNumber),
         },
-        list: async () => [],
-      }),
+      ),
     };
   }
   return { default: Twilio };
@@ -111,6 +138,10 @@ mock.module("./twilio-client", () => ({
       },
     },
   },
+  getPublicUrl: () => {
+    if (!mockPublicUrl) throw new Error("PUBLIC_APP_URL is not set - Twilio needs a public HTTPS/WSS URL");
+    return mockPublicUrl;
+  },
   resolveOrgTwilioCreds: async () => {
     if (mockResolvedCreds !== undefined) return mockResolvedCreds;
     const accountSid = storedCredentials.find((c) => c.field === "twilio_account_sid")?.value;
@@ -119,7 +150,8 @@ mock.module("./twilio-client", () => ({
   },
 }));
 
-const { ensureSubaccountForOrg, listAvailableNumbers, buyNumberForOrg, releaseNumberForOrg } = await import("./twilio-provisioning");
+const { ensureSubaccountForOrg, listAvailableNumbers, buyNumberForOrg, releaseNumberForOrg, inboundVoiceWebhooks, syncNumberWebhooksForOrg } =
+  await import("./twilio-provisioning");
 
 function resetMocks() {
   process.env.TWILIO_ACCOUNT_SID = "AC_parent";
@@ -133,6 +165,10 @@ function resetMocks() {
   mockResolvedCreds = undefined;
   availableNumbers = [];
   purchasedNumbers = [];
+  purchaseArgs = [];
+  remoteNumbers = [];
+  webhookUpdates = [];
+  mockPublicUrl = "https://api.weeber.test";
 }
 
 describe("ensureSubaccountForOrg — idempotent provisioning", () => {
@@ -305,6 +341,116 @@ describe("number provisioning bootstraps its own sub-account", () => {
     mockResolvedCreds = null;
 
     const result = await releaseNumberForOrg("org-fresh", 7);
+
+    expect(result.ok).toBe(false);
+    expect(accountsCreated).toHaveLength(0);
+  });
+});
+
+/**
+ * Regression cover for the defect that made every purchased number inert:
+ * incomingPhoneNumbers.create was called with only { phoneNumber }, so
+ * Twilio had no voiceUrl to POST to and inbound callers heard a Twilio
+ * error message. Outbound was unaffected (place-outbound-call.ts passes
+ * `url` per call), which is exactly why it went unnoticed.
+ */
+describe("buyNumberForOrg — inbound voice webhook", () => {
+  beforeEach(resetMocks);
+
+  it("configures the voice webhook as part of the purchase", async () => {
+    availableNumbers = [{ phoneNumber: "+15551110001", locality: null, region: null }];
+
+    const result = await buyNumberForOrg("org-1", "+15551110001");
+
+    expect(result.ok).toBe(true);
+    expect(purchaseArgs).toHaveLength(1);
+    expect(purchaseArgs[0]).toMatchObject({
+      phoneNumber: "+15551110001",
+      voiceUrl: "https://api.weeber.test/api/voice/incoming",
+      voiceMethod: "POST",
+      statusCallback: "https://api.weeber.test/api/voice/status-callback",
+      statusCallbackMethod: "POST",
+    });
+  });
+
+  it("points at the same route the outbound TwiML url uses, so one handler serves both", () => {
+    expect(inboundVoiceWebhooks().voiceUrl).toBe("https://api.weeber.test/api/voice/incoming");
+  });
+
+  it("refuses to buy at all when PUBLIC_APP_URL is unset, rather than buying an unanswerable number", async () => {
+    mockPublicUrl = null;
+
+    const result = await buyNumberForOrg("org-1", "+15551110001");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/refusing to purchase/i);
+    // The money-spending call must not have happened.
+    expect(purchasedNumbers).toHaveLength(0);
+    expect(purchaseArgs).toHaveLength(0);
+  });
+});
+
+describe("syncNumberWebhooksForOrg — back-filling already-purchased numbers", () => {
+  beforeEach(() => {
+    resetMocks();
+    // These tests are about webhook repair, not provisioning, so start from an
+    // org that already has a usable sub-account.
+    mockOrgRow = { twilioMode: "platform", twilioAccountSid: "AC_sub", outboundNumber: null };
+    mockResolvedCreds = { accountSid: "AC_sub", authToken: "sub_token" };
+  });
+
+  it("repairs a number bought before we set any voiceUrl", async () => {
+    mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
+    remoteNumbers = [{ sid: "PN_old", phoneNumber: "+15551110001", voiceUrl: null }];
+
+    const result = await syncNumberWebhooksForOrg("org-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.repaired).toEqual(["+15551110001"]);
+    expect(webhookUpdates).toHaveLength(1);
+    expect(webhookUpdates[0].sid).toBe("PN_old");
+    expect(webhookUpdates[0].args).toMatchObject({
+      voiceUrl: "https://api.weeber.test/api/voice/incoming",
+      voiceMethod: "POST",
+    });
+  });
+
+  it("is idempotent — a correctly configured number is left alone", async () => {
+    mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
+    remoteNumbers = [
+      { sid: "PN_ok", phoneNumber: "+15551110001", voiceUrl: "https://api.weeber.test/api/voice/incoming" },
+    ];
+
+    const result = await syncNumberWebhooksForOrg("org-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.checked).toBe(1);
+    expect(result.repaired).toEqual([]);
+    expect(webhookUpdates).toHaveLength(0);
+  });
+
+  it("re-points a number whose voiceUrl still references an old PUBLIC_APP_URL", async () => {
+    mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
+    remoteNumbers = [
+      { sid: "PN_stale", phoneNumber: "+15551110001", voiceUrl: "https://old-domain.example/api/voice/incoming" },
+    ];
+
+    const result = await syncNumberWebhooksForOrg("org-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.repaired).toEqual(["+15551110001"]);
+  });
+
+  it("does not provision a sub-account just to sync webhooks", async () => {
+    mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
+    mockOrgRow = { twilioMode: "platform", twilioAccountSid: null, outboundNumber: null };
+    mockResolvedCreds = null;
+
+    const result = await syncNumberWebhooksForOrg("org-1");
 
     expect(result.ok).toBe(false);
     expect(accountsCreated).toHaveLength(0);

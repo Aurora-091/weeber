@@ -77,6 +77,9 @@ mock.module("./twilio-client", () => ({
       },
     },
   },
+  // mock.module replaces the whole module, so every export twilio-provisioning
+  // imports has to be present here or the import fails at load time.
+  getPublicUrl: () => "https://api.weeber.test",
   // Vault-first cred resolver — return creds from the mocked org row, mirroring
   // the previous direct plaintext-column read.
   resolveOrgTwilioCreds: async () =>
