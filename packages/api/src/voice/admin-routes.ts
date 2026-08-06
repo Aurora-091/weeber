@@ -41,6 +41,7 @@ import {
   listAvailableNumbers,
   setByoCredentials,
   resetToPlatformDefault,
+  syncNumberWebhooksForOrg,
 } from "./twilio-provisioning";
 
 async function validateGtmId(id: string): Promise<boolean> {
@@ -195,6 +196,43 @@ export const admin = new Hono<AdminEnv>()
     if (!result.ok) return c.json({ error: result.error }, 400);
     await logAdminAction(c.get("adminActor"), "twilio.number.purchased", { orgId, phoneNumber: result.phoneNumber });
     return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  /**
+   * Repairs the inbound webhooks on every active number an org holds.
+   *
+   * syncNumberWebhooksForOrg shipped without a caller, which made it dead
+   * code: the two situations it exists for — numbers bought before the
+   * purchase path set a voiceUrl, and every number after a PUBLIC_APP_URL
+   * change — were both unreachable in a running system. An inert number
+   * rings and drops with no webhook, so the failure is invisible from our
+   * side: no call row, no error, just a caller who thinks we hung up.
+   *
+   * Admin-only and manual rather than automatic on boot. A deploy that
+   * comes up with a wrong PUBLIC_APP_URL would otherwise happily re-point
+   * every number in the fleet at it; making a human ask keeps that blast
+   * radius behind an intentional request.
+   */
+  .post("/orgs/:orgId/twilio/sync-webhooks", async (c) => {
+    const orgId = c.req.param("orgId");
+    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    if (!org) return c.json({ error: "org not found" }, 404);
+
+    const result = await syncNumberWebhooksForOrg(orgId);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+
+    // Only audit-log a sync that actually changed something, matching the
+    // subaccount route's reuse handling: a clean run over correctly
+    // configured numbers is a no-op, and recording it as a repair would
+    // make the audit trail claim fixes that never happened.
+    if (result.repaired.length > 0) {
+      await logAdminAction(c.get("adminActor"), "twilio.webhooks.synced", {
+        orgId,
+        checked: result.checked,
+        repaired: result.repaired,
+      });
+    }
+    return c.json({ checked: result.checked, repaired: result.repaired }, 200);
   })
 
   .post("/orgs/:orgId/twilio/byo", async (c) => {
