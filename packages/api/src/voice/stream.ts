@@ -409,6 +409,34 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceWarningIssued = false;
 
+  /**
+   * Monotonic counter bumped at the one place a caller utterance is actually
+   * consumed as an end-of-turn (the STT handler, right where the silence state
+   * is reset). `handleSilenceTimeout` captures the value that was current when
+   * its timer was armed and re-checks it after every await: if the caller spoke
+   * while the re-prompt/goodbye line was being synthesized, the counter has
+   * moved and the timeout abandons itself.
+   *
+   * Why a *speech* epoch and not a timer epoch: `speak()` re-arms the silence
+   * timer on its own tail (see the `else if (!ended)` branch there), so the
+   * canned line spoken *by* handleSilenceTimeout bumps any timer-generation
+   * counter itself — a post-await generation check would abort on every single
+   * timeout, including the legitimate ones. Only caller speech may cancel.
+   *
+   * Why only that one call site and not the barge-in block too: aborting the
+   * timeout leaves no silence timer armed, and this timer is the only backstop
+   * against a call that stays open forever (there is no max-duration cap). The
+   * end-of-turn site is safe because every path below it re-arms — the
+   * mid-thought branch arms explicitly, everything else reaches speak(). The
+   * barge-in block has no such guarantee (its interim text may never be
+   * followed by a speechFinal), so it deliberately does not bump.
+   */
+  let callerSpeechEpoch = 0;
+
+  function recordCallerSpeech() {
+    callerSpeechEpoch += 1;
+  }
+
   function clearSilenceTimer() {
     if (silenceTimer) {
       clearTimeout(silenceTimer);
@@ -1045,19 +1073,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   function armSilenceTimer(ws: Sendable) {
     if (ended) return;
     clearSilenceTimer();
+    const armedAtEpoch = callerSpeechEpoch;
     silenceTimer = setTimeout(() => {
-      void handleSilenceTimeout(ws);
+      void handleSilenceTimeout(ws, armedAtEpoch);
     }, silenceWarningIssued ? SILENCE_HANGUP_MS : SILENCE_WARNING_MS);
   }
 
-  async function handleSilenceTimeout(ws: Sendable) {
-    if (ended) return;
+  /**
+   * @param armedAtEpoch `callerSpeechEpoch` as it stood when this timeout was
+   * armed. Clearing the timer is not enough on its own: once this function has
+   * suspended inside `await speakCannedLine`, `clearSilenceTimer()` from the
+   * STT handler is a no-op and the goodbye + hangup still land. Re-checking the
+   * epoch after every await is what actually cancels an in-flight timeout when
+   * the caller turns out to have been speaking all along.
+   */
+  async function handleSilenceTimeout(ws: Sendable, armedAtEpoch: number) {
+    if (ended || callerSpeechEpoch !== armedAtEpoch) return;
     if (!silenceWarningIssued) {
       silenceWarningIssued = true;
       await speakCannedLine(ws, "Are you still there? Let me know if you need anything else.");
+      if (ended || callerSpeechEpoch !== armedAtEpoch) return;
       armSilenceTimer(ws);
     } else {
       await speakCannedLine(ws, "I haven't heard back, so I'll go ahead and end the call here. Feel free to call back anytime. Goodbye.");
+      if (ended || callerSpeechEpoch !== armedAtEpoch) return;
       await performHangUp(ws, "caller silence timeout");
     }
   }
@@ -1540,7 +1579,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // warning stage next time they go quiet, not an immediate hangup)
           // regardless of the mid-thought check below — real speech arrived
           // either way.
+          //
+          // recordCallerSpeech() is the half that clearSilenceTimer() cannot
+          // do: if the silence timeout has ALREADY fired and is suspended
+          // inside `await speakCannedLine`, clearing the timer changes
+          // nothing and the goodbye + hangup still land on a caller who is
+          // demonstrably talking. Bumping the epoch here is what makes that
+          // in-flight timeout abandon itself. See handleSilenceTimeout.
           silenceWarningIssued = false;
+          recordCallerSpeech();
           clearSilenceTimer();
 
           // A1b: the vendor endpointing signal fired, but the sentence
