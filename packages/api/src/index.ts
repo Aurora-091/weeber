@@ -47,6 +47,15 @@ const app = new Hono()
           elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
           cartesia: Boolean(process.env.CARTESIA_API_KEY),
           groq: Boolean(process.env.GROQ_API_KEY),
+          // Reported because Indic routing silently depends on it: both
+          // resolveSttProvider (stt/index.ts) and resolveTtsProvider
+          // (tts/index.ts) only switch a Hindi call onto Sarvam when this key
+          // is present, and fall back to the platform default when it isn't.
+          // That fallback is invisible at runtime — a Hindi call just sounds
+          // worse — so the key's presence has to be observable from health.
+          // `activeTtsProvider` below cannot stand in for it: it resolves with
+          // no language argument, so it reports the non-Indic default either way.
+          sarvam: Boolean(process.env.SARVAM_API_KEY),
           twilio: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
           publicUrl: Boolean(process.env.PUBLIC_APP_URL),
           aiGateway: Boolean(process.env.AI_GATEWAY_API_KEY),
