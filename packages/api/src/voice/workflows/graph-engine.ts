@@ -1,7 +1,7 @@
 import { eq, and, lte, sql } from "drizzle-orm";
 import { db } from "../../database";
 import { scheduledCalls, workflowTemplates, orgWorkflowConfigs, workflowRuns, orgs } from "../../database/schema";
-import { addToDoNotCallList } from "@openvent/compliance";
+import { addToDoNotCallList } from "@weeber/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { dispatchWebhook, resolveWebhookUrl } from "../webhooks";
 import { getTwilioClientForOrg } from "../twilio-client";

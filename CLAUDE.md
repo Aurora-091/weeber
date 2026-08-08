@@ -42,5 +42,5 @@ one-per-file in [`docs/decisions/`](./docs/decisions/README.md); what-shipped-wh
   UI/dashboard work; not fine for testing an actual phone call.
 - Before any PR: `packages/api` typecheck + test, `packages/web` typecheck + build, and repo-root
   `bun run lint` must all be clean (CI enforces this). Branch protection on `main` is not yet enabled.
-- `packages/openvent-compliance` changes are STOP-AND-ASK — see the gate list in
+- `packages/weeber-compliance` changes are STOP-AND-ASK — see the gate list in
   [`docs/brain/project-brief.md`](./docs/brain/project-brief.md).

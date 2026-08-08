@@ -187,7 +187,7 @@ because the pipeline itself works.
   - [x] Analytics pages exist: `pages/app/analytics.tsx`, `pages/dashboard/{analytics,
     revenue-analytics,marketing-analytics}.tsx`.
   - [x] Consent/TCPA/DNC/calling-window compliance gate is real and enforced on every outbound call
-    (`packages/openvent-compliance`, `voice/compliance/adapters.ts`).
+    (`packages/weeber-compliance`, `voice/compliance/adapters.ts`).
   - [ ] Per-org DNC (see Phase C, item **P** below — DNC is still global).
   - [ ] India DPDP/TRAI compliance findings — code exists (`calling-window.ts` has IST-window logic)
     but whether this was ever explicitly confirmed *closed* with you is unclear from the docs — treat
@@ -330,7 +330,7 @@ differentiator.**
 - [ ] **I — India DND/TRAI compliance confirmation.** Same as B3's compliance note above — code
   exists, explicit confirmation-with-you status unclear.
 - [ ] **P — Per-org DNC lists.** `do_not_call` table has no `orgId` column — one global list across
-  every tenant. **Touches `packages/openvent-compliance` — confirm with the user before changing
+  every tenant. **Touches `packages/weeber-compliance` — confirm with the user before changing
   anything here (CLAUDE.md gate #6).**
 - [ ] **Q — Full RBAC / multi-seat user accounts.** `org_members.role` defaults to `"owner"` only, no
   invite/second-seat flow exists.
@@ -408,7 +408,7 @@ start early" verdict, but now with concrete targets instead of a vague "evaluate
   flat-tier subscription (ADR-034) — not a usage-metered prepaid wallet. Worth building once you have
   enough paying merchants that a bundled ₹-native prepaid model (Bolna's pattern) becomes worth the
   engineering, not before. **Reference COGS to price against** (`weeber-stack-decision.report`,
-  sourced): openvent's own runtime blends to **~$0.048/min** (Twilio + Deepgram + gpt-4o-mini/Gemini
+  sourced): Weeber's own runtime blends to **~$0.048/min** (Twilio + Deepgram + gpt-4o-mini/Gemini
   Flash + Cartesia, no platform fee) — sharper than the round "~$0.06/min" figure used elsewhere, and
   worth quoting this way in any pricing/investor conversation instead.
 - [ ] **D4 — GPU credits, concrete path (new, from `voice-ai-orchestration.report`).** "Free" GPU

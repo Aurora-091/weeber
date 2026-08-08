@@ -1,10 +1,10 @@
 # Compliance
 
 Enforced automatically — not something an integrator has to remember to wire in. The compliance layer
-lives in its own standalone, framework-agnostic package — [`packages/openvent-compliance`](../packages/openvent-compliance)
-(`@openvent/compliance`) — with zero dependency on Twilio, Bun/Hono, or any specific database. It's designed to
-be adoptable independently of OpenVent's own pipeline (in a Pipecat, LiveKit, or fully custom voice stack);
-OpenVent's own app uses it via a thin Drizzle adapter (`voice/compliance/adapters.ts`) as its own reference
+lives in its own standalone, framework-agnostic package — [`packages/weeber-compliance`](../packages/weeber-compliance)
+(`@weeber/compliance`) — with zero dependency on Twilio, Bun/Hono, or any specific database. It's designed to
+be adoptable independently of Weeber's own pipeline (in a Pipecat, LiveKit, or fully custom voice stack);
+Weeber's own app uses it via a thin Drizzle adapter (`voice/compliance/adapters.ts`) as its own reference
 integration. See the package's own README for usage outside this repo.
 
 - **TCPA calling window**: outbound calls are blocked outside 8am–9pm in the called party's local time
@@ -14,7 +14,7 @@ integration. See the package's own README for usage outside this repo.
   [dashboard](./dashboard.md). The National DNC Registry has no free API — it requires a paid Subscription
   Account Number (SAN) via telemarketing.donotcall.gov. The internal list is fully automatic today; a
   national-registry sync adapter is a documented drop-in point once you have a SAN (see
-  `packages/openvent-compliance/src/national-dnc.ts`).
+  `packages/weeber-compliance/src/national-dnc.ts`).
 - **Recording/AI disclosure**: the agent's opening line automatically states the call may be recorded and
   that the caller is speaking with an AI — default **on** (`RECORDING_DISCLOSURE_ENABLED=false` to disable,
   not recommended).

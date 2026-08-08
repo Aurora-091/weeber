@@ -12,9 +12,8 @@ The single-source "why we exist and what's non-negotiable" file. Read once; it c
 ## What Weeber is
 
 A **private, multi-vertical voice-AI SaaS** for SMBs — AI phone agents that handle real inbound and
-outbound calls (support, cart recovery, COD confirmation, bookings, reminders, feedback). Built on a
-fork of the open-source **OpenVent** orchestration framework, extended into an org-scoped product where
-the dashboard, agents, tools, metrics, and terminology adapt to the org's **vertical**.
+outbound calls (support, cart recovery, COD confirmation, bookings, reminders, feedback). An org-scoped
+product where the dashboard, agents, tools, metrics, and terminology adapt to the org's **vertical**.
 
 - **Launch vertical:** ecommerce, **Shopify first** (cart recovery + COD confirmation + feedback).
 - **On the board:** clinic/healthcare, insurance, hotel — plus more ecommerce platforms
@@ -39,7 +38,7 @@ the dashboard, agents, tools, metrics, and terminology adapt to the org's **vert
 | TTS | Cartesia / ElevenLabs / Sarvam (per-agent, failover chain) | — |
 | Telephony | Twilio (platform + BYO), Plivo (BYO), Exotel (BYO, India) | — |
 | Email | Resend (transactional) | — |
-| Compliance | `packages/openvent-compliance` (standalone, dependency-free) | — |
+| Compliance | `packages/weeber-compliance` (standalone, dependency-free) | — |
 
 Companion repo: **`weebersh`** (Shopify OAuth/webhook bridge). The wire contract lives in
 `../reference/contract.md` and must bump in *both* repos when it changes.
@@ -61,7 +60,7 @@ Companion repo: **`weebersh`** (Shopify OAuth/webhook bridge). The wire contract
 
 ## STOP-AND-ASK gates — never decide these unilaterally
 
-1. **`packages/openvent-compliance` changes** — confirm with the user before merging, however small.
+1. **`packages/weeber-compliance` changes** — confirm with the user before merging, however small.
 2. **Real credentials** (Twilio/Supabase/Deepgram/Cartesia/ElevenLabs/LLM/GitHub) — ask via a secure
    channel; never hardcode or invent placeholders.
 3. **Entry-condition branching / trigger-split** (ADR-033) — config-driven vs visual-canvas is still

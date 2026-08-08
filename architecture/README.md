@@ -5,31 +5,34 @@
 > current codebase — the previous version referenced a pre-Postgres, pre-package-split layout that no
 > longer exists.
 
-How a call actually flows through Weeber/openvent, end to end, and how the repo is laid out.
+How a call actually flows through Weeber, end to end, and how the repo is laid out.
 
-## Where openvent sits: self-hosted orchestration, bring-your-own AI providers
+## Where Weeber sits: we own the orchestration, we rent the AI providers
 
 Voice-agent architectures sit on a spectrum:
 
 ```
-Fully local                    openvent                       Fully managed
-(Ollama + local STT/TTS,       (orchestration self-       (Vapi, Retell, LiveKit
-zero cloud, real GPU/          hosted; LLM/STT/TTS/       Cloud — zero infra,
-latency/quality tradeoffs)     PSTN are cloud APIs         zero control, no
-                                you own the wiring for)     provider choice)
+Fully local                     Weeber                        Fully managed
+(Ollama + local STT/TTS,       (we own orchestration;     (Vapi, Retell, LiveKit
+zero cloud, real GPU/           LLM/STT/TTS/PSTN are       Cloud — you rent the
+latency/quality tradeoffs)      cloud APIs we wire and     whole stack, no
+                                can swap)                   provider choice)
 ```
 
-openvent self-hosts the *orchestration layer* — the code, the database, the call logic, the compliance
-rules, the dashboards, all inspectable and yours. The *AI layer* (LLM inference, STT, TTS) and the
-*telephony layer* (PSTN) remain cloud APIs by necessity — see `DECISIONS.md` ADR-016 for the full
-reasoning on why "fully local" is a legitimate but different product, not a near-term goal here.
+Weeber owns the *orchestration layer* — the code, the database, the call logic, the compliance rules,
+the dashboards. The *AI layer* (LLM inference, STT, TTS) and the *telephony layer* (PSTN) are cloud APIs
+by necessity — see `DECISIONS.md` ADR-016 for the reasoning on why "fully local" is a legitimate but
+different product, not a near-term goal here.
 
-What you actually own at this position: which provider plugs into each slot (swap Deepgram ↔ Sarvam ↔
-ElevenLabs, swap Twilio ↔ Plivo ↔ Exotel, swap ElevenLabs ↔ Cartesia ↔ Sarvam — no migration, no
-platform lock-in),
-where the call data lands (your own Postgres, not a platform's dashboard), and every line of call logic
-and compliance enforcement. What you don't own: the phone network itself, or the model weights the
-LLM/STT/TTS calls run against.
+What that position buys us: which provider plugs into each slot is our choice, not a vendor's (swap
+Deepgram ↔ Sarvam, swap Twilio ↔ Plivo ↔ Exotel, swap ElevenLabs ↔ Cartesia ↔ Sarvam — no migration, no
+platform lock-in), the call data lands in our own Postgres rather than a platform's dashboard, and every
+line of call logic and compliance enforcement is ours to inspect and change. What we don't own: the
+phone network itself, or the model weights the LLM/STT/TTS calls run against.
+
+Note the audience shift: this is what *Weeber* controls as the operator of a managed product. Merchants
+and clinics on Weeber don't self-host anything — they sign up and get agents. The provider abstraction is
+a margin and resilience lever for us (ADR-021), not a customer-facing feature.
 
 ## Repo layout (current, 2026-07-13)
 
@@ -61,9 +64,9 @@ packages/
 │           ├── {twilio,plivo,exotel}-provisioning.ts  # per-org sub-account/number provisioning
 │           ├── tools/             # agent tool-calling (offerCartRecoveryDiscount, confirmCodOrder, etc.)
 │           ├── workflows/         # outcome-based automation + scheduler.ts (60s sweep)
-│           ├── compliance/        # adapters wiring @openvent/compliance into this app
+│           ├── compliance/        # adapters wiring @weeber/compliance into this app
 │           └── integrations/      # HubSpot/Salesforce/GoHighLevel/Google Calendar CRM adapters
-├── openvent-compliance/          # @openvent/compliance — standalone, framework-agnostic
+├── weeber-compliance/          # @weeber/compliance — standalone, framework-agnostic
 │                                  # (DNC, calling-window/TCPA, GDPR erasure, audit trail).
 │                                  # Zero dependency on Twilio/Bun/Hono/any specific DB.
 ├── web/                          # @weeber/web — React/Vite frontend, deployed to Vercel

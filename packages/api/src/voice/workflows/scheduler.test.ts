@@ -102,14 +102,14 @@ mock.module("../session-store", () => {
 let mockDncResult = false;
 let mockCallingWindowResult: { allowed: boolean; reason?: string } = { allowed: true };
 
-mock.module("@openvent/compliance", () => {
+mock.module("@weeber/compliance", () => {
   return {
     isOnDoNotCallList: async () => mockDncResult,
     checkCallingWindow: () => mockCallingWindowResult
   };
 });
 
-mock.module("../../../../openvent-compliance/src/index", () => {
+mock.module("../../../../weeber-compliance/src/index", () => {
   return {
     isOnDoNotCallList: async () => mockDncResult,
     checkCallingWindow: () => mockCallingWindowResult

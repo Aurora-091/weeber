@@ -187,7 +187,7 @@ export const calls = pgTable("calls", {
   // this column existed, simply has null here rather than a misleading guess.
   // `disclosureText`/`disclosureVersion` above say WHAT was configured; this
   // says WHETHER/WHEN it was actually delivered. The transcript substring
-  // check in @openvent/compliance's audit-trail.ts stays as a content fallback.
+  // check in @weeber/compliance's audit-trail.ts stays as a content fallback.
   disclosureFiredAt: timestamp("disclosure_fired_at", { withTimezone: true, mode: "date" }),
   // Per-call cost visibility (2026-07-18, India feature-gap analysis Phase 3):
   // the STT/TTS/LLM providers *actually used* for this specific call, snapshotted
@@ -304,7 +304,7 @@ export const doNotCall = pgTable("do_not_call", {
 
 /**
  * Consent ledger (Global Compliance Engine Tier 0, 2026-07-16,
- * docs/global-compliance-engine-plan.md #6) — backs @openvent/compliance's ConsentStorageAdapter.
+ * docs/global-compliance-engine-plan.md #6) — backs @weeber/compliance's ConsentStorageAdapter.
  * Replaces shopifyContacts.marketingConsent's single boolean with a real, purpose-scoped,
  * append-only ledger: many rows per (orgId, dataPrincipal, purpose), one new row each time
  * consent is granted or re-granted, withdrawals recorded via `withdrawnAt` rather than deleting

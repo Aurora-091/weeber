@@ -98,7 +98,7 @@ describe("placeOutboundCall — the org must survive in the answer URL", () => {
     expect(lastTwilioCreate!.url).toBe("https://api.weeber.test/api/voice/incoming?orgId=org%20shop%26x");
   });
 
-  it("omits the query entirely for a call with no org (self-hosted OpenVent)", async () => {
+  it("omits the query entirely for a call with no org (single-tenant/self-hosted)", async () => {
     const result = await placeOutboundCall({ to: "+15557776666" });
 
     expect(result.ok).toBe(true);

@@ -112,7 +112,7 @@ nullable, `licensedStates` jsonb array, `linesOfAuthority` nullable, `source` en
 without a schema change (see "Why NIPR, not build-from-scratch" below), but ships today as a
 manual-entry MVP with zero external dependency. `checkInsuranceProducerLicensing(orgId, toNumber)`:
 no-op unless insurance-vertical *and* a NANP (+1) number; resolves the lead's state from a new,
-partial `AREA_CODE_STATE` map (`@openvent/compliance`'s `packs/us.ts`, ~230 area codes across all
+partial `AREA_CODE_STATE` map (`@weeber/compliance`'s `packs/us.ts`, ~230 area codes across all
 50 states + DC — broader than the existing 3-state mini-TCPA map, still explicitly best-effort,
 same "known-weak-signal" caveat as everywhere else phone-number-based jurisdiction inference is
 used in this codebase) and checks it against any advisor's `licensedStates` for that org. An

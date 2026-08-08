@@ -124,7 +124,7 @@ this round's synthesis, replacing the stale "not started" section of `ROADMAP.md
 ## What this round did NOT change
 - Open-core model (ADR-015) — unaffected, still the direction.
 - Self-hosted-orchestration positioning (ADR-016) — reinforced, not revised, by the Voximplant research.
-- npm publish of `@openvent/compliance` — still deferred, now arguably even more clearly the right call, since
+- npm publish of `@weeber/compliance` — still deferred, now arguably even more clearly the right call, since
   the audit-trail feature (below) will likely live in or alongside that package and should ship as part of
   a more complete compliance story, not before it.
 

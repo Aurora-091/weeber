@@ -56,7 +56,7 @@ state worth knowing about.
 
 ## 4. Compliance engine
 
-Own package (`@openvent-compliance`), not a bolt-on: DNC list + national DNC registry check
+Own package (`@weeber-compliance`), not a bolt-on: DNC list + national DNC registry check
 (hard-blocking, no override), purpose-scoped consent grants, India TRAI calling-window enforcement
 (9am-9pm IST hard gate) + a US pack, versioned recording/AI disclosure text (persisted per-call so
 you know exactly what was said, not just that disclosure happened), a GDPR erasure module (retention

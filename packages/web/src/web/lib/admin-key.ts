@@ -4,7 +4,7 @@
  *
  * Two auth paths coexist:
  *   1. Supabase session (email/password) — sends Authorization: Bearer <jwt>
- *   2. Legacy API key — sends X-OpenVent-Admin-Key header
+ *   2. Legacy API key — sends X-Weeber-Admin-Key header
  *
  * The `adminHeaders()` helper picks the appropriate header based on what's available.
  */
@@ -26,7 +26,7 @@ export function clearAdminKey() {
 
 export function adminHeaders(): Record<string, string> {
   const key = getAdminKey();
-  return key ? { "X-OpenVent-Admin-Key": key } : {};
+  return key ? { "X-Weeber-Admin-Key": key } : {};
 }
 
 /**
@@ -41,5 +41,5 @@ export async function adminHeadersAsync(): Promise<Record<string, string>> {
     }
   }
   const key = getAdminKey();
-  return key ? { "X-OpenVent-Admin-Key": key } : {};
+  return key ? { "X-Weeber-Admin-Key": key } : {};
 }

@@ -5,7 +5,7 @@
  *
  *   1. If `Authorization: Bearer <jwt>` is present → verify it as a Supabase
  *      Auth token, then confirm the user's email exists in `platform_admins`.
- *   2. Otherwise fall through to the existing API-key check (X-OpenVent-Admin-Key).
+ *   2. Otherwise fall through to the existing API-key check (X-Weeber-Admin-Key, or the still-accepted legacy X-OpenVent-Admin-Key).
  *
  * This middleware is designed to WRAP the existing requireAdminKey — it either
  * authenticates via session and calls next(), or passes control to the next

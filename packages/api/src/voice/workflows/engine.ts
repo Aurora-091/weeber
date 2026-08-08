@@ -1,6 +1,6 @@
 import { db } from "../../database";
 import { scheduledCalls } from "../../database/schema";
-import { addToDoNotCallList } from "@openvent/compliance";
+import { addToDoNotCallList } from "@weeber/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { dispatchWebhook, resolveWebhookUrl } from "../webhooks";
 import { sendSmsForOrg } from "../send-sms";

@@ -12,7 +12,7 @@ sequenceDiagram
     participant Routes as integrations/shopify/routes.ts
     participant DB as scheduled_calls table
     participant Sched as voice/workflows/scheduler.ts<br/>(60s sweep)
-    participant Compliance as @openvent/compliance<br/>(DNC + calling-window gate)
+    participant Compliance as @weeber/compliance<br/>(DNC + calling-window gate)
     participant Transport as voice/telephony-transport.ts
     participant Pipeline as voice/stream.ts<br/>(see voice-orchestration.md)
 

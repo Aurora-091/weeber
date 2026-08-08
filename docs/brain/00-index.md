@@ -32,7 +32,7 @@ updated: 2026-07-19
 | **Leads / records layer / CRM ingest & sync** | `../decisions/adr-061-*.md` → `../product-strategy/native-leads-layer-plan-2026-07-19.md` → `../integrations/leads-ingest-api.md` + `pipedream-inbound-recipe.md` → `leads`/`leadIntakeSchemas`/`leadApiKeys` in `schema.ts` + `packages/api/src/voice/leads/` |
 | **Integrations strategy** (inbound Pipedream vs native adapters, Pipedrive) | `../product-strategy/integrations-strategy-and-roadmap-2026-07-19.md` |
 | **Scheduling / retries / outbound cadence** | `packages/api/src/voice/workflows/scheduler.ts` → `../decisions/adr-026-*.md` (session store) → `scheduledCalls` in `schema.ts`. The "queue" is the in-process sweep. |
-| **Compliance (DNC/TCPA/HIPAA/GDPR)** | **STOP-AND-ASK first** → `../reference/compliance.md` → `../compliance/global-compliance-engine-plan.md` → `packages/openvent-compliance/` |
+| **Compliance (DNC/TCPA/HIPAA/GDPR)** | **STOP-AND-ASK first** → `../reference/compliance.md` → `../compliance/global-compliance-engine-plan.md` → `packages/weeber-compliance/` |
 | **Database schema** | `packages/api/src/database/schema.ts` → additive-only rule → `db:push`. Semantics-changing? → write an ADR. |
 | **Auth** | `../reference/security.md` → `packages/api/src/app/middleware/supabase-auth.ts`. Admin-key auth and Supabase user auth are two separate systems — don't merge. |
 | **Frontend / dashboard** | `../../architecture/README.md` (the /dashboard + /app tree) → `UI-DESIGN-BRIEF.md` → `../reference/dashboard.md`. HTTP only via `web/lib/api.ts`. |

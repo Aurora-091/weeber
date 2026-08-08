@@ -132,7 +132,14 @@ class MemorySessionStore implements SessionStore {
  */
 class RedisSessionStore implements SessionStore {
   private client: import("ioredis").Redis;
-  private keyPrefix = "openvent:session:";
+  // Safe to rename right now precisely because REDIS_URL is unset in
+  // production — createSessionStore() is returning MemorySessionStore, so there
+  // is no live keyspace to orphan. If Redis is ever switched on, changing this
+  // prefix again mid-flight strands every in-progress call's session under the
+  // old prefix: get() misses, the agent loses its captured fields, and size()
+  // under-reports. At that point this needs a read-both/write-new migration,
+  // not an edit.
+  private keyPrefix = "weeber:session:";
 
   constructor(redisUrl: string) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

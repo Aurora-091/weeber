@@ -124,7 +124,7 @@ export async function promoteLeadFromCall(args: {
   schema?: LeadFieldDef[];
 }): Promise<void> {
   const { phone, capturedState, callId } = args;
-  // Leads are an org concept — self-hosted OpenVent usage with no org has no
+  // Leads are an org concept — single-tenant/self-hosted usage with no org has no
   // leads layer (same boundary caller-memory draws, but caller-memory uses ""
   // for the no-org case; here we simply skip, since a leads table with orgId=""
   // mixing every self-host user's leads would be worse than no leads at all).

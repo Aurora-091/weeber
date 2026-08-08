@@ -71,7 +71,7 @@ involved. See `docs/reference/resources.md` for the corrected version.
 ### Architecture — pointers, not duplicated here
 `architecture/README.md` (+ `api-flow.md`, `data-model.md`, `user-flow.md`, `voice-orchestration.md`)
 is the real source of truth for code layout and call flow — still accurate, don't re-derive it. In
-one line: openvent self-hosts orchestration (code/DB/compliance/dashboards), the AI layer (LLM/STT/
+one line: Weeber self-hosts orchestration (code/DB/compliance/dashboards), the AI layer (LLM/STT/
 TTS) and telephony layer stay cloud APIs you plug in, swappable, no lock-in.
 
 ### Product surface, current state
@@ -95,7 +95,7 @@ TTS) and telephony layer stay cloud APIs you plug in, swappable, no lock-in.
 | Finding | Detail | Suggested action |
 |---|---|---|
 | `PUBLIC_MERCHANT_APP_URL` env var still says "merchant" | ADR-052 renamed "Merchant" → "User" everywhere else as the tenant-facing term (2026-07-13), this env var was missed | Low priority, cosmetic — rename in a future pass alongside any other env-var cleanup, not urgent enough to touch mid-flight env config alone |
-| `@openvent/compliance` package name vs. `@weeber/api`/`@weeber/web` | Intentional — the compliance package is the open-source/open-core piece, kept under its original project name on purpose per the fork history | Not a bug, just flagging so it doesn't look like an oversight — confirm you still want this split-brand if the compliance package is ever published independently |
+| `@weeber/compliance` package name vs. `@weeber/api`/`@weeber/web` | Intentional — the compliance package is the open-source/open-core piece, kept under its original project name on purpose per the fork history | Not a bug, just flagging so it doesn't look like an oversight — confirm you still want this split-brand if the compliance package is ever published independently |
 | Hotel/Hospital/Real-estate/Logistics verticals | Zero code exists — pure landing-page copy | Fine as-is for now (honest "coming soon," not overclaiming) — just don't let sales conversations imply these are further along than marketing copy |
 | Insurance replacing "Enterprise" in the vertical grid | Done this session, draft copy | Still needs your sign-off (flagged in the code comment) before treating as final |
 | `EnterpriseDialog` component copy ("Enterprise inquiry," "our enterprise team") | Now also used for the Insurance card's "Talk to us" button (shares the same dialog) | Minor — the copy is generic enough to not be wrong for insurance, but consider retitling if you want it to read as insurance-specific |

@@ -23,10 +23,10 @@ not fraud verification — keep the pitch scoped to what's actually built).
   straight from a laptop in the room.
 - **India-specific compliance is already enforced in the calling engine, not just talked about**:
   - TRAI's TCCCPR calling-window rule (9am–9pm IST, not the US TCPA's 8am–9pm) is enforced specifically
-    for +91 numbers (`packages/openvent-compliance/src/calling-window.ts`) — this is a real, coded rule,
+    for +91 numbers (`packages/weeber-compliance/src/calling-window.ts`) — this is a real, coded rule,
     not a policy document.
   - Every call opens with a spoken AI + recording disclosure by default, not opt-in
-    (`packages/openvent-compliance/src/consent.ts`) — satisfies IRDAI's mandatory consent-notification
+    (`packages/weeber-compliance/src/consent.ts`) — satisfies IRDAI's mandatory consent-notification
     expectation and the EU AI Act's AI-disclosure requirement in one mechanism.
   - Org-scoped Do-Not-Call enforcement and a full per-call audit trail already exist and are enforced
     before every dial, not logged after the fact.
@@ -34,7 +34,7 @@ not fraud verification — keep the pitch scoped to what's actually built).
 ## Be honest about this gap, don't oversell it
 
 - **The National DNC/NDNC-TRAI-registry sync is a documented drop-in, not a live integration.** The
-  architecture has a named extension point for it (`packages/openvent-compliance/src/national-dnc.ts`),
+  architecture has a named extension point for it (`packages/weeber-compliance/src/national-dnc.ts`),
   matching the same pattern already used for the (also not-yet-wired) US National DNC Registry. If asked
   "are you synced with the NCPR/DND registry," the accurate answer is: "the calling-window and
   per-number consent enforcement is live today; registry sync is architected and is a fast follow once we

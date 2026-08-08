@@ -1,13 +1,13 @@
-import type { CallAuditStorageAdapter, CallLogStorageAdapter, ConsentPurpose, ConsentRecord, ConsentStorageAdapter, DncStorageAdapter } from "@openvent/compliance";
+import type { CallAuditStorageAdapter, CallLogStorageAdapter, ConsentPurpose, ConsentRecord, ConsentStorageAdapter, DncStorageAdapter } from "@weeber/compliance";
 import { db } from "../../database";
 import { calls, consentRecords, doNotCall, optOutEvents, transcripts, toolCalls } from "../../database/schema";
 import { desc, eq, lt, or, asc } from "drizzle-orm";
 
 /**
- * Drizzle/Turso storage adapters wiring OpenVent's own schema into the
- * standalone @openvent/compliance package (packages/openvent-compliance). This is
+ * Drizzle/Turso storage adapters wiring Weeber's own schema into the
+ * standalone @weeber/compliance package (packages/weeber-compliance). This is
  * the "dogfooding" proof that the extraction actually works standalone —
- * OpenVent's own compliance enforcement now runs entirely through the published
+ * Weeber's own compliance enforcement now runs entirely through the published
  * package's functions, with these two adapters as the only app-specific
  * glue code required.
  */
@@ -39,7 +39,7 @@ export const dncAdapter: DncStorageAdapter = {
 /**
  * Consent ledger adapter (Global Compliance Engine Tier 0, 2026-07-16,
  * docs/global-compliance-engine-plan.md #6) — a factory, not a single shared instance like
- * `dncAdapter` above. @openvent/compliance's `ConsentStorageAdapter` interface is
+ * `dncAdapter` above. @weeber/compliance's `ConsentStorageAdapter` interface is
  * intentionally org-agnostic (just `dataPrincipal` + `purpose`, no `orgId` param) so the package
  * itself has zero multi-tenancy opinion — but this app's `consent_records` table is genuinely
  * per-org (the same phone number can be a customer of more than one org on this platform, and
@@ -50,7 +50,7 @@ export const dncAdapter: DncStorageAdapter = {
  *
  * `hasConsent`/`withdraw` only ever look at the MOST RECENT record for a given
  * (orgId, dataPrincipal, purpose) — mirrors the memory adapter's `activeGrant` semantics in
- * packages/openvent-compliance/src/adapters/memory.ts exactly, so behavior is identical between
+ * packages/weeber-compliance/src/adapters/memory.ts exactly, so behavior is identical between
  * the reference adapter used in tests and this production one.
  */
 export function createConsentAdapterForOrg(orgId: string): ConsentStorageAdapter {
@@ -132,9 +132,9 @@ export const callLogAdapter: CallLogStorageAdapter = {
 };
 
 /**
- * Backs the compliance audit-trail feature (see @openvent/compliance's
+ * Backs the compliance audit-trail feature (see @weeber/compliance's
  * audit-trail.ts) — assembles the "who was called, when, what was said"
- * record a compliance request actually needs, from OpenVent's own
+ * record a compliance request actually needs, from Weeber's own
  * calls/transcripts tables. See routes.ts's GET /calls/:id/audit and
  * GET /callers/:phoneNumber/audit for where this gets used.
  */

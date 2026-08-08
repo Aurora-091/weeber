@@ -1,14 +1,13 @@
-# Weeber (openvent)
+# Weeber
 
-Weeber is a multi-tenant, vertical voice-AI SaaS (Shopify/ecommerce, clinic, insurance) built on top of
-`openvent` — a self-hosted voice-agent orchestration framework (Bun/Hono/Drizzle backend, React/Vite
-frontend, Twilio/Plivo/Exotel + Deepgram/Sarvam + ElevenLabs/Cartesia provider abstraction). See
-`CLAUDE.md` for the fuller "what this repo is" description.
+Weeber is a multi-tenant, vertical voice-AI SaaS (Shopify/ecommerce, clinic, insurance) — a Bun/Hono/Drizzle
+backend, a React/Vite frontend, and a provider-abstracted voice pipeline (Twilio/Plivo/Exotel +
+Deepgram/Sarvam + ElevenLabs/Cartesia). See `CLAUDE.md` for the fuller "what this repo is" description.
 
 **New to this repo? Read in this order:**
 
 1. [`architecture/README.md`](./architecture/README.md) — how a call actually flows end to end, and how
-   the codebase (`packages/api`, `packages/web`, `packages/openvent-compliance`, ...) is laid out. Start here.
+   the codebase (`packages/api`, `packages/web`, `packages/weeber-compliance`, ...) is laid out. Start here.
 2. [`docs/reference/getting-started.md`](./docs/reference/getting-started.md) — local setup, running the stack.
 3. [`docs/reference/configuration.md`](./docs/reference/configuration.md) — env vars, per-number config, workflows.
 4. [`CLAUDE.md`](./CLAUDE.md) — repo conventions, commands, and things that trip people up (this is the
@@ -21,7 +20,7 @@ frontend, Twilio/Plivo/Exotel + Deepgram/Sarvam + ElevenLabs/Cartesia provider a
 | [`architecture/`](./architecture/) | Codebase map + call-flow diagrams. Read this first, not `docs/`. |
 | [`docs/`](./docs/) | Everything else — operational reference (`docs/reference/`), compliance plans, voice-quality/latency research, product-strategy/GTM research, insurance-vertical planning, Workflow Canvas history, per-agent prompts (`docs/agent-prompts/`), and an `archive/` of superseded docs. See [`docs/README.md`](./docs/README.md) for the full index. |
 | [`audit/`](./audit/) | Dated, point-in-time code audits — snapshots of what the codebase actually does, not plans. See [`audit/README.md`](./audit/README.md). |
-| [`packages/`](./packages/) | The actual code: `api` (backend), `web` (frontend), `openvent-compliance` (standalone compliance engine), `mobile`, `desktop`. |
+| [`packages/`](./packages/) | The actual code: `api` (backend), `web` (frontend), `weeber-compliance` (standalone compliance engine). |
 | [`DECISIONS.md`](./DECISIONS.md) | The running architecture decision log (ADRs) — why things are the way they are, including reversed decisions. The single most useful file for "why does this work like this." |
 | [`changelog.md`](./changelog.md) | Running log of what shipped, when. |
 | [`WEEBER-PLAN.md`](./WEEBER-PLAN.md) | The phase roadmap (Foundation → Differentiation → Scale/Moat → Cost/In-house) — what's built vs. what's next. |

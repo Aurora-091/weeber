@@ -109,7 +109,7 @@ Highest effort, highest risk, most capability. Requires: a new edge-condition ty
 against the current transcript/context at branch time (latency + cost per branch — needs its own
 budget, likely fine since branching happens post-call, not mid-conversation), and — most
 importantly — a **compliance review**, since this product's whole audit trail today
-(`openvent-compliance`'s `buildCallAuditRecord`) assumes deterministic, enum-based dispositions. An
+(`weeber-compliance`'s `buildCallAuditRecord`) assumes deterministic, enum-based dispositions. An
 LLM-evaluated branch condition means "why did this call go down this path" now has a probabilistic
 answer, not a fixed one — worth being explicit that this is a real product-philosophy tradeoff, not
 just an engineering cost, before picking this option.

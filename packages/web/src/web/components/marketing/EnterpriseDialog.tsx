@@ -116,7 +116,7 @@ const CONTEXT_COPY: Record<"enterprise" | "insurance", { label: string; successB
 };
 
 /** Multi-step enterprise-inquiry form — ported from Vocalist's
- * EnterpriseDialog.tsx, wired to openvent's own POST /api/public/enterprise-inquiry
+ * EnterpriseDialog.tsx, wired to Weeber's own POST /api/public/enterprise-inquiry
  * (routed through the existing support-tickets table) instead of a Supabase
  * edge function. */
 export function EnterpriseDialog({ open, onOpenChange, context = "enterprise" }: Props) {

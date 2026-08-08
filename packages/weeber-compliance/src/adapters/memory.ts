@@ -14,7 +14,7 @@ import type {
  * matter. Not suitable for production (state is lost on restart, doesn't
  * share across instances). Swap for a real database-backed adapter before
  * shipping — see the package README for the Drizzle/Turso example used by
- * the OpenVent reference app.
+ * the Weeber app.
  */
 export function createMemoryDncAdapter(): DncStorageAdapter {
   const entries = new Map<string, DoNotCallEntry>();

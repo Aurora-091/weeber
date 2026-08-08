@@ -1,7 +1,7 @@
 import app from "./index";
 import { tryUpgradeVoiceSocket, voiceWebsocketHandlers } from "./voice/ws-route";
 import { tryUpgradeWaitlistSocket, waitlistWebsocketHandlers } from "./app/waitlist-ws";
-import { assertHipaaPreflight, startRetentionSweep } from "@openvent/compliance";
+import { assertHipaaPreflight, startRetentionSweep } from "@weeber/compliance";
 import { callLogAdapter } from "./voice/compliance/adapters";
 import { assertVoiceConfig } from "./voice/config-check";
 import { startScheduledCallSweep } from "./voice/workflows/scheduler";
@@ -25,7 +25,7 @@ process.on("uncaughtException", (err) => {
 });
 
 // Compliance boot checks — fail fast and loud rather than silently running
-// in a state the operator didn't actually confirm. Provided by @openvent/compliance.
+// in a state the operator didn't actually confirm. Provided by @weeber/compliance.
 assertHipaaPreflight();
 
 // Config validation — logs loudly (doesn't crash) if the active providers are
@@ -34,7 +34,7 @@ assertHipaaPreflight();
 assertVoiceConfig();
 
 // GDPR: automatic retention purge — runs on boot and then daily. No manual
-// cleanup step required. Provided by @openvent/compliance.
+// cleanup step required. Provided by @weeber/compliance.
 startRetentionSweep(callLogAdapter, {
   onPurge: (result) => console.log(`[gdpr] retention sweep purged ${result.callsDeleted} expired call(s)`),
   onError: (err) => console.error("[gdpr] retention sweep failed", err),

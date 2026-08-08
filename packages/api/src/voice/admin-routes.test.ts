@@ -61,7 +61,7 @@ afterAll(() => {
 
 import { admin } from "./admin-routes";
 
-const adminHeaders = { "X-OpenVent-Admin-Key": "test-admin-key", "Content-Type": "application/json" };
+const adminHeaders = { "X-Weeber-Admin-Key": "test-admin-key", "Content-Type": "application/json" };
 
 describe("admin flags routes", () => {
   beforeEach(() => {

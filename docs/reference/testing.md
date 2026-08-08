@@ -1,6 +1,6 @@
 # Testing
 
-OpenVent uses `bun:test` — no separate test runner, no mocking framework. Tests live next to the code they
+Weeber uses `bun:test` — no separate test runner, no mocking framework. Tests live next to the code they
 test (`foo.ts` → `foo.test.ts`), following Bun's convention.
 
 ## Test layout: colocation, not a `testing/` folder
@@ -33,7 +33,7 @@ cd packages/api && bun run test
 cd packages/web && bun run test
 
 # The standalone compliance package
-cd packages/openvent-compliance && bun run test
+cd packages/weeber-compliance && bun run test
 ```
 
 To iterate on a single file, `bun test <path>` is fine **for that one file** (isolation is moot with one
@@ -77,7 +77,7 @@ includes `--isolate`); never bare `bun test` for a full run.**
 | GoHighLevel / Salesforce / HubSpot / Google Calendar | `packages/api/src/voice/integrations/*.test.ts` | Not-configured fallback (missing env vars), successful sync/booking, graceful degradation when the third-party API errors or is unreachable |
 | Telephony providers | `packages/api/src/voice/plivo-client.test.ts`, `packages/api/src/voice/telephony-transport.test.ts` | Wire-format parsing/building, mu-law<->PCM16 codec round-trip, Plivo hangup/transfer request shapes |
 | Compliance gates | `packages/api/src/voice/compliance/*.test.ts` | Insurance number-series/producer-licensing gates, consent-adapter org isolation, FTSA attempt cap |
-| Compliance package | `packages/openvent-compliance/src/*.test.ts` | Calling-window resolution (incl. mini-TCPA state overrides), DNC add/check, consent disclosure toggle, HIPAA boot guardrail, GDPR retention purge + erasure, national-DNC adapter shape |
+| Compliance package | `packages/weeber-compliance/src/*.test.ts` | Calling-window resolution (incl. mini-TCPA state overrides), DNC add/check, consent disclosure toggle, HIPAA boot guardrail, GDPR retention purge + erasure, national-DNC adapter shape |
 
 Not an exhaustive list — this table covers the areas most worth knowing about, not every test file. Run
 `bun run test` for the current total pass/fail count; don't rely on a hardcoded number here, it goes stale
@@ -92,7 +92,7 @@ the moment anyone adds a test.
   for specific examples) rather than unit tests. A proper integration-test harness for this is open
   territory.
 - **OAuth flows** for Salesforce/Google Calendar — these integrations assume you already have a valid
-  access token in the environment; the token-acquisition flow itself isn't OpenVent's responsibility and isn't
+  access token in the environment; the token-acquisition flow itself isn't Weeber's responsibility and isn't
   tested here.
 - **Plivo/Exotel against a real account** — the request shapes (hangup/transfer/outbound call) match each
   provider's own documented API, but no live call has been placed through either in this codebase's own
@@ -151,7 +151,7 @@ Each package has a `test:coverage` script (Bun's built-in `--coverage`, no extra
 bun run test:coverage
 
 # One package
-cd packages/openvent-compliance && bun run test:coverage
+cd packages/weeber-compliance && bun run test:coverage
 ```
 
 Coverage is a **separate** script on purpose — the canonical `test` stays lean and fast for the CI gate,

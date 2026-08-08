@@ -16,15 +16,15 @@ import { STATS, HOW_IT_WORKS, PLATFORM_FEATURES, SECURITY_FEATURES, VERTICAL_TAB
  * Weeber public waitlist/marketing page — faithfully ported from Vocalist's
  * src/pages/Waitlist.tsx (github.com/Aurora-091/Vocalist), per explicit
  * direction to replicate the design, copy, and animations exactly rather
- * than reinterpret into openvent's dark-monochrome `.theme-weeber` product
+ * than reinterpret into Weeber's dark-monochrome `.theme-weeber` product
  * theme. Uses its own `.marketing` token set (--m-*, styles.css) —
  * deliberately not `.theme-weeber`, same separation Vocalist itself has
  * between its marketing site and product dashboard.
  *
- * Adapted for openvent's own stack (not a byte-copy):
+ * Adapted for Weeber's own stack (not a byte-copy):
  * - react-router-dom -> wouter (MarketingNav/Footer/logo already adapted).
  * - Supabase edge functions (waitlist-join, waitlist-phone, enterprise-inquire)
- *   -> openvent's own backend (POST /api/public/waitlist + /waitlist/phone +
+ *   -> Weeber's own backend (POST /api/public/waitlist + /waitlist/phone +
  *   /enterprise-inquiry), reusing the referral/position/count system already
  *   built (ADR-041) — the visual layer changed, the working backend didn't.
  * - Referral URL uses window.location.origin instead of a hardcoded domain.

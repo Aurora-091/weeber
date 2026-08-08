@@ -44,7 +44,7 @@ afterAll(() => {
 
 import { workflowAdminRoutes } from "./admin-routes";
 
-const adminHeaders = { "X-OpenVent-Admin-Key": "test-admin-key" };
+const adminHeaders = { "X-Weeber-Admin-Key": "test-admin-key" };
 
 describe("workflowAdminRoutes — auth gate (security fix, 2026-07-16)", () => {
   beforeEach(() => {

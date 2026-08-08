@@ -17,7 +17,7 @@
  * that map: a ported/VOIP number's real state can't be perfectly inferred from area code alone.
  */
 import { eq, and, gte } from "drizzle-orm";
-import { MINI_TCPA_AREA_CODE_STATE } from "@openvent/compliance";
+import { MINI_TCPA_AREA_CODE_STATE } from "@weeber/compliance";
 import { db } from "../../database";
 import { calls } from "../../database/schema";
 

@@ -3,7 +3,7 @@ import { db } from "../../database";
 import { scheduledCalls, orgs } from "../../database/schema";
 import { placeOutboundCall } from "../place-outbound-call";
 import { sessionStore } from "../session-store";
-import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@openvent/compliance";
+import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@weeber/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "../compliance/number-series-gate";

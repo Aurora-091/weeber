@@ -6,7 +6,7 @@ answer. This isn't a model-quality problem; it happens even with strong models, 
 most stacks have is the raw transcript (or a lossy summary/RAG layer over it), with no deterministic,
 structured source of truth the agent is required to read from.
 
-OpenVent keeps a separate, deterministic state layer instead:
+Weeber keeps a separate, deterministic state layer instead:
 
 - The agent calls `captureField` the moment a caller states something durable — an email, an order ID, a
   name — recording it as a `{ field, value }` pair, not free text.

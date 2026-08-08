@@ -39,7 +39,7 @@ common drift. They are:
 1. **`.theme-weeber` (+ `.theme-weeber.dark`)** in `styles.css` — **the product.** Apply at the root
    layout element of every `/app` and `/dashboard` route. Monochrome, warm-paper, 12px radius. This is
    what 99% of feature work touches.
-2. **`:root` (+ `.dark`)** in `styles.css` — **the OpenVent/Vent OSS landing page.** Editorial serif +
+2. **`:root` (+ `.dark`)** in `styles.css` — **the public marketing/waitlist landing page.** Editorial serif +
    *ember* palette (`--ember: oklch(0.53 0.19 35)`, warm orange-red). A different, unrelated surface.
    **Do not** touch or reuse these bare tokens inside product routes.
 3. **`--m-*`** in `styles-marketing.css` — **the marketing site.** Hex-based (`--m-bg: #FCFCFB`,

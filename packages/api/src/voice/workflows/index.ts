@@ -3,7 +3,7 @@ import type { WorkflowConfig } from "./types";
 /**
  * Loads workflow configs from the WORKFLOWS env var (a JSON array of
  * WorkflowConfig). Keeping this env-based (vs. a dashboard/DB table) matches
- * the rest of OpenVent's "code-first config, no UI required" approach — edit the
+ * the rest of Weeber's "code-first config, no UI required" approach — edit the
  * env var, restart, done.
  *
  * Example:

@@ -7,17 +7,16 @@
 
 ## 30-second orientation
 
-Weeber is a **private, multi-vertical voice-AI SaaS** — a fork of the open-source `OpenVent`
-orchestration framework (Bun / Hono / Drizzle / Twilio / Deepgram), extended into an org-scoped
-product with per-vertical agents. Ecommerce (Shopify first) is the launch vertical; clinic, insurance,
-and hotel verticals are on the board. It pairs with a separate Shopify OAuth bridge repo,
+Weeber is a **private, multi-vertical voice-AI SaaS** (Bun / Hono / Drizzle / Twilio / Deepgram) —
+an org-scoped product with per-vertical agents. Ecommerce (Shopify first) is the launch vertical;
+clinic, insurance, and hotel verticals are on the board. It pairs with a separate Shopify OAuth bridge repo,
 [`weebersh`](https://github.com/Aurora-091/weebersh). This repo holds the call logic, scheduling,
 compliance, and business rules.
 
 - **Backend:** `packages/api` (`@weeber/api`) — Bun/Hono, deployed to **Railway** (Pro, Singapore).
 - **Frontend:** `packages/web` (`@weeber/web`) — React/Vite dashboard, deployed to **Vercel** (Pro).
 - **DB:** **Supabase** Postgres (pooled, port 6543) — auth + `pgvector` KB, ADR-034.
-- **Compliance:** `packages/openvent-compliance` — standalone, dependency-free, the real moat.
+- **Compliance:** `packages/weeber-compliance` — standalone, dependency-free, the real moat.
 
 Pre-launch. ~10 real calls all-time. No paying customers yet. Treat traction docs accordingly.
 
@@ -54,7 +53,7 @@ today).
 4. **Frontend never imports backend runtime** — only the `AppType` RPC type. All HTTP goes through
    `packages/web/src/web/lib/api.ts` (honors `VITE_API_BASE_URL`), never a hardcoded `fetch("/api/...")`.
    Dependency direction is one-way: `web → api (types only) → compliance`.
-5. **Anything touching `packages/openvent-compliance` is STOP-AND-ASK.** It's the product differentiator;
+5. **Anything touching `packages/weeber-compliance` is STOP-AND-ASK.** It's the product differentiator;
    correctness matters more than speed. Confirm with the user before merging, however small.
 6. **Never invent credentials.** Twilio, Supabase, Deepgram, Cartesia/ElevenLabs, LLM, GitHub tokens —
    ask the user through a secure channel; never hardcode or use plausible-looking placeholders.

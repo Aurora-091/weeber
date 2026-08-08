@@ -140,7 +140,7 @@ whenever `NODE_ENV === "production"`, regardless of its value. Outside productio
 for local testing, same as before. Tests: `routes.test.ts`, new `describe("Voice routes -
 BYPASS_COMPLIANCE hardening")` block, 4 tests.
 
-**#2/#3 — disclosure text + version, per call, per language.** `packages/openvent-compliance/src/
+**#2/#3 — disclosure text + version, per call, per language.** `packages/weeber-compliance/src/
 consent.ts` rewritten: new `DISCLOSURE_VERSION` constant, `DISCLOSURE_TEXT_BY_LANGUAGE` map (`en`
 + a draft `hi` Hinglish line — Devanagari script, English loanwords kept in Latin per this
 codebase's existing convention, **still needs human review before it's ever spoken on a real
@@ -179,7 +179,7 @@ existing per-recipient `scheduledCalls.attempt` tracking. Left for a future sess
 rushed — see "Deliberately not done" below.
 
 **#6 — consent ledger, foundation.** Built generically (not India-only), per the earlier decision.
-`packages/openvent-compliance/src/storage.ts`: new `ConsentPurpose` type (`service` |
+`packages/weeber-compliance/src/storage.ts`: new `ConsentPurpose` type (`service` |
 `transactional` | `marketing` | `underwriting` | `feedback`), `ConsentRecord` type, and
 `ConsentStorageAdapter` interface (`hasConsent`/`grant`/`withdraw`/`listForPrincipal`) — mirrors
 `DncStorageAdapter`'s shape exactly. `adapters/memory.ts`: `createMemoryConsentAdapter()` reference
@@ -227,7 +227,7 @@ for org-a never satisfies org-b's check).
 
 - `bun run typecheck` — clean, all 3 packages.
 - `bun run lint` (oxlint) — 0 warnings, 0 errors, 323 files.
-- `packages/openvent-compliance`: `bun test --isolate src/` — 62 pass / 0 fail (was 26 before this
+- `packages/weeber-compliance`: `bun test --isolate src/` — 62 pass / 0 fail (was 26 before this
   session's additions — consent.test.ts, packs/us.test.ts, and the new consent-ledger tests in
   index.test.ts).
 - `packages/api`: `bun run test` (the package's real script, `bun test --isolate src/`) — 363 pass
@@ -237,19 +237,19 @@ for org-a never satisfies org-b's check).
 
 ### File map
 
-- `packages/openvent-compliance/src/consent.ts` — rewritten (disclosure versioning + localization).
-- `packages/openvent-compliance/src/consent.test.ts` — new.
-- `packages/openvent-compliance/src/calling-window.ts` — rewritten as a thin resolver.
-- `packages/openvent-compliance/src/packs/types.ts` — new (shared pack types).
-- `packages/openvent-compliance/src/packs/india.ts` — new (extracted from calling-window.ts).
-- `packages/openvent-compliance/src/packs/us.ts` — new (extracted + mini-TCPA additions).
-- `packages/openvent-compliance/src/packs/us.test.ts` — new.
-- `packages/openvent-compliance/src/storage.ts` — added `ConsentPurpose`/`ConsentRecord`/
+- `packages/weeber-compliance/src/consent.ts` — rewritten (disclosure versioning + localization).
+- `packages/weeber-compliance/src/consent.test.ts` — new.
+- `packages/weeber-compliance/src/calling-window.ts` — rewritten as a thin resolver.
+- `packages/weeber-compliance/src/packs/types.ts` — new (shared pack types).
+- `packages/weeber-compliance/src/packs/india.ts` — new (extracted from calling-window.ts).
+- `packages/weeber-compliance/src/packs/us.ts` — new (extracted + mini-TCPA additions).
+- `packages/weeber-compliance/src/packs/us.test.ts` — new.
+- `packages/weeber-compliance/src/storage.ts` — added `ConsentPurpose`/`ConsentRecord`/
   `ConsentStorageAdapter`.
-- `packages/openvent-compliance/src/adapters/memory.ts` — added `createMemoryConsentAdapter`.
-- `packages/openvent-compliance/src/index.ts` — added the optional `consentCheck` param to
+- `packages/weeber-compliance/src/adapters/memory.ts` — added `createMemoryConsentAdapter`.
+- `packages/weeber-compliance/src/index.ts` — added the optional `consentCheck` param to
   `checkOutboundCallCompliance`, new `"consent"` failedCheck variant.
-- `packages/openvent-compliance/src/index.test.ts` — +11 consent-ledger tests.
+- `packages/weeber-compliance/src/index.test.ts` — +11 consent-ledger tests.
 - `packages/api/src/voice/routes.ts` — `BYPASS_COMPLIANCE` hardening.
 - `packages/api/src/voice/routes.test.ts` — +4 tests.
 - `packages/api/src/voice/agent.ts` — `ResolvedAgentConfig` + all construction sites.

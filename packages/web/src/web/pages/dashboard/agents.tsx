@@ -163,7 +163,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       const text = form.greetingLine || "Hi there, thanks for calling — how can I help you today?";
       const res = await apiFetch("/api/voice/voice-preview", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-OpenVent-Admin-Key": getAdminKey() },
+        headers: { "Content-Type": "application/json", "X-Weeber-Admin-Key": getAdminKey() },
         body: JSON.stringify({ text, voiceProvider: form.voiceProvider, voiceId: form.voiceId || undefined, language: form.language || undefined }),
       });
       if (!res.ok) throw new Error(`${res.status}`);

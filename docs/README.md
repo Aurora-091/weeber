@@ -1,6 +1,6 @@
 # Docs
 
-Reference material, plans, and research for Weeber/openvent, organized by topic. Start with
+Reference material, plans, and research for Weeber, organized by topic. Start with
 `architecture/` (sibling folder, one level up) for how the codebase itself is laid out and how a call
 flows end to end — this folder is everything else: how to configure/operate it, and the reasoning
 behind product/compliance/voice-quality decisions.

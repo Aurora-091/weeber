@@ -36,7 +36,16 @@ export const requireAdminKey = createMiddleware<{ Variables: AdminAuthVariables 
     return next();
   }
 
-  const providedKey = c.req.header("X-OpenVent-Admin-Key");
+  // Two accepted header names, permanently. The header was renamed
+  // X-OpenVent-Admin-Key -> X-Weeber-Admin-Key with the OpenVent branding
+  // removal; the old name is NOT deprecated on a timer. It is a live wire
+  // contract with things this repo cannot see or redeploy — operator curl
+  // scripts, saved Postman/Bruno collections, cron jobs, and anything else
+  // holding an admin key. Dropping it later buys nothing (the key itself is
+  // still the only secret; accepting a second header name grants no extra
+  // access) and would break admin access silently, at whatever hour the
+  // forgotten caller next runs. New name first so it wins if both are sent.
+  const providedKey = c.req.header("X-Weeber-Admin-Key") ?? c.req.header("X-OpenVent-Admin-Key");
   const configuredKey = process.env.ADMIN_API_KEY;
 
   if (configuredKey && providedKey === configuredKey) {
@@ -65,5 +74,5 @@ export const requireAdminKey = createMiddleware<{ Variables: AdminAuthVariables 
     return next();
   }
 
-  return c.json({ error: "Unauthorized — missing or invalid X-OpenVent-Admin-Key header" }, 401);
+  return c.json({ error: "Unauthorized — missing or invalid X-Weeber-Admin-Key header (X-OpenVent-Admin-Key is also accepted)" }, 401);
 });

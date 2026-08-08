@@ -65,7 +65,7 @@ mock.module("./middleware/rate-limit", () => {
   };
 });
 
-mock.module("@openvent/compliance", () => {
+mock.module("@weeber/compliance", () => {
   return {
     checkOutboundCallCompliance: async () => {
       return mockComplianceResult;

@@ -1,4 +1,4 @@
-# @openvent/compliance
+# @weeber/compliance
 
 Framework-agnostic compliance primitives for voice agents — automatic TCPA calling-window checks,
 Do-Not-Call enforcement, recording/AI consent disclosure, a HIPAA boot-time guardrail, and GDPR
@@ -25,7 +25,7 @@ import {
   checkOutboundCallCompliance,
   createMemoryDncAdapter,
   withDisclosure,
-} from "@openvent/compliance";
+} from "@weeber/compliance";
 
 const dnc = createMemoryDncAdapter(); // swap for a real adapter in production — see below
 
@@ -80,7 +80,7 @@ production, implement these against whatever you already use. Example against Dr
 import { db } from "./db";
 import { doNotCall } from "./schema";
 import { eq } from "drizzle-orm";
-import type { DncStorageAdapter } from "@openvent/compliance";
+import type { DncStorageAdapter } from "@weeber/compliance";
 
 export const drizzleDncAdapter: DncStorageAdapter = {
   async isListed(phoneNumber) {
@@ -102,7 +102,7 @@ export const drizzleDncAdapter: DncStorageAdapter = {
 ## HIPAA mode
 
 ```ts
-import { assertHipaaPreflight } from "@openvent/compliance";
+import { assertHipaaPreflight } from "@weeber/compliance";
 
 // Call once at process boot.
 assertHipaaPreflight({ enabled: true, baaConfirmed: true });
@@ -119,7 +119,7 @@ module only ensures nobody silently skipped that step.
 ## GDPR retention + erasure
 
 ```ts
-import { startRetentionSweep, eraseCallerData } from "@openvent/compliance";
+import { startRetentionSweep, eraseCallerData } from "@weeber/compliance";
 import { myCallLogAdapter } from "./my-adapter";
 
 // Runs once at boot, then daily — deletes call data older than DATA_RETENTION_DAYS (default 90).

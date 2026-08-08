@@ -68,7 +68,7 @@ updated: 2026-08-01
   preview via web call (v4 Phase 3) SHIPPED 2026-07-19 (`voice/workflows/preview-walker.ts`,
   `components/workflow-preview/FlowPreviewPanel.tsx`) — the whole v4 plan (Phases 1/2/3) is done.
 - Compliance scaffolding: DNC (no bypass), TCPA/TRAI calling-window, HIPAA guardrail, GDPR
-  retention/erasure, audit-trail export (`packages/openvent-compliance`).
+  retention/erasure, audit-trail export (`packages/weeber-compliance`).
 - Auth: Supabase (JWKS), email OTP sign-in, waitlist + referral system.
 - Config storage: DB-backed `org_agent_configs`/`org_workflow_configs` (not env).
 - All 5 Shopify agent personas + 10 insurance agent prompts written (not placeholders); insurance

@@ -8,7 +8,7 @@ import { apiFetch } from "../../lib/api";
  * ("show me everything about how this number was contacted") vs. a single
  * call's audit (available from the call detail page). Direct answer to
  * real user feedback that producing this on demand is what actually kills
- * the TCPA/DNC compliance fear — see @openvent/compliance's audit-trail.ts and
+ * the TCPA/DNC compliance fear — see @weeber/compliance's audit-trail.ts and
  * DECISIONS.md/ROADMAP.md for the full reasoning.
  */
 export function AuditPage() {

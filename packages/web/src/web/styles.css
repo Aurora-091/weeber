@@ -371,7 +371,7 @@
  * ADR-044) — scoped via `.theme-weeber`, applied at the root layout of
  * /dashboard (admin panel) and /app (merchant dashboard) ONLY. Deliberately
  * separate from the `:root`/`.dark` tokens above, which belong to the
- * public OpenVent OSS landing page (editorial serif, paper/ink/ember) —
+ * public marketing/waitlist page (editorial serif, paper/ink/ember) —
  * that page isn't part of Weeber's product surface and is left untouched.
  * Every actual Weeber screen should have `.theme-weeber` on its root
  * element.

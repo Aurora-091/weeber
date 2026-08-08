@@ -9,7 +9,7 @@ import { leadsIngest } from "./voice/leads/ingest";
 import { shopify } from "./integrations/shopify/routes";
 import { resolveTtsProvider } from "./voice/tts";
 import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
-import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@openvent/compliance";
+import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@weeber/compliance";
 import { requestLogger } from "./middleware/request-logger";
 import { errorHandler } from "./middleware/error-handler";
 import { assertCorsConfiguredForProduction, buildCorsOriginResolver } from "./middleware/cors-config";
@@ -33,7 +33,7 @@ const app = new Hono()
       credentials: true,
       // Explicit allowlist because both auth headers are non-simple — with a
       // CORS origin allowlist set, preflights would otherwise reject them.
-      allowHeaders: ["Content-Type", "Authorization", "X-OpenVent-Admin-Key"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Weeber-Admin-Key", "X-OpenVent-Admin-Key"],
       exposeHeaders: ["set-auth-token"],
     }),
   )

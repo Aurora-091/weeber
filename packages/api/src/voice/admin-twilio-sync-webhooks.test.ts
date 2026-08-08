@@ -82,7 +82,7 @@ afterAll(() => {
 
 const { admin } = await import("./admin-routes");
 
-const adminHeaders = { "X-OpenVent-Admin-Key": "test-admin-key", "Content-Type": "application/json" };
+const adminHeaders = { "X-Weeber-Admin-Key": "test-admin-key", "Content-Type": "application/json" };
 
 describe("POST /orgs/:orgId/twilio/sync-webhooks", () => {
   beforeEach(() => {

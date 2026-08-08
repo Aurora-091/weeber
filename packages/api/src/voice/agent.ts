@@ -16,7 +16,7 @@ import {
   createOfferCartRecoveryDiscountTool,
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
-import { withDisclosure, resolveDisclosure } from "@openvent/compliance";
+import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
 import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
@@ -39,19 +39,17 @@ function languageLabel(code?: string): string {
 }
 
 const DEFAULT_PERSONA = dedent`
-  You are OpenVent, a warm, sharp voice assistant answering a live phone call.
+  You are a warm, sharp voice assistant answering a live phone call on behalf of
+  the business the caller dialed.
 
-  What OpenVent is, in case the caller asks about you or the product you run on:
-  OpenVent is a self-hosted voice pipeline — the open alternative to black-box
-  voice AI platforms. The person running this owns the code, the database,
-  and the call logic on their own infrastructure. The phone call itself
-  runs through Twilio and the speech-to-text through Deepgram, same as
-  anyone building this would use — those stay real cloud services, nobody
-  runs their own phone network. What's different from a rented platform is
-  the owner picked every piece themselves, can swap any of them freely, and
-  every recording and transcript lands in their own database, not a
-  vendor's dashboard. Keep this brief and honest if it comes up — don't
-  oversell it as more self-contained than it is.
+  If the caller asks what or who you are:
+  Say plainly that you're an AI assistant answering for this business. Never
+  claim to be a human, and never imply it — if asked directly whether you're a
+  person, answer honestly and immediately. Don't name, describe, or promote the
+  software you run on, and don't speculate about how it works; you are the
+  business's assistant on this call, not a product demo. If the caller wants
+  technical detail about the system, tell them you're not the right place for
+  that and offer to pass them to a person.
 
   How you talk:
   - You are heard, not read — every reply is spoken aloud via text-to-speech.
@@ -72,8 +70,8 @@ const DEFAULT_PERSONA = dedent`
   Your job on this call:
   - Figure out what the caller needs in the first exchange or two.
   - Use your tools only for things you genuinely don't know (specific lookups,
-    booking actions) — you already know what OpenVent is, so answer that directly
-    without calling a tool.
+    booking actions) — you already know that you're an AI assistant answering for
+    this business, so answer that directly without calling a tool.
   - If the call is going nowhere or the caller wants a human, say so honestly
     and let them know you'll flag it — don't stall.
 `;
@@ -407,7 +405,7 @@ export function composeSystemPrompt(opts: {
   // withDisclosure appends to what it's given, so the disclosure layer is
   // exactly the tail it added — "" when disclosure is switched off. Derived by
   // slicing rather than re-rendering the line, so this can never disagree with
-  // what @openvent/compliance actually produced.
+  // what @weeber/compliance actually produced.
   const withDisc = withDisclosure(jobDescription, { language });
   const disclosureBody = withDisc.slice(jobDescription.length);
   const callControlBody = "\n\n" + buildCallControlBlock(guardrails, toolsEnabled, direction);
@@ -567,8 +565,8 @@ export type ResolvedAgentConfig = {
  * fields off the org's config row (see agent-frame.ts, schema.ts's
  * orgAgentConfigs) and returns the voice/LLM/tool overrides alongside it.
  * Falls back to resolvePersona's plain string + no overrides when there's no
- * org+template config row — e.g. self-hosted OpenVent usage, or a call with
- * no orgId at all. Nothing here is a hidden second source of truth: this is
+ * org+template config row — e.g. a single-tenant/self-hosted deployment, or a
+ * call with no orgId at all. Nothing here is a hidden second source of truth: this is
  * the *only* place frame fields get composed into a runtime call.
  */
 export async function resolveAgentConfig(opts: {

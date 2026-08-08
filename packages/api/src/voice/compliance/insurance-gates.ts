@@ -11,7 +11,7 @@
  * compliance checks, a manual call was never meant to be a way to route around a gate.
  */
 import { eq, and } from "drizzle-orm";
-import { resolveUsState } from "@openvent/compliance";
+import { resolveUsState } from "@weeber/compliance";
 import { db } from "../../database";
 import { orgs, orgPhoneNumbers, insuranceAdvisors } from "../../database/schema";
 

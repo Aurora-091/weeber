@@ -104,7 +104,20 @@ describe("resolvePersona", () => {
 
   it("falls back to default persona if no match is found", async () => {
     const persona = await resolvePersona({});
-    expect(persona).toContain("You are OpenVent");
+    expect(persona).toContain("answering a live phone call on behalf of");
+  });
+
+  // The default persona is what a caller actually hears whenever no org or
+  // template persona applies — and AGENT_PERSONAS is unset in production, so
+  // this IS the live fallback, not a theoretical one. It used to open with
+  // "You are OpenVent" and then pitch the platform down the phone. A caller
+  // dialing a clinic should never hear the name of the vendor behind the
+  // software, under either brand. Asserting the absence, not a new brand
+  // string, is what stops this regressing the next time someone rebrands.
+  it("never names the platform vendor in the default persona", async () => {
+    const persona = (await resolvePersona({})).toLowerCase();
+    expect(persona).not.toContain("openvent");
+    expect(persona).not.toContain("weeber");
   });
 
   it("appends call-control/guardrail instructions to every resolved persona, regardless of source", async () => {

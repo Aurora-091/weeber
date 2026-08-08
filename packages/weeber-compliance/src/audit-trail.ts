@@ -2,11 +2,11 @@ import type { ConsentPurpose, ConsentRecord, ConsentStorageAdapter, DncStorageAd
 
 /**
  * Compliance audit trail — the direct answer to a piece of real user
- * feedback (see OpenVent's DECISIONS.md / ROADMAP.md, feedback round 3): the
+ * feedback (see docs/decisions/, feedback round 3): the
  * thing that actually kills the TCPA/DNC compliance fear isn't another
  * warning banner, it's being able to produce, on demand, exactly who was
  * called, when, under what consent basis, what disposition, and what the
- * agent said. OpenVent already collects all of this (calls, transcripts,
+ * agent said. Weeber already collects all of this (calls, transcripts,
  * disposition, DNC status, and — since ADR-062 — the consent ledger,
  * disclosure-fired timestamp, and per-call opt-out events) — this module is
  * the missing step that packages it into a single exportable, audit-ready
@@ -120,7 +120,7 @@ export type CallAuditRecord = {
 
 /**
  * Minimal surface this module needs from your call-log storage to assemble
- * an audit record — implement against your own database (see the OpenVent
+ * an audit record — implement against your own database (see the Weeber
  * reference app's Drizzle adapter for a production example, or
  * adapters/memory.ts for tests).
  */
@@ -153,7 +153,7 @@ export type CallAuditStorageAdapter = {
 };
 
 /**
- * A per-org consent adapter factory (see the OpenVent app's
+ * A per-org consent adapter factory (see the Weeber app's
  * createConsentAdapterForOrg). The audit module resolves consent per call
  * from the call's own orgId, because the same phone number can be a customer
  * of more than one org and consent granted to one org must never appear as

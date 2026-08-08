@@ -55,7 +55,7 @@ mock.module("../../database/schema", () => ({
   calls: { __table: "calls", toNumber: { name: "to_number" }, startedAt: { name: "started_at" } },
 }));
 
-mock.module("@openvent/compliance", () => ({
+mock.module("@weeber/compliance", () => ({
   MINI_TCPA_AREA_CODE_STATE: { "305": "FL", "407": "FL", "206": "WA", "405": "OK" },
 }));
 

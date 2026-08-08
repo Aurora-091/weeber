@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.5",
-    "@openvent/compliance": "*",
+    "@weeber/compliance": "*",
     "@sentry/bun": "^10.66.0",
     "ai": "^7.0.15",
     "dedent": "^1.7.2",

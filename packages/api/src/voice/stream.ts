@@ -1452,7 +1452,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /**
    * ADR-062: stamp when the disclosure/opening turn actually fired. The
    * recording/AI disclosure is prepended to the very start of the opening
-   * turn (see @openvent/compliance's withDisclosure), so the moment the
+   * turn (see @weeber/compliance's withDisclosure), so the moment the
    * greeting finishes speaking is the moment disclosure was delivered as
    * audio. Fire-and-forget and gated on disclosure actually being configured
    * for this call — a failure here just leaves the audit record's fire-time

@@ -44,7 +44,7 @@ import {
   buildCallAuditRecord,
   buildPhoneNumberAuditTrail,
   renderAuditTrailText,
-} from "@openvent/compliance";
+} from "@weeber/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter, auditConsentFactory } from "./compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "./compliance/number-series-gate";
@@ -260,7 +260,7 @@ export const voice = new Hono()
       return c.json({ error: "`to` must be a valid E.164 phone number, e.g. +15551234567" }, 400);
     }
 
-    // Compliance gates — enforced automatically via @openvent/compliance, no
+    // Compliance gates — enforced automatically via @weeber/compliance, no
     // manual step required. A call that fails either check is rejected and
     // never dials. Applies identically regardless of which provider places
     // the call below.
@@ -564,7 +564,7 @@ export const voice = new Hono()
   })
 
   // Compliance: Do-Not-Call list management — enforced automatically on
-  // every outbound call (POST /calls/outbound) via @openvent/compliance.
+  // every outbound call (POST /calls/outbound) via @weeber/compliance.
   .get("/dnc", requireAdminKey, async (c) => {
     const rows = await listDoNotCall(dncAdapter);
     return c.json({ doNotCall: rows }, 200);
@@ -589,7 +589,7 @@ export const voice = new Hono()
   })
 
   // Compliance: GDPR right-to-erasure — deletes all call data tied to a
-  // phone number on request, via @openvent/compliance.
+  // phone number on request, via @weeber/compliance.
   .delete("/callers/:phoneNumber", requireAdminKey, async (c) => {
     const phoneNumber = decodeURIComponent(c.req.param("phoneNumber"));
     const result = await eraseCallerData(callLogAdapter, phoneNumber);

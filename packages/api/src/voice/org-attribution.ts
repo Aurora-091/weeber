@@ -45,7 +45,7 @@ import { orgPhoneNumbers, orgs } from "../database/schema";
  * here rather than being pushed into a shared query.)
  *
  * Returns null when nothing matches, which is the correct outcome for
- * self-hosted OpenVent usage with no orgs at all.
+ * single-tenant/self-hosted usage with no orgs at all.
  */
 export async function resolveOrgIdForNumbers(
   ...numbers: (string | null | undefined)[]

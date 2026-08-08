@@ -94,7 +94,7 @@ not for live call routing. Concretely:
 # India Telephony: Numbers, Regulation, and Provisioning
 
 Reference doc for the actual mechanics of getting Weeber's agents onto real Indian phone numbers,
-compliantly. This is deliberately separate from `packages/openvent-compliance` (which enforces DNC/calling-window
+compliantly. This is deliberately separate from `packages/weeber-compliance` (which enforces DNC/calling-window
 at the *code* level) — this doc covers the *telecom/regulatory* layer underneath that, which today assumes a
 US/NANP-style model and needs a real India-specific pass (flagged since ADR-034).
 
