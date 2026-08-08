@@ -252,10 +252,30 @@ jobs:
     needs: [typecheck, test, build, lint, migration-drift, e2e, design-guard, visual, a11y, fonts]
     runs-on: ubuntu-latest
     steps:
-      - name: Fail if any dependent job failed
+      - name: Every dependent job must have SUCCEEDED
+        # Allow-list, not a deny-list. The previous version failed only on
+        # 'failure' or 'cancelled', which meant 'skipped' passed the gate —
+        # and a job that never acquires a runner surfaces as 'skipped' here,
+        # not 'cancelled'. On run 31124061140 (GitHub Actions major outage,
+        # 2026-08-06) Lint, Test, Typecheck, Drizzle migrations, Visual
+        # regression and A11y all ended with zero steps executed and this
+        # required check still reported SUCCESS. A green gate meant nothing
+        # ran. Anything that is not exactly 'success' now fails, so a new
+        # result string GitHub invents later fails closed instead of open.
+        #
+        # The table prints unconditionally: the old diagnostic was inside the
+        # failure branch, so the one run that needed explaining logged nothing.
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "One or more required jobs failed:"
-            echo "${{ toJSON(needs) }}"
+          set -euo pipefail
+          echo "$NEEDS_JSON" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' | sort
+          BAD=$(echo "$NEEDS_JSON" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")')
+          COUNT=$(echo "$NEEDS_JSON" | jq -r 'length')
+          echo "---"
+          echo "$COUNT dependent jobs evaluated."
+          if [ -n "$BAD" ]; then
+            echo "::error::These jobs did not succeed: $BAD"
             exit 1
           fi
+          echo "All $COUNT jobs succeeded."
