@@ -95,6 +95,50 @@ waiting for the diagnosis.
   webhooks, that is evidence the original failure was environmental and transient. If it comes back
   unset again, the repair path will cover it and the investigation has a fresh, observable data point.
 
+## Outcome (same day, after the fix shipped)
+
+The decisive experiment was authorised and run: one number bought on `b479532` into
+`org_58c7d5cc` — the same sub-account as the 2026-08-05 failure — then released immediately
+(`DELETE` → HTTP 204).
+
+**It succeeded.** The purchase returned HTTP 201, and its Monitor `phone-number.created` event
+carries `voice_url` and `status_callback` set to the correct production URLs. There is no
+`phone-number.updated` event, so the verify step found nothing to repair — `create` itself worked.
+Identical code, identical SDK, opposite result. **The failure is intermittent, not deterministic**,
+which corrects this ADR's original "failure reproducible" framing.
+
+The discriminator is the **egress IP recorded on each create event**:
+
+| Purchase | Source IP | Owner (RDAP) | `voice_url` at create |
+|---|---|---|---|
+| 2026-08-05 12:11 | `34.143.171.53` | Google LLC | **absent** |
+| 2026-08-08 17:25 | `34.143.171.53` | Google LLC | **absent** |
+| 2026-08-08 19:55 | `208.77.246.75` | Railway (`RLWY-METALGEN1-02`) | present |
+
+Both failures egressed from Railway's GCP-backed runtime; the success egressed from Railway Metal.
+The service moved between the two during the day's redeploys — we did not move it deliberately.
+
+The second, sharper clue is **which** parameters went missing. `friendly_name`, `voice_method`,
+`status_callback_method`, `sms_method` and `voice_fallback_method` all arrived on every attempt.
+The only two that ever vanished were `voice_url` and `status_callback` — **exactly the two
+URL-valued fields**. Every scalar got through, both times. A transport that drops URL-valued form
+fields while preserving every other field in the same request body is the signature of something
+inspecting and rewriting the request in the egress path, not of a Twilio-side default or an SDK bug.
+
+This is strong evidence, not proof: the failing runtime no longer exists to reproduce on, so the
+mechanism cannot be confirmed from here. It does, however, close out every hypothesis that pointed
+at our own code, and it upgrades the read-back from "correct under every hypothesis" to "the only
+thing standing between a merchant and an inert paid number if the service is ever scheduled back
+onto that runtime". The `create`-carries-webhooks path is now the observed norm, so the repair
+branch should be treated as a live safety net rather than dead code — worth a log line if it ever
+fires again.
+
+Cleanup owed from the experiment: `buyNumberForOrg` also overwrote `orgs.outboundNumber` and left an
+`org_phone_numbers` row marked `active` for a number that no longer exists. Releasing off Twilio's
+API fixes neither. Two guarded `UPDATE`s restore both. That the experiment needed hand-written SQL
+to undo is itself a finding: there is no admin-side release route, and `closeOrgTelephony` still has
+no caller — the same dead-code shape ADR-073 was written about.
+
 ## Alternatives considered
 
 - **Release the number when the webhooks cannot be set.** Rejected: destructive, and the number is

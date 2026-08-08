@@ -359,12 +359,20 @@ export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promi
   // PhoneNumber/VoiceUrl/VoiceMethod/StatusCallback/StatusCallbackMethod (see
   // twilio-purchase-webhook-wire.test.ts, which locks that contract in).
   //
-  // The cause is still unproven — something between the container and Twilio,
-  // or an undocumented Twilio-side behaviour on create. What IS certain is that
-  // the create response reports the resource's actual state, so it can be
-  // checked instead of trusted, and that a plain `update` fixes the number (the
-  // manual repair of both numbers went through on the first try). So: read back
-  // what Twilio says it stored, and re-apply the webhooks when it disagrees.
+  // A controlled purchase later the same day (same sub-account, same code) came
+  // back with both fields correctly set, so the failure is INTERMITTENT, not
+  // deterministic. The discriminator is the egress IP on Twilio's create event:
+  // both failures came from Railway's GCP runtime (34.143.171.53, Google LLC),
+  // the success from Railway Metal (208.77.246.75). And only the two URL-valued
+  // params ever went missing — friendly_name and every *_method arrived every
+  // time — which points at something rewriting the request on the way out, not
+  // at Twilio or the SDK. Unproven: the failing runtime is gone. See ADR-077.
+  //
+  // So this read-back is a live safety net, not dead code: `create` carrying the
+  // webhooks is now the norm, and the branch below is what stops a merchant
+  // paying for an inert number if we ever land back on that egress path.
+  // A plain `update` is known to fix it — the manual repair of both real numbers
+  // went through on the first try.
   let webhooksLive = remoteMatchesWebhooks(created, webhooks);
   let repairDetail = "";
   if (!webhooksLive) {
