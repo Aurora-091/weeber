@@ -410,7 +410,10 @@ export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promi
   return { ok: true, phoneNumber };
 }
 
-export type ReleaseNumberResult = { ok: true } | { ok: false; error: string };
+/** Carries the released number back so a caller can audit-log WHICH number
+ * it gave up — symmetric with the purchase path's `twilio.number.purchased`.
+ * A row id alone is useless in an audit trail read months later. */
+export type ReleaseNumberResult = { ok: true; phoneNumber: string } | { ok: false; error: string };
 
 /**
  * Releases (deletes) a number from Twilio and marks its org_phone_numbers
@@ -441,7 +444,7 @@ export async function releaseNumberForOrg(orgId: string, phoneNumberId: number):
 
   await db.update(orgPhoneNumbers).set({ status: "released" }).where(eq(orgPhoneNumbers.id, phoneNumberId));
 
-  return { ok: true };
+  return { ok: true, phoneNumber: row.phoneNumber };
 }
 
 /**
@@ -595,14 +598,63 @@ export async function setByoCredentials(
   return { ok: true };
 }
 
+export type ResetTelephonyResult = { ok: true } | { ok: false; error: string };
+
 /** Reverts to the platform global default (Twilio) — clears every
  * provider's stored credentials, not just Twilio's, since only one
  * provider can be active at a time and this is the shared "start over"
  * button all three telephony cards call. Does not delete anything on the
  * provider's own side (e.g. the underlying Twilio sub-account or number),
  * just stops using them; that's a deliberate manual action on the
- * provider's own console, not something to do silently from here. */
-export async function resetToPlatformDefault(orgId: string): Promise<void> {
+ * provider's own console, not something to do silently from here.
+ *
+ * REFUSES when a platform-mode org still holds active numbers (bug,
+ * 2026-08-08). The "leave the provider's side alone, release it from their
+ * console" reasoning above holds for BYO, where the customer owns the
+ * account and the console. It is false for platform mode: the number lives
+ * in a sub-account under OUR parent account, so the merchant has no console
+ * login for it (see inboundVoiceWebhooks' docstring, which relies on the
+ * same fact). This function nulls twilioAccountSid/twilioAuthToken AND
+ * purges the vault, while org_phone_numbers rows stay "active" — so after a
+ * reset, releaseNumberForOrg can no longer resolve creds and the number is
+ * unreleasable by any route in the system while it keeps billing monthly.
+ * Undoing that state needs hand-written SQL plus the sub-account SID dug out
+ * of the admin audit log, which is what actually happened on 2026-08-08.
+ *
+ * Refuses rather than auto-releasing: a "start over" button must not silently
+ * destroy paid, dialable numbers. A release is irreversible (Twilio will not
+ * give the same number back) and the number may already be printed, adverised
+ * or forwarded, so it stays an explicit action — the same stance the purchase
+ * path takes in getSubClientEnsuring ("the *number* is the chargeable step,
+ * and that stays an explicit user action"). */
+export async function resetToPlatformDefault(orgId: string): Promise<ResetTelephonyResult> {
+  const [org] = await db
+    .select({ twilioMode: orgs.twilioMode })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
+
+  // Anything that is not explicitly BYO is treated as platform-owned — an
+  // unknown org or a null mode falls into the guarded branch on purpose,
+  // since guessing "BYO" would be the expensive way to be wrong.
+  if (org?.twilioMode !== "byo") {
+    const held = await db
+      .select({ id: orgPhoneNumbers.id, phoneNumber: orgPhoneNumbers.phoneNumber })
+      .from(orgPhoneNumbers)
+      .where(and(eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")));
+
+    if (held.length > 0) {
+      return {
+        ok: false,
+        error:
+          `Cannot reset telephony while this workspace still holds ${held.length} active number(s): ` +
+          `${held.map((h) => h.phoneNumber).join(", ")}. They are rented under a platform sub-account, ` +
+          "so resetting would clear the credentials needed to release them and they would keep billing " +
+          "with no way to give them back. Release them first, then reset.",
+      };
+    }
+  }
+
   await db
     .update(orgs)
     .set({
@@ -626,4 +678,6 @@ export async function resetToPlatformDefault(orgId: string): Promise<void> {
   for (const provider of ["twilio", "plivo", "exotel"] as const) {
     for (const field of TELEPHONY_VAULT_FIELDS[provider]) await deleteCredential(orgId, field);
   }
+
+  return { ok: true };
 }

@@ -60,6 +60,7 @@ mock.module("./twilio-provisioning", () => ({
   ensureSubaccountForOrg: async () => ({ ok: false, error: "not used in these tests" }),
   buyNumberForOrg: async () => ({ ok: false, error: "not used in these tests" }),
   listAvailableNumbers: async () => ({ ok: false, error: "not used in these tests" }),
+  releaseNumberForOrg: async () => ({ ok: false, error: "not used in these tests" }),
   setByoCredentials: async () => ({ ok: false, error: "not used in these tests" }),
   resetToPlatformDefault: async () => ({ ok: false, error: "not used in these tests" }),
   syncNumberWebhooksForOrg: async (orgId: string) => {

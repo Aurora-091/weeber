@@ -410,7 +410,12 @@ export function UserIntegrationsPage() {
   const telephonyResetMutation = useMutation({
     mutationFn: async () => {
       const res = await appFetch("/api/app/telephony/reset", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to reset telephony settings");
+      // Surface the server's own message, matching every other mutation in
+      // this file. The reset can now be refused with a 409 that names the
+      // active numbers blocking it — swallowing that for a generic string
+      // would leave the merchant with an unexplained failure and no next step.
+      const data = await res.json().catch(() => ({}) as { error?: string });
+      if (!res.ok) throw new Error(data.error ?? "Failed to reset telephony settings");
     },
     onSuccess: () => {
       toast.success("Reverted to platform default");

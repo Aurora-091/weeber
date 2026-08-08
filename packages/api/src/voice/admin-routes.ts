@@ -39,6 +39,7 @@ import {
   ensureSubaccountForOrg,
   buyNumberForOrg,
   listAvailableNumbers,
+  releaseNumberForOrg,
   setByoCredentials,
   resetToPlatformDefault,
   syncNumberWebhooksForOrg,
@@ -261,14 +262,52 @@ export const admin = new Hono<AdminEnv>()
 
   .post("/orgs/:orgId/twilio/reset", async (c) => {
     const orgId = c.req.param("orgId");
-    await resetToPlatformDefault(orgId);
+    const result = await resetToPlatformDefault(orgId);
+    // 409, not 400: the request is well-formed, the workspace is just in a
+    // state where resetting would strand billable numbers.
+    if (!result.ok) return c.json({ error: result.error }, 409);
     await logAdminAction(c.get("adminActor"), "twilio.reset", { orgId });
     return c.json({ ok: true }, 200);
   })
 
+  /**
+   * Releases one of an org's numbers — the missing inverse of
+   * POST /orgs/:orgId/twilio/number above (bug, 2026-08-08).
+   *
+   * That route lets an admin commit the org to a recurring monthly rental.
+   * Release existed only on the merchant-session route
+   * (POST /api/app/numbers/:id/release), so the admin surface could spend
+   * money it could not take back: an operator who provisions a number for an
+   * org — during setup, support or a test — has no way to undo it without a
+   * merchant session for that workspace, which an operator legitimately does
+   * not have. Undoing exactly that on 2026-08-08 took hand-written SQL
+   * against production.
+   *
+   * The comment this replaces claimed buying and releasing were both
+   * "merchant-side actions" that admins don't manage here. That was already
+   * untrue for the spend half, and an asymmetry that only permits spending is
+   * the wrong way round.
+   *
+   * Org-scoping is enforced inside releaseNumberForOrg (the row lookup
+   * requires id AND orgId to match), so a mistyped :orgId cannot release a
+   * different workspace's number — it 400s as "not found" instead.
+   */
+  .post("/orgs/:orgId/twilio/numbers/:id/release", async (c) => {
+    const orgId = c.req.param("orgId");
+    const phoneNumberId = Number(c.req.param("id"));
+    if (!Number.isInteger(phoneNumberId)) return c.json({ error: "`id` must be an integer" }, 400);
+
+    const result = await releaseNumberForOrg(orgId, phoneNumberId);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    // Logs the number, not the row id: a release is a destructive, billable
+    // and irreversible action, and "which number did we give up" is the only
+    // useful form of that record later.
+    await logAdminAction(c.get("adminActor"), "twilio.number.released", { orgId, phoneNumber: result.phoneNumber });
+    return c.json({ ok: true, phoneNumber: result.phoneNumber }, 200);
+  })
+
   // C2b — read-only mirror of GET /api/app/numbers for admin oversight.
-  // Buying/releasing numbers stays a merchant-side action in the app
-  // panel; admins can see what's assigned but don't manage it here.
+  // Write actions on numbers are the two routes above (purchase + release).
   .get("/orgs/:orgId/numbers", async (c) => {
     const orgId = c.req.param("orgId");
     const rows = await db.select().from(orgPhoneNumbers).where(eq(orgPhoneNumbers.orgId, orgId));

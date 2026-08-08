@@ -1106,8 +1106,13 @@ export const userApp = new Hono<UserEnv>()
   // Shared by all three telephony cards — clears every provider's stored
   // credentials and reverts to the platform Twilio default, see
   // resetToPlatformDefault's docstring for why it's not Twilio-only.
+  // Refuses while the org still holds active platform-rented numbers — see
+  // resetToPlatformDefault's docstring. Without that guard this route, which
+  // any member can reach, made those numbers permanently unreleasable while
+  // they kept billing.
   .post("/telephony/reset", async (c) => {
-    await resetToPlatformDefault(c.get("userOrgId")!);
+    const result = await resetToPlatformDefault(c.get("userOrgId")!);
+    if (!result.ok) return c.json({ error: result.error }, 409);
     return c.json({ ok: true }, 200);
   })
 
