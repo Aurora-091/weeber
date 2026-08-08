@@ -13,6 +13,7 @@
     "lint": "cd ../.. && oxlint packages/api --deny-warnings --no-error-on-unmatched-pattern",
     "db:generate": "bun --env-file=../../.env drizzle-kit generate",
     "db:migrate": "bun --env-file=../../.env drizzle-kit migrate",
+    "db:migrate:run": "bun --env-file=../../.env run scripts/migrate.ts",
     "db:push": "bun --env-file=../../.env drizzle-kit push",
     "db:studio": "bun --env-file=../../.env drizzle-kit studio",
     "bench:latency": "bun --env-file=../../.env run scripts/latency-benchmark.ts"
