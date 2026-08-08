@@ -20,6 +20,12 @@ let searchResult: { phoneNumber: string; locality: string | null; region: string
 let removedSids: string[] = [];
 let incomingListResult: { sid: string }[] = [];
 let createShouldThrow = false;
+/** Simulates the production defect: Twilio accepts the purchase but stores no webhooks. */
+let createDropsWebhooks = false;
+/** Simulates a number that stays misconfigured even after an explicit update. */
+let updateAlsoDropsWebhooks = false;
+let createArgs: Record<string, unknown>[] = [];
+let updatedWebhooks: { sid: string; set: Record<string, unknown> }[] = [];
 
 function getTableName(table: unknown): string | undefined {
   if (!table) return undefined;
@@ -74,11 +80,24 @@ mock.module("twilio", () => {
           remove: async () => {
             removedSids.push(sid);
           },
+          // Twilio echoes the resource's stored state back on update, which is
+          // what the purchase path reads to decide whether the webhooks took.
+          update: async (set: Record<string, unknown>) => {
+            updatedWebhooks.push({ sid, set });
+            if (updateAlsoDropsWebhooks) return { sid, voiceUrl: null, statusCallback: null };
+            return { sid, ...set };
+          },
         }),
         {
-          create: async ({ phoneNumber }: { phoneNumber: string }) => {
+          create: async (args: { phoneNumber: string; voiceUrl?: string; statusCallback?: string }) => {
+            createArgs.push(args);
             if (createShouldThrow) throw new Error("Twilio purchase failed");
-            return { sid: `PN_${phoneNumber}` };
+            const sid = `PN_${args.phoneNumber}`;
+            // The create RESPONSE reports what Twilio actually stored — the
+            // production defect is a 201 whose voice_url/status_callback are
+            // null even though both were sent.
+            if (createDropsWebhooks) return { sid, voiceUrl: null, statusCallback: null };
+            return { sid, voiceUrl: args.voiceUrl ?? null, statusCallback: args.statusCallback ?? null };
           },
           list: async () => incomingListResult,
         },
@@ -116,6 +135,10 @@ describe("C2b number provisioning", () => {
     removedSids = [];
     incomingListResult = [];
     createShouldThrow = false;
+    createDropsWebhooks = false;
+    updateAlsoDropsWebhooks = false;
+    createArgs = [];
+    updatedWebhooks = [];
   });
 
   describe("listAvailableNumbers", () => {
@@ -168,6 +191,59 @@ describe("C2b number provisioning", () => {
 
       const legacyUpdate = updatedSets.find((u) => u.table === "orgs");
       expect(legacyUpdate?.set.outboundNumber).toBe("+15551110001");
+    });
+
+    // 2026-08-08: both numbers the platform ever bought came back from Twilio
+    // with voice_url and status_callback null — inert numbers that ring and
+    // drop. The purchase path had reported ok:true for both, because it only
+    // ever checked that create() didn't throw. These four tests cover the
+    // read-back-and-repair behaviour that replaced that assumption.
+    describe("when Twilio does not store the webhooks it was sent", () => {
+      it("sends the webhooks on create in the first place", async () => {
+        await buyNumberForOrg("org-1", "+15551110001");
+        expect(createArgs).toHaveLength(1);
+        expect(createArgs[0]).toMatchObject({
+          phoneNumber: "+15551110001",
+          voiceUrl: "https://api.weeber.test/api/voice/incoming",
+          voiceMethod: "POST",
+          statusCallback: "https://api.weeber.test/api/voice/status-callback",
+          statusCallbackMethod: "POST",
+        });
+      });
+
+      it("does not re-apply anything when Twilio confirms the webhooks took", async () => {
+        const result = await buyNumberForOrg("org-1", "+15551110001");
+        expect(result.ok).toBe(true);
+        expect(updatedWebhooks).toHaveLength(0);
+      });
+
+      it("re-applies them and still reports success when the follow-up update works", async () => {
+        createDropsWebhooks = true;
+        const result = await buyNumberForOrg("org-1", "+15551110001");
+        expect(result.ok).toBe(true);
+        expect(updatedWebhooks).toHaveLength(1);
+        expect(updatedWebhooks[0]?.sid).toBe("PN_+15551110001");
+        expect(updatedWebhooks[0]?.set).toMatchObject({
+          voiceUrl: "https://api.weeber.test/api/voice/incoming",
+          statusCallback: "https://api.weeber.test/api/voice/status-callback",
+        });
+      });
+
+      it("records the number anyway and says it cannot answer calls when the repair also fails", async () => {
+        createDropsWebhooks = true;
+        updateAlsoDropsWebhooks = true;
+        const result = await buyNumberForOrg("org-1", "+15551110001");
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toMatch(/will not answer calls/i);
+          expect(result.error).toContain("+15551110001");
+        }
+        // A purchased number missing from org_phone_numbers is billable AND
+        // invisible to syncNumberWebhooksForOrg, so it must still be recorded.
+        const phoneNumberInsert = insertedRows.find((r) => r.table === "org_phone_numbers");
+        expect(phoneNumberInsert?.phoneNumber).toBe("+15551110001");
+      });
     });
 
     it("surfaces the Twilio error instead of silently succeeding when the purchase call fails", async () => {

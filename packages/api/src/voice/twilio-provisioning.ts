@@ -255,6 +255,22 @@ export function inboundVoiceWebhooks(): NumberVoiceWebhooks {
   };
 }
 
+/**
+ * Does Twilio's own view of a number match the webhooks we asked for?
+ *
+ * Takes the remote resource (a create or update response, or a list entry) so
+ * both the purchase path and the sync path judge "correctly configured" by the
+ * same rule. statusCallback counts, not just voiceUrl: a number with the right
+ * voiceUrl but no statusCallback answers calls and then silently drops every
+ * completion event, so duration, status and cost never land.
+ */
+function remoteMatchesWebhooks(
+  remote: { voiceUrl?: string | null; statusCallback?: string | null },
+  want: NumberVoiceWebhooks,
+): boolean {
+  return remote.voiceUrl === want.voiceUrl && remote.statusCallback === want.statusCallback;
+}
+
 export type SyncWebhooksResult =
   | { ok: true; checked: number; repaired: string[] }
   | { ok: false; error: string };
@@ -265,9 +281,9 @@ export type SyncWebhooksResult =
  * Two jobs: back-filling numbers bought before the purchase path set a
  * voiceUrl at all (those are inert — they ring and drop), and re-pointing
  * every number after a PUBLIC_APP_URL change. Idempotent, so it's safe to
- * run repeatedly; only numbers whose voiceUrl actually differs get written,
- * and the returned `repaired` list names them so a caller can tell "all fine"
- * from "fixed 3".
+ * run repeatedly; only numbers whose live config actually differs get written
+ * (voiceUrl OR statusCallback — see remoteMatchesWebhooks), and the returned
+ * `repaired` list names them so a caller can tell "all fine" from "fixed 3".
  */
 export async function syncNumberWebhooksForOrg(orgId: string): Promise<SyncWebhooksResult> {
   let webhooks: NumberVoiceWebhooks;
@@ -290,7 +306,7 @@ export async function syncNumberWebhooksForOrg(orgId: string): Promise<SyncWebho
     try {
       const [remote] = await sub.client.incomingPhoneNumbers.list({ phoneNumber: row.phoneNumber, limit: 1 });
       if (!remote) continue;
-      if (remote.voiceUrl === webhooks.voiceUrl) continue;
+      if (remoteMatchesWebhooks(remote, webhooks)) continue;
       await sub.client.incomingPhoneNumbers(remote.sid).update(webhooks);
       repaired.push(row.phoneNumber);
     } catch (err) {
@@ -323,18 +339,65 @@ export async function buyNumberForOrg(orgId: string, phoneNumber: string): Promi
     return { ok: false, error: `Refusing to purchase ${phoneNumber}: ${(err as Error).message}` };
   }
 
+  let created: { sid: string; voiceUrl?: string | null; statusCallback?: string | null };
   try {
-    await sub.client.incomingPhoneNumbers.create({ phoneNumber, ...webhooks });
+    created = await sub.client.incomingPhoneNumbers.create({ phoneNumber, ...webhooks });
   } catch (err) {
     return { ok: false, error: `Failed to purchase ${phoneNumber}: ${(err as Error).message}` };
   }
 
+  // VERIFY, DON'T ASSUME (bug, 2026-08-08)
+  // Both numbers this platform has ever bought came back with NO voiceUrl and
+  // NO statusCallback, i.e. inert: they ring and drop. Twilio's own Monitor
+  // audit log for each purchase records a phone-number.created event whose
+  // resource_properties contain voice_method/status_callback_method but no
+  // voice_url and no status_callback at all, and the later repair event shows
+  // `voice_url: {previous: None}` — so those fields were never set, not set and
+  // lost. Everything on our side was ruled out by inspection: the deployed
+  // build provably contained this create call, and driving the real SDK through
+  // a recording httpClient shows `{ phoneNumber, ...webhooks }` serialising to
+  // PhoneNumber/VoiceUrl/VoiceMethod/StatusCallback/StatusCallbackMethod (see
+  // twilio-purchase-webhook-wire.test.ts, which locks that contract in).
+  //
+  // The cause is still unproven — something between the container and Twilio,
+  // or an undocumented Twilio-side behaviour on create. What IS certain is that
+  // the create response reports the resource's actual state, so it can be
+  // checked instead of trusted, and that a plain `update` fixes the number (the
+  // manual repair of both numbers went through on the first try). So: read back
+  // what Twilio says it stored, and re-apply the webhooks when it disagrees.
+  let webhooksLive = remoteMatchesWebhooks(created, webhooks);
+  let repairDetail = "";
+  if (!webhooksLive) {
+    try {
+      const updated = await sub.client.incomingPhoneNumbers(created.sid).update(webhooks);
+      webhooksLive = remoteMatchesWebhooks(updated, webhooks);
+      if (!webhooksLive) repairDetail = ` Twilio still reports voiceUrl=${updated.voiceUrl || "unset"} after an explicit update.`;
+    } catch (err) {
+      repairDetail = ` Re-applying them failed: ${(err as Error).message}.`;
+    }
+  }
+
+  // The row is written even when the webhooks could not be set, deliberately.
+  // The org is billed for the number from the moment create() returned, and a
+  // number that exists in Twilio but not in org_phone_numbers is invisible to
+  // syncNumberWebhooksForOrg — which is exactly how the platform's legacy
+  // TWILIO_PHONE_NUMBER number ended up with a dead webhook nothing could
+  // repair. Recording it keeps both the billing and the repair path visible.
   await db.insert(orgPhoneNumbers).values({ orgId, provider: "twilio", phoneNumber, status: "active" });
 
   // Keep legacy orgs.outboundNumber populated as a fallback for orgs that
   // don't yet assign per-agent numbers (resolveOutboundNumberForAgent falls
   // back to it when nothing else applies).
   await db.update(orgs).set({ outboundNumber: phoneNumber }).where(eq(orgs.id, orgId));
+
+  if (!webhooksLive) {
+    return {
+      ok: false,
+      error:
+        `Purchased ${phoneNumber}, but Twilio did not store its inbound webhooks, so the number will not answer calls.${repairDetail}` +
+        " It is recorded and billable — retry the telephony webhook sync, or release it.",
+    };
+  }
 
   return { ok: true, phoneNumber };
 }

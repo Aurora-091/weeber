@@ -43,8 +43,10 @@ let purchasedNumbers: string[] = [];
  * some number got bought). */
 let purchaseArgs: Record<string, unknown>[] = [];
 /** Numbers that already exist in the sub-account, for the webhook back-fill
- * path. `voiceUrl: null` models a number bought before we set one. */
-let remoteNumbers: { sid: string; phoneNumber: string; voiceUrl: string | null }[] = [];
+ * path. `voiceUrl: null` models a number bought before we set one.
+ * statusCallback counts too: a number with a good voiceUrl and no
+ * statusCallback answers calls and drops every completion event (ADR-077). */
+let remoteNumbers: { sid: string; phoneNumber: string; voiceUrl: string | null; statusCallback?: string | null }[] = [];
 let webhookUpdates: { sid: string; args: Record<string, unknown> }[] = [];
 /** Mutable so a test can model an unset PUBLIC_APP_URL, which getPublicUrl
  * throws on in production. */
@@ -106,14 +108,16 @@ mock.module("twilio", () => {
           remove: async () => void sid,
           update: async (args: Record<string, unknown>) => {
             webhookUpdates.push({ sid, args });
-            return { sid };
+            return { sid, ...args };
           },
         }),
         {
-          create: async (args: { phoneNumber: string }) => {
+          create: async (args: { phoneNumber: string; voiceUrl?: string; statusCallback?: string }) => {
             purchasedNumbers.push(args.phoneNumber);
             purchaseArgs.push(args);
-            return { sid: `PN_${args.phoneNumber}` };
+            // Twilio's create response reports the resource's stored state, and
+            // the purchase path reads it back to verify the webhooks took (ADR-077).
+            return { sid: `PN_${args.phoneNumber}`, voiceUrl: args.voiceUrl ?? null, statusCallback: args.statusCallback ?? null };
           },
           list: async ({ phoneNumber }: { phoneNumber?: string } = {}) =>
             remoteNumbers.filter((n) => !phoneNumber || n.phoneNumber === phoneNumber),
@@ -420,7 +424,12 @@ describe("syncNumberWebhooksForOrg — back-filling already-purchased numbers", 
   it("is idempotent — a correctly configured number is left alone", async () => {
     mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
     remoteNumbers = [
-      { sid: "PN_ok", phoneNumber: "+15551110001", voiceUrl: "https://api.weeber.test/api/voice/incoming" },
+      {
+        sid: "PN_ok",
+        phoneNumber: "+15551110001",
+        voiceUrl: "https://api.weeber.test/api/voice/incoming",
+        statusCallback: "https://api.weeber.test/api/voice/status-callback",
+      },
     ];
 
     const result = await syncNumberWebhooksForOrg("org-1");
@@ -430,6 +439,31 @@ describe("syncNumberWebhooksForOrg — back-filling already-purchased numbers", 
     expect(result.checked).toBe(1);
     expect(result.repaired).toEqual([]);
     expect(webhookUpdates).toHaveLength(0);
+  });
+
+  // ADR-077: sync used to compare voiceUrl alone, so this number counted as
+  // healthy. It answers calls and then drops every completion event — no
+  // duration, no status, no cost ever lands.
+  it("repairs a number whose voiceUrl is right but whose statusCallback is missing", async () => {
+    mockPhoneNumberRows = [{ id: 1, orgId: "org-1", phoneNumber: "+15551110001", status: "active" }];
+    remoteNumbers = [
+      {
+        sid: "PN_no_status",
+        phoneNumber: "+15551110001",
+        voiceUrl: "https://api.weeber.test/api/voice/incoming",
+        statusCallback: null,
+      },
+    ];
+
+    const result = await syncNumberWebhooksForOrg("org-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.repaired).toEqual(["+15551110001"]);
+    expect(webhookUpdates[0]?.args).toMatchObject({
+      statusCallback: "https://api.weeber.test/api/voice/status-callback",
+      statusCallbackMethod: "POST",
+    });
   });
 
   it("re-points a number whose voiceUrl still references an old PUBLIC_APP_URL", async () => {
