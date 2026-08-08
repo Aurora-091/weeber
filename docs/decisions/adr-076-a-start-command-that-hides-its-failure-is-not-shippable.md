@@ -6,13 +6,21 @@
 
 ## Context
 
-Production is running commit `1337df4`. `1de740a` — the ADR-075 CI gate fix — is on `origin/main` with
-all 11 checks green, and has been deployed to Railway production **twice**:
+`1de740a` — the ADR-075 CI gate fix — is on `origin/main` with all 11 checks green. Deploying it to
+Railway production took **five attempts across 35 minutes**, four of which failed:
 
 | Deployment | Created | Result |
 | --- | --- | --- |
-| `2f81281d-1255-4c62-829a-1565e2ae76aa` | 2026-08-08T17:34:13Z | FAILED — reported as "1/1 replicas never became healthy" |
-| `01921c55-881c-433a-873f-780d73dd5256` | 2026-08-08T18:00:07Z | FAILED — same, after `healthcheckTimeout` was raised to 300s |
+| `2f81281d-1255-4c62-829a-1565e2ae76aa` | 2026-08-08T17:34:13.641Z | FAILED — reported as "1/1 replicas never became healthy" |
+| `9fa745af-1096-4335-b836-619a83e473b1` | 2026-08-08T17:42:15.913Z | FAILED — same |
+| `425af76c-e5bf-461e-ab3d-78164fc1f202` | 2026-08-08T17:43:14.134Z | **SUCCESS** — one minute later, same commit, nothing changed |
+| `01921c55-881c-433a-873f-780d73dd5256` | 2026-08-08T18:00:07.102Z | FAILED — redeploy, after `healthcheckTimeout` was raised to 300s |
+| `bc8b5341-e89b-410e-a1af-d23331db5020` | 2026-08-08T18:09:26.411Z | FAILED — redeploy |
+
+The success at 17:43 matters and was initially missed: **the same commit succeeded 58 seconds after it
+failed, with no intervening change.** So this is not a deterministic incompatibility between the commit
+and production — it is intermittent, roughly one attempt in five, which rules out every "the code or the
+config is wrong" explanation on its own.
 
 The healthcheck was a symptom, not the cause. `deploymentLogs` for `01921c55` show a hard crash-loop
 restarting roughly every 1.5 seconds — six container starts between 18:01:02 and 18:01:11 — and every
@@ -54,9 +62,35 @@ Every hypothesis that could be tested from outside the container was tested and 
   `prepare: false` — 0 errors either way.
 
 So: same commit, same `DATABASE_URL` (verified byte-identical to the value in Railway), same drizzle-kit
-version, same migration state, healthy pooler — succeeds from a sandbox, fails inside the Railway
-container. **The root cause is still unidentified**, and it will stay unidentified for as long as the
-failing command refuses to say what went wrong.
+version, same migration state, healthy pooler — succeeds from a sandbox, fails intermittently inside the
+Railway container. **The root cause is not proven**, and it cannot be proven for as long as the failing
+command refuses to say what went wrong. That is what makes the diagnostic the fix worth shipping first.
+
+Two intermittency sources were found while investigating, both real regardless of which one caused these
+particular failures:
+
+**1. Every push to `main` deploys to staging and production simultaneously, against one database.**
+`service.repoTriggers` has two entries and they are *not* duplicates, which is how they were first
+misread — one is scoped to the staging environment `573770c5`, one to production `669b2931`, and both
+watch `main`. The 17:34 attempt is the clearest evidence: staging deployment `db0992d2` was created at
+`17:34:13.256Z` and **succeeded**, production `2f81281d` at `17:34:13.641Z` — 385 ms later — and
+**failed**. Since staging shares production's `DATABASE_URL`, both containers ran `drizzle-kit migrate`
+against the same database within the same second. `CREATE SCHEMA IF NOT EXISTS` and `CREATE TABLE IF NOT
+EXISTS` are *not* concurrency-safe in Postgres: two sessions that pass the existence check together race
+to insert into `pg_namespace`/`pg_class` and the loser gets a unique-violation, not a silent skip. A
+sandbox run has no competitor, which is exactly why it always succeeded there.
+
+**2. A session-level `SET` can leak into a pooled backend and make it read-only.** Separately documented
+in the same day's incident notes: a `set default_transaction_read_only = on` guard, intended to protect
+production during read-only auditing, persisted on a Supavisor transaction-mode backend after the client
+disconnected and was handed to application traffic — staging's seed at 17:45:25 failed with
+`cannot execute UPDATE in a read-only transaction` (`routine: PreventCommandIfReadOnly`). A migration
+that lands on such a backend fails on its first DDL statement, intermittently, depending purely on which
+backend the pooler hands out. The affected backends were reset and 30 sequential plus 80 concurrent
+probes across 6 distinct backends now report `off`. The standing rule from that incident — never `SET`
+anything over the pooler, use `begin read only; …; commit;` — applies to migrations too, and is a second
+reason the runner below opens its own client with explicit settings rather than inheriting whatever a CLI
+decides.
 
 Two further problems with the command itself, independent of this incident:
 
@@ -133,3 +167,22 @@ CLI.
 - **Drop migrations from the start path entirely and run them by hand.** Trades an invisible failure for
   an un-run migration, which is worse — the schema would drift from the deployed code with nothing
   checking.
+
+## Outcome (same day, after the runner landed)
+
+- `ac49d35` deployed to production at 18:26:46 and again on a redeploy at 18:29:26 — **two consecutive
+  successes** where the old command had failed four times out of five. The runner's own output in the
+  container: `[migrate] applying migrations from /app/packages/api/drizzle`, the two expected
+  `already exists, skipping` notices, `[migrate] up to date in 622ms`, then the server bound on 8080.
+  Migrations now report what they did on every boot instead of only spinning.
+- Both deployment triggers were switched to `checkSuites: true`, so neither staging nor production can
+  auto-deploy a commit whose GitHub check suite has not passed. Previously both were `false`, which meant
+  ADR-075's gate protected `main` but protected nothing about what reached production.
+- Production deployments now arrive in `NEEDS_APPROVAL` and require an explicit approve before they run.
+  This was not configured as part of this work — it was observed on the `ac49d35` push. It has a useful
+  side effect worth keeping in mind: approving production alone, without approving staging, is what
+  guaranteed the 18:26 deploy had no concurrent peer racing it on the shared database.
+- Still open, and deliberately not changed here: staging and production share one database, so a staging
+  deploy carrying migrations production does not have would apply them to production's schema. Both
+  triggers watch `main` today so the commits match, but nothing enforces that. The narrow fix is to gate
+  the migration step on owning the database rather than on merely booting.
