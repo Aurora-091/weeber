@@ -20,6 +20,7 @@ import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
 import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
+import { visibleTemplatesForOrg } from "./template-visibility";
 import { and, eq } from "drizzle-orm";
 import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
 import { resolveLocalizedGreeting } from "./insurance-greetings";
@@ -473,10 +474,15 @@ export async function resolvePersona(opts: {
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
+    // Visibility-scoped (2026-08-09): `explicitPersona` can arrive from a
+    // request, so an unfiltered key lookup let one org name another org's
+    // private template and receive its persona prompt. A key this org can't
+    // see resolves to nothing and falls through to the raw-prompt branch
+    // below, exactly as an unknown key always has.
     const [tmpl] = await db
       .select({ key: agentTemplates.key })
       .from(agentTemplates)
-      .where(eq(agentTemplates.key, explicitPersona))
+      .where(and(eq(agentTemplates.key, explicitPersona), visibleTemplatesForOrg(orgId)))
       .limit(1);
     if (tmpl) {
       resolvedTemplateKey = tmpl.key;
@@ -590,10 +596,11 @@ export async function resolveAgentConfig(opts: {
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
+    // Same visibility scoping as resolvePersona — see the note there.
     const [tmpl] = await db
       .select({ key: agentTemplates.key })
       .from(agentTemplates)
-      .where(eq(agentTemplates.key, explicitPersona))
+      .where(and(eq(agentTemplates.key, explicitPersona), visibleTemplatesForOrg(orgId)))
       .limit(1);
     if (tmpl) resolvedTemplateKey = tmpl.key;
   }

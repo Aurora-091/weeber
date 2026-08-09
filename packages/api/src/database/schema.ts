@@ -53,6 +53,19 @@ export const agentTemplates = pgTable("agent_templates", {
   literalGreetingTemplate: text("literal_greeting_template"),
   defaultTools: jsonb("default_tools").$type<unknown[]>().default([]),
   active: boolean("active").notNull().default(true),
+  // Bespoke templates (2026-08-09): the catalog was implicitly global — every
+  // active template for a vertical appeared for every org in that vertical.
+  // A template written *for* one account (a pilot's own script, an agency's
+  // own qualifying flow) has no business showing up in another merchant's
+  // agent list, and its persona prompt is that account's IP.
+  //   visibility = 'public'  -> catalog template, offered by vertical as before
+  //   visibility = 'private' -> only offered to ownerOrgId
+  // Default 'public' + null owner keeps every existing seeded row behaving
+  // exactly as it does today (additive, no backfill needed). A private row
+  // with a null ownerOrgId is offered to nobody, which is the safe direction
+  // to fail.
+  visibility: text("visibility").notNull().default("public"),
+  ownerOrgId: text("owner_org_id").references(() => orgs.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 

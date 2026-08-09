@@ -27,6 +27,7 @@ import {
   workflowTemplates,
 } from "../database/schema";
 import { getRecommendedDefaults } from "./vertical-defaults";
+import { visibleTemplatesForVertical } from "./template-visibility";
 
 /**
  * Nearest-rank percentile over a numeric sample (§2's latency benchmark) —
@@ -141,7 +142,7 @@ export async function provisionVerticalDefaults(orgId: string): Promise<Provisio
     const validTemplates = await db
       .select({ key: agentTemplates.key })
       .from(agentTemplates)
-      .where(and(eq(agentTemplates.vertical, org.vertical), eq(agentTemplates.active, true)));
+      .where(and(visibleTemplatesForVertical(org.vertical, orgId), eq(agentTemplates.active, true)));
     const validKeys = new Set(validTemplates.map((t) => t.key));
     for (const key of defaults.agents) {
       if (!validKeys.has(key)) continue;
@@ -179,10 +180,12 @@ export async function getAgentConfigsForOrg(orgId: string) {
   const org = await getOrg(orgId);
   if (!org) return null;
 
+  // Includes any template privately allocated to this org (see
+  // template-visibility.ts) — a bespoke agent is one row here, not a fork.
   const templates = await db
     .select()
     .from(agentTemplates)
-    .where(and(eq(agentTemplates.vertical, org.vertical), eq(agentTemplates.active, true)));
+    .where(and(visibleTemplatesForVertical(org.vertical, orgId), eq(agentTemplates.active, true)));
   const configs = await db.select().from(orgAgentConfigs).where(eq(orgAgentConfigs.orgId, orgId));
   const configByKey = new Map(configs.map((cfg) => [cfg.templateKey, cfg]));
 

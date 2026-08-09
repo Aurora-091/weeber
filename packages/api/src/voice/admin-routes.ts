@@ -34,6 +34,7 @@ import { listWaitlist, waitlistMarketingSummary } from "../app/waitlist";
 import { createBroadcast, listBroadcasts, sendBroadcast } from "../app/broadcasts";
 import { listSupportTickets, updateSupportTicketStatus, listSupportReplies, replySupportTicket } from "../app/support";
 import { logAdminAction, listAdminAuditLog } from "../app/audit-log";
+import { isTemplateVisibility } from "./template-visibility";
 import {
   getTwilioStatus,
   ensureSubaccountForOrg,
@@ -325,7 +326,7 @@ export const admin = new Hono<AdminEnv>()
   .post("/agent-templates", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
-    const { vertical, key, name, description, defaultPersonaPrompt, defaultTools, active } = body as {
+    const { vertical, key, name, description, defaultPersonaPrompt, defaultTools, active, visibility, ownerOrgId } = body as {
       vertical?: string;
       key?: string;
       name?: string;
@@ -333,9 +334,23 @@ export const admin = new Hono<AdminEnv>()
       defaultPersonaPrompt?: string;
       defaultTools?: string[];
       active?: boolean;
+      visibility?: string;
+      ownerOrgId?: string;
     };
     if (!vertical?.trim() || !key?.trim() || !name?.trim()) {
       return c.json({ error: "`vertical`, `key`, and `name` are required" }, 400);
+    }
+    if (visibility !== undefined && !isTemplateVisibility(visibility)) {
+      return c.json({ error: "`visibility` must be \"public\" or \"private\"" }, 400);
+    }
+    // A private template with no owner is visible to nobody — that's a silently
+    // dead row, so reject it at creation rather than let it look allocated.
+    if (visibility === "private" && !ownerOrgId?.trim()) {
+      return c.json({ error: "`ownerOrgId` is required when visibility is \"private\"" }, 400);
+    }
+    if (ownerOrgId?.trim()) {
+      const [owner] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, ownerOrgId.trim())).limit(1);
+      if (!owner) return c.json({ error: `org "${ownerOrgId.trim()}" not found` }, 404);
     }
     const [existing] = await db.select({ id: agentTemplates.id }).from(agentTemplates).where(eq(agentTemplates.key, key.trim())).limit(1);
     if (existing) return c.json({ error: `template key "${key.trim()}" already exists` }, 409);
@@ -349,6 +364,8 @@ export const admin = new Hono<AdminEnv>()
         defaultPersonaPrompt: defaultPersonaPrompt ?? null,
         defaultTools: Array.isArray(defaultTools) ? defaultTools : [],
         active: active ?? true,
+        visibility: visibility ?? "public",
+        ownerOrgId: ownerOrgId?.trim() || null,
       })
       .returning();
     return c.json({ agentTemplate: row }, 201);
@@ -358,23 +375,97 @@ export const admin = new Hono<AdminEnv>()
     const key = c.req.param("key");
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
-    const { name, description, defaultPersonaPrompt, defaultTools, active } = body as {
+    const { name, description, defaultPersonaPrompt, defaultTools, active, visibility, ownerOrgId } = body as {
       name?: string;
       description?: string | null;
       defaultPersonaPrompt?: string | null;
       defaultTools?: string[];
       active?: boolean;
+      visibility?: string;
+      ownerOrgId?: string | null;
     };
+    if (visibility !== undefined && !isTemplateVisibility(visibility)) {
+      return c.json({ error: "`visibility` must be \"public\" or \"private\"" }, 400);
+    }
+    if (ownerOrgId !== undefined && ownerOrgId !== null && ownerOrgId.trim()) {
+      const [owner] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, ownerOrgId.trim())).limit(1);
+      if (!owner) return c.json({ error: `org "${ownerOrgId.trim()}" not found` }, 404);
+    }
     const set: Partial<typeof agentTemplates.$inferInsert> = {};
     if (name !== undefined) set.name = name;
     if (description !== undefined) set.description = description;
     if (defaultPersonaPrompt !== undefined) set.defaultPersonaPrompt = defaultPersonaPrompt;
     if (defaultTools !== undefined) set.defaultTools = defaultTools;
     if (active !== undefined) set.active = active;
+    if (visibility !== undefined) set.visibility = visibility;
+    if (ownerOrgId !== undefined) set.ownerOrgId = ownerOrgId?.trim() || null;
     if (Object.keys(set).length === 0) return c.json({ error: "nothing to update" }, 400);
+    // Same fail-closed rule as create, evaluated against the post-update row:
+    // never leave a private template without an owner.
+    const [current] = await db.select().from(agentTemplates).where(eq(agentTemplates.key, key)).limit(1);
+    if (!current) return c.json({ error: "template not found" }, 404);
+    const nextVisibility = set.visibility ?? current.visibility;
+    const nextOwner = set.ownerOrgId !== undefined ? set.ownerOrgId : current.ownerOrgId;
+    if (nextVisibility === "private" && !nextOwner) {
+      return c.json({ error: "a private template must have an `ownerOrgId`" }, 400);
+    }
     const [row] = await db.update(agentTemplates).set(set).where(eq(agentTemplates.key, key)).returning();
     if (!row) return c.json({ error: "template not found" }, 404);
     return c.json({ agentTemplate: row }, 200);
+  })
+
+  // Allocate one agent template to one org — the bespoke-agent path.
+  //
+  // A per-account agent is an `org_agent_configs` row against a template, not
+  // a forked codebase or a copied prompt: everything an account can customize
+  // (persona, name, greeting/closing, voice + failover chain, language, tools,
+  // guardrails) already lives on that row. What was missing was a way to hand
+  // an account a template the rest of the catalog can't see, and to switch it
+  // on for them without waiting for them to find it in their agent list.
+  //
+  // Idempotent: re-granting an already-granted template is a 200 with
+  // created=false, and it never overwrites a config the account has since
+  // edited (onConflictDoNothing, same rule as provisionVerticalDefaults).
+  .post("/orgs/:orgId/agents/grant", async (c) => {
+    const orgId = c.req.param("orgId");
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { templateKey, makePrivate } = body as { templateKey?: string; makePrivate?: boolean };
+    if (!templateKey?.trim()) return c.json({ error: "`templateKey` is required" }, 400);
+    const key = templateKey.trim();
+
+    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    if (!org) return c.json({ error: `org "${orgId}" not found` }, 404);
+
+    const [tmpl] = await db.select().from(agentTemplates).where(eq(agentTemplates.key, key)).limit(1);
+    if (!tmpl) return c.json({ error: `template "${key}" not found` }, 404);
+    // Granting someone else's bespoke template would make it visible to two
+    // accounts at once — refuse instead of silently reassigning it.
+    if (tmpl.visibility === "private" && tmpl.ownerOrgId && tmpl.ownerOrgId !== orgId) {
+      return c.json({ error: `template "${key}" is privately owned by another org` }, 409);
+    }
+    if (!tmpl.active) return c.json({ error: `template "${key}" is not active` }, 400);
+
+    // `makePrivate` claims the template for this org in the same call, so the
+    // common case (write a bespoke template, hand it to its one account) is one
+    // request. Omitted/false leaves a public catalog template public.
+    if (makePrivate && tmpl.visibility !== "private") {
+      await db.update(agentTemplates).set({ visibility: "private", ownerOrgId: orgId }).where(eq(agentTemplates.key, key));
+    }
+
+    const inserted = await db
+      .insert(orgAgentConfigs)
+      .values({ orgId, templateKey: key, enabled: true })
+      .onConflictDoNothing({ target: [orgAgentConfigs.orgId, orgAgentConfigs.templateKey] })
+      .returning({ id: orgAgentConfigs.id });
+
+    await logAdminAction(c.get("adminActor"), "agent.template.granted", {
+      orgId,
+      templateKey: key,
+      madePrivate: Boolean(makePrivate),
+      created: inserted.length > 0,
+    });
+    return c.json({ ok: true, orgId, templateKey: key, created: inserted.length > 0 }, 200);
   })
 
   // Billing oversight — read-only against orgs.planName + computed usage
