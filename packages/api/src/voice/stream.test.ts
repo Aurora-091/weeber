@@ -6,8 +6,16 @@ describe("estimateRemainingPlaybackMs", () => {
     expect(estimateRemainingPlaybackMs("Hi.")).toBe(400);
   });
 
-  it("clamps very long text to the 4000ms ceiling", () => {
-    expect(estimateRemainingPlaybackMs("a".repeat(500))).toBe(4000);
+  // Audit 10 (2026-08-09): the old 4000ms ceiling was the cause of the 6/6
+  // self-terminated production calls — a 217-char greeting takes ~12s to
+  // speak, so capping the estimate at 4s armed the caller-silence timer
+  // while the agent was still talking. Long turns must estimate long.
+  it("does not clamp a realistic long turn — it scales with length", () => {
+    expect(estimateRemainingPlaybackMs("a".repeat(500))).toBe(500 * 55);
+  });
+
+  it("clamps a pathological turn to the sanity ceiling", () => {
+    expect(estimateRemainingPlaybackMs("a".repeat(100_000))).toBe(60_000);
   });
 
   it("scales roughly linearly with text length in between", () => {

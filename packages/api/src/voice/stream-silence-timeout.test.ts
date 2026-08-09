@@ -154,7 +154,7 @@ mock.module("./org-queries", () => ({
 }));
 mock.module("./leads/leads", () => ({ promoteLeadFromCall: async () => undefined }));
 
-const { createVoiceStreamHandlers } = await import("./stream");
+const { createVoiceStreamHandlers, estimateRemainingPlaybackMs } = await import("./stream");
 
 const START_EVENT = JSON.stringify({
   event: "start",
@@ -191,6 +191,21 @@ const finalizedStatuses = () =>
 const SILENCE_WARNING_MS = 8000;
 const SILENCE_HANGUP_MS = 7000;
 
+/**
+ * Audit 10 (2026-08-09): the silence window no longer starts when we finish
+ * *sending* a turn's audio, it starts when the caller has finished *hearing*
+ * it. So crossing a stage means advancing the turn's estimated playback plus
+ * the threshold — advancing the bare threshold must NOT trip the timer, which
+ * is what the `does not fire early` test below pins.
+ *
+ * These two strings are the exact text the mocked agent (greeting) and
+ * `handleSilenceTimeout` (re-prompt) produce.
+ */
+const GREETING_TEXT = "Sure, happy to help.";
+const WARNING_TEXT = "Are you still there? Let me know if you need anything else.";
+const GREETING_PLAYBACK_MS = estimateRemainingPlaybackMs(GREETING_TEXT);
+const WARNING_PLAYBACK_MS = estimateRemainingPlaybackMs(WARNING_TEXT);
+
 beforeEach(() => {
   jest.useFakeTimers();
   dbUpdates = [];
@@ -211,8 +226,9 @@ describe("caller silence timeout", () => {
     await handlers.onMessage(START_EVENT, ws);
     await flush();
 
-    // Stage 1: caller says nothing for 8s -> the re-prompt.
-    jest.advanceTimersByTime(SILENCE_WARNING_MS);
+    // Stage 1: caller says nothing for 8s *after the greeting finishes
+    // playing* -> the re-prompt.
+    jest.advanceTimersByTime(GREETING_PLAYBACK_MS + SILENCE_WARNING_MS);
     await flush();
     expect(agentLines().some((t) => t.includes("Are you still there?"))).toBe(true);
 
@@ -220,7 +236,7 @@ describe("caller silence timeout", () => {
     // canned line so the timeout is suspended mid-await, exactly where the
     // production race happened.
     const gate = openGate();
-    jest.advanceTimersByTime(SILENCE_HANGUP_MS);
+    jest.advanceTimersByTime(WARNING_PLAYBACK_MS + SILENCE_HANGUP_MS);
     await flush();
 
     // ...and the caller answers right then. This is the 38ms window from call 16.
@@ -242,15 +258,38 @@ describe("caller silence timeout", () => {
     await handlers.onMessage(START_EVENT, ws);
     await flush();
 
-    jest.advanceTimersByTime(SILENCE_WARNING_MS);
+    jest.advanceTimersByTime(GREETING_PLAYBACK_MS + SILENCE_WARNING_MS);
     await flush();
     expect(agentLines().some((t) => t.includes("Are you still there?"))).toBe(true);
 
-    jest.advanceTimersByTime(SILENCE_HANGUP_MS);
+    jest.advanceTimersByTime(WARNING_PLAYBACK_MS + SILENCE_HANGUP_MS);
     await flush(200);
 
     expect(agentLines().some((t) => t.includes("I haven't heard back"))).toBe(true);
     expect(finalizedStatuses()).toContain("completed");
     expect(ws.closeCount).toBeGreaterThanOrEqual(1);
+  });
+
+  /**
+   * The actual audit-10 regression test: 6/6 production calls died because the
+   * silence timer was armed the instant TTS finished *sending*, so a greeting
+   * that took ~12s to play was interrupted at 8s by "Are you still there?" and
+   * at 15s by the goodbye + hangup. The caller was never silent — they had not
+   * finished being talked at.
+   */
+  it("does not fire while the greeting is still playing out to the caller", async () => {
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await flush();
+
+    // One millisecond short of "greeting finished playing + full 8s of silence".
+    jest.advanceTimersByTime(GREETING_PLAYBACK_MS + SILENCE_WARNING_MS - 1);
+    await flush(200);
+
+    expect(agentLines().some((t) => t.includes("Are you still there?"))).toBe(false);
+    expect(finalizedStatuses()).not.toContain("completed");
+    expect(ws.closeCount).toBe(0);
   });
 });

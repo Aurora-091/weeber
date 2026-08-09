@@ -63,12 +63,41 @@ function sleep(ms: number): Promise<void> {
  * Heuristic-only estimate of remaining audio playback time after the TTS
  * provider has finished *sending* every chunk for this turn — sending isn't
  * the same as Twilio having finished *playing* it back to the caller.
- * ~18 characters/sec is a reasonably conservative average spoken pace;
- * clamped so a one-word reply doesn't wait needlessly long and a long
- * closing line doesn't get cut short.
+ * ~18 characters/sec is a reasonably conservative average spoken pace.
+ *
+ * Audit 10 (2026-08-09): the old 4000 ms upper clamp made this actively
+ * dangerous. A TTS provider streams a 12-second line in ~1-2s of wall clock,
+ * so on any turn longer than ~73 characters this under-estimated by seconds —
+ * and every consumer of this function treats it as "the caller has now heard
+ * everything". That produced two live-call bugs: closing lines cut off
+ * mid-sentence on the hangUp path, and (far worse) the caller-silence timer
+ * being armed while ~10s of greeting audio was still in flight, so the agent
+ * declared the caller silent and hung up on itself mid-greeting. 6/6
+ * production calls died this way.
+ *
+ * The ceiling is gone: a long turn genuinely takes long to play, and pretending
+ * otherwise is what broke calls. The floor stays (a one-word reply shouldn't
+ * hinge on a sub-400ms estimate), and MAX_PLAYBACK_ESTIMATE_MS is a sanity
+ * bound against a pathological multi-thousand-character turn wedging a call
+ * open, not a model of speech.
+ *
+ * This is still an ESTIMATE and should be replaced by Twilio `mark` events
+ * (ground truth for playback completion) — see audit 10's P0. The 55 ms/char
+ * constant is uncalibrated against real Cartesia/Sarvam output and will be
+ * wrong per-voice; it is deliberately conservative (slow) so the error costs
+ * a slightly late timer rather than another self-terminated call.
  */
+const MAX_PLAYBACK_ESTIMATE_MS = 60_000;
+
+/**
+ * How long we will wait for a closing/handoff line to play out before tearing
+ * the call down anyway. Unlike the silence timer, this wait costs live PSTN
+ * minutes, so it is capped much tighter than MAX_PLAYBACK_ESTIMATE_MS.
+ */
+const CLOSING_LINE_MAX_WAIT_MS = 15_000;
+
 export function estimateRemainingPlaybackMs(text: string): number {
-  return Math.min(Math.max(text.length * 55, 400), 4000);
+  return Math.min(Math.max(text.length * 55, 400), MAX_PLAYBACK_ESTIMATE_MS);
 }
 
 /**
@@ -1070,13 +1099,36 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
   }
 
-  function armSilenceTimer(ws: Sendable) {
+  /**
+   * @param unplayedAudioMs Audit 10 (2026-08-09) — how much of the turn we just
+   * finished *sending* the caller almost certainly hasn't *heard* yet. The
+   * silence threshold is measured from the end of playback, not the end of
+   * sending, so this is added on top of it.
+   *
+   * Why this parameter has to exist: `speak()` resolves when the TTS provider
+   * reports it has sent its last chunk, which for a streaming provider is
+   * seconds ahead of realtime playback over an 8kHz PSTN leg. Arming a bare 8s
+   * timer at that instant meant a 12-second greeting had its "is the caller
+   * still there?" clock expire ~4s BEFORE the caller finished hearing the
+   * greeting — so the agent talked over itself, got no reply (the caller was
+   * still listening, and had never been given a gap to speak into), and hung
+   * up on itself 7s later. Every call in production died this way, inbound and
+   * outbound, and all of them were recorded `health_status = healthy`.
+   *
+   * Passing 0 is correct and intended for call sites that are NOT following
+   * agent speech (i.e. arming after caller audio), and only for those.
+   *
+   * Still an estimate — see estimateRemainingPlaybackMs. Twilio `mark` events
+   * are the real fix and would let this parameter go away entirely.
+   */
+  function armSilenceTimer(ws: Sendable, unplayedAudioMs = 0) {
     if (ended) return;
     clearSilenceTimer();
     const armedAtEpoch = callerSpeechEpoch;
+    const threshold = silenceWarningIssued ? SILENCE_HANGUP_MS : SILENCE_WARNING_MS;
     silenceTimer = setTimeout(() => {
       void handleSilenceTimeout(ws, armedAtEpoch);
-    }, silenceWarningIssued ? SILENCE_HANGUP_MS : SILENCE_WARNING_MS);
+    }, unplayedAudioMs + threshold);
   }
 
   /**
@@ -1091,9 +1143,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     if (ended || callerSpeechEpoch !== armedAtEpoch) return;
     if (!silenceWarningIssued) {
       silenceWarningIssued = true;
-      await speakCannedLine(ws, "Are you still there? Let me know if you need anything else.");
+      const warningLine = "Are you still there? Let me know if you need anything else.";
+      await speakCannedLine(ws, warningLine);
       if (ended || callerSpeechEpoch !== armedAtEpoch) return;
-      armSilenceTimer(ws);
+      // Audit 10: this re-arm overwrites the one speak() already set on its own
+      // tail, so it has to carry the same unplayed-audio allowance — otherwise
+      // the hangup clock for the re-prompt starts before the caller has heard
+      // the re-prompt, and they get ~3s to answer a question they're still
+      // listening to.
+      armSilenceTimer(ws, estimateRemainingPlaybackMs(warningLine));
     } else {
       await speakCannedLine(ws, "I haven't heard back, so I'll go ahead and end the call here. Feel free to call back anytime. Goodbye.");
       if (ended || callerSpeechEpoch !== armedAtEpoch) return;
@@ -1380,7 +1438,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // helpers above for why this can only ever be an estimate.
     if (pendingHangUp || pendingTransfer) {
       await Promise.race([ttsDone, sleep(8000)]);
-      await sleep(estimateRemainingPlaybackMs(fullText));
+      // Bounded separately from the silence timer: waiting for playback here
+      // holds the PSTN leg (and its per-minute cost) open, and a runaway LLM
+      // closing line should not be able to stall teardown for a full minute.
+      await sleep(Math.min(estimateRemainingPlaybackMs(fullText), CLOSING_LINE_MAX_WAIT_MS));
 
       if (pendingHangUp) {
         const { reason } = pendingHangUp;
@@ -1397,7 +1458,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // goodbye) goes through this function — arming the caller-silence
       // timer here, once, covers all of them instead of needing a call site
       // at every place a turn gets run.
-      armSilenceTimer(ws);
+      //
+      // Audit 10 (2026-08-09): the silence window must start when the caller
+      // has finished HEARING this turn, not when we finished sending it — see
+      // armSilenceTimer. `wasInterrupted` means the caller barged in and the
+      // rest of this turn's audio was discarded, so there is nothing left in
+      // flight to wait for; anything else is still playing out.
+      armSilenceTimer(ws, wasInterrupted ? 0 : estimateRemainingPlaybackMs(fullText));
     }
   }
 
