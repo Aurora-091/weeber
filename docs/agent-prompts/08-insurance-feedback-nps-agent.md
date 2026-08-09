@@ -146,9 +146,9 @@ audited translations (same meaning, same regulatory boundary — do not paraphra
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Step 1 — rating | `captureField({ key: "csat_rating", value })` | Generic capture tool, matching the `03-feedback` pattern |
-| Step 2 — open comment | `captureField({ key: "feedback_comment", value })` | Same tool, different key |
-| Step 4 — specific complaint detail | `captureField({ key: "complaint_detail", value })` | What "the team follows up" reads from afterward |
+| Step 1 — rating | `captureField({ field: "csat_rating", value })` | Generic capture tool, matching the `03-feedback` pattern |
+| Step 2 — open comment | `captureField({ field: "feedback_comment", value })` | Same tool, different key |
+| Step 4 — specific complaint detail | `captureField({ field: "complaint_detail", value })` | What "the team follows up" reads from afterward |
 | Any advice/claim/coverage/price ask | `flagGuardrailEvent({ category: "topic-boundary" \| "unauthorized-promise", detail })` + route | Never engage on the merits |
 | Serious complaint needing a human | `transferToHuman` (if a live desk exists) or `crmSync` note to queue follow-up | See known gap below |
 | End of call, any branch | `setDisposition({ disposition, notes })` | **Enum overload:** Branch A → `interested` (closest fit); Branch B → `not-interested`; Branch C → `no-decision`. Flag that dedicated `feedback-positive` / `feedback-negative` values would be cleaner than overloading sales-oriented enums, once usage data exists |

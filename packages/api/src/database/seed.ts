@@ -130,10 +130,12 @@ export const AGENT_TEMPLATES = [
       key: "insurance-final-expense-qualifier",
       name: "Insurance Final Expense Qualifier / Warm-Transfer",
       vertical: "insurance",
-      description: "Qualifies a warm final-expense lead (need, rough budget, tobacco, coarse health-readiness flag), then live-transfers to a licensed advisor or books a callback. Stops cold at the regulated line — never quotes, underwrites, or collects SSN/bank/health details.",
+      description: "Qualifies a warm final-expense lead (need, service preference, cost context, rough budget, benefit timing, tobacco, banking readiness, coarse health-readiness flag), texts the agency's contact card, then live-transfers to a licensed advisor or books a callback. Stops cold at the regulated line — never quotes, recommends a carrier, underwrites, or collects SSN/bank/health details; those seven script sections are handed to the licensed advisor as a pre-filled closer brief instead.",
       fileName: "09-insurance-final-expense-qualifier-agent.md",
       literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently reached out about {{interest_area}}, and I wanted to follow up. Do you have a couple of minutes?",
-      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
+      // sendSms added so the "I'll text you our contact card" step in Section 4 is a real
+      // capability rather than a promise the agent cannot keep.
+      defaultTools: ["captureField", "sendSms", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
   ];

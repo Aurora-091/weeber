@@ -161,7 +161,7 @@ Confirm back in full words. Close via Branch C.
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Section 3 — optional routing detail | `captureField({ key: "for_whom" / "interest_area", value })` | Only if it aids routing; this agent deliberately captures minimally |
+| Section 3 — optional routing detail | `captureField({ field: "for_whom" / "interest_area", value })` | Only if it aids routing; this agent deliberately captures minimally |
 | Section 3 — live handoff | `transferToHuman({ reason: "warm appointment-setter handoff" })` | The primary success path |
 | Section 3 / Section 5 — no live advisor | `bookAppointment({ callerName, dateTimeIso, notes })` | Fallback; never let a warm lead dead-end |
 | Any regulated ask (price / carrier / plan / qualification) | `flagGuardrailEvent({ category: "unauthorized-promise" \| "topic-boundary", detail })` | Every refusal leaves a breadcrumb |

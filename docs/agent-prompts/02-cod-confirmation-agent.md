@@ -133,8 +133,8 @@ the call — no further waiting.
 ## SECTION 6: Reschedule Module
 
 "No problem — could you share a day and time for the callback?" Require both a day and a time (don't accept
-"tomorrow" on its own). Record them with `captureField({ key: "reschedule_date", value: ... })` and
-`captureField({ key: "reschedule_time", value: ... })`, confirm back in full words with no symbols, then
+"tomorrow" on its own). Record them with `captureField({ field: "reschedule_date", value: ... })` and
+`captureField({ field: "reschedule_time", value: ... })`, confirm back in full words with no symbols, then
 close via Branch C.
 
 ---

@@ -131,3 +131,65 @@ describe("docs/agent-prompts/notes/ — never seeded", () => {
     }
   });
 });
+
+/**
+ * The prompts tell the model how to call each tool, by example. Those examples are the model's
+ * only specification of a tool's parameter names, and nothing previously checked them against the
+ * tools' actual Zod schemas — so all nine prompts instructed
+ * `captureField({ key, value })` while the tool has always declared `{ field, value }`.
+ *
+ * That is not a documentation typo. An argument object failing schema validation means the call
+ * does not execute, which matches production: zero rows in `tool_calls`, on every call ever
+ * placed, while `captureField` is the most-instructed tool in the set.
+ *
+ * This guard reads the parameter names out of the prompt examples and asserts each one exists on
+ * the real tool, so the next drift fails at CI instead of silently disabling state capture.
+ */
+describe("seeded agent prompts — tool-call examples match the tools' real schemas", () => {
+  /**
+   * Parameter names each tool actually accepts, read off the `inputSchema` declarations in
+   * `voice/tools/`. Only tools whose prompt examples pass a named object are listed; tools the
+   * prompts only ever mention by name need no entry.
+   */
+  const TOOL_PARAMETERS: Record<string, string[]> = {
+    captureField: ["field", "value"],
+    flagGuardrailEvent: ["category", "detail"],
+    setDisposition: ["disposition", "notes"],
+    setIntent: ["intent", "notes"],
+    transferToHuman: ["reason"],
+    bookAppointment: ["callerName", "dateTimeIso", "notes"],
+    crmSync: ["notes"],
+    sendSms: ["body"],
+  };
+
+  for (const template of AGENT_TEMPLATES) {
+    it(`${template.fileName} names only real tool parameters`, async () => {
+      const content = await readPrompt(template.fileName);
+      const offences: string[] = [];
+
+      for (const [toolName, allowed] of Object.entries(TOOL_PARAMETERS)) {
+        // Matches `toolName({ ... })` across the prompt, including the tools table rows.
+        const callPattern = new RegExp(`${toolName}\\(\\{([^}]*)\\}`, "g");
+        for (const call of content.matchAll(callPattern)) {
+          const body = call[1] ?? "";
+          // Property keys only: `foo:` at the start of the object or after a comma.
+          for (const prop of body.matchAll(/(?:^|,)\s*([A-Za-z_]\w*)\s*:/g)) {
+            const name = prop[1]!;
+            if (!allowed.includes(name)) {
+              offences.push(
+                `${toolName} has no "${name}" parameter (accepts: ${allowed.join(", ")}) — ` +
+                  `found in ${JSON.stringify(call[0])}`,
+              );
+            }
+          }
+        }
+      }
+
+      expect(
+        offences,
+        `${template.fileName} instructs the model to pass a parameter the tool does not declare. ` +
+          `The call will fail schema validation at runtime and the tool will never execute.`,
+      ).toEqual([]);
+    });
+  }
+});

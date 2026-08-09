@@ -163,7 +163,7 @@ components. Confirm back in full words. Close via Branch C.
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Section 3 — captures interest area / timeline | `captureField({ key: "interest_timeline", value })` | Generic capture, same tool as every other vertical. |
+| Section 3 — captures interest area / timeline | `captureField({ field: "interest_timeline", value })` | Generic capture, same tool as every other vertical. |
 | Section 3/5 — qualified and wants advisor follow-up | `bookAppointment({ callerName, dateTimeIso, notes })` | Books the licensed-advisor callback — this is the one place a real appointment gets scheduled in this template, distinct from the Reschedule Module (which reschedules *this* call, not the advisor callup). |
 | End of call, any branch | `crmSync({ notes })` | Logs qualification outcome + advisor booking so the lead doesn't go cold in the CRM regardless of how the call ended. |
 | Section 5 — not interested | `setDisposition({ disposition: "not-interested", notes })` | |

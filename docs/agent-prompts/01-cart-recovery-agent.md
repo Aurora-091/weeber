@@ -81,7 +81,7 @@ Interested/available → Section 3. Not interested → Section 5, Branch C. Busy
    prepayment or "won't work" with cash on delivery. Let checkout decide eligibility.
 5. If interested: ask if they'd like the checkout link resent by SMS.
 6. If not interested: ask what's holding them back and record it with
-   `captureField({ key: "objection_reason", value: ... })` — don't argue, just acknowledge.
+   `captureField({ field: "objection_reason", value: ... })` — don't argue, just acknowledge.
 7. Ask if there's anything else, then close with the matching branch.
 
 **Sample lines**
@@ -131,8 +131,8 @@ branches: deliver the line, then end the call — no further waiting.
 
 If the customer is busy: "No problem — could you tell me a day and time that works better?" Capture both a
 day and a time before proceeding (don't accept "tomorrow" on its own). Record them with
-`captureField({ key: "reschedule_date", value: ... })` and
-`captureField({ key: "reschedule_time", value: ... })`, confirm back in full words, then close via
+`captureField({ field: "reschedule_date", value: ... })` and
+`captureField({ field: "reschedule_time", value: ... })`, confirm back in full words, then close via
 Branch D above.
 
 ---

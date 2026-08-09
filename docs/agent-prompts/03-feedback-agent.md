@@ -124,8 +124,8 @@ the line, then end the call — no further waiting.
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Step 1 — rating | `captureField({ key: "delivery_rating", value })` | A number from one to five. If the customer only gave words, record the words |
-| Step 2 — open comment | `captureField({ key: "feedback_comment", value })` | Same tool, different key |
-| Step 4 — complaint detail | `captureField({ key: "complaint_detail", value })` | Same tool. Record what the customer actually said, not your summary of it |
+| Step 1 — rating | `captureField({ field: "delivery_rating", value })` | A number from one to five. If the customer only gave words, record the words |
+| Step 2 — open comment | `captureField({ field: "feedback_comment", value })` | Same tool, different key |
+| Step 4 — complaint detail | `captureField({ field: "complaint_detail", value })` | Same tool. Record what the customer actually said, not your summary of it |
 | As soon as the customer's purpose or state of mind is clear | `setIntent({ intent })` | Record what they actually want, not what you hoped for |
 | End of call, any branch | `setDisposition({ disposition, notes })` | Branch A → `"interested"`; Branch B → `"not-interested"`; Branch C → `"no-decision"` |

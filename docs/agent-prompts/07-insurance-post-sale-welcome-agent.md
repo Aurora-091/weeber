@@ -87,12 +87,26 @@ Available → Section 3. Busy → offer a brief callback (Reschedule Module, Sec
    your policy documents?"
    - **Yes** → "Wonderful." → step 2.
    - **No / not sure** → "No problem — I'll make a note so our team can resend those to you." →
-     `captureField({ key: "documents_received", value: "no" })`, note for follow-up → step 2.
+     `captureField({ field: "documents_received", value: "no" })`, note for follow-up → step 2.
 2. "And just so you know, your point of contact for anything you need is {{advisor_name}}" (only if the
    variable is present; otherwise: "our servicing team is here for anything you need"). If
    `{{servicing_number}}` is present, mention it once, in full words.
 3. "Is there anything simple I can point you to today?" → administrative FAQs only (Section 4); anything
    substantive → route to a human.
+4. **Referral ask — only on a fully positive call, asked once, never pressed.** Skip this entirely if the
+   policyholder was confused, unhappy, said their documents hadn't arrived, or raised anything that needed a
+   licensed human. Otherwise: "Last thing, and no obligation at all — is there anyone in the family who's
+   mentioned wanting to look into coverage like yours?"
+   - **No / hesitant** → "Of course, no problem at all." → move to closing. Do not ask twice.
+   - **Yes** → capture the *relationship only* (e.g. "sister") →
+     `captureField({ field: "referral_offered", value })`, then: "I won't call them out of the blue — I'll
+     let {{advisor_name}} know, and the easiest thing is to pass along your advisor's number so they can
+     reach out whenever they're ready."
+     **Never take the third party's name or phone number, and never schedule a call to them.** A person who
+     has not contacted {{company_name}} themselves has given no consent to be called, so a referred number
+     is not a dialable lead — it is a licensed advisor's follow-up with the policyholder. If the
+     policyholder offers the number anyway: "You don't need to give me that — just pass our number to
+     them and they can call whenever suits."
 
 ---
 
@@ -160,11 +174,12 @@ Close via Branch C.
 
 | Moment in the script | Tool to call | Notes |
 |---|---|---|
-| Step 1 — documents received y/n | `captureField({ key: "documents_received", value })` | Green field only |
-| Step 1 (no) — resend note | `captureField({ key: "resend_documents", value: "true" })` + `crmSync` | So the team actually acts on it (see known gap below) |
+| Step 1 — documents received y/n | `captureField({ field: "documents_received", value })` | Green field only |
+| Step 1 (no) — resend note | `captureField({ field: "resend_documents", value: "true" })` + `crmSync` | So the team actually acts on it (see known gap below) |
 | Step 3 / Section 4 — administrative status FAQ | `lookupInfo({ query })` | **Read-only.** Only for facts already on file; never financial detail |
 | Any coverage/claims/change/cancel ask | `transferToHuman` (if a live servicing desk exists) or `flagGuardrailEvent` + `crmSync` to queue human follow-up | Never let a "talk to someone about my coverage" moment silently end |
-| Reschedule day/time | `captureField({ key: "reschedule_date" / "reschedule_time", value })` | — |
+| Step 4 — referral offered | `captureField({ field: "referral_offered", value })` | Relationship word only — never a third party's name or number, and never a scheduled call to them |
+| Reschedule day/time | `captureField({ field: "reschedule_date" / "reschedule_time", value })` | — |
 | End of call, any branch | `setDisposition({ disposition, notes })` | **Enum overload:** Branch A → `booked` (closest fit for "confirmed/handled"); Branch B → `not-interested` or `no-decision`; flag that a `serviced` / `welcome-complete` value would be cleaner once usage data exists |
 | End of call | `crmSync({ notes })` | Writes the outcome to the insurer's CRM/policy system |
 
