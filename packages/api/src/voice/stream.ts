@@ -434,6 +434,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let pendingHangUp: { reason: string } | undefined;
   let pendingTransfer: { reason: string } | undefined;
 
+  /** ADR-082: latched the moment transferToHuman is requested, and never
+   * cleared. Once a handoff is in flight, a hangUp request is always the wrong
+   * action — the transfer is what ends this leg — so `hangUp` becomes a no-op
+   * for the rest of the call rather than racing the bridge. The same-turn case
+   * is resolved by precedence in speak(); this covers the ordering the
+   * precedence check can't see, where the model emits transferToHuman on one
+   * turn and then hangUp on a later one while performTransfer is still
+   * bridging. */
+  let transferLatched = false;
+
   /** Caller-silence handling (re-prompt once, then hang up) — see armSilenceTimer. */
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceWarningIssued = false;
@@ -516,9 +526,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // goodbye line and then sat on a live call that never hung up. A missing
     // reason costs a log line, not the hangup.
     if (name === "hangUp") {
-      pendingHangUp = { reason: toolCallReason(input, "hangUp called without a reason") };
+      // ADR-082: a handoff is already in flight — see transferLatched.
+      if (transferLatched) {
+        console.warn("[voice] ignoring hangUp: a transferToHuman is already latched for this call");
+      } else {
+        pendingHangUp = { reason: toolCallReason(input, "hangUp called without a reason") };
+      }
     }
     if (name === "transferToHuman") {
+      transferLatched = true;
       pendingTransfer = { reason: toolCallReason(input, "transferToHuman called without a reason") };
     }
     // sendDtmf (Misc-2): generate the tone audio and play it straight into
@@ -1356,6 +1372,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           },
           endTurn: () => real.endTurn(),
           close: () => real.close(),
+          // ADR-082: this wrapper omitted setTone, so `tts?.setTone?.(emotion)`
+          // in sendTtsTextWithTone resolved to undefined on every live turn and
+          // expressive delivery (the tone-tag feature, 2026-07-17) was silently
+          // dead in production for every call that synthesized audio. The `?.`
+          // was deliberate — an unimplemented provider should no-op — which is
+          // exactly why nothing surfaced it. Only the cached-audio path was
+          // unaffected (it sets `tts = null` and never calls setTone at all),
+          // which is why no test caught it either. Forwarded conditionally so a
+          // provider that genuinely lacks setTone still no-ops.
+          setTone: real.setTone ? (tone: string) => real.setTone?.(tone) : undefined,
         };
       };
 
@@ -1443,15 +1469,38 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // closing line should not be able to stall teardown for a full minute.
       await sleep(Math.min(estimateRemainingPlaybackMs(fullText), CLOSING_LINE_MAX_WAIT_MS));
 
-      if (pendingHangUp) {
+      // Transfer takes precedence over hang-up when the model requested both
+      // in the same turn (ADR-082). This branch used to be the other way
+      // round, and it silently discarded `pendingTransfer` — call 21
+      // (2026-08-09) is the reference case: the agent said "let me connect you
+      // with a licensed advisor right now", the caller answered "Okay", and the
+      // model read that as BOTH assent to the handoff and a goodbye, emitting
+      // transferToHuman and hangUp together (its own hangUp reason was "caller
+      // said goodbye"). The caller was hung up on instead of transferred, and
+      // the call was still recorded completed/booked — a lost lead that looks
+      // like a success on the dashboard.
+      //
+      // Transfer is the safe resolution of the ambiguity in both directions: a
+      // transfer IS an ending (the caller keeps talking, to a human), so
+      // honouring it when the model meant "goodbye" costs one bridged call,
+      // whereas honouring the hangup when the model meant "handoff" drops a
+      // caller who was explicitly promised a person. performTransfer already
+      // falls back to a hang-up when the org has no transfer number
+      // configured, so the worst case here is exactly the old behaviour.
+      if (pendingTransfer) {
+        const { reason } = pendingTransfer;
+        if (pendingHangUp) {
+          console.warn(
+            `[voice] same-turn transferToHuman + hangUp — honouring the transfer and dropping the hangup (transfer: "${reason}", hangup: "${pendingHangUp.reason}")`,
+          );
+        }
+        pendingTransfer = undefined;
+        pendingHangUp = undefined;
+        await performTransfer(ws, reason);
+      } else if (pendingHangUp) {
         const { reason } = pendingHangUp;
         pendingHangUp = undefined;
-        pendingTransfer = undefined;
         await performHangUp(ws, reason);
-      } else if (pendingTransfer) {
-        const { reason } = pendingTransfer;
-        pendingTransfer = undefined;
-        await performTransfer(ws, reason);
       }
     } else if (!ended) {
       // Every spoken turn (greeting, normal reply, or a silence re-prompt/

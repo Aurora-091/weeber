@@ -263,3 +263,88 @@ describe("an agent-requested hangup always ends the call", () => {
     expect(ws.closeCount).toBe(0);
   });
 });
+
+/**
+ * Defect: the agent promised a warm handoff and then hung up on the caller.
+ *
+ * Reference case is production call 21 (2026-08-09), reconstructed from
+ * transcripts + tool_calls: the agent said "Perfect. Let me connect you with a
+ * licensed advisor right now", the caller answered "Okay", and the model
+ * emitted transferToHuman AND hangUp on that same turn — its own hangUp reason
+ * was "caller said goodbye", so it genuinely read the acknowledgement both
+ * ways. speak() resolved the tie by honouring the hangup and *deleting*
+ * pendingTransfer, so the caller was disconnected instead of bridged. The call
+ * was still written as completed/booked: a lost lead that looks like a success
+ * on the dashboard.
+ *
+ * See ADR-082. Both orderings are asserted because tool-call order within a
+ * turn is the model's choice, not something we control.
+ */
+describe("a same-turn transfer + hangup resolves to the transfer", () => {
+  it("transfers when hangUp was requested first", async () => {
+    orgRows = [{ name: "Test Org", humanTransferNumber: "+912222222222" }];
+    scriptedToolCalls = [
+      { name: "hangUp", input: { reason: "caller said goodbye" } },
+      { name: "transferToHuman", input: { reason: "final-expense qualified handoff" } },
+    ];
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await callerSpeaks();
+
+    expect(finalizedStatuses()).toContain("transferred");
+    expect(finalizedStatuses()).not.toContain("completed");
+    expect(ws.closeCount).toBe(0);
+  });
+
+  it("transfers when transferToHuman was requested first", async () => {
+    orgRows = [{ name: "Test Org", humanTransferNumber: "+912222222222" }];
+    scriptedToolCalls = [
+      { name: "transferToHuman", input: { reason: "final-expense qualified handoff" } },
+      { name: "hangUp", input: { reason: "caller said goodbye" } },
+    ];
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await callerSpeaks();
+
+    expect(finalizedStatuses()).toContain("transferred");
+    expect(finalizedStatuses()).not.toContain("completed");
+    expect(ws.closeCount).toBe(0);
+  });
+
+  it("still hangs up on a plain hangUp with no transfer in play", async () => {
+    // Guards the inverted branch: honouring transfers must not make hangUp
+    // unreachable on the ordinary "caller is done" path.
+    scriptedToolCalls = [{ name: "hangUp", input: { reason: "caller said goodbye" } }];
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await callerSpeaks();
+
+    expect(finalizedStatuses()).toContain("completed");
+    expect(finalizedStatuses()).not.toContain("transferred");
+    expect(ws.closeCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("falls back to a hang-up when a same-turn transfer has no number configured", async () => {
+    // No humanTransferNumber on the org: performTransfer's existing fallback
+    // must still end the call rather than strand the caller in silence.
+    orgRows = [{ name: "Test Org", humanTransferNumber: null }];
+    scriptedToolCalls = [
+      { name: "transferToHuman", input: { reason: "final-expense qualified handoff" } },
+      { name: "hangUp", input: { reason: "caller said goodbye" } },
+    ];
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await callerSpeaks();
+
+    expect(finalizedStatuses()).toContain("completed");
+    expect(ws.closeCount).toBeGreaterThanOrEqual(1);
+  });
+});

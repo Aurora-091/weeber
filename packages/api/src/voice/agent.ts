@@ -150,10 +150,20 @@ function buildCallControlBlock(
   // into a silent dead turn (or the model bailing and hanging up) any time
   // an agent had captureField/transferToHuman/flagGuardrailEvent unchecked
   // in its tool list, since these instructions used to be unconditional.
+  // The "never both in one turn" sentence is not stylistic (ADR-082): a caller
+  // answering "Okay" to a transfer offer reads as assent to the handoff AND as
+  // a closing pleasantry, and models emitted transferToHuman + hangUp together
+  // on exactly that input. stream.ts now resolves the conflict in favour of the
+  // transfer regardless, so this line is the prompt-side half of a
+  // defence-in-depth pair, not the guarantee.
   const transferLine = canTransfer
     ? "- If the caller explicitly wants a person, or asks something genuinely outside what\n" +
       "  you can help with, say you're transferring them and call transferToHuman in the\n" +
-      "  same turn. Try to actually help first — don't reach for this early."
+      "  same turn. Try to actually help first — don't reach for this early.\n" +
+      "- Never call hangUp in the same turn as transferToHuman, and never call it after one.\n" +
+      "  The transfer is what ends your part of the call — the caller carries on talking to\n" +
+      "  a person. A short acknowledgement like \"okay\" right after you offer a handoff means\n" +
+      "  yes, take me to them; it is not a goodbye."
     : "- If the caller explicitly wants a person, or asks something genuinely outside what\n" +
       "  you can help with, say so plainly and try to actually help within what you can do —\n" +
       "  there's no live transfer available on this call.";
