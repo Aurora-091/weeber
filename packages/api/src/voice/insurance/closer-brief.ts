@@ -43,6 +43,19 @@
  * SSN into a CRM note.
  */
 
+import {
+  PROHIBITED_CAPTURE_KEYS,
+  findProhibitedCapture,
+} from "../prohibited-capture";
+
+// Re-exported: the guard moved to ../prohibited-capture when it started
+// screening the `captureField` write itself for every vertical (it used to only
+// report a regression here, after the fact). Existing importers of this module
+// keep working.
+export { PROHIBITED_CAPTURE_KEYS, findProhibitedCapture };
+
+
+
 /** A single question or action the licensed advisor performs after handoff. */
 export type AdvisorStep = {
   /** Stable key, snake_case — safe to use as a checklist item id in a UI. */
@@ -132,31 +145,6 @@ export const ADVISOR_ONLY_STEPS: readonly AdvisorStep[] = [
   },
 ] as const;
 
-/**
- * Field keys the qualifying agent must never capture. Present as a guard, not as documentation:
- * `findProhibitedCapture` turns a silent prompt regression into a visible failure.
- *
- * Kept broad on purpose — matching is substring-based (see `findProhibitedCapture`), so `ssn`
- * catches `applicant_ssn` and `routing` catches `bank_routing_number`.
- */
-export const PROHIBITED_CAPTURE_KEYS: readonly string[] = [
-  "ssn",
-  "social_security",
-  "routing",
-  "account_number",
-  "bank_account",
-  "card_number",
-  "date_of_birth",
-  "dob",
-  "premium",
-  "carrier",
-  "beneficiary_name",
-  "diagnosis",
-  "condition",
-  "medication",
-  "voice_signature",
-  "ach",
-] as const;
 
 /** One line of pre-qualification the agent captured, ready to render. */
 export type BriefFact = {
@@ -199,52 +187,6 @@ const PREQUAL_FIELDS: readonly { key: string; label: string }[] = [
   { key: "banking_ready", label: "Has a standard bank account" },
   { key: "health_flag", label: "Health topics to be ready for" },
 ] as const;
-
-/** Strips casing and every separator, so `applicantSSN`, `applicant_ssn`, and `SSN` all align. */
-function compact(key: string): string {
-  return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-/** Splits a key into words across `_`, `-`, spaces, and camelCase humps. */
-function tokenize(key: string): string[] {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-}
-
-/**
- * Finds any key in `capturedState` that the agent should never have collected.
- *
- * Matching is separator- and case-insensitive on both sides, because the model authors these keys
- * freely: `account_number`, `accountNumber`, and `Account Number` are the same field and all three
- * must trip the guard.
- *
- * Two matching modes, split by length for a reason. Guard entries of four characters or more match
- * as a substring of the compacted key, so `routing` catches `bankRoutingNumber`. Shorter entries
- * (`ach`, `dob`) match only as a whole word, because a three-letter substring collides with
- * ordinary vocabulary — substring-matching `ach` would flag a field named `reachable_time`, and a
- * guard that cries wolf gets switched off.
- *
- * Deliberately errs toward false positives otherwise: a spurious incident costs someone a glance
- * at a dashboard, while a missed one means an SSN was formatted into a CRM note.
- */
-export function findProhibitedCapture(capturedState: Record<string, unknown>): string[] {
-  const found: string[] = [];
-  for (const rawKey of Object.keys(capturedState)) {
-    const compacted = compact(rawKey);
-    const tokens = tokenize(rawKey);
-    const isProhibited = PROHIBITED_CAPTURE_KEYS.some((banned) => {
-      const bannedCompact = compact(banned);
-      return bannedCompact.length >= 4
-        ? compacted.includes(bannedCompact)
-        : tokens.includes(bannedCompact);
-    });
-    if (isProhibited) found.push(rawKey);
-  }
-  return found;
-}
 
 /**
  * Builds the advisor's brief from a call's captured state.

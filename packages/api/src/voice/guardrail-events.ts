@@ -17,11 +17,19 @@ export const GUARDRAIL_CATEGORIES = [
   "unauthorized-promise",
   "prompt-injection",
   "abuse",
+  // 2026-08-09: the agent tried to capture a field it is never permitted to
+  // hold (SSN, bank routing, an itemized condition). Distinct from
+  // topic-boundary — that is the agent correctly declining to discuss
+  // something, this is the agent attempting the write and being refused, which
+  // means the prompt regressed or the model was talked past it.
+  "regulated-capture",
   "unknown",
 ] as const;
 
 export type GuardrailCategory = (typeof GUARDRAIL_CATEGORIES)[number];
-export type GuardrailSource = "agent-self-report" | "heuristic-detector";
+/** `capture-guard` is code refusing a write, not the agent reporting itself and
+ * not a text heuristic — it is the only source here that blocked something. */
+export type GuardrailSource = "agent-self-report" | "heuristic-detector" | "capture-guard";
 
 export type GuardrailEventFields = {
   category: GuardrailCategory;

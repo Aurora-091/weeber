@@ -15,6 +15,7 @@ import {
 } from "./tools/offerCartRecoveryDiscount";
 import { resolveCodOrderContext, type CodOrderContext } from "./tools/confirmCodOrder";
 import { resolveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
+import { screenCapture, redactCaptureValue } from "./prohibited-capture";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
 import { sessionStore } from "./session-store";
@@ -517,9 +518,40 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   async function logToolCall(ws: Sendable, name: string, input: unknown, output: unknown) {
+    let loggedInput = input;
     if (name === "captureField" && input && typeof input === "object" && "field" in input && "value" in input) {
       const { field, value } = input as { field: string; value: string };
-      void mergeCapturedField(field, value);
+      // Hard reject (2026-08-09). `findProhibitedCapture` had existed with 16
+      // keys, full tests, and ZERO callers — nothing screened the write, so a
+      // model that decided to record an SSN was obeyed, and the guard's only
+      // effect was reporting the breach afterwards on the closer brief.
+      //
+      // Screened here rather than inside the tool's execute() because this is
+      // the single point where the value reaches durable storage. Refusing the
+      // state merge alone would still have written the raw value to
+      // `tool_calls.input` below AND dispatched it to the org's outbound
+      // webhook — the same leak through a different pipe. So the value is
+      // redacted for both, and only the key (the evidence) survives.
+      const screen = screenCapture(field);
+      if (!screen.allowed) {
+        loggedInput = redactCaptureValue(input);
+        console.warn(`[voice] refused prohibited captureField key "${screen.key}"`);
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "regulated-capture",
+              source: "capture-guard",
+              // The key only — never the value, which is the thing being kept out.
+              detail: `refused captureField key "${screen.key}"`,
+            })
+            .catch((err) => console.error("[voice] failed to log capture-guard event", err));
+        }
+      } else {
+        void mergeCapturedField(field, value);
+      }
     }
 
     // hangUp/transferToHuman only *signal intent* (see their tool definitions) —
@@ -573,15 +605,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
 
     if (!dbCallId) return;
+    // `loggedInput` === `input` for everything except a refused captureField,
+    // where the value has been redacted — see the screen above.
     await db
       .insert(toolCalls)
-      .values({ callId: dbCallId, toolName: name, input, output })
+      .values({ callId: dbCallId, toolName: name, input: loggedInput, output })
       .catch(() => undefined as unknown);
     void dispatchWebhook(webhookUrl, "call.tool_call", {
       callSid,
       callId: dbCallId,
       toolName: name,
-      input,
+      input: loggedInput,
       output,
     });
 
