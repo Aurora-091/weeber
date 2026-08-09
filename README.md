@@ -21,8 +21,9 @@ Deepgram/Sarvam + ElevenLabs/Cartesia). See `CLAUDE.md` for the fuller "what thi
 | [`docs/`](./docs/) | Everything else — operational reference (`docs/reference/`), compliance plans, voice-quality/latency research, product-strategy/GTM research, insurance-vertical planning, Workflow Canvas history, per-agent prompts (`docs/agent-prompts/`), and an `archive/` of superseded docs. See [`docs/README.md`](./docs/README.md) for the full index. |
 | [`audit/`](./audit/) | Dated, point-in-time code audits — snapshots of what the codebase actually does, not plans. See [`audit/README.md`](./audit/README.md). |
 | [`packages/`](./packages/) | The actual code: `api` (backend), `web` (frontend), `weeber-compliance` (standalone compliance engine). |
-| [`DECISIONS.md`](./DECISIONS.md) | The running architecture decision log (ADRs) — why things are the way they are, including reversed decisions. The single most useful file for "why does this work like this." |
-| [`changelog.md`](./changelog.md) | Running log of what shipped, when. |
+| [`docs/decisions/`](./docs/decisions/) | The architecture decision log (ADRs) — why things are the way they are, including reversed ones. Start at [`docs/decisions/README.md`](./docs/decisions/README.md); root [`DECISIONS.md`](./DECISIONS.md) is a stub pointing here since the 2026-07-18 split. The single most useful place for "why does this work like this." |
+| [`docs/changelog/`](./docs/changelog/) | What shipped, when — one file per month, index at [`docs/changelog/README.md`](./docs/changelog/README.md). Root [`changelog.md`](./changelog.md) is a stub pointing here. |
+| [`tools/`](./tools/) | The CI ratchets. `tools/dead-code/` is the knip reachability gate (`bun run knip:gate`, ADR-090); `tools/ui-guard/` is the design-drift + contrast gate. Both compare against a committed baseline and fail only when a count goes up — so a red one means the change under review added the finding. |
 | [`WEEBER-PLAN.md`](./WEEBER-PLAN.md) | The phase roadmap (Foundation → Differentiation → Scale/Moat → Cost/In-house) — what's built vs. what's next. |
 | [`UI-DESIGN-BRIEF.md`](./UI-DESIGN-BRIEF.md) | The confirmed design system/direction for `/dashboard` and `/app`. |
 | [`AGENT-CONSOLE-UI-PLAN.md`](./AGENT-CONSOLE-UI-PLAN.md) | Agent config + live-preview UI plan and build status. |

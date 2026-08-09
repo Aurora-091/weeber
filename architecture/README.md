@@ -21,7 +21,7 @@ latency/quality tradeoffs)      cloud APIs we wire and     whole stack, no
 
 Weeber owns the *orchestration layer* — the code, the database, the call logic, the compliance rules,
 the dashboards. The *AI layer* (LLM inference, STT, TTS) and the *telephony layer* (PSTN) are cloud APIs
-by necessity — see `DECISIONS.md` ADR-016 for the reasoning on why "fully local" is a legitimate but
+by necessity — see `docs/decisions/` ADR-016 for the reasoning on why "fully local" is a legitimate but
 different product, not a near-term goal here.
 
 What that position buys us: which provider plugs into each slot is our choice, not a vendor's (swap
@@ -121,7 +121,7 @@ Zapier/Make-consumable, voice/webhooks.ts) — no manual step required.
 ## Key design decisions
 
 Every consequential architecture decision — and the reasoning behind it, including ones later reversed
-— is recorded in [`DECISIONS.md`](../DECISIONS.md). Worth reading before making a large change; it'll
+— is recorded in [`docs/decisions/`](../docs/decisions/README.md). Worth reading before making a large change; it'll
 usually tell you why something is the way it is, or that a given approach was already tried and rejected.
 
 ## Operational constraints

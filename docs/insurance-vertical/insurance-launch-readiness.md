@@ -2,7 +2,7 @@
 
 Status: reference doc — what you actually need to do/gather before flipping the insurance vertical
 live, given what's built (see `docs/agent-prompts/00-insurance-regulatory-reference.md` for the
-regulatory research and `changelog.md`'s 2026-07-16 entries for the build report). This doc is the
+regulatory research and `docs/changelog/2026-07.md`'s 2026-07-16 entries for the build report). This doc is the
 "who do I call, what do I fill in" companion — no new engineering content, just the checklist +
 contacts + links.
 

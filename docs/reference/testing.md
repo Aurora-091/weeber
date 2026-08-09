@@ -88,7 +88,7 @@ the moment anyone adds a test.
 - **The live call pipeline itself** (`stream.ts`'s WebSocket state machine, actual Twilio/Plivo/Exotel Media
   Stream handling, STT/TTS provider connections) — this needs a real phone call to exercise meaningfully;
   it's verified via manual curl-based regression checks and, where a real provider account was available,
-  live-tested end-to-end (see `DECISIONS.md`'s hardening-round ADRs and `docs/voice-quality/hindi-hinglish-voice-support.md`
+  live-tested end-to-end (see `../decisions/`'s hardening-round ADRs and `docs/voice-quality/hindi-hinglish-voice-support.md`
   for specific examples) rather than unit tests. A proper integration-test harness for this is open
   territory.
 - **OAuth flows** for Salesforce/Google Calendar — these integrations assume you already have a valid
@@ -188,16 +188,33 @@ Design constraints that keep it deterministic (read before adding more E2E):
 
 ## Continuous Integration
 
-Every push and pull request against `main` runs six parallel jobs via GitHub Actions — see
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml): `typecheck`, `test`, `build`, `lint`,
-`migration-drift`, and `e2e` (the Playwright landing-page suite). Every job runs
-`bun install --frozen-lockfile` **as its first step** — the deps-first rule above is enforced in CI, so the
-false-green-on-missing-deps failure mode can't reach `main`.
+Every push and pull request against `main` runs eleven parallel jobs via GitHub Actions — see
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml): `typecheck`, `test`, `build`, `lint`,
+`migration-drift`, `e2e` (the Playwright landing-page suite), `dead-code`, `design-guard`, `visual`,
+`a11y`, and `fonts`. Every job runs `bun install --frozen-lockfile` **as its first step** — the
+deps-first rule above is enforced in CI, so the false-green-on-missing-deps failure mode can't reach
+`main`.
+
+**`dead-code` and `design-guard` are ratchets, and they are not tests.** Each diffs the repo against a
+committed baseline — `tools/dead-code/knip-baseline.json` (61 known findings) and
+`tools/ui-guard/design-budget.json` — and fails only when a count goes **up**. Red means the change
+under review added the finding. Widening a baseline is a deliberate, reviewable edit; do not do it to
+unblock a push. `dead-code` runs `knip-bun` rather than `knip` because the node build dies with
+`RangeError: Array buffer allocation failed` in `oxc-parser` on a 4 GB machine.
+
+`dead-code` exists because **this test suite structurally cannot catch one whole class of defect.** A
+unit test imports a symbol directly, so a function nothing in production calls still looks used. Eight
+of ADRs 073–088 are exactly that — written, documented, unit-tested, never wired — and 073 and 088 are
+the identical bug found three days apart by a human running `rg`. Related: 57 of 123 API test files use
+`mock.module` and exactly 1 touches `db.insert(`, so coverage is dense at the unit level and near-blind
+at the seams, which is where all eight lived. Writing more unit tests does not close this; asserting a
+production caller exists does (ADR-090).
 
 None of these steps need real API keys or a live database; the build, tests, and the E2E suite are fully
 static/mocked/secret-free by design (the E2E targets only the client-side landing path — see above). A red
 CI check therefore means something is actually broken, not a missing secret — treat it as blocking.
 
-The one required status check in branch protection is `ci-success`, the aggregator that `needs` all six
-jobs. Adding/renaming a job never means reconfiguring branch protection — but a new job **does** need to be
+The one required status check in branch protection is `ci-success`, the aggregator that `needs` all
+eleven jobs and allow-lists `result == "success"` rather than asserting failure, so it cannot go green
+on jobs that never ran (ADR-075). Adding/renaming a job never means reconfiguring branch protection — but a new job **does** need to be
 added to `ci-success`'s `needs` list or its failures won't block merges (the `e2e` job is wired in).

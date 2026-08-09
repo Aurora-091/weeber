@@ -48,7 +48,7 @@ ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=
 SARVAM_API_KEY=               # Sarvam Bulbul v3 — natural Indic-language voices
 ```
 Note: ElevenLabs' free tier blocks all library voices via API (`402 payment_required`) — Cartesia's free/
-Starter tier works out of the box. See [`DECISIONS.md`](../DECISIONS.md) for why Cartesia is the default.
+Starter tier works out of the box. See [`docs/decisions/`](../decisions/README.md) for why Cartesia is the default.
 
 **STT provider (pick one, default is Deepgram):**
 ```
@@ -111,7 +111,7 @@ dialing — a blocked call returns a `403` with the reason, and never reaches Tw
 
 ## Next steps
 
-- [`architecture/README.md`](../architecture/README.md) — how a call flows through the system, repo layout, plus diagrams (`architecture/voice-orchestration.md`, `api-flow.md`, `user-flow.md`, `data-model.md`)
+- [`architecture/README.md`](../../architecture/README.md) — how a call flows through the system, repo layout, plus diagrams (`architecture/voice-orchestration.md`, `api-flow.md`, `user-flow.md`, `data-model.md`)
 - [`docs/reference/api-reference.md`](./api-reference.md) — every endpoint
 - [`docs/reference/compliance.md`](./compliance.md) — TCPA/DNC/HIPAA/GDPR, what's enforced automatically
 - [`docs/reference/security.md`](./security.md) — admin auth, webhook signature validation, rate limiting, tunneling

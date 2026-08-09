@@ -11,7 +11,7 @@
 > not just "probably done." `[ ]` = genuinely not found in the codebase as of this update. If you build
 > something below, tick it *and* add the file reference — don't leave a checked box with no evidence.
 >
-> See `architecture/README.md` for the codebase map these file paths live in, and `DECISIONS.md` for
+> See `architecture/README.md` for the codebase map these file paths live in, and `docs/decisions/README.md` for
 > the reasoning behind any decision referenced here.
 >
 > **Sharpened 2026-07-13 (same day, second pass)** against two research reports that predate this
@@ -89,7 +89,7 @@ because the pipeline itself works.
 - [x] **A2 — Per-tenant Twilio sub-accounts + Plivo/Exotel SIP for India.**
   `voice/twilio-provisioning.ts` (real sub-account creation, not a stub), `voice/telephony-transport.ts`
   (wire-format abstraction), `voice/{plivo,exotel}-{client,provisioning}.ts`. `orgs.twilioMode`
-  (`platform` | own sub-account). See ADR-048/ADR-049 in `DECISIONS.md`.
+  (`platform` | own sub-account). See ADR-048/ADR-049 in `docs/decisions/`.
 - [x] **A3 — Tools/function-calling contract.**
   `voice/tools/*.ts` — 8 real tools: `offerCartRecoveryDiscount`, `confirmCodOrder`, `captureField`,
   `hangUp`, `transferToHuman`, `flagGuardrailEvent`, `crmSync`, `bookAppointment`, `setDisposition`,
@@ -449,7 +449,7 @@ stay parked until volume/revenue actually demands them.**
 - **Staging Supabase project has a placeholder `DATABASE_URL` on Railway.** Not re-verified this
   session — flag as unconfirmed, not assumed fixed.
 - **Theme portal-scoping, agent full-window layout, 2 Dependabot vulns** — all fixed 2026-07-13, see
-  `audit/2026-07-13-audit-04-uiux.md` and the `changelog.md` entries for that date. Listed here only so
+  `audit/2026-07-13-audit-04-uiux.md` and the `docs/changelog/` entries for that date. Listed here only so
   this file doesn't look like it's ignoring them; they're closed, not open.
 
 ---

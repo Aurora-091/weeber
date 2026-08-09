@@ -64,7 +64,7 @@ India-readiness.
 ### [`product-strategy/`](./product-strategy/)
 GTM, competitive research, and internal reasoning artifacts — not specs, not reference. Several are
 explicitly marked "not a public/decision doc" in their own header; treat them as a paper trail of
-reasoning, not a source of current truth (check `DECISIONS.md` for what actually got decided).
+reasoning, not a source of current truth (check [`decisions/`](./decisions/README.md) for what actually got decided).
 - `strategy-2026-07.md` — strategy synthesis after real Reddit/LinkedIn feedback rounds
 - `competitor-changelog-scan-2026-07-17.md` — what Bolna/Retell/Bland actually shipped in 2026
 - `product-infra-and-gtm-report.md` — one-time recap report (shipped work + infra + GTM)

@@ -183,4 +183,4 @@ Supabase's compute tier is still sized for the target concurrency, then only con
 - `docs/voice-quality/india-telephony.md` — Plivo/Exotel provider status, what's confirmed vs. unconfirmed.
 - `docs/reference/configuration.md`'s "Scaling to multiple instances" section — the `REDIS_URL`/ADR-026
   mechanics.
-- `DECISIONS.md` ADR-026 (Redis-backed session storage) and ADR-034 (Supabase Postgres decision).
+- `docs/decisions/` ADR-026 (Redis-backed session storage) and ADR-034 (Supabase Postgres decision).

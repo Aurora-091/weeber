@@ -16,7 +16,7 @@ Weeber keeps a separate, deterministic state layer instead:
 - The result: the model reads ground truth instead of re-deriving it from scrollback, and every fact is
   inspectable afterward — on the [dashboard](./dashboard.md) or via `GET /api/voice/calls/:id/status`.
 
-See [`DECISIONS.md`](../DECISIONS.md) ADR-012 for the full reasoning, including what's deliberately not
+See [`docs/decisions/`](../decisions/README.md) ADR-012 for the full reasoning, including what's deliberately not
 built yet (no per-persona required-slot schema — the model decides what's worth capturing based on the
 tool description alone, not a strict checklist).
 
@@ -35,6 +35,6 @@ time. `callerMemory` is a separate table, one row per phone number, that persist
   distinct from this-call's known-facts block, since the model should treat the two with different
   confidence.
 
-See [`DECISIONS.md`](../DECISIONS.md) ADR-023 for the full reasoning and what's explicitly out of scope
+See [`docs/decisions/`](../decisions/README.md) ADR-023 for the full reasoning and what's explicitly out of scope
 (no unit tests against a real DB for the read/write helpers — consistent with the rest of this layer,
 verified integration-style instead).

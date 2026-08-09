@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-01
+updated: 2026-08-09
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,33 @@ updated: 2026-08-01
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **First outbound pilot prep, and the structural finding underneath it (2026-08-09, ADR-081…090).**
+  Ten ADRs landed in one day and they are not ten topics. The scope decision is ADR-081: the agent
+  **qualifies and warm-transfers**, it does not perform the licensed act — no claiming licensure, no
+  carrier recommendation, no premium quote, no itemized health conditions, no SSN/DOB/routing/account
+  capture, no effective date or beneficiary, no voice-signature ACH authorization. Treat that as a
+  standing constraint on anything in the insurance vertical, not a pilot detail.
+  Shipped with it: transfer outranks hang-up (082), lazy TTS connect so an unspoken socket stops
+  tripping failover (083), call health counts `callerTranscriptCount` (084), outbound opener resolves
+  lead greeting context in the pickup `Promise.all` (085) and the `interest_area`/`state` fields it
+  needs now exist in the intake schema (087), per-account template `visibility`/`ownerOrgId` + an admin
+  grant route (086), the prohibited-capture guard actually enforced at the write path (088), and
+  preview-first CSV lead import (089).
+  **The finding that matters more than any of them: eight of ADRs 073–088 are the same defect** —
+  code written, documented, unit-tested, never connected to a caller. 073 and 088 are the identical
+  bug found three days apart, both by a human running `rg`. Nothing measured reachability, and unit
+  tests structurally hide it (the test imports the symbol, so the export looks used). ADR-090 adds
+  `knip` as a CI **ratchet** — `bun run knip:gate`, baseline 61 findings in
+  `tools/dead-code/knip-baseline.json`, fails only on new ones. **Before wiring anything new, run the
+  gate; before trusting a "shipped" item below, check it has a caller.**
+  Gates: typecheck clean · lint 0/0 (479 files) · test **1242 pass / 0 fail** · `knip:gate` green.
+  **Not live-verified:** no outbound call has been placed since the silence-timer fix. 082–085 are
+  unit-verified only. See `task.md` for the pilot blocker list (no real prospect CSV header row, no
+  prospect org in the deployed DB so the bespoke template is still seeded public, uncalibrated 55 ms/char
+  playback constant, unsolved US-vs-India TTS routing).
+
+### Earlier context (kept for continuity — verify against `progress.md` before relying on it)
 
 - **The caller identity a tool writes to comes from the carrier, not the model (2026-08-01, ADR-069).**
   Closes the one ADR-066 violation the tool audit found. `crmSync` took `phoneNumber: z.string()` as a
@@ -428,4 +455,4 @@ messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
   ingest→call activation router is still the open product decision (CLAUDE.md gate #4). Ask before
   building the routing UI.
 
-_Last updated by: Workflows Standard View affordance/legibility fixes (editable-node cue + orientation strip + Save declutter + empty-state CTA), 2026-07-30._
+_Last updated by: outbound pilot prep ADR-081…089 + the dead-code reachability ratchet ADR-090, and a doc-staleness sweep (ADR index had stopped at 080), 2026-08-09._

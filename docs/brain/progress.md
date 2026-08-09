@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-01
+updated: 2026-08-09
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -115,8 +115,17 @@ updated: 2026-08-01
 
 ## In progress
 
-- Nothing mid-flight. Last session (native leads layer + integrations strategy, 2026-07-19) shipped
-  and verified. Pick the next item from "Next" below by sequencing, not scope (ADR-037).
+- **First outbound pilot (insurance / final-expense qualifier).** Code side is shipped and green
+  (ADR-081…089). What is left is not code: no real prospect CSV export header row, so `HEADER_ALIASES`
+  in `voice/leads/csv-import.ts` is an educated guess; no prospect org in the deployed DB, so the
+  bespoke template is still seeded **public** to every insurance org until one
+  `POST /admin/orgs/:orgId/agents/grant` with `makePrivate: true` runs; and **no live outbound call has
+  been placed since the silence-timer fix**, which leaves ADR-082…085 unit-verified only. Running list
+  in `task.md`.
+- **Structural hardening after ADR-090.** The ratchet (`bun run knip:gate`) is in CI. Next in that
+  thread: three *integration* tests with a real DB and no `mock.module`, one per ingest path — the
+  suite is 57-of-123 files mocking modules and exactly 1 touching `db.insert(`, which is why eight
+  wiring defects got through it.
 
 ## Next (tiered — see `WEEBER-PLAN.md` "Road ahead — prioritized (2026-07-19)")
 
@@ -147,6 +156,24 @@ updated: 2026-08-01
 
 ## Known issues / debt (open)
 
+- **61 known dead-code findings are baselined, not fixed** (`tools/dead-code/knip-baseline.json`,
+  ADR-090): 4 unused files, 40 unused exports, 15 unused exported types, 2 duplicate exports. The
+  ratchet stops the number growing; it does not clean up. Notable entries worth a decision rather than
+  a shrug — all of `voice/workflows/index.ts` and `voice/turn-detection/index.ts` export unused,
+  `bookAppointment`, `readCredentials`/`deleteOrgCredentials`, six error classes in `utils/errors.ts`.
+  Each is either about to be wired or should be deleted; "baselined" is not an answer.
+- **The test suite is blind at the seams.** 57 of 123 API test files use `mock.module`; exactly 1
+  touches `db.insert(`. Unit density is high, integration coverage is near zero, and all eight
+  wiring defects behind ADRs 073–088 lived in that gap. Adding unit tests does not close it.
+- **Two capture policies will drift.** `PROHIBITED_CAPTURE_KEYS` (`voice/prohibited-capture.ts`,
+  ADR-088) and `REGULATED_FIELD_MARKERS` (`voice/leads/intake-schema.ts`) encode overlapping rules in
+  separate lists with no test tying them together. Unioning them is *wrong* — the markers
+  `health`/`income`/`bank` would block `health_flag`/`income_type`/`banking_ready`, three of the nine
+  permitted pre-qual fields — so the fix is a consistency assertion where they overlap, not a merge.
+- **Tenancy is convention-only.** Org scoping is a `.where()` clause a developer has to remember. No
+  test enumerates the tenant-scoped tables, so a missed clause is a cross-tenant read that ships green.
+- **Production is unreadable.** `RAILWAY_TOKEN` fails in all four auth modes, so prod env vars cannot
+  be inspected and logs arrive by copy-paste. `DATABASE_URL` does work, so DB verification is possible.
 - **`bookAppointment`'s `dateTimeIso` is unbounded.** The ADR-066 tool audit cleared the tool otherwise
   (it *creates* an event, never mutates a model-named entity, and `orgId` + calendar creds are bound
   server-side), but nothing stops the model booking a slot in the past or years out. Low severity,

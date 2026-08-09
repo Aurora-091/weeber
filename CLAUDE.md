@@ -40,7 +40,15 @@ one-per-file in [`docs/decisions/`](./docs/decisions/README.md); what-shipped-wh
 - Live call audio only works under the real Bun runtime (`bun run start`), never Vite's dev server —
   the Twilio Media Stream WebSocket bridge doesn't exist under Vite's SSR module runner. Fine for
   UI/dashboard work; not fine for testing an actual phone call.
-- Before any PR: `packages/api` typecheck + test, `packages/web` typecheck + build, and repo-root
-  `bun run lint` must all be clean (CI enforces this). Branch protection on `main` is not yet enabled.
+- Before any PR: `packages/api` typecheck + test, `packages/web` typecheck + build, repo-root
+  `bun run lint`, and the three repo-root gates `bun run knip:gate` / `bun run design:guard` /
+  `bun run contrast:gate` must all be clean (CI enforces all of them across eleven jobs plus a
+  `ci-success` aggregate). Branch protection on `main` is not yet enabled.
+- `knip:gate` and `design:guard` are **ratchets**: they compare against a committed baseline and fail
+  only when a count increases, so a red one means you added the finding. Do not widen
+  `tools/dead-code/knip-baseline.json` or `tools/ui-guard/design-budget.json` to get green — that edit
+  exists to be argued about in review. See ADR-090 for why reachability analysis is a separate check
+  from the test suite: a unit test imports a symbol directly, so dead exports look used, and eight of
+  ADRs 073–088 shipped that way.
 - `packages/weeber-compliance` changes are STOP-AND-ASK — see the gate list in
   [`docs/brain/project-brief.md`](./docs/brain/project-brief.md).

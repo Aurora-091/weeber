@@ -25,7 +25,7 @@ created from the Keys page (see below):
   created/last-used timestamps, revoke individually — without rotating `ADMIN_API_KEY` for everyone
 
 This is meant for you, the operator, not end users. It's not a full multi-tenant product login system,
-but it's no longer just one shared secret either — see [`DECISIONS.md`](../DECISIONS.md) ADR-025 for the
+but it's no longer just one shared secret either — see [`docs/decisions/`](../decisions/README.md) ADR-025 for the
 labeled-key auth model.
 
 The org picker on the Agents/Analytics pages is a plain client-side dropdown, not an access-scoping

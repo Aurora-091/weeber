@@ -2,7 +2,8 @@
 
 Dated, point-in-time code audits — each one is a snapshot of "what does the codebase actually do
 right now", not a plan or a spec. If a finding here is stale, the code has moved on since; check
-`DECISIONS.md`/`changelog.md` for what happened after. Files are named `YYYY-MM-DD-audit-NN[-topic].md`
+[`docs/decisions/README.md`](../docs/decisions/README.md) / [`docs/changelog/README.md`](../docs/changelog/README.md)
+for what happened after. Files are named `YYYY-MM-DD-audit-NN[-topic].md`
 and are read chronologically, oldest first.
 
 - **`2026-07-10-audit-01.md`** — first backend audit pass.
@@ -15,10 +16,10 @@ and are read chronologically, oldest first.
 - **`2026-07-15-review-outbox-vault-versioning.md`** — targeted review of the outbox pattern, secrets
   vault, and versioning approach.
 - **`2026-07-17-audit-07-live-infra.md`** — audit covering live infrastructure as currently deployed.
-- **`2026-07-30-audit-08-workflow-canvas-ux.md`** — most recent audit: cold UX audit of the merchant
+- **`2026-07-30-audit-08-workflow-canvas-ux.md`** — cold UX audit of the merchant
   workflow builder (Standard view / canvas / AI-draft) + competitive matrix; drove the P0 persona-dropdown
   and AI-draft-front-door fixes shipped the same day.
-- **`2026-08-09-audit-09.md`** — most recent audit: pre-pilot risk audit at `cf929b0`. Baseline verified
+- **`2026-08-09-audit-09.md`** — pre-pilot risk audit at `cf929b0`. Baseline verified
   green (typecheck/lint/1111 tests) after 60 commits of drift; correctness is largely retired, so findings
   are operational — no spend/usage ceiling (P0), fail-open admin gate, unreaped `claimed` scheduled calls,
   Plivo/Exotel secrets leaking to the admin browser, transitional vault still dual-writing plaintext,

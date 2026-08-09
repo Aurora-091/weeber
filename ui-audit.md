@@ -305,7 +305,7 @@ Ranking by fill darkness maps directly to urgency — solid-black is loudest, ho
 - **`/app` (merchants) and marketing: go fully monochrome.** A merchant looks at 4–8 agents. The shape/fill system above is plenty, and the brand consistency is worth more.
 - **`/dashboard` compliance and call-outcome tables: consider keeping hue.** Ops staff scan hundreds of rows for a failed DNC check. Hue is genuinely pre-attentive in a way fill weight is not — it's the one place the accessibility and speed argument favours colour.
 
-If you take that exception, scope it hard: `.theme-weeber .table-status--critical` inside `/dashboard` only, at *measured* values (your current dark error is 4.26:1 — failing), never on `/app`, never on marketing. If you'd rather have zero exceptions, the table above is verified and I'd ship it. **Your call — but make it once and write it into `DECISIONS.md`, because the current state is a half-finished migration, and that's worse than either endpoint.**
+If you take that exception, scope it hard: `.theme-weeber .table-status--critical` inside `/dashboard` only, at *measured* values (your current dark error is 4.26:1 — failing), never on `/app`, never on marketing. If you'd rather have zero exceptions, the table above is verified and I'd ship it. **Your call — but make it once and write it into `docs/decisions/` as an ADR, because the current state is a half-finished migration, and that's worse than either endpoint.**
 
 ### Migration order
 

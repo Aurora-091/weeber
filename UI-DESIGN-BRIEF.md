@@ -19,7 +19,7 @@
 
 Confirmed design direction for everything under `/dashboard` (admin panel) and `/app` (user dashboard).
 Read alongside `architecture/README.md` / `architecture/user-flow.md` (page structure/scope). See
-`DECISIONS.md` ADR-032 (original direction) and ADR-039/043/044 (the corrections that made the old brief
+`docs/decisions/` ADR-032 (original direction) and ADR-039/043/044 (the corrections that made the old brief
 stale).
 
 ## The reference point

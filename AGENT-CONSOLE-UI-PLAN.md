@@ -1,7 +1,7 @@
 # AGENT-CONSOLE-UI-PLAN.md — Agent config + live preview upgrade
 
 > **Status: Phase 1 and Phase 2 shipped 2026-07-12** (commits `03b3d40`, `8001d9d`). See
-> `changelog.md`'s two "Agent Preview drawer" entries and `DECISIONS.md` ADR-051 for what actually
+> `docs/changelog/2026-07.md`'s two "Agent Preview drawer" entries and `docs/decisions/` ADR-051 for what actually
 > got built vs. this plan. Phase 3 remains deliberately not started — see §3 below for why.
 
 **Reference:** two ElevenLabs Conversational AI screenshots (agent config editor with a right-side

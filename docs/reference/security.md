@@ -40,6 +40,6 @@ For anything beyond local testing, your app needs a public URL Twilio can reach.
 - **Named Cloudflare Tunnel (optional, for a stable public domain).** Gives you a fixed hostname instead of
   a rotating one. Requires either your DNS zone to actually live on Cloudflare, or Cloudflare's Partial
   (CNAME) Setup — which is no longer self-serve on the free tier as of this writing (see
-  [`DECISIONS.md`](../DECISIONS.md) ADR-013/ADR-014 for what was tried and why it was reverted). Worth
+  [`docs/decisions/`](../decisions/README.md) ADR-013/ADR-014 for what was tried and why it was reverted). Worth
   setting up once you have a real reason for a stable domain (real user traffic, a production launch), not
   before.

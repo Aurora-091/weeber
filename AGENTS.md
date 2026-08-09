@@ -74,11 +74,30 @@ bun run start:railway                    # how production runs (drizzle migrate 
 cd packages/api && bun run typecheck && bun run test    # must be clean before any PR
 cd packages/web && bun run typecheck && bun run build   # must be clean before any PR
 bun run lint                             # oxlint, zero warnings
+bun run knip:gate                        # dead-code reachability ratchet (ADR-090)
+bun run design:guard                     # design-drift ratchet
+bun run contrast:gate                    # WCAG contrast gate
 cd packages/api && bun run db:push       # apply schema.ts to the live DB (additive-only)
 ```
 
 Live call audio only works under the real Bun runtime (Twilio Media Stream WS), never under Vite's dev
-server. CI enforces typecheck + test + build + lint + e2e on every push to `main`.
+server. CI runs **eleven** jobs on every push to `main` — typecheck, test, build, lint,
+migration-drift, e2e, dead-code, design-guard, visual, a11y, fonts — behind a twelfth `ci-success`
+aggregate that **allow-lists `result == "success"`** so it cannot go green on jobs that never ran
+(ADR-075). Adding a job means adding it to `ci-success`'s `needs`, or it is decorative.
+
+**Two of those jobs are ratchets, not pass/fail gates**, and they behave differently from the rest:
+`design-guard` (`tools/ui-guard/design-budget.json`) and `dead-code` (`tools/dead-code/knip-baseline.json`)
+compare against a recorded baseline and fail only when a count goes **up**. So a red ratchet means
+*you* added the finding. Widening a baseline to get green is a deliberate, reviewable edit — never
+do it silently to unblock a push. `knip` runs as `knip-bun`, not `knip`; the node build dies with
+`RangeError: Array buffer allocation failed` in `oxc-parser` on a 4 GB machine.
+
+**Why the dead-code job exists (read this before adding a new module):** eight of ADRs 073–088 are the
+same defect — code written, documented, unit-tested, and never connected to a caller. A unit test
+imports the symbol directly, so the export looks used while production never calls it; that is why the
+other ten jobs could not see any of them. When you finish a feature, the last step is proving something
+in production calls it, not that a test does.
 
 **How testing works here — read [`docs/reference/testing.md`](docs/reference/testing.md) before writing or
 running tests.** Non-obvious rules that live there: always `bun run test` (never bare `bun test` — the
