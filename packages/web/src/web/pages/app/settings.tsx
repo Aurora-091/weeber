@@ -71,6 +71,9 @@ export function UserSettingsPage() {
 
   // Permanent account close (owner-only) — types the business name to confirm.
   const [closeConfirm, setCloseConfirm] = useState("");
+  // Always true today — every member is the owner (see ADR-080). Kept so the
+  // danger zone is already gated when team invites ship, but the server-side
+  // check in POST /org/close is the authority, never this.
   const isOwner = (me.role ?? "owner") === "owner";
   // Confirm by retyping the business name (falls back to CLOSE if unnamed) —
   // the same string the agent speaks, so it's the one the owner recognizes.

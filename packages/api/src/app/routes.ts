@@ -88,8 +88,12 @@ type UserEnv = { Variables: UserSessionVariables };
 
 /**
  * First-login bootstrap: one org + owner membership per new user.
- * Idempotent under races — the unique (user, org) index plus re-select means
- * two concurrent first requests still end up with exactly one membership.
+ * Idempotent under races — the standalone unique index on supabase_user_id
+ * plus the re-select means two concurrent first requests still end up with
+ * exactly one membership. It has to be that index specifically, not a
+ * composite (user, org) one: each racer mints its own random orgId before
+ * inserting, so a composite key never collides between them. See the
+ * org_members_user_idx comment in schema.ts.
  */
 async function resolveOrCreateMembership(userId: string, email: string | null) {
   const [existing] = await db
@@ -331,6 +335,12 @@ export const userApp = new Hono<UserEnv>()
   // the Twilio subaccount for good (irreversible — mirrors what the 60-day
   // inactivity sweep does, just on demand). Owner-only: closing an account
   // is destructive and shouldn't be reachable by a regular member.
+  //
+  // NOTE: that 403 is currently unreachable — there is no "regular member"
+  // yet. org_members is unique on supabase_user_id alone and the only insert
+  // writes role "owner", so userRole is always "owner" here. The check is
+  // kept as the landing spot for team invites rather than deleted, but do
+  // not read it as proof the role model is live anywhere. See ADR-080.
   .post("/org/close", async (c) => {
     const orgId = c.get("userOrgId")!;
     if (c.get("userRole") !== "owner") {

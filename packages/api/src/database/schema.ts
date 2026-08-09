@@ -545,6 +545,14 @@ export const orgMembers = pgTable("org_members", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   supabaseUserId: text("supabase_user_id").notNull(),
   orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  // Placeholder for a Phase 2 team feature, NOT a live role model: the unique
+  // index below means one membership per user, and the only insert site
+  // (app/routes.ts resolveOrCreateMembership) hardcodes "owner". Every value
+  // in this column is "owner" and can only be "owner" today, so every
+  // `role !== "owner"` check in the codebase is currently unreachable.
+  // Unlike platform_admins.role below, this is deliberately left unconstrained
+  // — the role vocabulary isn't decided yet, and guessing it in a CHECK would
+  // be a migration to undo later. See ADR-080.
   role: text("role").notNull().default("owner"),
   email: text("email"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
