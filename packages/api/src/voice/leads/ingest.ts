@@ -24,8 +24,14 @@ import { resolveLeadApiKey } from "./api-keys";
 import { validateFields } from "./intake-schema";
 import { resolveIntakeSchema } from "./schema-store";
 import { upsertLead, type LeadSource } from "./leads";
+import { planCsvImport, summarizePlan } from "./csv-import";
 
 const INGEST_SOURCES: LeadSource[] = ["form", "webhook", "pipedream", "crm", "manual"];
+
+/** Hard ceiling on an uploaded CSV. A lead list is small; anything past this is
+ * either a mistake or a different problem (streamed import), and a multi-MB
+ * string parsed in one pass on the request path is not free. */
+const MAX_CSV_BYTES = 5 * 1024 * 1024;
 
 function extractKey(authHeader: string | undefined, apiKeyHeader: string | undefined): string | null {
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice("Bearer ".length).trim();
@@ -112,4 +118,122 @@ export const leadsIngest = new Hono()
       },
       created ? 201 : 200,
     );
+  })
+  /**
+   * POST /ingest/csv — spreadsheet import, preview-first.
+   *
+   * `dryRun` defaults to TRUE. That default is the feature: the way a CSV import
+   * goes wrong is a header row that does not match the intake schema, and
+   * `validateFields` drops unknown keys silently by design, so a mismatched file
+   * imports "fine" as a list of bare phone numbers and you find out on a live
+   * call. You have to ask for the write, having seen the per-column mapping.
+   *
+   * Accepts multipart/form-data (`file`, plus optional `dryRun`,
+   * `defaultCountryCode`, `source` fields) or a raw text/csv body with the same
+   * options as query params.
+   */
+  .post("/ingest/csv", async (c) => {
+    const key = extractKey(c.req.header("Authorization"), c.req.header("X-Api-Key"));
+    if (!key) {
+      return c.json({ error: "Missing API key. Send it as `Authorization: Bearer <key>` or `X-Api-Key`." }, 401);
+    }
+    const resolved = await resolveLeadApiKey(key);
+    if (!resolved) {
+      return c.json({ error: "Invalid or revoked API key." }, 401);
+    }
+    const orgId = resolved.orgId;
+
+    const contentType = c.req.header("Content-Type") ?? "";
+    let text = "";
+    const options: Record<string, string> = Object.fromEntries(
+      Object.entries(c.req.query()).map(([k, v]) => [k, String(v)]),
+    );
+
+    if (contentType.includes("multipart/form-data")) {
+      const form = await c.req.parseBody().catch(() => null);
+      if (!form) return c.json({ error: "Could not read the multipart body." }, 400);
+      const file = form["file"];
+      if (!(file instanceof File)) {
+        return c.json({ error: "Expected a `file` part containing the CSV." }, 400);
+      }
+      if (file.size > MAX_CSV_BYTES) {
+        return c.json({ error: `File is larger than the ${MAX_CSV_BYTES / (1024 * 1024)}MB limit.` }, 413);
+      }
+      text = await file.text();
+      for (const [k, v] of Object.entries(form)) {
+        if (typeof v === "string") options[k] = v;
+      }
+    } else {
+      text = await c.req.text().catch(() => "");
+      if (text.length > MAX_CSV_BYTES) {
+        return c.json({ error: `Body is larger than the ${MAX_CSV_BYTES / (1024 * 1024)}MB limit.` }, 413);
+      }
+    }
+
+    if (!text.trim()) {
+      return c.json({ error: "The CSV was empty." }, 400);
+    }
+
+    // Only an explicit opt-out writes. Anything else — absent, malformed,
+    // "false-ish" — previews, because the safe branch must be the default one.
+    const dryRun = String(options.dryRun ?? "true").toLowerCase() !== "false";
+    const resolvedSource: LeadSource =
+      typeof options.source === "string" && (INGEST_SOURCES as string[]).includes(options.source)
+        ? (options.source as LeadSource)
+        : "crm";
+
+    const org = await getOrg(orgId);
+    const schema = await resolveIntakeSchema(orgId, org?.vertical);
+    const plan = planCsvImport({
+      text,
+      schema,
+      defaultCountryCode: typeof options.defaultCountryCode === "string" ? options.defaultCountryCode : undefined,
+    });
+    const preview = summarizePlan(plan);
+
+    if (plan.errors.length) {
+      return c.json({ ok: false, dryRun: true, applied: false, preview }, 400);
+    }
+
+    if (dryRun) {
+      return c.json({
+        ok: true,
+        dryRun: true,
+        applied: false,
+        preview,
+        note: "Nothing was written. Re-send with dryRun=false to import the rows above.",
+      });
+    }
+
+    let created = 0;
+    let updated = 0;
+    const failedRows: number[] = [];
+    for (const row of plan.rows) {
+      try {
+        const result = await upsertLead({
+          orgId,
+          phone: row.phone,
+          name: row.name,
+          fields: row.fields,
+          source: resolvedSource,
+        });
+        if (result.created) created++;
+        else updated++;
+      } catch {
+        // One bad row must not abandon the rest of the file half-imported with
+        // no record of where it stopped. Row numbers are reported so the
+        // operator can re-send just those.
+        failedRows.push(row.row);
+      }
+    }
+
+    return c.json({
+      ok: failedRows.length === 0,
+      dryRun: false,
+      applied: true,
+      created,
+      updated,
+      failedRows: failedRows.length ? failedRows : undefined,
+      preview,
+    });
   });
