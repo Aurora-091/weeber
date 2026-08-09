@@ -175,6 +175,24 @@ export async function promoteLeadFromCall(args: {
  * unresolved-tag guard correctly rejects the line rather than the agent
  * greeting a lead as "Hi, is this ?".
  */
+/**
+ * `product_interest` enum value -> the phrase an agent may say out loud.
+ * Intentionally vague on all of them: this text is spoken to a consumer in the
+ * first sentence of a cold-ish call, so it must name a CATEGORY and never a
+ * plan, a carrier, a coverage amount or a price. Anything unmapped yields no
+ * `interest_area` at all — the guard then rejects the line, which is the right
+ * failure: a generic greeting beats an agent asserting the wrong product.
+ */
+const SPOKEN_INTEREST: Record<string, string> = {
+  final_expense: "final expense coverage",
+  term: "term life coverage",
+  life: "life insurance coverage",
+  health: "health coverage",
+  motor: "vehicle insurance",
+  travel: "travel insurance",
+  // "other" is deliberately absent — there is no honest category phrase for it.
+};
+
 export async function getLeadGreetingContext(
   orgId: string | undefined,
   phone: string | undefined,
@@ -193,6 +211,16 @@ export async function getLeadGreetingContext(
   for (const [key, value] of Object.entries(row.fields ?? {})) {
     if (typeof value === "string" && value.trim()) context[key] = value;
   }
+  // A lead that only carries the `product_interest` enum (the common case for
+  // a CRM/CSV push, which exports a category rather than a sentence) still has
+  // to produce something sayable, or the opener falls back to the LLM over a
+  // field we actually have. The enum value itself is not sayable — "you'd
+  // recently reached out about final_expense" — so map it to the phrase.
+  if (!context.interest_area) {
+    const spoken = SPOKEN_INTEREST[context.product_interest?.trim().toLowerCase() ?? ""];
+    if (spoken) context.interest_area = spoken;
+  }
+
   const name = row.name?.trim();
   if (name) {
     context.lead_name = name;

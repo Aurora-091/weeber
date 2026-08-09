@@ -90,12 +90,32 @@ export function isRegulatedField(key: string, label = ""): boolean {
 const INSURANCE_DEFAULT: LeadFieldDef[] = [
   { key: "full_name", label: "Full name", type: "text", piiClass: "contact" },
   { key: "city", label: "City", type: "text", piiClass: "contact" },
+  // State/region (2026-08-09): licensure is state-scoped in the US, so which
+  // state a lead sits in decides whether there is a licensed advisor who may
+  // legally take the transfer at all — it is routing data, not decoration.
+  // Free text rather than an enum: this has to hold US states AND Indian
+  // states, and an out-of-options enum value is stored anyway (see coerce).
+  { key: "state", label: "State / region", type: "text", piiClass: "contact" },
   {
     key: "product_interest",
     label: "Product interest",
     type: "enum",
-    options: ["term", "health", "motor", "life", "travel", "other"],
+    options: ["term", "health", "motor", "life", "final_expense", "travel", "other"],
   },
+  // `interest_area` is the phrase the agent SAYS ("you'd recently reached out
+  // about final expense coverage"), which is not the same thing as
+  // `product_interest`, the enum the leads table filters and reports on.
+  //
+  // This field was missing entirely (2026-08-09) while three outbound
+  // templates opened with {{interest_area}}. Because validateFields drops
+  // keys that aren't in the schema, no ingest path could ever land it, the
+  // unresolved-tag guard rejected the opener, and every one of those calls
+  // silently fell back to an LLM-improvised greeting — the exact failure
+  // ADR-085 set out to fix, one layer further down than it looked.
+  //
+  // Kept free text and deliberately generic: it is read aloud verbatim to a
+  // consumer, so it must never carry a plan name, a carrier, or a number.
+  { key: "interest_area", label: "Interest area (spoken)", type: "text" },
   { key: "existing_policy", label: "Already covered?", type: "boolean" },
   {
     key: "budget_band",
