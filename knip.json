@@ -1,0 +1,40 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "project": [
+        "tools/**/*.ts"
+      ]
+    },
+    "packages/api": {
+      "entry": [
+        "scripts/*.ts",
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.ts"
+      ]
+    },
+    "packages/web": {
+      "entry": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "e2e/**/*.spec.ts",
+        "e2e-visual/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,css}"
+      ]
+    },
+    "packages/weeber-compliance": {
+      "entry": [
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    }
+  },
+  "ignoreExportsUsedInFile": true
+}

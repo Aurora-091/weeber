@@ -132,6 +132,26 @@ jobs:
         # it can't go false-red on a missing key.
         run: cd packages/web && bun run test:e2e
 
+  dead-code:
+    name: Dead-code reachability ratchet (knip)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Dead-code ratchet
+        # Catches the ONE defect class no other job here can see: code that is
+        # written, documented and unit-tested but never wired to a caller. A unit
+        # test imports the symbol directly, so the export looks used and is dead in
+        # production — 8 of ADRs 073-088 are exactly that, and 073 vs 088 are the
+        # identical bug found 3 days apart by a human running `rg`. Baseline in
+        # tools/dead-code/knip-baseline.json; fails only on findings NOT in it, so
+        # existing debt does not block. See docs/decisions/adr-090-*.md.
+        run: bun run knip:gate
+
   design-guard:
     name: Design drift ratchet + contrast gate
     runs-on: ubuntu-latest
@@ -249,7 +269,7 @@ jobs:
   ci-success:
     name: CI success
     if: always()
-    needs: [typecheck, test, build, lint, migration-drift, e2e, design-guard, visual, a11y, fonts]
+    needs: [typecheck, test, build, lint, migration-drift, e2e, dead-code, design-guard, visual, a11y, fonts]
     runs-on: ubuntu-latest
     steps:
       - name: Every dependent job must have SUCCEEDED
