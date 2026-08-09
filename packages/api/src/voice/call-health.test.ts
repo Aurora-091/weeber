@@ -15,6 +15,8 @@ function healthyCall(overrides: Partial<CallHealthInput> = {}): CallHealthInput 
     answered: true,
     turnCount: 4,
     transcriptCount: 8,
+    // Half the rows are the caller's: a genuinely two-sided conversation.
+    callerTranscriptCount: 4,
     hadDisposition: true,
     sttConnectMs: 400,
     llmTtftMs: 600,
@@ -160,5 +162,70 @@ describe("classifyCallHealth", () => {
     const r = classifyCallHealth(healthyCall({ finalStatus: "transferred" }));
     expect(r.status).toBe("healthy");
     expect(r.reasons).toEqual([]);
+  });
+
+  // ---- ADR-084: the caller must be evidenced, not assumed ------------------
+  describe("a call the caller was never heard in is not healthy", () => {
+    it("flags a one-sided call where the agent took several turns alone", () => {
+      // The production shape that motivated this: agent greeted, ran three
+      // turns, recorded an outcome, and every latency metric was green — but no
+      // caller utterance was ever transcribed.
+      const r = classifyCallHealth(
+        healthyCall({ turnCount: 3, transcriptCount: 3, callerTranscriptCount: 0 }),
+      );
+      expect(r.status).toBe("silent-failure");
+      expect(r.reasons.some((x) => x.includes("never transcribed"))).toBe(true);
+    });
+
+    it("flags a disposition recorded with no caller speech as not evidence-backed", () => {
+      const r = classifyCallHealth(
+        healthyCall({ turnCount: 3, transcriptCount: 3, callerTranscriptCount: 0, hadDisposition: true }),
+      );
+      expect(r.status).toBe("silent-failure");
+      expect(r.reasons.some((x) => x.includes("not evidence-backed"))).toBe(true);
+    });
+
+    it("flags a fabricated outcome even on a short call", () => {
+      // turnCount is low enough to dodge the one-sided check above, so the
+      // disposition rule has to stand on its own here.
+      const r = classifyCallHealth(
+        healthyCall({ turnCount: 1, transcriptCount: 1, callerTranscriptCount: 0, hadDisposition: true }),
+      );
+      expect(r.status).toBe("silent-failure");
+      expect(r.reasons.some((x) => x.includes("not evidence-backed"))).toBe(true);
+    });
+
+    it("does not flag a call that never connected", () => {
+      // No live pipeline to judge — zero caller rows is expected, not a fault.
+      const r = classifyCallHealth(
+        healthyCall({
+          answered: false,
+          callerTranscriptCount: 0,
+          transcriptCount: 0,
+          turnCount: 0,
+          hadDisposition: false,
+        }),
+      );
+      expect(r.status).toBe("healthy");
+    });
+
+    it("does not double-flag a greeting-only call with no outcome", () => {
+      // Already covered by the greeting-only degraded rule. With one turn, no
+      // disposition and no caller speech, neither ADR-084 rule should fire and
+      // escalate it to silent-failure.
+      const r = classifyCallHealth(
+        healthyCall({ turnCount: 1, transcriptCount: 1, callerTranscriptCount: 0, hadDisposition: false }),
+      );
+      expect(r.status).toBe("degraded");
+      expect(r.reasons.some((x) => x.includes("not evidence-backed"))).toBe(false);
+    });
+
+    it("stays healthy as soon as the caller is transcribed even once", () => {
+      const r = classifyCallHealth(
+        healthyCall({ turnCount: 3, transcriptCount: 4, callerTranscriptCount: 1 }),
+      );
+      expect(r.status).toBe("healthy");
+      expect(r.reasons).toEqual([]);
+    });
   });
 });

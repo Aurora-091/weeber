@@ -52,6 +52,17 @@ export interface CallHealthInput {
   turnCount: number;
   /** Total transcript rows written for this call (both roles). */
   transcriptCount: number;
+  /**
+   * Transcript rows attributed to the CALLER specifically (ADR-084).
+   *
+   * Separate from `transcriptCount` because the total cannot distinguish a real
+   * conversation from the agent talking to itself: an agent that greeted,
+   * monologued three turns and hung up on a caller who never got a word in
+   * writes several transcript rows and looks fine by every other signal here.
+   * Zero caller rows on an answered call means we have no evidence the caller
+   * was ever heard, whatever the pipeline metrics say.
+   */
+  callerTranscriptCount: number;
   /** Did the agent record an outcome via setDisposition? */
   hadDisposition: boolean;
   /** First STT-connect latency (ms). Undefined = STT never connected. */
@@ -119,6 +130,33 @@ export function classifyCallHealth(input: CallHealthInput): CallHealthResult {
   // Nothing was ever said by anyone despite the call connecting.
   if (input.transcriptCount === 0 && input.ttsFirstByteMs === undefined) {
     silent.push("no transcript and no agent audio — call was empty");
+  }
+  // ADR-084: the agent held a conversation the caller was never heard in. The
+  // agent got past its greeting (so this is not the greeting-only case below)
+  // and produced audio, yet not one caller utterance was ever transcribed.
+  // Either STT silently stopped delivering finals, or the agent talked over /
+  // hung up on the caller. Both are silent failures: every latency metric on
+  // such a call is green.
+  if (
+    input.callerTranscriptCount === 0 &&
+    input.turnCount > 1 &&
+    input.ttsFirstByteMs !== undefined
+  ) {
+    silent.push(
+      `agent took ${input.turnCount} turns but the caller was never transcribed — one-sided call`,
+    );
+  }
+  // ADR-084: an outcome recorded on a call the caller never spoke in is a
+  // FABRICATED outcome. This is the most dangerous row shape in the system:
+  // it is counted as a success by every funnel/disposition dashboard, so it
+  // inflates exactly the pilot metrics a customer is judging us on, and a
+  // "booked"/"qualified" disposition here can push a lead to a human closer
+  // with facts no caller ever confirmed. Flagged even when turnCount is low,
+  // because the disposition — not the turn count — is what makes it harmful.
+  if (input.hadDisposition && input.callerTranscriptCount === 0) {
+    silent.push(
+      "an outcome was recorded but the caller was never transcribed — the disposition is not evidence-backed",
+    );
   }
   // Dead air so long the caller almost certainly perceived a dead line.
   if (
