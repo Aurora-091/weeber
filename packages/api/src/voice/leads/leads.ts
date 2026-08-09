@@ -153,6 +153,58 @@ export async function promoteLeadFromCall(args: {
   }
 }
 
+/**
+ * Greeting-time lead lookup for OUTBOUND calls (ADR-085).
+ *
+ * Outbound templates open by naming the person: insurance 05/09 use
+ * "Hi, is this {{lead_name}}? ... you'd recently reached out about
+ * {{interest_area}}". Nothing bound either tag, so `renderTemplate` left them
+ * literal, the unresolved-tag guard in stream.ts rejected the line, and every
+ * such call silently fell back to an LLM-generated greeting — which pays ~1.2s
+ * time-to-first-token on pickup AND does not know the lead's name either.
+ *
+ * The lead row is the person-of-record and is keyed by exactly what we have at
+ * greeting time: (orgId, phone). Read-only, single row, no writes — this runs
+ * on the pickup hot path, folded into stream.ts's existing Promise.all batch so
+ * it adds no extra round-trip.
+ *
+ * Returns a flat merge-tag context, NOT the raw lead. `fields` is the
+ * schema-validated intake blob, so its keys are already the intake schema's
+ * keys — safe to expose as merge tags. `lead_name` is exposed only when a real
+ * name exists; a blank/whitespace name is omitted entirely so the caller's
+ * unresolved-tag guard correctly rejects the line rather than the agent
+ * greeting a lead as "Hi, is this ?".
+ */
+export async function getLeadGreetingContext(
+  orgId: string | undefined,
+  phone: string | undefined,
+): Promise<Record<string, string>> {
+  if (!orgId || !phone) return {};
+  const [row] = await db
+    .select({ name: leads.name, fields: leads.fields })
+    .from(leads)
+    .where(and(eq(leads.orgId, orgId), eq(leads.phone, phone)))
+    .limit(1);
+  if (!row) return {};
+
+  const context: Record<string, string> = {};
+  // Intake fields first, so an explicit lead.name below always wins over a
+  // stale full_name captured on some earlier call.
+  for (const [key, value] of Object.entries(row.fields ?? {})) {
+    if (typeof value === "string" && value.trim()) context[key] = value;
+  }
+  const name = row.name?.trim();
+  if (name) {
+    context.lead_name = name;
+    // Same person under the tag names the other outbound templates use, so one
+    // lookup serves 05 (lead_name), 07 (policyholder_name) and any future
+    // template that names the person it called.
+    context.policyholder_name = name;
+    context.full_name = name;
+  }
+  return context;
+}
+
 export type LeadListRow = {
   id: number;
   phone: string;

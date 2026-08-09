@@ -150,7 +150,10 @@ mock.module("./twilio-client", () => ({
 }));
 
 mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({ promoteLeadFromCall: async () => undefined }));
+mock.module("./leads/leads", () => ({
+  promoteLeadFromCall: async () => undefined,
+  getLeadGreetingContext: async () => ({}),
+}));
 
 const { createVoiceStreamHandlers } = await import("./stream");
 

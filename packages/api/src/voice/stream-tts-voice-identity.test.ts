@@ -160,6 +160,7 @@ mock.module("./org-queries", () => ({
 // call-finalize time — noise that would drown the assertions below.
 mock.module("./leads/leads", () => ({
   promoteLeadFromCall: async () => undefined,
+  getLeadGreetingContext: async () => ({}),
 }));
 
 const { createVoiceStreamHandlers } = await import("./stream");

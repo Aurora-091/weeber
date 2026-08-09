@@ -152,7 +152,10 @@ mock.module("./org-queries", () => ({
     return {};
   },
 }));
-mock.module("./leads/leads", () => ({ promoteLeadFromCall: async () => undefined }));
+mock.module("./leads/leads", () => ({
+  promoteLeadFromCall: async () => undefined,
+  getLeadGreetingContext: async () => ({}),
+}));
 
 const { createVoiceStreamHandlers, estimateRemainingPlaybackMs } = await import("./stream");
 

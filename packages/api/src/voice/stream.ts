@@ -24,7 +24,7 @@ import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { getCallerMemory, upsertCallerMemory, resolveHumanNumber } from "./caller-memory";
-import { promoteLeadFromCall } from "./leads/leads";
+import { promoteLeadFromCall, getLeadGreetingContext } from "./leads/leads";
 import { getTwilioClientForOrg, getPublicUrl } from "./twilio-client";
 import { hangupPlivoCall, transferPlivoCall } from "./plivo-client";
 import { sendSmsForOrg } from "./send-sms";
@@ -487,10 +487,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   // signal (see call-health.ts) so finalizeCall doesn't need an extra COUNT(*)
   // read just to know whether anything was ever said.
   let transcriptCount = 0;
+  // ADR-084: counted separately because the TOTAL is not a health signal on its
+  // own. An agent that monologued through a call the caller never got a word
+  // into produces a healthy-looking transcriptCount. Only the caller's own rows
+  // tell us the conversation was two-sided.
+  let callerTranscriptCount = 0;
 
   async function logTranscript(role: "caller" | "agent", text: string) {
     if (!dbCallId) return;
     transcriptCount++;
+    if (role === "caller") callerTranscriptCount++;
     await db.insert(transcripts).values({ callId: dbCallId, role, text }).catch(() => undefined as unknown);
     void dispatchWebhook(webhookUrl, "call.transcript", { callSid, callId: dbCallId, role, text });
   }
@@ -687,6 +693,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         answered: callAnsweredAt !== undefined,
         turnCount: Math.max(0, turnCounter + 1),
         transcriptCount,
+        callerTranscriptCount,
         hadDisposition: capturedDisposition !== undefined,
         sttConnectMs,
         llmTtftMs,
@@ -1314,9 +1321,26 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       const primaryTtsProvider = activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride);
       const ttsFailoverChain = resolveTtsFailoverChain(primaryTtsProvider, ttsFallbackOrderOverride);
       const sentTextBuffer: string[] = [];
+      // Lazy TTS connect (ADR-083, 2026-08-09) — see the `tts = {...}` facade
+      // at the end of this block. `realTts` is undefined until the turn
+      // actually has a character to synthesize.
+      let realTts: TtsConnection | undefined;
+      let endTurnRequested = false;
+      let pendingTone: string | undefined;
 
       const attemptTts = (attemptProvider: TtsProvider, replayText: string[] = []): TtsConnection => {
         activeTtsProvider = attemptProvider;
+        // Whether this specific socket has ever been handed text. A provider
+        // that drops a socket it was never asked to synthesize anything on has
+        // told us nothing about its health (ADR-083) — that's an idle timeout,
+        // not a failure, and it must not burn a link off the failover chain.
+        let textReachedProvider = replayText.length > 0;
+        // Declared before connectTts because onError below closes over it and a
+        // provider is free to report failure synchronously, before connectTts
+        // has even returned — reading a `const` initialized further down would
+        // be a temporal-dead-zone throw at exactly the moment we're trying to
+        // recover from a failure.
+        let wrapper: TtsConnection | undefined;
         const real = connectTts(
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
@@ -1343,6 +1367,24 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             resolveTtsDone?.();
           },
           (err) => {
+            // ADR-083: an error on a socket that was never given any text is
+            // an idle timeout (Cartesia: `1000 connection idle timeout`;
+            // Sarvam: `408 Websocket was left open without any messages for
+            // too long`), not a provider fault. Drop the dead socket so the
+            // next sendText transparently reconnects to the *same* provider —
+            // no chain burn, no recordProviderFailover, no sticky voice flip.
+            if (!textReachedProvider) {
+              console.warn(`[voice] discarding idle TTS socket for "${attemptProvider}" (closed before any text was sent); will reconnect on demand`, err);
+              if (wrapper === undefined || realTts === wrapper) realTts = undefined;
+              // If the turn already ended without ever producing text, nothing
+              // is coming — release the ttsDone waiter instead of letting it
+              // burn its full 8s timeout.
+              if (endTurnRequested) {
+                agentIsSpeaking = false;
+                resolveTtsDone?.();
+              }
+              return;
+            }
             const next = turnTtsFirstByteMs === undefined ? ttsFailoverChain.shift() : undefined;
             if (!next) {
               console.error("[voice] TTS turn failed", err);
@@ -1357,7 +1399,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // wrapper below, since that text is already in sentTextBuffer
             // and re-pushing it would duplicate the buffer on a second
             // failover in the same turn.
-            tts = attemptTts(next, [...sentTextBuffer]);
+            realTts = attemptTts(next, [...sentTextBuffer]);
           },
           attemptProvider,
           voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider),
@@ -1365,9 +1407,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           (word) => spokenWords.push(word),
         );
         for (const text of replayText) real.sendText(text);
-        return {
+        wrapper = {
           sendText(text: string) {
             sentTextBuffer.push(text);
+            textReachedProvider = true;
             real.sendText(text);
           },
           endTurn: () => real.endTurn(),
@@ -1383,9 +1426,60 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // provider that genuinely lacks setTone still no-ops.
           setTone: real.setTone ? (tone: string) => real.setTone?.(tone) : undefined,
         };
+        return wrapper;
       };
 
-      tts = attemptTts(primaryTtsProvider);
+      // ADR-083: this used to be `tts = attemptTts(primaryTtsProvider)`, which
+      // opened the socket here — at the top of the turn, before generate() had
+      // run the LLM and any tool round-trips. On a turn with a tool call that
+      // gap is seconds long, and both Cartesia and Sarvam kill a websocket that
+      // has sat open with no messages. The resulting close landed in onError
+      // above, which read it as a provider hard-failure: it burned a link off
+      // the failover chain, called recordProviderFailover, and flipped
+      // activeTtsProvider for the *rest of the call* (failover is deliberately
+      // sticky, see the comment above). One slow tool call could therefore
+      // switch a US caller onto Sarvam's *-IN voice permanently, with the real
+      // provider perfectly healthy the whole time.
+      //
+      // So connect on first byte of text instead. Everything downstream already
+      // goes through `tts?.`, so a facade with the same TtsConnection shape is
+      // a drop-in: the socket now opens when there is something to synthesize,
+      // which is also when the provider expects it.
+      tts = {
+        sendText(text: string) {
+          if (!realTts) {
+            realTts = attemptTts(activeTtsProvider ?? primaryTtsProvider);
+            // A tone parsed before the socket existed still applies to this
+            // turn — setTone is contractually "before any sendText".
+            if (pendingTone !== undefined) realTts.setTone?.(pendingTone);
+          }
+          realTts.sendText(text);
+        },
+        endTurn() {
+          endTurnRequested = true;
+          if (realTts) {
+            realTts.endTurn();
+            return;
+          }
+          // Turn produced no speakable text at all (aborted mid-generate, or a
+          // pure tool turn). No socket was ever opened, so no provider will
+          // report done — release the waiter rather than stalling 8s on it.
+          agentIsSpeaking = false;
+          resolveTtsDone?.();
+        },
+        close() {
+          if (realTts) {
+            realTts.close();
+            return;
+          }
+          agentIsSpeaking = false;
+          resolveTtsDone?.();
+        },
+        setTone(tone: string) {
+          if (realTts) realTts.setTone?.(tone);
+          else pendingTone = tone;
+        },
+      };
     }
 
     let fullText = "";
@@ -1913,7 +2007,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // production). Running them concurrently instead of in sequence
             // removes two round-trips' worth of that wait for free — no
             // behavior change, purely a scheduling change.
-            const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow] = await Promise.all([
+            const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow, leadGreetingContext] = await Promise.all([
               row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
               // Misc-1: a "call my phone" test call carries the merchant's
               // exact in-progress form state — use it directly and skip the
@@ -1934,6 +2028,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               humanNumberOrgId
                 ? db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, humanNumberOrgId)).limit(1).catch(() => [])
                 : Promise.resolve([]),
+              // ADR-085: the lead's own name/intake fields, for outbound
+              // templates that open by naming the person ({{lead_name}},
+              // {{interest_area}}). Folded into this batch rather than added as
+              // a later await — it must not add to pickup-to-first-word.
+              // Best-effort: a lookup failure just means the greeting falls back
+              // to the LLM path, exactly as it did before this existed.
+              getLeadGreetingContext(humanNumberOrgId, humanNumber).catch(() => ({})),
             ]);
             callerMemoryFacts = callerMemoryResult;
             persona = agentConfig.systemPrompt;
@@ -1982,7 +2083,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // voice.
             if (agentConfig.literalGreetingTemplate) {
               const merchantName = orgRow[0]?.name;
-              const greetingContext: Record<string, string> = { ...capturedState, agent_name: agentConfig.agentName ?? "our team" };
+              // Precedence, lowest to highest: the lead row (what we knew
+              // before dialling) < capturedState (what this call has already
+              // confirmed) < agent identity. So a lead whose name was corrected
+              // mid-call is greeted by the corrected name on a later re-render,
+              // and a stale intake field never overrides a confirmed one.
+              const greetingContext: Record<string, string> = {
+                ...leadGreetingContext,
+                ...capturedState,
+                agent_name: agentConfig.agentName ?? "our team",
+              };
               if (merchantName) {
                 greetingContext.merchant_name = merchantName;
                 greetingContext.company_name = merchantName;
