@@ -24,9 +24,18 @@ function getTableName(table: unknown): string | undefined {
   return sym ? (table as Record<symbol, string>)[sym] : undefined;
 }
 
+// Every `where(...)` predicate handed to the fake db, so a query that is
+// *supposed* to be visibility-scoped can be asserted on directly — the fake
+// itself ignores predicates, so without this a read that dropped its scoping
+// would still return rows and the test would pass.
+let capturedWheres: unknown[] = [];
+
 function thenable(rows: unknown[]) {
   const promise = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  promise.where = () => thenable(rows);
+  promise.where = (cond: unknown) => {
+    capturedWheres.push(cond);
+    return thenable(rows);
+  };
   promise.limit = () => thenable(rows);
   promise.orderBy = () => thenable(rows);
   promise.innerJoin = () => thenable(rows);
@@ -72,7 +81,13 @@ afterAll(() => {
 
 import { admin } from "./admin-routes";
 import { agentTemplates } from "../database/schema";
-import { isTemplateVisibility, visibleTemplatesForOrg, visibleTemplatesForVertical } from "./template-visibility";
+import {
+  isTemplateVisibility,
+  isTemplateVisibleToOrg,
+  loadVisibleTemplate,
+  visibleTemplatesForOrg,
+  visibleTemplatesForVertical,
+} from "./template-visibility";
 
 const adminHeaders = { "X-Weeber-Admin-Key": "test-admin-key", "Content-Type": "application/json" };
 const dialect = new PgDialect();
@@ -132,6 +147,67 @@ describe("template visibility predicate", () => {
       and(eq(agentTemplates.active, true), visibleTemplatesForVertical("insurance", "org-peterson"))!,
     );
     expect(text).toMatch(/\(.*or.*\)/s);
+  });
+});
+
+describe("by-key template reads (ADR-091)", () => {
+  const PUBLIC_ROW = {
+    id: 9,
+    key: "insurance-final-expense-qualifier",
+    vertical: "insurance",
+    active: true,
+    visibility: "public",
+    ownerOrgId: null,
+  };
+
+  beforeEach(() => {
+    capturedWheres = [];
+    rowsByTable = { agent_templates: [PUBLIC_ROW] };
+  });
+
+  it("scopes the by-key read with the visibility predicate, not just the key", () => {
+    // The bug ADR-091 fixes: `where(eq(agentTemplates.key, key))` on its own.
+    // `templateKey` is a caller-supplied URL path param, so an unscoped by-key
+    // read hands back another account's defaultPersonaPrompt.
+    loadVisibleTemplate("bespoke", "org-peterson");
+    expect(capturedWheres).toHaveLength(1);
+    const { text, params } = render(capturedWheres[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(text).toContain('"key"');
+    expect(text).toContain("owner_org_id");
+    expect(params).toEqual(["bespoke", "public", "private", "org-peterson"]);
+  });
+
+  it("narrows to the public catalog when no org is supplied (fail closed)", () => {
+    loadVisibleTemplate("bespoke");
+    const { text, params } = render(capturedWheres[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(text).not.toContain("owner_org_id");
+    expect(params).toEqual(["bespoke", "public"]);
+  });
+
+  it("does not filter on `active` — a call in flight on a retired template must still resolve", () => {
+    loadVisibleTemplate("bespoke", "org-peterson");
+    const { text } = render(capturedWheres[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(text).not.toContain('"active"');
+  });
+
+  it("returns null rather than a partial row when nothing matches", async () => {
+    rowsByTable.agent_templates = [];
+    expect(await loadVisibleTemplate("ghost", "org-peterson")).toBeNull();
+  });
+
+  it("returns the row when it is visible", async () => {
+    expect(await loadVisibleTemplate("insurance-final-expense-qualifier", "org-peterson")).toMatchObject({
+      key: "insurance-final-expense-qualifier",
+    });
+  });
+
+  it("isTemplateVisibleToOrg answers yes/no off the same predicate", async () => {
+    expect(await isTemplateVisibleToOrg("insurance-final-expense-qualifier", "org-peterson")).toBe(true);
+    const { params } = render(capturedWheres[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(params).toEqual(["insurance-final-expense-qualifier", "public", "private", "org-peterson"]);
+
+    rowsByTable.agent_templates = [];
+    expect(await isTemplateVisibleToOrg("bespoke", "org-peterson")).toBe(false);
   });
 });
 

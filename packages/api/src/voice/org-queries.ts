@@ -27,7 +27,7 @@ import {
   workflowTemplates,
 } from "../database/schema";
 import { getRecommendedDefaults } from "./vertical-defaults";
-import { visibleTemplatesForVertical } from "./template-visibility";
+import { visibleTemplatesForVertical, isTemplateVisibleToOrg } from "./template-visibility";
 
 /**
  * Nearest-rank percentile over a numeric sample (§2's latency benchmark) —
@@ -199,7 +199,25 @@ export async function getAgentConfigsForOrg(orgId: string) {
 }
 
 /** Upsert one agent's frame config (AgentFrameSchema-validated by the caller). */
-export async function upsertAgentConfig(orgId: string, templateKey: string, frame: AgentFrame) {
+export type UpsertAgentConfigResult =
+  | { ok: true; row: typeof orgAgentConfigs.$inferSelect }
+  | { ok: false; error: string };
+
+export async function upsertAgentConfig(
+  orgId: string,
+  templateKey: string,
+  frame: AgentFrame,
+): Promise<UpsertAgentConfigResult> {
+  // ADR-091: `templateKey` is a URL path param and this column has no FK, so
+  // this route would insert a config row for any string — including another
+  // org's private template key, and including keys that are not templates at
+  // all. `provisionVerticalDefaults` above already validates against
+  // `visibleTemplatesForVertical`; the hand-written path never did. Same
+  // not-found/not-visible conflation as loadVisibleTemplate: don't let a write
+  // probe which private keys exist.
+  if (!(await isTemplateVisibleToOrg(templateKey, orgId))) {
+    return { ok: false, error: `No agent template "${templateKey}" is available to this org` };
+  }
   const values = {
     personaPrompt: frame.personaPrompt,
     enabled: frame.enabled ?? true,
@@ -237,7 +255,7 @@ export async function upsertAgentConfig(orgId: string, templateKey: string, fram
       set: values,
     })
     .returning();
-  return row!;
+  return { ok: true, row: row! };
 }
 
 export type AssignNumberResult = { ok: true } | { ok: false; error: string };
@@ -257,6 +275,11 @@ export async function assignPhoneNumberToAgent(
   templateKey: string,
   phoneNumberId: number | null,
 ): Promise<AssignNumberResult> {
+  // ADR-091: same guard as upsertAgentConfig — this path also inserts an
+  // org_agent_configs row keyed on a caller-supplied templateKey.
+  if (!(await isTemplateVisibleToOrg(templateKey, orgId))) {
+    return { ok: false, error: `No agent template "${templateKey}" is available to this org` };
+  }
   if (phoneNumberId != null) {
     const [numberRow] = await db
       .select({ id: orgPhoneNumbers.id })

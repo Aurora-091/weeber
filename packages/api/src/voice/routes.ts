@@ -657,8 +657,9 @@ export const voice = new Hono()
       return c.json({ error: "Invalid agent config", details: parsed.error.issues }, 400);
     }
 
-    const row = await upsertAgentConfig(orgId, templateKey, parsed.data);
-    return c.json({ agentConfig: row }, 200);
+    const result = await upsertAgentConfig(orgId, templateKey, parsed.data);
+    if (!result.ok) return c.json({ error: result.error }, 404);
+    return c.json({ agentConfig: result.row }, 200);
   })
 
   // Agent test chat — exercises the real agent config (persona, tools, guardrails,

@@ -1,0 +1,1 @@
+ALTER TABLE "org_agent_configs" ADD CONSTRAINT "org_agent_configs_template_key_agent_templates_key_fk" FOREIGN KEY ("template_key") REFERENCES "public"."agent_templates"("key") ON DELETE no action ON UPDATE no action;

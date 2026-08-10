@@ -15,6 +15,7 @@
  * weebersh's OAuth flow, which links the shop back via POST /connected).
  */
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../database";
@@ -50,6 +51,7 @@ import {
   updateOnboardingState,
   listOrgOrderCalls,
 } from "../voice/org-queries";
+import { isTemplateVisibleToOrg } from "../voice/template-visibility";
 import { buildOrdersWorkbook, buildAnalyticsWorkbook, buildTranscriptsWorkbook, buildLeadsWorkbook } from "./export";
 import {
   listOrgLeads,
@@ -188,6 +190,20 @@ const EVENTS_WINDOW_MS = 60_000;
 const EVENTS_MAX_PER_WINDOW = Number(process.env.APP_EVENTS_RATE_LIMIT ?? 120);
 const eventsIngestRateLimited = makeFixedWindowLimiter(EVENTS_WINDOW_MS, EVENTS_MAX_PER_WINDOW);
 
+/**
+ * ADR-091 — 404s any `/agent-configs/:templateKey*` request naming a template
+ * the session's org cannot see (nonexistent, or private to another org).
+ * Mounted once below rather than repeated per handler.
+ */
+const requireVisibleTemplate: MiddlewareHandler<UserEnv> = async (c, next) => {
+  const templateKey = c.req.param("templateKey");
+  const orgId = c.get("userOrgId");
+  if (templateKey && orgId && !(await isTemplateVisibleToOrg(templateKey, orgId))) {
+    return c.json({ error: `No agent template "${templateKey}" is available to this org` }, 404);
+  }
+  return next();
+};
+
 export const userApp = new Hono<UserEnv>()
   .use("*", requireUserSession)
 
@@ -251,6 +267,23 @@ export const userApp = new Hono<UserEnv>()
 
   // Everything below requires a resolved org.
   .use("*", requireUserOrg)
+
+  // ADR-091 — visibility is enforced at the route boundary, once, for every
+  // `/agent-configs/:templateKey*` route rather than inside each handler.
+  //
+  // There are six of them (PUT, PUT /number, POST /test-chat, /compiled-prompt,
+  // /test-call-token, /test-call-phone) and the number only grows; a per-handler
+  // check is a thing a future route can forget, and `test-chat` is exactly the
+  // route that forgot it. A template this org cannot see is indistinguishable
+  // from one that does not exist: 404, no hint that the key is real, so private
+  // keys stay unenumerable through this surface.
+  //
+  // Defence in depth, not the only defence — `loadVisibleTemplate` inside
+  // resolvePersona/resolveAgentConfig/buildPreviewAgentConfig scopes the same
+  // reads for callers that don't come through this router (admin routes, the
+  // WS test-call path, the scheduler).
+  .use("/agent-configs/:templateKey/*", requireVisibleTemplate)
+  .use("/agent-configs/:templateKey", requireVisibleTemplate)
 
   // Product-usage telemetry ingest (see app/events-ingest.ts). Batched,
   // best-effort, never fails a user action: malformed events are dropped and
@@ -402,8 +435,9 @@ export const userApp = new Hono<UserEnv>()
     if (!parsed.success) {
       return c.json({ error: "Invalid agent config", details: parsed.error.issues }, 400);
     }
-    const row = await upsertAgentConfig(c.get("userOrgId")!, c.req.param("templateKey"), parsed.data);
-    return c.json({ agentConfig: row }, 200);
+    const result = await upsertAgentConfig(c.get("userOrgId")!, c.req.param("templateKey"), parsed.data);
+    if (!result.ok) return c.json({ error: result.error }, 404);
+    return c.json({ agentConfig: result.row }, 200);
   })
 
   // C2b — assign/unassign which org number this agent dials out from.
@@ -1439,7 +1473,7 @@ export const userApp = new Hono<UserEnv>()
     if (!prompt) return c.json({ error: "prompt is required" }, 400);
 
     const { draftWorkflowGraph } = await import("../voice/workflows/ai-draft");
-    const result = await draftWorkflowGraph(prompt);
+    const result = await draftWorkflowGraph(prompt, orgId);
     if (!result.ok) return c.json({ error: result.error }, 422);
     return c.json({ graph: result.graph }, 200);
   })

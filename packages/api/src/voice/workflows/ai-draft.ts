@@ -19,8 +19,9 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { resolveVoiceModel } from "../llm";
 import { db } from "../../database";
-import { agentTemplates } from "../../database/schema";
-import { eq } from "drizzle-orm";
+import { agentTemplates, orgs } from "../../database/schema";
+import { and, eq } from "drizzle-orm";
+import { visibleTemplatesForVertical } from "../template-visibility";
 import { validateLockedNodesEnforced } from "./scaffold";
 import { validateWorkflowGraph } from "./graph-validation";
 import type { WorkflowGraph } from "./graph-types";
@@ -75,8 +76,27 @@ export type DraftWorkflowResult = { ok: true; graph: WorkflowGraph } | { ok: fal
 const LOCKED_DNC_CHECK_ID = "dnc-check";
 const LOCKED_CALLING_WINDOW_CHECK_ID = "calling-window-check";
 
-async function listAvailablePersonaKeys(): Promise<string[]> {
-  const rows = await db.select({ key: agentTemplates.key }).from(agentTemplates).where(eq(agentTemplates.active, true));
+/**
+ * The persona keys this org may actually use in a drafted graph (ADR-091).
+ *
+ * This used to select every `active` template key in the table, with no org,
+ * vertical, or visibility scoping — so the system prompt handed a merchant a
+ * list of every other tenant's private template keys, and a drafted graph
+ * could name one. Enumeration is the whole point of `visibility`, so it goes
+ * through the same predicate as the agent list (`visibleTemplatesForVertical`):
+ * this vertical's public catalog plus this org's own bespoke templates.
+ *
+ * An unknown org (or one with no visible active templates) yields an empty
+ * list, and the system prompt already renders that as "no agents configured
+ * yet" — fail closed, not fail open to the whole catalog.
+ */
+async function listAvailablePersonaKeys(orgId: string): Promise<string[]> {
+  const [org] = await db.select({ vertical: orgs.vertical }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  if (!org) return [];
+  const rows = await db
+    .select({ key: agentTemplates.key })
+    .from(agentTemplates)
+    .where(and(visibleTemplatesForVertical(org.vertical, orgId), eq(agentTemplates.active, true)));
   return rows.map((r) => r.key);
 }
 
@@ -107,8 +127,8 @@ follow-ups) based on the user's description. Keep it realistic — don't invent 
 outcomes, or persona keys outside the lists above.`;
 }
 
-export async function draftWorkflowGraph(prompt: string): Promise<DraftWorkflowResult> {
-  const personaKeys = await listAvailablePersonaKeys();
+export async function draftWorkflowGraph(prompt: string, orgId: string): Promise<DraftWorkflowResult> {
+  const personaKeys = await listAvailablePersonaKeys(orgId);
 
   let generated: z.infer<typeof graphSchema>;
   try {

@@ -372,6 +372,21 @@ describe("getEffectiveFlags", () => {
 describe("upsertAgentConfig", () => {
   beforeEach(() => {
     lastInsertValues = undefined;
+    // ADR-091: the templateKey is now checked against the visibility predicate
+    // before anything is written, so the fake db has to return a matching
+    // agent_templates row for the write path to be reached at all.
+    rowsByTable = { agent_templates: [{ key: "template-a" }] };
+  });
+
+  it("refuses to write a config row for a template this org cannot see (ADR-091)", async () => {
+    // `templateKey` arrives from a URL path param. Without this check, a
+    // merchant could create their own customization row against another
+    // account's private template — or against a key that is not a template.
+    rowsByTable = { agent_templates: [] };
+    const result = await upsertAgentConfig("org-1", "someone-elses-bespoke", { personaPrompt: "mine now" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("someone-elses-bespoke");
+    expect(lastInsertValues).toBeUndefined();
   });
 
   it("regression: sttFallbackOrder/ttsFallbackOrder/llmFallbackModels must reach the insert values, not be silently dropped", async () => {

@@ -9,6 +9,10 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
  */
 
 let mockPhoneNumberRows: { id: number }[] = [];
+// ADR-091: both write paths in this file now check the templateKey against the
+// visibility predicate before inserting an org_agent_configs row, so the fake
+// db has to answer that read too.
+let mockTemplateRows: { key: string }[] = [];
 let insertedValues: Record<string, unknown> | undefined;
 let conflictSet: Record<string, unknown> | undefined;
 
@@ -23,7 +27,12 @@ mock.module("../database", () => ({
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
-          limit: () => (getTableName(table) === "org_phone_numbers" ? mockPhoneNumberRows : []),
+          limit: () => {
+            const name = getTableName(table);
+            if (name === "org_phone_numbers") return mockPhoneNumberRows;
+            if (name === "agent_templates") return mockTemplateRows;
+            return [];
+          },
         }),
       }),
     }),
@@ -46,6 +55,7 @@ const { assignPhoneNumberToAgent } = await import("./org-queries");
 describe("assignPhoneNumberToAgent — C2b org-scoping", () => {
   beforeEach(() => {
     mockPhoneNumberRows = [];
+    mockTemplateRows = [{ key: "cart-recovery" }];
     insertedValues = undefined;
     conflictSet = undefined;
   });
@@ -72,5 +82,19 @@ describe("assignPhoneNumberToAgent — C2b org-scoping", () => {
     const result = await assignPhoneNumberToAgent("org-1", "cart-recovery", null);
     expect(result.ok).toBe(true);
     expect(insertedValues?.phoneNumberId).toBeNull();
+  });
+
+  it("refuses to create a config row for a template this org cannot see (ADR-091)", async () => {
+    // The templateKey is caller-supplied and was previously written straight
+    // into org_agent_configs, so this path could both attach a number to
+    // another org's private template and create a row against a key that
+    // isn't a template at all. Same message as every other not-visible
+    // response, so the two cases stay indistinguishable.
+    mockTemplateRows = [];
+    mockPhoneNumberRows = [{ id: 7 }];
+    const result = await assignPhoneNumberToAgent("org-1", "someone-elses-bespoke", 7);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("someone-elses-bespoke");
+    expect(insertedValues).toBeUndefined();
   });
 });

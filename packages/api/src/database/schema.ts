@@ -430,7 +430,14 @@ export const featureFlags = pgTable("feature_flags", {
 export const orgAgentConfigs = pgTable("org_agent_configs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
-  templateKey: text("template_key").notNull(),
+  // ADR-091: this is the customization layer for a catalog template, so the
+  // key has to name a real template. It was a bare text column, which is how
+  // a typo'd or since-renamed key became a config row that resolves to
+  // nothing at call time (and made "is this key real?" a question every read
+  // path had to answer for itself). No onDelete: templates are retired with
+  // `active = false`, never deleted, so a delete that would orphan live org
+  // config should fail loudly rather than cascade customer settings away.
+  templateKey: text("template_key").notNull().references(() => agentTemplates.key),
   personaPrompt: text("persona_prompt"),
   enabled: boolean("enabled").notNull().default(true),
   name: text("name"),

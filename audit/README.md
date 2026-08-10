@@ -34,6 +34,18 @@ and are read chronologically, oldest first.
   (no lead-field binding) are an aggravator: they force the slower LLM greeting, pushing it past the
   8s threshold. AMD was ruled out. Includes mark-event-based fix proposal.
 
+- **`2026-08-09-audit-11-catalog-and-jurisdiction-structure.md`** — structural audit of two questions:
+  (a) is the premade-vs-bespoke agent model right, and (b) on what axis should India and non-India be
+  separated. Verdict: both structures are correct in shape and under-enforced in practice. The three-layer
+  catalog model (`visibility`/`ownerOrgId` → `org_agent_configs`) is the right one, but visibility is applied
+  in only 4 of ~10 reads of `agent_templates` — the merchant-facing `templateKey` path is unguarded, so
+  `POST /api/app/agent-configs/:templateKey/test-chat` hands another org's private persona prompt to a chat
+  the caller controls (P0). Region: the jurisdiction-pack resolver in `weeber-compliance` is already the right
+  axis (per-call, recipient-based, not per-org) but only the calling window consumes it — provider chains,
+  disclosure text, number series and licensing are each decided from a different input, which is how a US
+  call can fail over into an Indian-accented Sarvam voice (P0) and how an unrecognized number silently gets
+  US TCPA rules (P1). 8 findings, two proposed ADRs.
+
 See also `docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md` for a source-level audit of
 the Agents UI framework paired with COGS/unit-economics analysis — kept under `docs/` rather than here
 since it's half product/GTM content, not a pure code audit.

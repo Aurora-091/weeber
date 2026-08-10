@@ -164,10 +164,39 @@ describe("user /api/app routes", () => {
 
 describe("POST /agent-configs/:templateKey/test-chat — Preview drawer's live-edit path", () => {
   beforeEach(() => {
-    rowsByTable = { org_members: [{ supabaseUserId: "user-1", orgId: "org-1", role: "owner" }], orgs: [], calls: [], feature_flags: [] };
+    rowsByTable = {
+      org_members: [{ supabaseUserId: "user-1", orgId: "org-1", role: "owner" }],
+      orgs: [],
+      calls: [],
+      feature_flags: [],
+      // ADR-091: every /agent-configs/:templateKey* request now passes through
+      // the requireVisibleTemplate middleware first, so the template has to
+      // exist and be visible to this org for the handler to run at all.
+      agent_templates: [
+        { key: "shopify-cart-recovery", vertical: "shopify", active: true, visibility: "public", ownerOrgId: null },
+      ],
+    };
     insertsByTable = {};
     lastResolveAgentConfigArgs = null;
     lastBuildPreviewArgs = null;
+  });
+
+  it("404s before reaching the handler when the org cannot see the template (ADR-091)", async () => {
+    // The gap ADR-091 closes: test-chat read the template by caller-supplied
+    // path param with no visibility scoping, so naming another org's private
+    // key returned that account's persona prompt. Not-found and not-visible
+    // are deliberately the same response so private keys stay unenumerable.
+    rowsByTable.agent_templates = [];
+    const res = await userApp.request("/agent-configs/someone-elses-bespoke/test-chat", {
+      method: "POST",
+      headers: { ...(await bearer("user-1")), "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toContain("someone-elses-bespoke");
+    // Never reached the persona-resolving code at all.
+    expect(lastResolveAgentConfigArgs).toBeNull();
+    expect(lastBuildPreviewArgs).toBeNull();
   });
 
   it("uses buildPreviewAgentConfig (live form state) when configOverride is present, not the saved DB row", async () => {

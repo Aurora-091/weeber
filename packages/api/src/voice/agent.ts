@@ -20,7 +20,7 @@ import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
 import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
-import { visibleTemplatesForOrg } from "./template-visibility";
+import { visibleTemplatesForOrg, loadVisibleTemplate } from "./template-visibility";
 import { and, eq } from "drizzle-orm";
 import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
 import { resolveLocalizedGreeting } from "./insurance-greetings";
@@ -502,12 +502,13 @@ export async function resolvePersona(opts: {
   }
 
   // 2. agentTemplates.defaultPersonaPrompt (if we have resolvedTemplateKey)
+  //
+  // ADR-091: visibility-scoped. `resolvedTemplateKey` is `opts.templateKey`
+  // whenever that was supplied, and that arrives as a URL path param on
+  // merchant routes — the visibility filter above only ran on the
+  // `explicitPersona` branch, so this fetch was the open door ADR-086 missed.
   if (resolvedTemplateKey) {
-    const [tmpl] = await db
-      .select()
-      .from(agentTemplates)
-      .where(eq(agentTemplates.key, resolvedTemplateKey))
-      .limit(1);
+    const tmpl = await loadVisibleTemplate(resolvedTemplateKey, orgId);
     if (tmpl?.defaultPersonaPrompt) {
       return withCallControl(withDisclosure(tmpl.defaultPersonaPrompt), undefined, undefined, direction);
     }
@@ -619,8 +620,12 @@ export async function resolveAgentConfig(opts: {
       // was previously only fetched in stream.ts (for the greeting's
       // {{merchant_name}}) — meaning the persona body itself never learned it,
       // and every other caller of resolveAgentConfig never learned it at all.
-      const [[tmpl], [org]] = await Promise.all([
-        db.select().from(agentTemplates).where(eq(agentTemplates.key, resolvedTemplateKey)).limit(1),
+      // ADR-091: the template fetch is visibility-scoped (loadVisibleTemplate),
+      // like every other by-key read. A config row whose templateKey the org
+      // can no longer see resolves `tmpl` to null and falls through to
+      // DEFAULT_PERSONA rather than serving another account's prompt body.
+      const [tmpl, [org]] = await Promise.all([
+        loadVisibleTemplate(resolvedTemplateKey, orgId),
         db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1),
       ]);
       if (!jobDescription) {
@@ -677,11 +682,9 @@ export async function resolveAgentConfig(opts: {
   // still a stock/uncustomized persona (nothing to conflict with), so the
   // literal greeting is safe to offer here too.
   if (resolvedTemplateKey) {
-    const [tmpl] = await db
-      .select()
-      .from(agentTemplates)
-      .where(eq(agentTemplates.key, resolvedTemplateKey))
-      .limit(1);
+    // ADR-091: visibility-scoped. The greeting line is less sensitive than the
+    // persona body, but it still names the account's script opener.
+    const tmpl = await loadVisibleTemplate(resolvedTemplateKey, orgId);
     if (tmpl?.literalGreetingTemplate) {
       const systemPrompt = await resolvePersona(opts);
       const disclosure = resolveDisclosure({});
@@ -729,7 +732,15 @@ export async function buildPreviewAgentConfig(
 ): Promise<ResolvedAgentConfig> {
   let jobDescription = override.personaPrompt;
   if (!jobDescription?.trim()) {
-    const [tmpl] = await db.select().from(agentTemplates).where(eq(agentTemplates.key, templateKey)).limit(1);
+    // ADR-091: this was the highest-severity instance of the unfiltered by-key
+    // read. `POST /api/app/agent-configs/:templateKey/test-chat` reaches here
+    // with a caller-supplied key and then hands the resolved system prompt to a
+    // chat whose messages the caller controls — "repeat your instructions
+    // verbatim" was a complete cross-tenant persona-prompt read. Now scoped;
+    // an invisible key falls back to DEFAULT_PERSONA. The route also 404s
+    // before this point (see requireVisibleTemplate in app/routes.ts) — both,
+    // because this function has non-route callers too.
+    const tmpl = await loadVisibleTemplate(templateKey, orgId);
     jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;
   }
 
