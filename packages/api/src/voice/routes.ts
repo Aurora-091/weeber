@@ -35,7 +35,6 @@ import { bumpOrgActivity } from "../app/org-activity";
 import { generatePreviewAudio } from "./tts-preview";
 import { listVoicesForProvider, fetchCartesiaPreviewAudio } from "./voices-catalog";
 import {
-  checkOutboundCallCompliance,
   addToDoNotCallList,
   removeFromDoNotCallList,
   listDoNotCall,
@@ -46,8 +45,7 @@ import {
   renderAuditTrailText,
 } from "@weeber/compliance";
 import { dncAdapter, callLogAdapter, callAuditAdapter, auditConsentFactory } from "./compliance/adapters";
-import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./compliance/insurance-gates";
-import { checkIndiaNumberSeriesCompliance } from "./compliance/number-series-gate";
+import { assertOutboundCallAllowed } from "./compliance/outbound-gate";
 import { runWorkflowForOutcome } from "./workflows/engine";
 import { resumeWorkflowAfterCall } from "./workflows/graph-engine";
 import type { WorkflowOutcome } from "./workflows/types";
@@ -260,47 +258,24 @@ export const voice = new Hono()
       return c.json({ error: "`to` must be a valid E.164 phone number, e.g. +15551234567" }, 400);
     }
 
-    // Compliance gates — enforced automatically via @weeber/compliance, no
-    // manual step required. A call that fails either check is rejected and
-    // never dials. Applies identically regardless of which provider places
-    // the call below.
+    // ADR-096: one chokepoint. This is a PRE-CHECK — `placeOutboundCall`
+    // runs the identical gate itself and fails closed, so this endpoint no
+    // longer carries the enforcement, only the courtesy of refusing before a
+    // provider leg is spent and of returning the refusal as a 403 with the
+    // gate's own reason string. It replaces a hand-rolled sequence of
+    // `checkOutboundCallCompliance` + the two insurance gates + the India DLT
+    // gate that was missing the FTSA attempt cap entirely and had no
+    // awareness of the self-expiring `orgs.callingWindowTestModeUntil` test
+    // mode that the scheduler and the insurance gates both honour.
     //
-    // Global Compliance Engine Tier 0 fix (2026-07-16, docs/global-compliance-engine-plan.md
-    // #1): this used to also honor a client-supplied `bypassCompliance` request-body flag —
-    // any caller of this endpoint could disable every legal gate on their own request. Fixed:
-    // the request-body variant is never honored, in any environment — it's stripped entirely,
-    // not just gated. The env var is now hard-disabled in production regardless of its value —
-    // `BYPASS_COMPLIANCE=true` shipped to prod by accident (or left over from a staging config)
-    // can no longer silently disable compliance. Outside production (dev/test), the env var
-    // still works for local testing. The only other sanctioned bypass anywhere in this codebase
-    // is the self-expiring `orgs.callingWindowTestModeUntil` (see workflows/scheduler.ts and
-    // compliance/insurance-gates.ts) — it covers the calling-window check and the two insurance-
-    // vertical config gates for demos, but DNC and the FTSA attempt cap have no bypass anywhere,
-    // on purpose, and this endpoint's bypass never covered DNC either.
-    const isProduction = process.env.NODE_ENV === "production";
-    const bypassCompliance = !isProduction && process.env.BYPASS_COMPLIANCE === "true";
-    if (!bypassCompliance) {
-      const compliance = await checkOutboundCallCompliance(to, dncAdapter);
-      if (!compliance.allowed) {
-        return c.json({ error: compliance.reason }, 403);
-      }
-      // Insurance-vertical-only gates (no-op for every other org) — same dual-wiring as
-      // workflows/scheduler.ts's dispatchScheduledCall, so a manual call can't route around them.
-      const numberSeriesCheck = await checkInsuranceNumberSeriesCompliance(orgId, to);
-      if (!numberSeriesCheck.allowed) {
-        return c.json({ error: numberSeriesCheck.reason }, 403);
-      }
-      const producerLicensingCheck = await checkInsuranceProducerLicensing(orgId, to);
-      if (!producerLicensingCheck.allowed) {
-        return c.json({ error: producerLicensingCheck.reason }, 403);
-      }
-      // General (non-insurance) India DLT number-series gate (2026-07-17) —
-      // no-op unless INDIA_NUMBER_SERIES_FLAG is on for this org, see
-      // compliance/number-series-gate.ts's doc comment for why it defaults off.
-      const generalNumberSeriesCheck = await checkIndiaNumberSeriesCompliance(orgId, to);
-      if (!generalNumberSeriesCheck.allowed) {
-        return c.json({ error: generalNumberSeriesCheck.reason }, 403);
-      }
+    // The `bypassCompliance` request-body flag stays gone (Global Compliance
+    // Engine Tier 0, 2026-07-16): any caller of this endpoint could otherwise
+    // disable every legal gate on their own request. The non-production
+    // `BYPASS_COMPLIANCE` env var now lives in compliance/outbound-gate.ts,
+    // is still hard-ignored in production, and no longer covers DNC.
+    const gate = await assertOutboundCallAllowed(orgId, to);
+    if (!gate.allowed) {
+      return c.json({ error: gate.reason }, 403);
     }
 
     // Single placement path (shared with the scheduled-call sweep in

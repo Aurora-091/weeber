@@ -70,6 +70,19 @@ mock.module("@weeber/compliance", () => {
     checkOutboundCallCompliance: async () => {
       return mockComplianceResult;
     },
+    // ADR-096: the outbound route no longer calls checkOutboundCallCompliance
+    // directly — it calls compliance/outbound-gate.ts's assertOutboundCallAllowed,
+    // which is also what placeOutboundCall enforces with. The real gate runs in
+    // these tests (that is the point of the chokepoint); these are the package
+    // primitives it composes.
+    isOnDoNotCallList: async () => mockDncListed,
+    checkCallingWindow: () => ({
+      allowed: mockWindowAllowed,
+      reason: "blocked for test",
+      resolvedTimezone: null,
+      localHour: 12,
+    }),
+    resolveUsState: () => null,
     addToDoNotCallList: async () => {},
     removeFromDoNotCallList: async () => {},
     listDoNotCall: async () => [],
@@ -82,6 +95,12 @@ mock.module("@weeber/compliance", () => {
 });
 
 let mockComplianceResult: { allowed: boolean; reason?: string; failedCheck?: string } = { allowed: true };
+// ADR-096 split the single "is this call compliant" boolean into the two gates
+// that behave differently under the non-production BYPASS_COMPLIANCE env var:
+// the calling window IS bypassable outside production, DNC is not — anywhere,
+// in any environment.
+let mockDncListed = false;
+let mockWindowAllowed = true;
 
 import { voice } from "./routes";
 
@@ -90,6 +109,8 @@ describe("Voice routes - Outbound Caller ID resolution", () => {
     mockSelectedOrgs = [];
     lastTwilioCallParams = null;
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
+    mockDncListed = false;
+    mockWindowAllowed = true;
   });
 
   it("dials with org outboundNumber if configured", async () => {
@@ -146,7 +167,14 @@ describe("Voice routes - BYPASS_COMPLIANCE hardening", () => {
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
     // A call blocked by real compliance is the control for every test below —
     // if the bypass logic is broken, a "blocked" call would silently succeed instead.
+    // ADR-096: the control is now the CALLING WINDOW, not DNC. DNC is no longer
+    // bypassable by the env var either (it never should have been — the old
+    // implementation skipped the whole compliance block, DNC included, while the
+    // comment beside it claimed DNC had no bypass anywhere). The last test in
+    // this block covers that directly.
     mockComplianceResult = { allowed: false, reason: "blocked for test", failedCheck: "dnc" };
+    mockDncListed = false;
+    mockWindowAllowed = false;
   });
 
   it("ignores a client-supplied bypassCompliance:true in the request body (dev/test env)", async () => {
@@ -195,6 +223,26 @@ describe("Voice routes - BYPASS_COMPLIANCE hardening", () => {
 
     expect(res.status).toBe(201);
     expect(lastTwilioCallParams).toBeDefined();
+
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.BYPASS_COMPLIANCE = originalBypassEnv;
+  });
+
+  it("does NOT bypass DNC, even outside production with BYPASS_COMPLIANCE=true (ADR-096)", async () => {
+    delete process.env.NODE_ENV;
+    process.env.BYPASS_COMPLIANCE = "true";
+    mockWindowAllowed = true; // only DNC blocks here
+    mockDncListed = true;
+
+    const res = await voice.request("/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "+15557776666", orgId: "org-123" })
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("Do Not Call") });
+    expect(lastTwilioCallParams).toBeNull();
 
     process.env.NODE_ENV = originalNodeEnv;
     process.env.BYPASS_COMPLIANCE = originalBypassEnv;

@@ -69,6 +69,22 @@ mock.module("./exotel-client", () => ({
   createExotelOutboundCall: async () => ({ ok: true, callSid: "EX_placed" }),
 }));
 
+// ADR-096 put a fail-closed compliance chokepoint at the top of
+// placeOutboundCall. This file is about provider/answer-URL routing, so the
+// gate is stubbed to "allowed" by default and flipped per-test where the
+// refusal itself is what is under test.
+let gateResult: Record<string, unknown> = { allowed: true };
+
+mock.module("./compliance/outbound-gate", () => ({
+  assertOutboundCallAllowed: async () => gateResult,
+  checkCallingWindowForOrg: async () => ({
+    allowed: true,
+    reason: "stubbed in test",
+    resolvedTimezone: null,
+    localHour: 12,
+  }),
+}));
+
 const { placeOutboundCall } = await import("./place-outbound-call");
 
 describe("placeOutboundCall — the org must survive in the answer URL", () => {
@@ -78,6 +94,7 @@ describe("placeOutboundCall — the org must survive in the answer URL", () => {
     agentConfigRows = [];
     lastTwilioCreate = null;
     lastPlivoInput = null;
+    gateResult = { allowed: true };
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
   });
 
@@ -123,5 +140,17 @@ describe("placeOutboundCall — the org must survive in the answer URL", () => {
     expect(lastPlivoInput!.answerUrl).toBe(
       "https://api.weeber.test/api/voice/incoming/plivo?orgId=org-india",
     );
+  });
+
+  it("refuses before any provider is touched when the ADR-096 gate says no", async () => {
+    orgRows = [{ id: "org-shop", outboundNumber: "+15559998888", telephonyProvider: "twilio" }];
+    gateResult = { allowed: false, gate: "dnc", reason: "This number is on the Do Not Call list." };
+
+    const result = await placeOutboundCall({ orgId: "org-shop", to: "+15557776666" });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.statusCode).toBe(403);
+    expect(lastTwilioCreate).toBeNull();
+    expect(lastPlivoInput).toBeNull();
   });
 });

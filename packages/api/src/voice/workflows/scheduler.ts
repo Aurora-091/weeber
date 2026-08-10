@@ -1,13 +1,17 @@
 import { lte, eq, and } from "drizzle-orm";
 import { db } from "../../database";
-import { scheduledCalls, orgs } from "../../database/schema";
+import { scheduledCalls } from "../../database/schema";
 import { placeOutboundCall } from "../place-outbound-call";
 import { sessionStore } from "../session-store";
-import { isOnDoNotCallList, checkCallingWindow, type CallingWindowResult } from "@weeber/compliance";
+import { isOnDoNotCallList } from "@weeber/compliance";
 import { dncAdapter } from "../compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "../compliance/number-series-gate";
 import { checkFtsaAttemptCap } from "../compliance/attempt-cap";
+// ADR-096: the calling-window + test-mode helper now lives with the other
+// gates in compliance/outbound-gate.ts, which is also what placeOutboundCall
+// enforces with — so the scheduler's pre-check and the chokepoint can't drift.
+import { checkCallingWindowForOrg } from "../compliance/outbound-gate";
 import { isAgentDispatchable } from "../org-queries";
 import { executeDueWorkflowRuns } from "./graph-engine";
 import { runOrgLifecycleSweep } from "./org-lifecycle-sweep";
@@ -20,29 +24,6 @@ const SWEEP_INTERVAL_MS = 60 * 1000; // check every minute
 const LIFECYCLE_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 type ScheduledCallRow = typeof scheduledCalls.$inferSelect;
-
-/**
- * Calling-window check with the per-org test-mode bypass layered on top
- * (2026-07-16 — "turn off compliance for testing" ask). Bypasses ONLY the
- * calling-window/TCPA-TRAI check, never DNC — DNC has no bypass anywhere in
- * this codebase, on purpose, explicit decision. Test mode is a timestamp
- * (orgs.callingWindowTestModeUntil) rather than a plain boolean specifically
- * so it self-expires — set via POST /api/app/compliance/test-mode, always
- * to now()+24h, so it can't be accidentally left on in production.
- */
-async function checkCallingWindowForRow(orgId: string | null, toNumber: string): Promise<CallingWindowResult> {
-  if (orgId) {
-    const [org] = await db
-      .select({ callingWindowTestModeUntil: orgs.callingWindowTestModeUntil })
-      .from(orgs)
-      .where(eq(orgs.id, orgId))
-      .limit(1);
-    if (org?.callingWindowTestModeUntil && org.callingWindowTestModeUntil.getTime() > Date.now()) {
-      return { allowed: true, reason: "org calling-window test mode is active", resolvedTimezone: null, localHour: -1 };
-    }
-  }
-  return checkCallingWindow(toNumber);
-}
 
 type DispatchResult =
   | { ok: true }
@@ -64,7 +45,7 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
     return { ok: false, reason: "dnc", detail: "This number is on the Do Not Call list." };
   }
 
-  const windowCheck = await checkCallingWindowForRow(row.orgId, row.toNumber);
+  const windowCheck = await checkCallingWindowForOrg(row.orgId, row.toNumber);
   if (!windowCheck.allowed) {
     return { ok: false, reason: "calling_window", detail: windowCheck.reason };
   }

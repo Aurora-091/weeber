@@ -5,6 +5,7 @@ import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
 import { createPlivoOutboundCall } from "./plivo-client";
 import { createExotelOutboundCall } from "./exotel-client";
 import { bumpOrgActivity } from "../app/org-activity";
+import { assertOutboundCallAllowed } from "./compliance/outbound-gate";
 
 export type TelephonyProvider = "twilio" | "plivo" | "exotel";
 
@@ -16,7 +17,7 @@ export type TelephonyProvider = "twilio" | "plivo" | "exotel";
  * the final key on its own). */
 export type PlaceOutboundResult =
   | { ok: true; provider: TelephonyProvider; sessionKey: string; status: string }
-  | { ok: false; error: string; statusCode: 400 | 500 | 502 };
+  | { ok: false; error: string; statusCode: 400 | 403 | 500 | 502 };
 
 /**
  * Resolves which telephony provider an org dials through and the number it
@@ -82,9 +83,18 @@ export async function resolveOutboundRouting(
  * (Twilio / Plivo / Exotel) instead of assuming Twilio — the bug this
  * replaces was the scheduler dialing every retry through Twilio, so a
  * Plivo/Exotel (India BYO) org's automated retries silently went out on the
- * wrong account or failed. Compliance gates are the caller's responsibility
- * (both call sites already run them before reaching here); this only places
- * the call and returns the session key to store state under.
+ * wrong account or failed.
+ *
+ * ADR-096 — INVARIANT: every outbound call this platform places goes through
+ * `assertOutboundCallAllowed` below, and it fails closed. The previous version
+ * of this comment asserted that compliance was the caller's responsibility because
+ * "both call sites" already ran the gates before reaching here; that was wrong
+ * on both counts. There were five callers, not two, and three of them ran no
+ * gates at all — see compliance/outbound-gate.ts for the audit-16 evidence.
+ * Callers may still pre-check (the scheduler needs per-gate reason codes to
+ * decide defer-vs-cancel, and no caller should spend a provider leg to
+ * discover a refusal it could have predicted), but a caller that pre-checks
+ * nothing is now safe rather than silently unscreened.
  */
 export async function placeOutboundCall(input: {
   orgId?: string | null;
@@ -99,6 +109,15 @@ export async function placeOutboundCall(input: {
   amd?: boolean;
 }): Promise<PlaceOutboundResult> {
   const { orgId, to, agentKey, amd = true } = input;
+
+  // ADR-096: the chokepoint. Runs before routing resolution and before any
+  // provider is touched, so a refused call costs nothing and cannot leak a
+  // dial through a provider-specific branch below.
+  const gate = await assertOutboundCallAllowed(orgId, to);
+  if (!gate.allowed) {
+    return { ok: false, error: gate.reason, statusCode: 403 };
+  }
+
   const { provider, from } = await resolveOutboundRouting(orgId, agentKey);
 
   if (!from) {

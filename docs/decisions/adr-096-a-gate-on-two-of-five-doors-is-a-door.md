@@ -2,7 +2,7 @@
 adr: 096
 title: A gate on two of five doors is a door
 date: 2026-08-10
-status: Proposed
+status: Accepted
 supersedes: none
 amends: the contract stated in place-outbound-call.ts:80-88
 related: ADR-003, ADR-007 (DNC has no bypass), ADR-090 (reachability ratchet), ADR-092
@@ -12,7 +12,8 @@ related: ADR-003, ADR-007 (DNC has no bypass), ADR-090 (reachability ratchet), A
 
 ## Status
 
-**Proposed.** No code changed. Raised by audit 16 F1/F2.
+**Accepted and implemented on 2026-08-10.** Raised by audit 16 F1/F2; shipped the same day. See
+"Implementation" below for the two deliberate behaviour changes that came with it.
 
 ## Context
 
@@ -117,3 +118,41 @@ The 403 reasons become the single place remediation UI has to be written against
 address the empty `insurance_advisors`/`do_not_call`/`consent_records` tables (audit 16 F2/F3), and
 does not fix the area-code-based licensing determination (audit 16 F5, which is a correctness question
 about *what* the gate reads, not *whether* it runs).
+
+## Implementation (2026-08-10)
+
+Shipped as written, in `packages/api/src/voice/` only. New file
+`voice/compliance/outbound-gate.ts` holds `assertOutboundCallAllowed(orgId, to)`, the
+`OutboundGate`/`OutboundGateResult` types and the shared `checkCallingWindowForOrg`.
+`placeOutboundCall` calls it as its first statement, before `resolveOutboundRouting` and before any
+provider branch; the result union widened to `400 | 403 | 500 | 502` and a refusal returns `403`. The
+false doc comment at the top of `place-outbound-call.ts` is now an `ADR-096 — INVARIANT` block. The
+campaign route's hand-rolled four-check pre-check in `voice/routes.ts` and the scheduler's local
+`checkCallingWindowForRow` were both replaced with the shared helpers. Regression coverage is
+**source-level** (`voice/compliance/outbound-gate.test.ts`, 9 tests) because the defect was
+reachability, not a wrong answer: a unit test of a function nobody calls still passes.
+
+Two behaviour changes came with the unification, both deliberate:
+
+1. **`BYPASS_COMPLIANCE` no longer skips DNC.** The env var is still non-production-only and still
+   hard-ignored in production, but the DNC check now runs *before* the bypass branch. `voice/routes.ts`
+   already carried the comment "DNC has no bypass anywhere in this codebase, on purpose"; that was
+   false, because the bypass skipped the whole block including `checkOutboundCallCompliance`'s DNC
+   call. The comment is now true.
+2. **The calling-window test-mode bypass now applies on the campaign route too.** The campaign route
+   went through `checkOutboundCallCompliance`, which calls `checkCallingWindow` with no awareness of
+   `orgs.callingWindowTestModeUntil`, so the same org in test mode got different answers from the
+   scheduler and from the campaign route. Both insurance gates already honoured test mode on both
+   paths. This is a *unification* of an inconsistency, not a new hole — and the bypass is per-org and
+   self-expiring at 24h.
+
+The campaign route also gains the FTSA attempt cap, which its pre-check never ran.
+
+Gates at merge: `typecheck` clean (3/3), `lint` 0 warnings / 0 errors on 481 files, `test`
+**1275 pass / 0 fail** (api 1130, compliance 71, web 74), `knip:gate` unchanged at baseline 61.
+
+**Operational consequence, live from this commit.** With `insurance_advisors` empty,
+`checkInsuranceProducerLicensing` now 403s every US number whose area code resolves to a state — on
+all five paths, test calls included. The pilot cannot dial US prospects until the advisor roster is
+populated or `orgs.callingWindowTestModeUntil` is set for a demo. This is the intended fail-closed
+behaviour and it is what makes audit 16 F2 a hard blocker instead of a latent one.
