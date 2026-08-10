@@ -6,7 +6,7 @@
  * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
-import { and, desc, eq, gte, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
 import { db } from "../database";
 import {
   agentTemplates,
@@ -276,6 +276,55 @@ export async function isAgentDispatchable(
   }
 
   return { ok: true };
+}
+
+/**
+ * A vertical switch leaves the old vertical's agents behind (ADR-093).
+ *
+ * `PATCH /api/app/settings` accepts `vertical` and did a bare
+ * `db.update(orgs).set(updates)` with no cleanup, so an org that moved from
+ * shopify to insurance kept its shopify `org_agent_configs` rows — production
+ * had 3 of them, all `enabled=t`, one holding a caller ID.
+ * `getAgentConfigsForOrg` narrows by vertical, so the merchant could not see
+ * them to pause them, while `visibleTemplatesForOrg` deliberately has no
+ * vertical narrowing (ADR-091, so an in-flight call on a retired template
+ * still resolves). Invisible, un-pausable, and — before ADR-092 —
+ * dispatchable.
+ *
+ * Disable, do NOT delete. The persona edits in those rows are the merchant's
+ * own work and a vertical switch is reversible (often it is a mis-click during
+ * onboarding); throwing the text away is the one part of this that cannot be
+ * undone. What actually has to stop is the row being live and holding a caller
+ * ID, so this clears `enabled` and `phoneNumberId` and leaves everything else
+ * intact. `isAgentDispatchable` already refuses these rows independently —
+ * this is the data-level half, so the state a human reads matches the state the
+ * scheduler enforces.
+ */
+export async function retireOffVerticalAgentConfigs(orgId: string, newVertical: string) {
+  const offVertical = await db
+    .select({ key: agentTemplates.key })
+    .from(agentTemplates)
+    .where(ne(agentTemplates.vertical, newVertical));
+  if (offVertical.length === 0) return { retired: [] as string[] };
+
+  const rows = await db
+    .update(orgAgentConfigs)
+    .set({ enabled: false, phoneNumberId: null })
+    .where(
+      and(
+        eq(orgAgentConfigs.orgId, orgId),
+        inArray(
+          orgAgentConfigs.templateKey,
+          offVertical.map((t) => t.key),
+        ),
+        // Only rows that are actually live or holding a number — a switch back
+        // and forth shouldn't keep rewriting rows that are already inert.
+        or(eq(orgAgentConfigs.enabled, true), isNotNull(orgAgentConfigs.phoneNumberId)),
+      ),
+    )
+    .returning({ templateKey: orgAgentConfigs.templateKey });
+
+  return { retired: rows.map((r) => r.templateKey) };
 }
 
 /** Upsert one agent's frame config (AgentFrameSchema-validated by the caller). */

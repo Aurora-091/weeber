@@ -35,6 +35,7 @@ import { submitSupportTicket } from "./support";
 import {
   getOrg,
   getAgentConfigsForOrg,
+  retireOffVerticalAgentConfigs,
   upsertAgentConfig,
   provisionVerticalDefaults,
   assignPhoneNumberToAgent,
@@ -341,7 +342,17 @@ export const userApp = new Hono<UserEnv>()
     if (Object.keys(updates).length === 0) {
       return c.json({ error: "No valid fields to update" }, 400);
     }
+    // ADR-093: read the vertical BEFORE the write so a switch can be detected.
+    // Changing vertical re-points the whole dashboard (agents, workflows,
+    // metrics, terminology); the old vertical's config rows used to survive it
+    // enabled and holding a caller ID, invisible to the merchant because
+    // getAgentConfigsForOrg narrows by vertical.
+    const previousVertical = "vertical" in updates ? (await getOrg(orgId))?.vertical ?? null : null;
     await db.update(orgs).set(updates).where(eq(orgs.id, orgId));
+    let retiredAgents: string[] = [];
+    if (updates.vertical && previousVertical && updates.vertical !== previousVertical) {
+      retiredAgents = (await retireOffVerticalAgentConfigs(orgId, updates.vertical)).retired;
+    }
     // Keep the Twilio subaccount friendly name in sync with the business
     // name — best-effort, never blocks the rename.
     if ("name" in updates && updates.name) {
@@ -361,6 +372,9 @@ export const userApp = new Hono<UserEnv>()
         webhookUrl: org!.webhookUrl,
         humanTransferNumber: org!.humanTransferNumber,
       },
+      // ADR-093: named so the UI can tell the merchant what a vertical switch
+      // just turned off, rather than silently disabling agents they configured.
+      retiredAgents,
     }, 200);
   })
 

@@ -2046,6 +2046,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // Misc-1: a "call my phone" test call carries the merchant's
               // exact in-progress form state — use it directly and skip the
               // DB-backed resolution entirely, same as the WS test call does.
+              // ADR-093, decided explicitly: `org_agent_configs.enabled` is an
+              // OUTBOUND dispatch gate only (ADR-092 enforces it in the
+              // scheduler) and is deliberately NOT consulted here. An inbound
+              // call reaching an org's active number is a human who chose to
+              // dial a published business number; pausing an agent is a
+              // statement about automated dialling, not an instruction to stop
+              // answering the phone. So a paused agent's number still answers,
+              // on the persona `numberConfig`/`row.toNumber` resolves — which
+              // is also today's behaviour, now recorded rather than incidental.
+              // The rejected alternatives were hanging up (worst outcome: a
+              // real customer hears dead air from a number the merchant still
+              // advertises) and force-transferring to `humanTransferNumber`
+              // (most orgs have none configured, so it degenerates to a hang up
+              // anyway). If a merchant wants a number to stop answering, the
+              // primitive for that is releasing the number, not pausing an
+              // agent — those are separate controls and should stay separate.
               session?.resolvedConfigOverride
                 ? Promise.resolve(session.resolvedConfigOverride)
                 : resolveAgentConfig({

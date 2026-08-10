@@ -24,6 +24,8 @@ function thenable(rows: unknown[]) {
 }
 
 let lastInsertValues: Record<string, unknown> | undefined;
+let lastUpdateValues: Record<string, unknown> | undefined;
+let updateReturning: unknown[] = [];
 
 /**
  * isAgentDispatchable reads agent_templates TWICE with different predicates
@@ -43,6 +45,14 @@ mock.module("../database", () => ({
           return thenable(agentTemplateResponses.shift() ?? []);
         }
         return thenable(rowsByTable[name] ?? []);
+      },
+    }),
+    update: () => ({
+      set: (v: Record<string, unknown>) => {
+        lastUpdateValues = v;
+        return {
+          where: () => ({ returning: () => Promise.resolve(updateReturning) }),
+        };
       },
     }),
     insert: () => ({
@@ -65,6 +75,7 @@ import {
   buildInstallUrl,
   upsertAgentConfig,
   isAgentDispatchable,
+  retireOffVerticalAgentConfigs,
 } from "./org-queries";
 
 const now = Date.now();
@@ -483,5 +494,49 @@ describe("isAgentDispatchable (ADR-092)", () => {
     const result = await isAgentDispatchable("org-gone", "insurance-post-sale-welcome");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain("org-gone");
+  });
+});
+
+/**
+ * ADR-093 — a vertical switch has to leave the old vertical's agents inert.
+ * The invariant under test is narrow but it is the whole point: `enabled` goes
+ * false and `phoneNumberId` goes null, and nothing else in the row is touched,
+ * because the persona text in there is the merchant's own work and a vertical
+ * switch is reversible.
+ */
+describe("retireOffVerticalAgentConfigs", () => {
+  beforeEach(() => {
+    rowsByTable = {};
+    lastUpdateValues = undefined;
+    updateReturning = [];
+  });
+
+  it("disables off-vertical rows and releases their caller ID", async () => {
+    rowsByTable["agent_templates"] = [{ key: "shopify-cart-recovery" }, { key: "shopify-feedback" }];
+    updateReturning = [{ templateKey: "shopify-cart-recovery" }, { templateKey: "shopify-feedback" }];
+
+    const result = await retireOffVerticalAgentConfigs("org-1", "insurance");
+
+    expect(result.retired).toEqual(["shopify-cart-recovery", "shopify-feedback"]);
+    expect(lastUpdateValues).toEqual({ enabled: false, phoneNumberId: null });
+  });
+
+  it("does not touch the persona or any other column", async () => {
+    rowsByTable["agent_templates"] = [{ key: "shopify-cart-recovery" }];
+    updateReturning = [{ templateKey: "shopify-cart-recovery" }];
+
+    await retireOffVerticalAgentConfigs("org-1", "insurance");
+
+    expect(Object.keys(lastUpdateValues ?? {}).sort()).toEqual(["enabled", "phoneNumberId"]);
+  });
+
+  it("is a no-op when no template belongs to another vertical", async () => {
+    rowsByTable["agent_templates"] = [];
+
+    const result = await retireOffVerticalAgentConfigs("org-1", "insurance");
+
+    expect(result.retired).toEqual([]);
+    // No UPDATE was issued at all — a switch back and forth shouldn't rewrite rows.
+    expect(lastUpdateValues).toBeUndefined();
   });
 });
