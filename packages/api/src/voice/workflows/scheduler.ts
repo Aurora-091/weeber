@@ -8,6 +8,7 @@ import { dncAdapter } from "../compliance/adapters";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "../compliance/insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "../compliance/number-series-gate";
 import { checkFtsaAttemptCap } from "../compliance/attempt-cap";
+import { isAgentDispatchable } from "../org-queries";
 import { executeDueWorkflowRuns } from "./graph-engine";
 import { runOrgLifecycleSweep } from "./org-lifecycle-sweep";
 
@@ -45,7 +46,7 @@ async function checkCallingWindowForRow(orgId: string | null, toNumber: string):
 
 type DispatchResult =
   | { ok: true }
-  | { ok: false; reason: "dnc" | "calling_window" | "attempt_cap" | "insurance_number_series" | "insurance_producer_licensing" | "india_number_series" | "place_failed"; detail: string };
+  | { ok: false; reason: "dnc" | "calling_window" | "attempt_cap" | "insurance_number_series" | "insurance_producer_licensing" | "india_number_series" | "agent_disabled" | "place_failed"; detail: string };
 
 /**
  * The actual DNC-check -> calling-window-check -> place-call -> session-
@@ -92,6 +93,23 @@ async function dispatchScheduledCall(row: ScheduledCallRow): Promise<DispatchRes
   const generalNumberSeriesCheck = await checkIndiaNumberSeriesCompliance(row.orgId, row.toNumber);
   if (!generalNumberSeriesCheck.allowed) {
     return { ok: false, reason: "india_number_series", detail: generalNumberSeriesCheck.reason };
+  }
+
+  // ADR-092: the agent's own on/off switch, enforced here rather than inside
+  // resolveAgentConfig (which the test surfaces share — see isAgentDispatchable).
+  // This sits with the other gates because that is exactly what it is: until
+  // now `enabled` changed a dashboard counter and nothing else, so a merchant
+  // who paused an agent still got automated calls placed under it. Keyed on the
+  // row's persona/workflowName because that is the only agent identity the
+  // scheduler carries — placeOutboundCall is NOT the right place for this gate:
+  // its only `agentKey`-passing callers are the two test-call-phone endpoints,
+  // which must keep working for a paused agent.
+  const agentKey = row.persona ?? row.workflowName;
+  if (row.orgId && agentKey) {
+    const dispatchable = await isAgentDispatchable(row.orgId, agentKey);
+    if (!dispatchable.ok) {
+      return { ok: false, reason: "agent_disabled", detail: dispatchable.reason };
+    }
   }
 
   // Dispatch through the shared placement path so a scheduled retry dials
@@ -205,6 +223,20 @@ export async function executeDueScheduledCalls() {
         continue;
       }
 
+      if (!result.ok && result.reason === "agent_disabled") {
+        // Cancel rather than defer: unlike a calling window or an FTSA cap,
+        // this does not resolve by waiting. The merchant turned the agent off
+        // (or switched vertical out from under it), and retrying every 30min
+        // until someone turns it back on would just accumulate silent churn.
+        // The reason is persisted so the Orders page can say why.
+        console.warn(`[scheduler] canceling scheduled call id=${row.id} to ${row.toNumber} — ${result.detail}`);
+        await db
+          .update(scheduledCalls)
+          .set({ status: "canceled", lastBlockReason: result.reason, lastBlockDetail: result.detail, blockedAt: new Date() })
+          .where(eq(scheduledCalls.id, row.id));
+        continue;
+      }
+
       if (!result.ok) {
         console.error(`[scheduler] could not place scheduled call id=${row.id} to ${row.toNumber}: ${result.detail}`);
         await db
@@ -275,8 +307,10 @@ export async function callScheduledRowNow(orgId: string, rowId: number): Promise
   try {
     const result = await dispatchScheduledCall(row);
     if (!result.ok) {
-      // DNC stays canceled permanently (never eligible again); a blocked
-      // calling-window, attempt-cap, or a failed placement all go back to
+      // DNC stays canceled permanently (never eligible again); so does a
+      // disabled agent (ADR-092 — the sweep would only re-block it, and the
+      // merchant is the one who turned it off). A blocked calling-window,
+      // attempt-cap, or a failed placement all go back to
       // "pending" so the normal sweep can still pick it up automatically
       // later — the merchant tried to force it now and couldn't, that
       // doesn't mean the trigger itself should be lost.
@@ -286,14 +320,20 @@ export async function callScheduledRowNow(orgId: string, rowId: number): Promise
       await db
         .update(scheduledCalls)
         .set({
-          status: result.reason === "dnc" ? "canceled" : "pending",
+          status: result.reason === "dnc" || result.reason === "agent_disabled" ? "canceled" : "pending",
           lastBlockReason: result.reason,
           lastBlockDetail: result.detail,
           blockedAt: new Date(),
         })
         .where(eq(scheduledCalls.id, rowId));
       const statusCode =
-        result.reason === "dnc" ? 403 : result.reason === "calling_window" ? 409 : result.reason === "attempt_cap" ? 429 : 502;
+        result.reason === "dnc"
+          ? 403
+          : result.reason === "calling_window" || result.reason === "agent_disabled"
+            ? 409
+            : result.reason === "attempt_cap"
+              ? 429
+              : 502;
       return { ok: false, statusCode, error: result.detail };
     }
 

@@ -7,6 +7,12 @@ let lastPlivoParams: any = null;
 let lastExotelParams: any = null;
 let mockUpdateCalls: { table: string | undefined; data: any }[] = [];
 let mockClaimReturning: any[] = [{ id: 1 }];
+// ADR-092: the agent on/off gate reads org_agent_configs + agent_templates.
+// Empty (the default) means "no config row, key isn't a catalog template",
+// which the gate deliberately treats as dispatchable — that is why every
+// pre-existing test in this file still dials with persona "test-persona".
+let mockAgentConfigRows: any[] = [];
+let mockAgentTemplateRows: any[] = [];
 
 function getTableName(table: any): string | undefined {
   if (!table) return undefined;
@@ -27,6 +33,10 @@ mock.module("../../database", () => {
                 result = mockSelectedOrgs;
               } else if (tableName === "scheduled_calls") {
                 result = mockScheduledCallRows;
+              } else if (tableName === "org_agent_configs") {
+                result = mockAgentConfigRows;
+              } else if (tableName === "agent_templates") {
+                result = mockAgentTemplateRows;
               }
               const mockQuery: any = [...result];
               mockQuery.limit = () => result;
@@ -129,6 +139,8 @@ describe("Scheduler - Outbound Caller ID resolution", () => {
     mockCallingWindowResult = { allowed: true };
     mockUpdateCalls = [];
     mockClaimReturning = [{ id: 1 }];
+    mockAgentConfigRows = [];
+    mockAgentTemplateRows = [];
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
   });
 
@@ -234,6 +246,8 @@ describe("Scheduler — DNC and calling-window gates (sweep)", () => {
     mockCallingWindowResult = { allowed: true };
     mockUpdateCalls = [];
     mockClaimReturning = [{ id: 1 }];
+    mockAgentConfigRows = [];
+    mockAgentTemplateRows = [];
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
   });
 
@@ -343,6 +357,8 @@ describe("callScheduledRowNow — manual call-now button", () => {
     mockCallingWindowResult = { allowed: true };
     mockUpdateCalls = [];
     mockClaimReturning = [{ id: 1 }];
+    mockAgentConfigRows = [];
+    mockAgentTemplateRows = [];
     process.env.TWILIO_PHONE_NUMBER = "+15551112222";
   });
 
@@ -418,5 +434,76 @@ describe("callScheduledRowNow — manual call-now button", () => {
 
     expect(result.ok).toBe(true);
     expect(lastTwilioCallParams).toBeDefined();
+  });
+});
+
+/**
+ * ADR-092. `org_agent_configs.enabled` used to be decorative: the "Paused" pill
+ * in the agents UI changed a dashboard counter and nothing on the call path, so
+ * an agent a merchant had explicitly turned off still placed automated calls.
+ * For an outbound product under TCPA/DNC, "I turned that agent off" is a
+ * compliance claim, so these pin it as a real dispatch gate.
+ */
+describe("Scheduler — agent enablement gate (ADR-092)", () => {
+  beforeEach(() => {
+    mockScheduledCallRows = [];
+    mockSelectedOrgs = [];
+    lastTwilioCallParams = null;
+    mockDncResult = false;
+    mockCallingWindowResult = { allowed: true };
+    mockUpdateCalls = [];
+    mockClaimReturning = [{ id: 1 }];
+    mockAgentConfigRows = [];
+    mockAgentTemplateRows = [];
+    process.env.TWILIO_PHONE_NUMBER = "+15551112222";
+  });
+
+  it("does not dial for a paused agent, and CANCELS the row instead of deferring it — unlike a calling window or an FTSA cap this does not resolve by waiting", async () => {
+    mockScheduledCallRows = [
+      { id: 1, toNumber: "+15557776666", orgId: "org-123", attempt: 1, maxAttempts: 2, workflowName: "insurance-post-sale-welcome", persona: "insurance-post-sale-welcome" },
+    ];
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888", vertical: "insurance" }];
+    mockAgentConfigRows = [{ enabled: false }];
+    mockAgentTemplateRows = [{ key: "insurance-post-sale-welcome" }];
+
+    await executeDueScheduledCalls();
+
+    expect(lastTwilioCallParams).toBeNull();
+    const cancelUpdate = mockUpdateCalls.find((u) => u.table === "scheduled_calls" && u.data.status === "canceled");
+    expect(cancelUpdate).toBeDefined();
+    expect(cancelUpdate!.data.lastBlockReason).toBe("agent_disabled");
+    expect(typeof cancelUpdate!.data.lastBlockDetail).toBe("string");
+    expect(cancelUpdate!.data.blockedAt).toBeInstanceOf(Date);
+    // Must NOT be requeued — no "pending" write for this row.
+    expect(mockUpdateCalls.some((u) => u.table === "scheduled_calls" && u.data.status === "pending")).toBe(false);
+  });
+
+  it("still dials when the agent's config row says enabled", async () => {
+    mockScheduledCallRows = [
+      { id: 1, toNumber: "+15557776666", orgId: "org-123", attempt: 1, maxAttempts: 2, workflowName: "insurance-post-sale-welcome", persona: "insurance-post-sale-welcome" },
+    ];
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888", vertical: "insurance" }];
+    mockAgentConfigRows = [{ enabled: true }];
+    mockAgentTemplateRows = [{ key: "insurance-post-sale-welcome" }];
+
+    await executeDueScheduledCalls();
+
+    expect(lastTwilioCallParams).toBeDefined();
+  });
+
+  it("surfaces a paused agent to the manual Call-now button as 409 and cancels the row, rather than silently requeueing it", async () => {
+    mockScheduledCallRows = [
+      { id: 5, orgId: "org-123", toNumber: "+15557776666", status: "pending", workflowName: "insurance-post-sale-welcome", persona: "insurance-post-sale-welcome", attempt: 1, maxAttempts: 2 },
+    ];
+    mockSelectedOrgs = [{ id: "org-123", outboundNumber: "+15559998888", vertical: "insurance" }];
+    mockAgentConfigRows = [{ enabled: false }];
+    mockAgentTemplateRows = [{ key: "insurance-post-sale-welcome" }];
+
+    const result = await callScheduledRowNow("org-123", 5);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.statusCode).toBe(409);
+    expect(lastTwilioCallParams).toBeNull();
+    expect(mockUpdateCalls.some((u) => u.table === "scheduled_calls" && u.data.status === "canceled")).toBe(true);
   });
 });

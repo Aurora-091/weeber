@@ -619,7 +619,7 @@ export const scheduledCalls = pgTable("scheduled_calls", {
   // compliance view can show WHY. `lastBlockReason` is one of the
   // DispatchResult reason enum values (dnc / calling_window / attempt_cap /
   // insurance_number_series / insurance_producer_licensing /
-  // india_number_series / place_failed); `lastBlockDetail` is the
+  // india_number_series / agent_disabled / place_failed); `lastBlockDetail` is the
   // human-readable sentence; `blockedAt` is when it was last recorded.
   // Cleared back to null on a successful dispatch so a deferred-then-succeeded
   // row never shows a stale reason.

@@ -18,6 +18,7 @@ export type BlockReason =
   | "insurance_number_series"
   | "insurance_producer_licensing"
   | "india_number_series"
+  | "agent_disabled"
   | "place_failed";
 
 type BlockReasonMeta = {
@@ -58,6 +59,11 @@ const BLOCK_REASONS: Record<BlockReason, BlockReasonMeta> = {
   india_number_series: {
     label: "Blocked number series",
     description: "This number falls in a series blocked by India DLT number-series rules, so the call wasn't placed.",
+    transient: false,
+  },
+  agent_disabled: {
+    label: "Agent paused",
+    description: "The agent this call runs on is turned off (or no longer belongs to your vertical), so the call was cancelled — turn the agent back on and re-trigger it.",
     transient: false,
   },
   place_failed: {

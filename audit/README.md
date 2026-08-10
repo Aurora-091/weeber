@@ -46,6 +46,19 @@ and are read chronologically, oldest first.
   call can fail over into an Indian-accented Sarvam voice (P0) and how an unrecognized number silently gets
   US TCPA rules (P1). 8 findings, two proposed ADRs.
 
+- **`2026-08-10-audit-12-agent-enablement-and-vertical-drift.md`** — opened to explain "I can't see the
+  new agent in the old accounts", which turned out not to be a bug: the agent list filters on the org's
+  `vertical` + `active` only, so the new insurance template is correctly invisible to the one shopify org
+  and correctly visible to all three insurance orgs regardless of provisioning. Two real defects found
+  while confirming it, both the ADR-091 shape (enforced on the browse path, ignored on the execution
+  path): `org_agent_configs.enabled` is read in exactly 2 cosmetic places and **nowhere** on the call
+  path, so the UI's "Paused" pill is decorative and a paused agent still answers and dials (P0, confirmed
+  live — `rishipawar8999`/`insurance-post-sale-welcome` is paused with an active number); and
+  `PATCH /settings` writes `vertical` with no cleanup, leaving off-vertical config rows that the list
+  query hides but the resolver still reaches — 3 such ghost rows in production, one holding an active
+  caller ID (P1). Includes the one enforcement decision (inbound call to a paused agent) that is a
+  product call, not an engineering one. 3 findings, one proposed ADR.
+
 See also `docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md` for a source-level audit of
 the Agents UI framework paired with COGS/unit-economics analysis — kept under `docs/` rather than here
 since it's half product/GTM content, not a pure code audit.

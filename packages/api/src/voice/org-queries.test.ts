@@ -25,10 +25,25 @@ function thenable(rows: unknown[]) {
 
 let lastInsertValues: Record<string, unknown> | undefined;
 
+/**
+ * isAgentDispatchable reads agent_templates TWICE with different predicates
+ * (does this key exist at all, then is it visible for the org's vertical), and
+ * this fake db keys rows by table name only. When set, this queue answers those
+ * two reads in order so a test can say "the template exists but is not visible
+ * to this vertical" — the leftover-row case.
+ */
+let agentTemplateResponses: unknown[][] | undefined;
+
 mock.module("../database", () => ({
   db: {
     select: () => ({
-      from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
+      from: (table: unknown) => {
+        const name = getTableName(table) ?? "";
+        if (name === "agent_templates" && agentTemplateResponses?.length) {
+          return thenable(agentTemplateResponses.shift() ?? []);
+        }
+        return thenable(rowsByTable[name] ?? []);
+      },
     }),
     insert: () => ({
       values: (v: Record<string, unknown>) => {
@@ -49,6 +64,7 @@ import {
   getShopifyStatus,
   buildInstallUrl,
   upsertAgentConfig,
+  isAgentDispatchable,
 } from "./org-queries";
 
 const now = Date.now();
@@ -410,5 +426,62 @@ describe("upsertAgentConfig", () => {
     expect(lastInsertValues?.sttFallbackOrder).toBeUndefined();
     expect(lastInsertValues?.ttsFallbackOrder).toBeUndefined();
     expect(lastInsertValues?.llmFallbackModels).toBeUndefined();
+  });
+});
+
+/**
+ * ADR-092. `org_agent_configs.enabled` was read in two cosmetic places and
+ * nowhere on the call path, so a paused agent still dialled. These pin the
+ * predicate that now gates scheduled dispatch — including the two fail-OPEN
+ * cases, which are the ones a careless "just check enabled" refactor breaks.
+ */
+describe("isAgentDispatchable (ADR-092)", () => {
+  beforeEach(() => {
+    agentTemplateResponses = undefined;
+    rowsByTable = {
+      orgs: [{ id: "org-1", vertical: "insurance" }],
+      org_agent_configs: [],
+      agent_templates: [{ key: "insurance-post-sale-welcome" }],
+    };
+  });
+
+  it("blocks an agent whose config row is explicitly disabled", async () => {
+    rowsByTable.org_agent_configs = [{ enabled: false }];
+    const result = await isAgentDispatchable("org-1", "insurance-post-sale-welcome");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("paused");
+  });
+
+  it("allows an agent whose config row is enabled", async () => {
+    rowsByTable.org_agent_configs = [{ enabled: true }];
+    expect((await isAgentDispatchable("org-1", "insurance-post-sale-welcome")).ok).toBe(true);
+  });
+
+  it("fails OPEN when there is no config row at all — an org that never touched the agents UI runs on template defaults, and treating absent as disabled would stop every unconfigured org's first workflow call", async () => {
+    rowsByTable.org_agent_configs = [];
+    expect((await isAgentDispatchable("org-1", "insurance-post-sale-welcome")).ok).toBe(true);
+  });
+
+  it("blocks a template left over from a previous vertical, even when its row says enabled (audit 12 found 3 of these in production, one holding an active caller ID)", async () => {
+    rowsByTable.org_agent_configs = [{ enabled: true }];
+    // 1st read: the key IS a real template. 2nd read: it is not visible for
+    // this org's current vertical.
+    agentTemplateResponses = [[{ key: "shopify-cart-recovery" }], []];
+    const result = await isAgentDispatchable("org-1", "shopify-cart-recovery");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("insurance");
+  });
+
+  it("fails OPEN for an agent identity that is not a catalog template key at all — the scheduler keys this on persona/workflowName, and the legacy engine writes the merchant's own workflow name there", async () => {
+    rowsByTable.org_agent_configs = [];
+    agentTemplateResponses = [[]]; // no template with that key exists
+    expect((await isAgentDispatchable("org-1", "my-custom-followup-flow")).ok).toBe(true);
+  });
+
+  it("blocks when the org no longer exists rather than resolving against a null vertical", async () => {
+    rowsByTable.orgs = [];
+    const result = await isAgentDispatchable("org-gone", "insurance-post-sale-welcome");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("org-gone");
   });
 });

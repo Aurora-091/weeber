@@ -198,6 +198,86 @@ export async function getAgentConfigsForOrg(orgId: string) {
   }));
 }
 
+/**
+ * Is this agent allowed to place an automated outbound call right now? (ADR-092)
+ *
+ * `org_agent_configs.enabled` existed since the agents UI shipped but was read
+ * in exactly two places, both cosmetic (the setup-status `enabledAgentCount`
+ * and an admin list column). Nothing on the call path consulted it, so the
+ * "Paused" pill in the dashboard was decorative: a paused agent still resolved
+ * its persona and still dialled. For an outbound product under TCPA/DNC, "I
+ * turned that agent off" is a compliance claim, so it had better be true.
+ *
+ * Deliberately NOT enforced inside `resolveAgentConfig`/`resolvePersona`. Those
+ * are shared with the test surfaces (`test-chat`, `test-call-token`,
+ * `test-call-phone`, `synthetic-test`, `compiled-prompt`), and a merchant must
+ * be able to try an agent out *before* enabling it — gating resolution would
+ * break the only configure-then-verify-then-go-live flow that exists.
+ *
+ * Also checks the template still belongs to the org's current vertical: audit
+ * 12 found 3 production config rows left behind by a vertical switch, which
+ * `getAgentConfigsForOrg` hides (it narrows by vertical) but the resolver still
+ * reaches, because `visibleTemplatesForOrg` deliberately has no vertical
+ * narrowing. Invisible, un-pausable, and one of them held an active caller ID.
+ *
+ * A MISSING config row is allowed through: an org that has never configured an
+ * agent runs on template defaults (see `getAgentConfigsForOrg`, where `config`
+ * is null and the UI defaults `enabled` to true). Treating absent as disabled
+ * would stop every unconfigured org's first workflow call.
+ */
+export async function isAgentDispatchable(
+  orgId: string,
+  templateKey: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const org = await getOrg(orgId);
+  if (!org) return { ok: false, reason: `Org ${orgId} no longer exists.` };
+
+  const [row] = await db
+    .select({ enabled: orgAgentConfigs.enabled })
+    .from(orgAgentConfigs)
+    .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.templateKey, templateKey)))
+    .limit(1);
+
+  if (row && !row.enabled) {
+    return { ok: false, reason: `Agent "${templateKey}" is paused, so it will not place automated calls.` };
+  }
+
+  // An agent identity that is not a template key at all is NOT a block. The
+  // scheduler keys this on `row.persona ?? row.workflowName`, and neither is
+  // guaranteed to be a template key: the legacy engine writes
+  // `persona: workflowName` (engine.ts) for arbitrary merchant-named workflows,
+  // the graph engine writes whatever `config.persona` a call node carries
+  // (scaffold.ts ships it as ""), and resolveAgentConfig itself treats an
+  // unrecognised persona as "no template" and falls through to the default
+  // prompt rather than erroring. Failing closed here would silently cancel
+  // every workflow whose call node isn't named after a catalog template.
+  const [exists] = await db
+    .select({ key: agentTemplates.key })
+    .from(agentTemplates)
+    .where(eq(agentTemplates.key, templateKey))
+    .limit(1);
+  if (!exists) return { ok: true };
+
+  // It IS a real template — so it must still be one this org can see, in its
+  // current vertical. A leftover cross-vertical row is not a dispatchable
+  // agent: getAgentConfigsForOrg hides it (it narrows by vertical), so the
+  // merchant cannot even find it to pause it, yet the resolver still reaches
+  // it because visibleTemplatesForOrg deliberately has no vertical narrowing.
+  const [tmpl] = await db
+    .select({ key: agentTemplates.key })
+    .from(agentTemplates)
+    .where(and(visibleTemplatesForVertical(org.vertical, orgId), eq(agentTemplates.key, templateKey)))
+    .limit(1);
+  if (!tmpl) {
+    return {
+      ok: false,
+      reason: `Agent "${templateKey}" is not available to this org's "${org.vertical}" setup (left over from a previous vertical?).`,
+    };
+  }
+
+  return { ok: true };
+}
+
 /** Upsert one agent's frame config (AgentFrameSchema-validated by the caller). */
 export type UpsertAgentConfigResult =
   | { ok: true; row: typeof orgAgentConfigs.$inferSelect }
