@@ -111,6 +111,25 @@ Deferred, unchanged, and still blocking a real campaign per audit 16 §8: licens
 The empty `do_not_call` table means the DNC gate currently passes everything it is asked about — it is
 hard, and it is also uninformed, which is a separate problem this ADR does not touch.
 
+## Correction (2026-08-11, same day)
+
+The "rejected alternative" section above claims test mode "expires at a hard 24h with no UI
+surfacing the expiry (so a campaign starts 403ing mid-flight and looks like an outage)". **That is
+factually wrong and is retracted.** Test mode has a labelled toggle on the Settings page with copy
+explaining exactly which gates it lifts and which it never lifts, and the dashboard renders a
+persistent warning pill — "Compliance test mode — calling window OFF" — whose tooltip names the
+expiry timestamp (`packages/web/src/web/pages/app/home.tsx:441`,
+`packages/web/src/web/pages/app/settings.tsx:455`). The expiry is surfaced in two places.
+
+The decision itself is unaffected: the other two objections stand (test mode also lifts the
+calling window, which producer licensing has nothing to do with, and it is a manual per-org toggle
+that does not scale to a customer who should simply never have been blocked). But one of three
+supporting claims was asserted without checking the frontend, and the ADR should not be read as
+evidence that test mode is poorly surfaced. It is not.
+
+Noted here rather than by editing the paragraph, per ADR-078 — a shipped ADR's reasoning is a
+record of what was actually believed at the time, including the parts that were wrong.
+
 ## Revisit when
 
 Any of: the roster is populated for the pilot org (the lenient branch stops being reachable for them);
