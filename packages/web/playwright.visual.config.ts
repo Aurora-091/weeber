@@ -32,7 +32,15 @@ import { defineConfig, devices } from "@playwright/test";
  *   - the build inputs are pinned (.env.visual via `vite build --mode visual`)
  *   - the three OS-level rasteriser knobs are pinned (srgb, no hinting, no LCD
  *     text — see launchOptions.args)
- *   - the font FILES are pinned to webfonts, enforced by font-provenance.spec.ts
+ *   - the font FILES are pinned — self-hosted @fontsource-variable packages at a
+ *     version recorded in bun.lock, bundled same-origin by Vite (ADR-099). This
+ *     was the ASPIRATIONAL pin until 2026-08-11: the fonts came off the Google
+ *     Fonts CDN at render time, so "pinned to webfonts" was all
+ *     font-provenance.spec.ts could prove — that a glyph came from *a* webfont,
+ *     not from the *same* one as last week. Upstream Fraunces moved and took
+ *     main red for four commits with no change under packages/web. The spec
+ *     still enforces "a webfont, never an OS font"; ALLOWED_OFF_ORIGIN being
+ *     empty in _settle.ts is what now enforces "and it is ours"
  * Proof: 36 baselines regenerated on Debian trixie passed unmodified on
  * ubuntu-24.04 in CI (run 3 of PR #2, all 13 checks green). Before that flag was
  * added, 12 shots differed between the two machines on antialiasing mode alone.

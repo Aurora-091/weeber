@@ -40,7 +40,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");

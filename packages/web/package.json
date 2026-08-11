@@ -18,6 +18,10 @@
     "test:fonts": "playwright test -c playwright.visual.config.ts font-provenance.spec.ts"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/fraunces": "5.3.0",
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@runablehq/website-runtime": "^0.10.0",
     "@supabase/supabase-js": "^2.110.2",
     "@tanstack/react-query": "^5.100.6",

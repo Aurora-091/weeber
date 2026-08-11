@@ -24,14 +24,19 @@ export async function blockApi(page: Page) {
  * Hosts a screenshot run is allowed to reach. Everything else off-origin is
  * aborted by `blockOffOrigin`.
  *
- * Google Fonts is on this list under protest. styles.css:1 @imports the CSS2
- * endpoint, so the four brand families are fetched from a third-party CDN at
- * test time — which means the fonts, and therefore the pixels, are an input this
- * repo does not version. Self-hosting them is the real fix; until then the guard
- * below at least makes any change to what gets rasterised fail loudly instead of
- * quietly moving 78 baselines.
+ * EMPTY, AND THAT IS THE POINT (ADR-099). It used to hold fonts.googleapis.com
+ * and fonts.gstatic.com "under protest", because styles.css:1 @imported the CSS2
+ * endpoint — so the four brand families, and therefore every pixel, were an input
+ * this repo did not version. It then failed exactly as predicted: upstream
+ * Fraunces changed and both `visual` and `fonts` went red on main with no change
+ * to any file under packages/web.
+ *
+ * The fonts are now @fontsource-variable packages pinned in bun.lock and bundled
+ * same-origin by Vite, so nothing legitimate needs an exemption. Adding a host
+ * back here means re-accepting an unversioned input into the baselines — don't,
+ * without an ADR that says why.
  */
-const ALLOWED_OFF_ORIGIN = ["fonts.googleapis.com", "fonts.gstatic.com"];
+const ALLOWED_OFF_ORIGIN: string[] = [];
 
 /**
  * Abort every off-origin request except the font CDN.

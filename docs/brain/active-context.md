@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-09
+updated: 2026-08-11
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,31 @@ updated: 2026-08-09
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **CI on `main` is green again; the cause was an unversioned third-party input (2026-08-11, ADR-099).**
+  `main` had been red for four commits — `visual`, `fonts`, `CI success` — while the whole range
+  changed exactly one file under `packages/web` (two lines in a test that renders nothing). Cause:
+  `styles.css:1` `@import`ed the Google Fonts CSS2 endpoint, so all 78 pixel baselines were a
+  photograph of whatever binary the CDN served that minute, and upstream Fraunces moved. The four
+  brand families are now `@fontsource-variable` packages pinned in `bun.lock` and bundled same-origin,
+  and `ALLOWED_OFF_ORIGIN` in the screenshot guard is empty — a screenshot run reaches nothing but
+  `localhost`. **Zero baseline bytes changed**, which is the proof: pinning restored the prior
+  rendering rather than laundering the drift into the baselines. No ratchet was widened.
+  **Take from this:** when a pixel gate goes red with no source change, work the four pins in
+  `playwright.visual.config.ts`'s header before touching a baseline or an `ALLOWED` list. One of them
+  had been aspirational rather than true.
+  Also fixed in the same pass: `2a29a18` left an unused `dirname` import in
+  `tools/dead-code/knip-gate.ts`, which is all the `lint` failure was.
+
+- **Two facts that were stale everywhere (2026-08-11).**
+  1. The GitHub repo is **`Aurora-091/weeber`**, not `openvent`. ADR-078 item G had left the rename
+     "to be decided separately". The old slug `301`s, so git remotes are fine, but API calls that do
+     not follow redirects break; the numeric id `1295249026` is stable. Historical ADRs/audits still
+     say `openvent` and are deliberately left alone.
+  2. The **Railway staging deploy of `2a29a18` is `SUCCESS`** on `api-staging-b11d.up.railway.app`,
+     no longer `NEEDS_APPROVAL`, and staging's builder is now `NIXPACKS` matching production. Still
+     true and still the real risk: staging shares ~33 of 40 env vars with production including
+     `DATABASE_URL` and the Twilio account, so "staging" dials and writes production.
 
 - **First outbound pilot prep, and the structural finding underneath it (2026-08-09, ADR-081…090).**
   Ten ADRs landed in one day and they are not ten topics. The scope decision is ADR-081: the agent

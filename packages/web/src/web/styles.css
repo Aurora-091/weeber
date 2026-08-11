@@ -1,13 +1,34 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap");
+/* Brand typefaces, self-hosted and version-pinned (ADR-099).
+ *
+ * These used to be one `@import url("https://fonts.googleapis.com/css2?...")`.
+ * That made the rasterised glyphs — and therefore all 78 pixel baselines and the
+ * font-provenance gate — a function of whatever Google's CDN served that minute,
+ * an input this repo did not version and could not diff. It broke exactly the way
+ * you would expect: `visual` and `fonts` both went red on main with no change to
+ * any file under packages/web, because upstream Fraunces moved.
+ *
+ * @fontsource-variable ships the same Google Fonts binaries from npm, pinned in
+ * bun.lock, bundled by Vite and served same-origin. `standard` = the opsz + wght
+ * axes, i.e. what the CSS2 endpoint returned by default; the italic sheet is
+ * separate because Fraunces ships italics as a second file.
+ *
+ * DO NOT REINTRODUCE A CDN @import. blockOffOrigin() in e2e-visual/_settle.ts now
+ * aborts every off-origin request with no font exemption, so a CDN font would
+ * fail the visual suite rather than quietly move the baselines again. */
+@import "@fontsource-variable/fraunces/standard.css";
+@import "@fontsource-variable/fraunces/standard-italic.css";
+@import "@fontsource-variable/inter-tight/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
+@import "@fontsource-variable/bricolage-grotesque/standard.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Fraunces", ui-serif, serif;
-  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Fraunces Variable", "Fraunces", ui-serif, serif;
+  --font-sans: "Inter Tight Variable", "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
