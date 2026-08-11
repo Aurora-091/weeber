@@ -99,6 +99,10 @@ export async function checkInsuranceNumberSeriesCompliance(
  * unrecognized area code would be far more disruptive than the risk it's guarding against, and
  * matches `checkUsCallingWindow`'s own existing "safe fallback" philosophy for unresolved area
  * codes rather than inventing a stricter standard just for this check.
+ *
+ * An EMPTY roster also does not block (ADR-098) — see the inline comment at the check itself. The
+ * gate enforces against a roster the org has actually asserted; it does not treat the absence of a
+ * roster as an assertion of no coverage.
  */
 export async function checkInsuranceProducerLicensing(
   orgId: string | null | undefined,
@@ -127,6 +131,31 @@ export async function checkInsuranceProducerLicensing(
     .select({ licensedStates: insuranceAdvisors.licensedStates })
     .from(insuranceAdvisors)
     .where(eq(insuranceAdvisors.orgId, orgId));
+
+  // ADR-098 — an unconfigured roster is not a failed licensing claim.
+  //
+  // ADR-096 put this gate on all five dial paths, which turned an empty
+  // `insurance_advisors` table into a total US dialing block for every
+  // insurance org, including test calls. That is the wrong default: an org
+  // that has never entered a roster has made no claim about its coverage,
+  // whereas an org with a roster that excludes this state has. Those are
+  // different facts and they now get different answers — empty allows and
+  // warns, non-empty enforces. Note this gate already fails open on an
+  // unresolved area code a few lines above, so refusing here was also
+  // internally inconsistent: an org with no roster was treated more harshly
+  // than a number whose state we could not determine at all.
+  //
+  // The warning is deliberately loud and unconditional (not sampled, not
+  // debug-level): it is the only signal that a real US solicitation went out
+  // without a licensing check, and audit follow-up depends on it being
+  // greppable in logs.
+  if (advisors.length === 0) {
+    console.warn(
+      `[compliance] insurance org ${orgId} has no advisors on file — producer licensing NOT verified ` +
+        `for a call to ${state}. Allowing (ADR-098). Populate Settings → Licensed advisors to enforce.`,
+    );
+    return { allowed: true };
+  }
 
   const isLicensed = advisors.some((advisor) => advisor.licensedStates.includes(state));
   if (!isLicensed) {

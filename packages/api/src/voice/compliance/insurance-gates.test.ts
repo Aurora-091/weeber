@@ -209,4 +209,40 @@ describe("checkInsuranceProducerLicensing — Platform gap #2 (US producer state
     const result = await checkInsuranceProducerLicensing("org-1", "+12125550100"); // 212 -> NY, not licensed
     expect(result.allowed).toBe(false);
   });
+
+  // ADR-098. An org that has never entered a roster has made no coverage claim;
+  // an org whose roster excludes the state has. Different facts, different
+  // answers. Before ADR-098 both refused, which — once ADR-096 put this gate on
+  // all five dial paths — meant an unconfigured insurance org could not place a
+  // single US call, test calls included.
+  it("allows when the roster is empty — an unconfigured roster is not a failed licensing claim (ADR-098)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance" }];
+    advisorRows = [];
+    const result = await checkInsuranceProducerLicensing("org-1", "+12125550100"); // 212 -> NY
+    expect(result.allowed).toBe(true);
+  });
+
+  it("warns loudly when it allows an unverified call through an empty roster (ADR-098)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance" }];
+    advisorRows = [];
+    const original = console.warn;
+    const lines: string[] = [];
+    console.warn = (...args: unknown[]) => void lines.push(args.join(" "));
+    try {
+      await checkInsuranceProducerLicensing("org-1", "+12125550100");
+    } finally {
+      console.warn = original;
+    }
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toContain("no advisors on file");
+    expect(lines[0]).toContain("NY");
+    expect(lines[0]).toContain("org-1");
+  });
+
+  it("still enforces once ANY advisor exists — an empty roster is the only lenient case (ADR-098)", async () => {
+    orgRows = [{ id: "org-1", vertical: "insurance" }];
+    advisorRows = [{ orgId: "org-1", licensedStates: [] }];
+    const result = await checkInsuranceProducerLicensing("org-1", "+12125550100"); // 212 -> NY
+    expect(result.allowed).toBe(false);
+  });
 });
