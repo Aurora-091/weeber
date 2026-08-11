@@ -1,0 +1,240 @@
+{
+  "main": {
+    "id": "52ecf827e9dea3c5",
+    "type": "split",
+    "children": [
+      {
+        "id": "f677abda28d08e67",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a8af724e7511a745",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/brain/project-brief.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "project-brief"
+            }
+          },
+          {
+            "id": "6c19000f59ed414e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Untitled.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Untitled"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "83238b7bfa915967",
+    "type": "split",
+    "children": [
+      {
+        "id": "d561a0ab009620f6",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1b16d6247a09651f",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "d039f40e31c73300",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "f8905643ccf5e0ea",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "092f840c4c1344c3",
+    "type": "split",
+    "children": [
+      {
+        "id": "f56a127e008c7bbe",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "06cb0f1d46266b88",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "WEEBER-PLAN.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for WEEBER-PLAN"
+            }
+          },
+          {
+            "id": "ab7f3dc926feef63",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "WEEBER-PLAN.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from WEEBER-PLAN"
+            }
+          },
+          {
+            "id": "b94ea4b84b4865a1",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "d8de6b3339484598",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "8429868bd9b57e46",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "WEEBER-PLAN.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of WEEBER-PLAN"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "6c19000f59ed414e",
+  "lastOpenFiles": [
+    "docs/brain/project-brief.md",
+    "Untitled.md",
+    "docs/brain/progress.md",
+    "docs/brain/active-context.md",
+    "docs/brain/00-index.md",
+    "docs/changelog/2026-07.md",
+    "docs/changelog/README.md",
+    "docs/changelog/reference-sections.md",
+    "docs/decisions/adr-061-leads-layer-lean-phase-1-relabel-and-orgid-as-hosted-form-token.md",
+    "docs/decisions/adr-040-configurable-per-agent-language-multi-provider-stt-tts-sarva.md",
+    "CLAUDE.md",
+    "DECISIONS.md",
+    "README.md",
+    "UI-DESIGN-BRIEF.md",
+    "WEEBER-PLAN.md",
+    "packages/api/TESTING.md",
+    "docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md",
+    "docs/reference/api-reference.md",
+    "docs/workflow-canvas/architecture.md",
+    "docs/insurance-language-variants-task.md",
+    "docs/README.md",
+    "architecture/voice-orchestration.md",
+    "architecture/data-model.md",
+    "architecture/api-flow.md",
+    "packages/openvent-compliance/src/packs/us.ts",
+    "packages/openvent-compliance/src/packs/us.test.ts",
+    "packages/openvent-compliance/src/packs/types.ts",
+    "packages/openvent-compliance/src/packs/india.ts",
+    "packages/openvent-compliance/src/packs",
+    "docs/UI-UX-AUDIT-CONTEXT.md",
+    "packages/web/src/web/components/agent-config/FallbackControls.tsx",
+    "packages/web/src/web/components/agent-config",
+    "docs/voice-quality-and-india-status-2026-07-12.md",
+    "supabase/migrations/20260715134118_add_workflow_runs_version.sql",
+    "supabase/migrations/20260715133931_create_webhook_outbox.sql",
+    "supabase/migrations/20260715133558_create_twilio_status_events.sql"
+  ]
+}

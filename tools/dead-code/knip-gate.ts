@@ -41,11 +41,10 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { spawnSync } from "node:child_process";
 
-const HERE = dirname(new URL(import.meta.url).pathname);
-const REPO_ROOT = resolve(HERE, "../..");
-const BASELINE_PATH = resolve(HERE, "knip-baseline.json");
+
+const REPO_ROOT = resolve(import.meta.dir, "../..");
+const BASELINE_PATH = resolve(import.meta.dir, "knip-baseline.json");
 const JSON_OUT = process.argv.includes("--json");
 const UPDATE = process.argv.includes("--update");
 
@@ -78,17 +77,16 @@ type Category = (typeof CATEGORIES)[number];
 type Finding = { key: string; category: Category; file: string; name: string; line?: number };
 
 function runKnip(): unknown {
-  const res = spawnSync("bunx", ["knip-bun", "--no-progress", "--reporter", "json"], {
+  const res = Bun.spawnSync({
+    cmd: ["bun", "x", "knip-bun", "--no-progress", "--reporter", "json"],
     cwd: REPO_ROOT,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    // knip exits 1 when it finds anything, which is its normal state here.
-    // Only a missing binary or a crash is a real failure, detected via stdout below.
   });
-  if (res.error) die(`could not run knip-bun: ${res.error.message}`);
-  const out = (res.stdout ?? "").trim();
+  if (!res.success && res.exitCode === null) {
+    die("could not run knip-bun: process failed to start");
+  }
+  const out = (res.stdout?.toString() ?? "").trim();
   if (!out.startsWith("{")) {
-    die(`knip-bun produced no JSON (exit ${res.status}).\n${(res.stderr ?? "").slice(0, 2000)}`);
+    die(`knip-bun produced no JSON (exit ${res.exitCode}).\n${(res.stderr?.toString() ?? "").slice(0, 2000)}`);
   }
   try {
     return JSON.parse(out);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /**
  * Product routes render inside `AppShell`'s `<main>`, and the desktop sidebar
@@ -39,7 +39,7 @@ function tsxFiles(dir: string): string[] {
 
 describe("product routes size their grids against the content column, not the viewport", () => {
   for (const file of [...tsxFiles(APP_PAGES), ...tsxFiles(SHELL)]) {
-    const name = file.split("/").pop()!;
+    const name = basename(file);
     if (ALLOWED.has(name)) continue;
 
     test(`${name} uses container variants for grid columns`, () => {
