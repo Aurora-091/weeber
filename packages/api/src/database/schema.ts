@@ -279,7 +279,22 @@ export const callLatency = pgTable("call_latency", {
  * (`speechFinal`, captured as `turnStartedAt` in stream.ts) to the first
  * byte of TTS audio going back out. `llmTtftMs`/`ttsFirstByteMs` are the
  * two components of that budget, kept separately so a regression can be
- * attributed to the right stage. Greeting turns (not triggered by caller
+ * attributed to the right stage.
+ *
+ * ADR-107 (2026-08-12) — SEMANTIC CUTOVER on `ttsFirstByteMs`. Rows captured
+ * BEFORE this date measure it from the top of speak(), which is before the
+ * LLM has produced a token, so those values include the whole LLM stage and
+ * overlap `llmTtftMs` almost entirely. The claim above that the two are
+ * separable components was false for those rows. From this date the column
+ * is measured from the first character reaching TTS, so the two really are
+ * additive. Do not pool rows across the cutover: the 78 pre-cutover rows
+ * (11 internal test calls, 2026-07-18..2026-08-10, no customer traffic) were
+ * left in place rather than deleted, and are the reason this column was
+ * redefined instead of duplicated — preserving a second column forever to
+ * protect test data would have been the worse trade. `voiceToVoiceMs` is
+ * unaffected: its meaning and its values are identical on both sides.
+ *
+ * Greeting turns (not triggered by caller
  * speech) still get a row for their llm/tts components, but
  * `voiceToVoiceMs` is null for them — there's no caller-stopped-talking
  * instant to measure from.

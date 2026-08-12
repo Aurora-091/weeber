@@ -1390,6 +1390,33 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     toneTagFilter = newToneTagFilter();
 
     const ttsRequestedAt = Date.now();
+    /**
+     * ADR-107: the instant the first character of this turn's reply was
+     * handed to TTS, and the instant the first audio byte came back.
+     *
+     * `ttsRequestedAt` is captured at the top of speak(), which is BEFORE
+     * generate() has produced a single token. Measuring "TTS first byte"
+     * from it therefore charged the entire LLM stage to TTS. Every
+     * production row showed the tell: `voice_to_voice_ms - tts_first_byte_ms`
+     * was a near-constant ~127ms while `llm_ttft_ms` moved between 1.6s and
+     * 3.6s, i.e. tts_first_byte_ms was tracking the LLM, not the vocoder.
+     * The schema doc called llm/tts "the two components of that budget"
+     * when they in fact overlapped almost completely, so the dashboard
+     * reported TTS as 1748ms of a 1878ms turn and pointed every latency
+     * investigation at the wrong provider.
+     *
+     * The honest anchor is the lazy-connect facade below (ADR-083), which
+     * is the first moment TTS has anything to synthesize. Note this is
+     * deliberately NOT the socket-open instant: connect time is real TTS
+     * cost and belongs inside the measurement.
+     *
+     * `turnFirstAudioAt` is kept as an absolute instant rather than being
+     * reconstructed from an offset, so voiceToVoiceMs (the caller-truth
+     * metric, whose meaning and value are unchanged by this fix) no longer
+     * has to be rebuilt as `anchor + offset - start`.
+     */
+    let ttsTextFirstSentAt: number | undefined;
+    let turnFirstAudioAt: number | undefined;
     let turnTtsFirstByteMs: number | undefined;
     // Resolved once the TTS provider reports it's sent every audio chunk for
     // this turn — used below to avoid cutting a hangUp/transfer closing line
@@ -1421,6 +1448,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
         void persistLatency();
       }
+      // ADR-107: a cache hit does no TTS work, so the stage cost is genuinely
+      // 0 — but voiceToVoiceMs still has to know WHEN the audio went out, so
+      // record the instant too rather than leaving it undefined (which would
+      // now null out v2v on every cached turn).
+      turnFirstAudioAt = Date.now();
       turnTtsFirstByteMs = 0;
       if (streamSid) {
         try {
@@ -1476,7 +1508,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         const real = connectTts(
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
-              ttsFirstByteMs = Date.now() - ttsRequestedAt;
+              // ADR-107: same anchor correction as the per-turn metric below.
+              // The call-level column had the identical defect — it was
+              // "speak() start -> first audio" on the call's first speaking
+              // turn, so it silently included that turn's LLM TTFT.
+              ttsFirstByteMs = Date.now() - (ttsTextFirstSentAt ?? ttsRequestedAt);
               if (pickupToFirstAudioMs === undefined && callAnsweredAt !== undefined) {
                 pickupToFirstAudioMs = Date.now() - callAnsweredAt;
                 console.log(`[voice] pickup-to-first-audio: ${pickupToFirstAudioMs}ms`);
@@ -1484,7 +1520,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               void persistLatency();
             }
             if (turnTtsFirstByteMs === undefined) {
-              turnTtsFirstByteMs = Date.now() - ttsRequestedAt;
+              // ADR-107: measured from the first character reaching TTS, not
+              // from the top of the turn. `ttsTextFirstSentAt` is always set
+              // by now — audio cannot arrive on a socket that was never
+              // handed text — but fall back to the old anchor rather than
+              // recording nothing if that ever stops holding.
+              turnFirstAudioAt = Date.now();
+              turnTtsFirstByteMs = turnFirstAudioAt - (ttsTextFirstSentAt ?? ttsRequestedAt);
             }
             options?.onAudioChunk?.(base64Audio);
             if (!streamSid) return;
@@ -1579,6 +1621,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // which is also when the provider expects it.
       tts = {
         sendText(text: string) {
+          // ADR-107: the honest start of the TTS stage for this turn. Set
+          // before the socket opens so connect time counts as TTS cost.
+          if (ttsTextFirstSentAt === undefined) ttsTextFirstSentAt = Date.now();
           if (!realTts) {
             realTts = attemptTts(activeTtsProvider ?? primaryTtsProvider);
             // A tone parsed before the socket existed still applies to this
@@ -1691,8 +1736,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       await persistTurnLatency(thisTurnIndex, {
         llmTtftMs: options?.turnLlmTtftRef?.value,
         ttsFirstByteMs: turnTtsFirstByteMs,
-        voiceToVoiceMs: options?.turnStartedAt !== undefined && turnTtsFirstByteMs !== undefined
-          ? ttsRequestedAt + turnTtsFirstByteMs - options.turnStartedAt
+        // ADR-107: unchanged in meaning AND in value — caller stopped talking
+        // -> first audio byte out. Previously reconstructed as
+        // `ttsRequestedAt + turnTtsFirstByteMs`, which was only correct while
+        // turnTtsFirstByteMs happened to be anchored at ttsRequestedAt. Now
+        // that the TTS stage is measured from its own anchor, v2v reads the
+        // absolute first-audio instant directly instead.
+        voiceToVoiceMs: options?.turnStartedAt !== undefined && turnFirstAudioAt !== undefined
+          ? turnFirstAudioAt - options.turnStartedAt
           : undefined,
       });
     })();

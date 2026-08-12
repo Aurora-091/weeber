@@ -12,6 +12,29 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The latency dashboard was blaming the wrong stage (2026-08-12, ADR-107 — shipped).**
+  `turn_latency` said voice-to-voice p50 was 1878 ms with **1748 ms of it TTS**, on a turn `llm_ttft`
+  already claimed 1381 ms of. `v2v - tts` was pinned at ~127 ms on *every* row across a two-second
+  spread of LLM time — `tts_first_byte_ms` was tracking the LLM, not the vocoder. `speak()` anchored
+  it at the top of the turn, before `generate()` ran, so the TTS column contained the whole LLM
+  stage. Corrected decomposition of the p50 turn: **~127 ms dispatch / 1381 ms LLM / ~370 ms TTS** —
+  the model is ~three quarters of the caller's wait. Shipped: anchor moved to the first character
+  handed to TTS (inside ADR-083's lazy-connect facade, before socket open so connect time counts);
+  column **redefined not duplicated** (all 78 pre-cutover rows are internal test calls), cutover
+  pinned in the schema doc comment; `voiceToVoiceMs` unchanged in meaning *and* value;
+  `stream-latency-attribution.test.ts` asserts the LLM stall lands in v2v and not in TTS, verified to
+  fail against the old anchor. **Correction on the record** (ADR-078 style, new entry not an edit):
+  ADR-104's "the four prod orgs still hold the old whole-file personas" is **false** — `runtime:begin`
+  is a source marker `extractRuntimePersona` strips at seed time, and SHA-256 of repo-extracted
+  runtime vs all nine prod rows is 9/9 identical. ADR-104 has been live in prod since it shipped; no
+  re-seed was needed or performed. **Next: the LLM transport.** Direct Groq as a real second
+  transport with its own failover chain mirroring `failover.ts`, shipped dark behind a flag —
+  gateway `groq/llama-3.3-70b-versatile` still fails ~50% of streaming-tool requests and is the last
+  link of prod `AI_GATEWAY_FALLBACK_MODELS`, while `buildGatewayProviderOptions` returns `undefined`
+  for groq so "groq" currently means no failover at all. **Blocked on staging isolation:** Railway
+  staging shares ~33 of 40 env vars with production including `DATABASE_URL` and the Twilio account,
+  so there is nowhere safe to soak a transport swap. Approved to split, not yet done.
+
 - **The agent texted a caller a phone number that does not exist (2026-08-12, ADR-106 — shipped).**
   Three more findings from the same call 25 as ADR-105, all about what the agent wrote and said while
   making a promise it could not keep. It sent two SMS: one containing the literal
