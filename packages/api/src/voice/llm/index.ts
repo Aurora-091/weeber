@@ -5,10 +5,21 @@ export type LlmProvider = "gateway" | "groq";
 
 /**
  * LLM provider registry, mirroring the TTS provider split (see ../tts/).
- * Swap the active provider via LLM_PROVIDER — no code changes needed.
- * Groq's LPU inference is dramatically faster than typical GPU-hosted models,
- * and since LLM inference is usually the single biggest latency contributor
- * in a voice pipeline, this is the highest-leverage latency lever available.
+ * The platform default is LLM_PROVIDER; an individual agent overrides it with
+ * org_agent_configs.llm_provider + llm_model (agent-frame.ts), so "which LLM"
+ * is a per-agent choice and the env var is only the fallback default.
+ *
+ * "gateway" and "groq" are two different TRANSPORTS, not two different models:
+ * "gateway" routes through Vercel AI Gateway (which can itself forward to Groq
+ * compute via a groq/* model id) and "groq" talks to Groq directly. Measured
+ * 2026-08-12, median time-to-first-content-delta, same model both ways:
+ * gateway -> groq/llama-3.3-70b-versatile 334ms vs groq direct 206ms, so the
+ * Vercel hop costs ~130ms. Direct is faster, but buildGatewayProviderOptions
+ * below returns empty providerOptions for "groq" — going direct trades that
+ * 130ms for having NO LLM failover at all. Default to "gateway" until a Groq
+ * multi-model failover path exists. (Measured from a dev sandbox, not from
+ * Railway Singapore, so treat the ranking as sound and the absolute numbers
+ * as indicative.)
  */
 export function resolveLlmProvider(override?: LlmProvider): LlmProvider {
   const configured = (override ?? process.env.LLM_PROVIDER ?? "gateway").toLowerCase();
@@ -79,7 +90,7 @@ export function getActiveModelLabel(override?: LlmProvider, modelOverride?: stri
  * "is this roughly cheap or expensive" signal shown next to each test
  * message. Previously hardcoded to a single OpenAI-mini-ish rate regardless
  * of which provider/model was actually active, which was flat wrong for
- * Groq (this env's actual default — see /api/health). Groq rate is real
+ * Groq. Groq rate is real
  * (llama-3.3-70b-versatile, groq.com/pricing as of mid-2026); gateway rate
  * is a rough gpt-4o-mini-class placeholder since AI_GATEWAY_MODEL can be
  * swapped to anything — update both if pricing drifts or the gateway

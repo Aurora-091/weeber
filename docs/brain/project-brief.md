@@ -20,8 +20,11 @@ product where the dashboard, agents, tools, metrics, and terminology adapt to th
   (WooCommerce, BigCommerce, Dukaan) after Shopify.
 - **Positioning:** a vertical "voice workforce," not a horizontal no-code builder. Compliance-first is
   the moat, not a checkbox.
-- **Stage:** pre-launch, pre-traction. ~10 real calls all-time, no paying customers yet. **No real
-  clients or partners exist** — do not reference any named client/partner as real.
+- **Stage:** pre-launch, pre-traction. 11 calls all-time and **every one is an internal test call**
+  placed by the team (US Twilio number → the team's own +91 numbers), so there is **zero customer
+  traffic** — never read the `calls` table as demand, and note that the callee country code makes
+  market inference meaningless (ADR-095 adds the explicit `orgs.market` axis). No paying customers.
+  **No real clients or partners exist** — do not reference any named client/partner as real.
 - **Operating entity:** Weeber is the SaaS product of **ADLOOM X MEDIA SOLUTIONS PRIVATE LIMITED**
   (Private Limited; CIN `U73200UP2026PTC246714`; incorporated 16 Apr 2026; registered email
   `adloomx@gmail.com`; active). Use this entity for billing/legal/grant/investor references.

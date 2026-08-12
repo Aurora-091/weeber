@@ -18,7 +18,8 @@ compliance, and business rules.
 - **DB:** **Supabase** Postgres (pooled, port 6543) — auth + `pgvector` KB, ADR-034.
 - **Compliance:** `packages/weeber-compliance` — standalone, dependency-free, the real moat.
 
-Pre-launch. ~10 real calls all-time. No paying customers yet. Treat traction docs accordingly.
+Pre-launch. 11 calls all-time, **all internal test calls** placed by the team — zero customer
+traffic, no paying customers. Treat traction docs accordingly.
 
 ## Read order — do this before making decisions
 
