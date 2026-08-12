@@ -174,3 +174,26 @@ describe("createOutputGuard", () => {
     expect(calls).toBe(0);
   });
 });
+
+describe("markdown syntax (ADR-106)", () => {
+  it("deletes the asterisks of a stage direction but keeps the words", () => {
+    // Production call 25 spoke "*Sending text message...*". The asterisks are
+    // syntax and go; the narration itself is a prompt defect, fixed in
+    // agent.ts's call-control block, because there is no chunk-safe way to tell
+    // a stage direction from `*really* important`.
+    const result = scrubSpokenText("*Sending text message...* And that's everything I need.");
+    expect(result.text).toBe("Sending text message... And that's everything I need.");
+    expect(result.findings).toContain("markdown-syntax");
+  });
+
+  it("keeps the emphasised word when asterisks wrap real speech", () => {
+    const result = scrubSpokenText("That is *really* important.");
+    expect(result.text).toBe("That is really important.");
+  });
+
+  it("leaves text with no asterisks byte-identical and reports no finding", () => {
+    const result = scrubSpokenText("One moment, I'm sending that across now.");
+    expect(result.text).toBe("One moment, I'm sending that across now.");
+    expect(result.findings).toEqual([]);
+  });
+});

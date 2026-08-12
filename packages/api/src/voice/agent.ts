@@ -27,6 +27,12 @@ import { resolveLocalizedGreeting } from "./insurance-greetings";
 import { TONE_INSTRUCTION_BLOCK } from "./tone-tags";
 import { scrubSystemPrompt } from "./merge-tags";
 import { createOutputGuard } from "./output-guard";
+import {
+  GUARDED_TEXT_ARGS,
+  screenToolArguments,
+  describeOutboundTextScreen,
+  type OutboundTextScreen,
+} from "./outbound-text-guard";
 import { TOPIC_BOUNDARY_LINES, INJECTION_LINES, abuseHandlingLine } from "./prompt-lines";
 import { buildWorkflowFactsBlock } from "./workflows/variables";
 
@@ -223,7 +229,10 @@ function buildCallControlBlock(
         "  confirm you're speaking with the right person (\"Hi, is this [name] speaking?\" or, if\n" +
         "  no name is known, \"Am I speaking with the person who placed the order / booked the\n" +
         "  appointment?\"). If it's someone else, ask if they can pass a message or if you should\n" +
-        "  call back — don't share account-specific details with anyone else."
+        "  call back — don't share account-specific details with anyone else. Never describe this\n" +
+        "  call as one they made: they did not reach out, ring in, or get in touch on this line —\n" +
+        "  you dialled them. Their number is the one you called, so never ask which number to use\n" +
+        "  and never read a number back to them as if they gave it to you."
       : "";
 
   const topicBoundaryTail = canFlagGuardrail
@@ -259,6 +268,20 @@ function buildCallControlBlock(
     transferLine,
     numbersLine,
     indianFormatLine,
+    // ADR-106. Production call 25 spoke "*Sending text message...*" out loud
+    // and sent a text containing an invented advisor number. The output guard
+    // deletes the asterisks and the argument guard refuses the text, but both
+    // are last lines of defence for a defect that is caused here: the model
+    // was never told that this channel is speech, or that a number it was not
+    // given is not a number it may use.
+    "- Everything you produce is spoken aloud by a voice. Write plain sentences only — no",
+    "  markdown, no asterisks, no bullet points, no headings, and never narrate your own",
+    "  actions in the third person (no \"*checking your account*\", no \"sending text now...\").",
+    "  If you are doing something, say it as a person would: \"one moment, I'm sending that",
+    "  across now.\"",
+    "- Never state a phone number, email address, or link that you were not given. If you do",
+    "  not have the number for something, say you'll have someone reach out instead — an",
+    "  invented number is worse than no number, because the caller will try it.",
   ];
   if (identityCheckLine) lines.push(identityCheckLine);
   lines.push(
@@ -871,6 +894,65 @@ export function withFillerTimer<T extends { execute?: (...args: never[]) => unkn
 }
 
 /**
+ * Refuses a tool call whose model-authored free text fails the outbound-text
+ * screen (ADR-106) — an unresolved bracket placeholder, leaked tool syntax,
+ * or a phone number nobody gave the agent.
+ *
+ * Wrapped at the tool level, the same shape as `withFillerTimer` above and
+ * for the same reason: it is the one place every caller of `buildVoiceTools`
+ * shares, so a tool cannot be added to the set and quietly skip the screen.
+ * `sendSms` is the exception and is screened in `stream.ts` instead — its
+ * `execute` is signal-only and the actual send happens there, so refusing
+ * here would refuse nothing.
+ *
+ * The refusal is returned to the model as a normal tool result rather than
+ * thrown. A thrown tool error ends the step and the caller hears the fallback
+ * line; a result the model can read tells it *why* and lets it retry the same
+ * call without the invention. It is deliberately worded as an instruction,
+ * not an error code.
+ */
+export function withOutboundTextGuard<T extends { execute?: (...args: never[]) => unknown }>(
+  toolDef: T,
+  name: string,
+  outboundText?: OutboundTextContext,
+): T {
+  if (!toolDef.execute || !outboundText || !GUARDED_TEXT_ARGS[name]) return toolDef;
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    execute: async (...args: never[]) => {
+      const refusal = screenToolArguments(name, args[0], { allowedNumbers: outboundText.allowedNumbers() });
+      if (refusal) {
+        outboundText.onRefusal?.(name, refusal.field, refusal.screen);
+        return {
+          refused: true,
+          field: refusal.field,
+          reason: describeOutboundTextScreen(refusal.screen),
+          message:
+            `Refused: the "${refusal.field}" you supplied contains something you were not given ` +
+            `(${refusal.screen.findings.join(", ")}). Rewrite it using only facts from this call ` +
+            `and call the tool again — never fill a gap with an invented number or a placeholder.`,
+        };
+      }
+      return await originalExecute(...args);
+    },
+  };
+}
+
+/**
+ * What a call legitimately has in scope for the outbound-text screen.
+ *
+ * `allowedNumbers` is a function, not an array, because the set grows during
+ * the call: a number the caller reads out on turn six is a number the agent
+ * may repeat on turn seven. Snapshotting it at tool-construction time would
+ * refuse exactly the legitimate case this guard exists to permit.
+ */
+export type OutboundTextContext = {
+  allowedNumbers: () => readonly (string | null | undefined)[];
+  onRefusal?: (toolName: string, field: string, screen: OutboundTextScreen) => void;
+};
+
+/**
  * The one place tool sets get built for a call, everywhere they're needed
  * (a live call via stream.ts, the text test-chat sandbox in both app/routes.ts
  * and voice/routes.ts, and synthetic-test.ts's AI-to-AI runs) — replaces what
@@ -926,6 +1008,7 @@ export function buildVoiceTools(
   cartRecovery?: CartRecoveryDiscountContext,
   codOrder?: CodOrderContext,
   crmSync?: CrmSyncContext,
+  outboundText?: OutboundTextContext,
 ) {
   const baseTools = {
     ...voiceTools,
@@ -958,9 +1041,16 @@ export function buildVoiceTools(
         ),
       )
     : allTools;
-  if (!onSlowToolCall) return narrowed;
+  // Screen first, then wrap for filler audio: the filler timer measures how
+  // long a tool takes, and a refused call does no work at all.
+  const guarded = outboundText
+    ? Object.fromEntries(
+        Object.entries(narrowed).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
+      )
+    : narrowed;
+  if (!onSlowToolCall) return guarded;
   return Object.fromEntries(
-    Object.entries(narrowed).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
+    Object.entries(guarded).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
   );
 }
 
@@ -1074,6 +1164,7 @@ export async function runVoiceAgentTurn({
   cartRecovery,
   codOrder,
   crmSync,
+  outboundText,
   workflowMetadata,
 }: {
   history: ModelMessage[];
@@ -1124,6 +1215,11 @@ export async function runVoiceAgentTurn({
    * Absent it, `crmSync` is not registered for this call, so the model cannot
    * append this call's notes to a contact it named itself. See buildVoiceTools. */
   crmSync?: CrmSyncContext;
+  /** ADR-106: the numbers this call legitimately has in scope, plus a refusal
+   * hook. Absent it, tool arguments are not screened — which is the correct
+   * default for the text test-chat and the synthetic harness, neither of which
+   * can send an SMS or write a CRM note to a real person. */
+  outboundText?: OutboundTextContext;
   /** G1.3: the merchant workflow's pre-call context for this call
    * (`scheduledCalls.metadata`, carried on the session as `workflowMetadata`).
    * Rendered by buildWorkflowContextBlock. Undefined on inbound calls and any
@@ -1163,7 +1259,7 @@ export async function runVoiceAgentTurn({
       providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
       system: systemPrompt,
       messages: history,
-      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync),
+      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText),
       stopWhen: stepCountIs(6),
       abortSignal: combinedSignal,
       onStepFinish: (step) => {
@@ -1292,6 +1388,7 @@ export function runVoiceAgentGreeting({
   orgId,
   codOrder,
   crmSync,
+  outboundText,
   workflowMetadata,
 }: {
   persona?: string;
@@ -1321,6 +1418,9 @@ export function runVoiceAgentGreeting({
   /** G1.4 (ADR-069): see runVoiceAgentTurn. Passed through for the same reason
    * as `codOrder` — the greeting turn gets the identical tool set. */
   crmSync?: CrmSyncContext;
+  /** ADR-106: see runVoiceAgentTurn. Passed through so the greeting turn is
+   * screened on the same terms as every later turn. */
+  outboundText?: OutboundTextContext;
   /** G1.3: the merchant workflow's pre-call context — matters most here, since
    * the opening line is exactly where the agent should already know whose cart
    * it's calling about. See runVoiceAgentTurn. */
@@ -1346,6 +1446,7 @@ export function runVoiceAgentGreeting({
     orgId,
     codOrder,
     crmSync,
+    outboundText,
     workflowMetadata,
   });
 }

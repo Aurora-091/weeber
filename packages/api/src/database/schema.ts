@@ -401,12 +401,22 @@ export const guardrailEvents = pgTable("guardrail_events", {
   callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
   orgId: text("org_id"),
   category: text("category", {
-    enum: ["topic-boundary", "unauthorized-promise", "prompt-injection", "abuse", "regulated-capture", "unknown"],
+    enum: [
+      "topic-boundary",
+      "unauthorized-promise",
+      "prompt-injection",
+      "abuse",
+      "regulated-capture",
+      "fabricated-outbound-text",
+      "unknown",
+    ],
   }).notNull(),
   // "capture-guard" is code that refused a write (see prohibited-capture.ts),
   // not a report or a heuristic. No migration needed for either widening: both
   // columns are plain `text` with a TS-level enum, no DB check constraint.
-  source: text("source", { enum: ["agent-self-report", "heuristic-detector", "capture-guard"] }).notNull(),
+  source: text("source", {
+    enum: ["agent-self-report", "heuristic-detector", "capture-guard", "outbound-text-guard"],
+  }).notNull(),
   /** The agent's one-sentence "what the caller asked / how I handled it" (self-report), or the
    * triggering caller phrase (heuristic detector) — null when neither was captured. */
   detail: text("detail"),

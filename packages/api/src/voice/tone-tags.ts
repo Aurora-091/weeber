@@ -39,10 +39,34 @@ export const TONE_VALUES = [
 
 export type ToneValue = (typeof TONE_VALUES)[number];
 
-/** Only ever matched at the very start of a turn's accumulated text — a
- * tone tag mid-sentence is never valid, so this never risks stripping
- * something that looks similar but isn't the real marker. */
-const TONE_TAG_REGEX = /^\s*\[\[tone:([a-zA-Z]+)\]\]\s*/;
+/** The tag in its intended position: the very start of a turn, which is
+ * where the prompt asks for it and where the tone value is authoritative. */
+const TONE_TAG_LEADING = /^\s*\[\[tone:([a-zA-Z]+)\]\]\s*/;
+
+/**
+ * The same tag *anywhere* in the text (ADR-106).
+ *
+ * This used to be leading-only, on the stated reasoning that "a tone tag
+ * mid-sentence is never valid, so this never risks stripping something that
+ * looks similar but isn't the real marker." Both halves were true and the
+ * conclusion was still wrong: mid-sentence tags are not valid, but the model
+ * emits them anyway, and when it does the anchor's only effect is that the
+ * caller hears one.
+ *
+ * Production call 25 (2026-08-10) spoke:
+ *
+ *     *Sending text message...* [[tone:upbeat]] And that's everything I need...
+ *
+ * The stage direction ahead of the tag is 23 characters, so the streaming
+ * filter below hit TONE_TAG_MAX_BUFFER_CHARS, correctly concluded "no leading
+ * tag is coming", released — and then forwarded the tag itself as ordinary
+ * speech, because after resolution the filter passed deltas straight through.
+ *
+ * The tag is this platform's own control token. It is never speech, in any
+ * position, whatever put it there. Position decides whether the *tone* is
+ * trustworthy; it does not decide whether the *characters* may be spoken.
+ */
+const TONE_TAG_ANYWHERE = /\[\[tone:([a-zA-Z]+)\]\]/g;
 
 /** Longest possible valid tag, `[[tone:empathetic]]`, is 19 characters —
  * buffering more than this without a match means the model didn't emit a
@@ -52,19 +76,52 @@ const TONE_TAG_REGEX = /^\s*\[\[tone:([a-zA-Z]+)\]\]\s*/;
 export const TONE_TAG_MAX_BUFFER_CHARS = 24;
 
 /**
- * Strips a leading `[[tone:value]]` marker if present. Always safe to call
- * on text that never had one — returns `{ tone: null, text }` unchanged.
+ * Strips **every** `[[tone:value]]` marker in the text and reports the first
+ * recognized tone (ADR-106 — see TONE_TAG_ANYWHERE for why "every" and not
+ * "the leading one"). Always safe to call on text that never had one —
+ * returns `{ tone: null, text }` unchanged.
+ *
  * An unrecognized value inside a well-formed tag (model hallucinated a tone
  * not in TONE_VALUES) still gets stripped from the spoken text — the tag
  * must never reach the caller's ear even if it's not a tone this platform
  * knows how to apply.
+ *
+ * A leading tag also consumes the whitespace that follows it, so the turn
+ * starts on its first real word. A tag found mid-text is removed along with
+ * one adjacent space, which is what keeps "message... [[tone:upbeat]] And"
+ * from becoming "message...  And".
  */
 export function stripToneTag(text: string): { tone: ToneValue | null; text: string } {
-  const match = TONE_TAG_REGEX.exec(text);
-  if (!match) return { tone: null, text };
-  const raw = match[1]!.toLowerCase();
-  const tone = (TONE_VALUES as readonly string[]).includes(raw) ? (raw as ToneValue) : null;
-  return { tone, text: text.slice(match[0].length) };
+  let tone: ToneValue | null = null;
+
+  const recordTone = (raw: string) => {
+    if (tone !== null) return;
+    const lowered = raw.toLowerCase();
+    if ((TONE_VALUES as readonly string[]).includes(lowered)) tone = lowered as ToneValue;
+  };
+
+  let out = text;
+  const leading = TONE_TAG_LEADING.exec(out);
+  if (leading) {
+    recordTone(leading[1]!);
+    out = out.slice(leading[0].length);
+  }
+
+  TONE_TAG_ANYWHERE.lastIndex = 0;
+  if (TONE_TAG_ANYWHERE.test(out)) {
+    TONE_TAG_ANYWHERE.lastIndex = 0;
+    out = out.replace(TONE_TAG_ANYWHERE, (_match, value: string) => {
+      recordTone(value);
+      return "";
+    });
+    // Only the damage the removal caused: a doubled space where the tag used
+    // to sit, and a space stranded before punctuation. Same repair as
+    // output-guard.ts, and applied only when something was actually removed
+    // so a clean turn passes through byte-identical.
+    out = out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([.,;:!?])/g, "$1");
+  }
+
+  return { tone, text: out };
 }
 
 /**
@@ -170,31 +227,63 @@ export function createToneTagFilter(sink: {
   let buffer = "";
   let resolved = false;
 
-  /** Shared by push() and flush(): strip whatever tag is there (if any),
-   * mark the turn resolved, and emit the remainder. Returns what it emitted. */
-  function release(): string {
-    const { tone, text } = stripToneTag(buffer);
-    resolved = true;
-    buffer = "";
+  /**
+   * Emits text with any tag in it removed. Used for every emission, not just
+   * the first (ADR-106): the pass-through that ran after resolution is how
+   * production call 25 spoke `[[tone:upbeat]]` out loud.
+   */
+  function emit(text: string): string {
+    const { tone, text: clean } = stripToneTag(text);
     if (tone !== null) sink.onTone?.(tone);
-    if (text) sink.onText(text);
-    return text;
+    if (clean) sink.onText(clean);
+    return clean;
   }
 
   return {
     push(delta: string) {
-      if (resolved) {
-        if (delta) sink.onText(delta);
-        return;
-      }
+      if (!delta && resolved) return;
       buffer += delta;
-      const complete = TONE_TAG_REGEX.test(buffer);
-      const malformed = buffer.includes("]]");
-      if (complete || malformed || buffer.length >= TONE_TAG_MAX_BUFFER_CHARS) release();
+
+      if (!resolved) {
+        const complete = TONE_TAG_LEADING.test(buffer);
+        const malformed = buffer.includes("]]");
+        if (!complete && !malformed && buffer.length < TONE_TAG_MAX_BUFFER_CHARS) return;
+        resolved = true;
+      }
+
+      // Past the leading-tag question, hold back only from a dangling `[`
+      // that could still turn into a tag. Same shape as output-guard.ts's
+      // speakableSplit and for the same reason: a tag arrives split across
+      // deltas (`[[to` + `ne:calm]]`), and forwarding the halves separately
+      // means neither one is recognizable and both are spoken. Text with no
+      // dangling bracket — nearly every delta — is emitted with zero delay.
+      const split = splitOnDanglingTag(buffer);
+      buffer = split.hold;
+      if (split.safe) emit(split.safe);
     },
     flush(): string {
-      if (resolved || buffer.length === 0) return "";
-      return release();
+      if (buffer.length === 0) return "";
+      const pending = buffer;
+      buffer = "";
+      resolved = true;
+      return emit(pending);
     },
   };
+}
+
+/**
+ * Splits accumulated text at the last `[` that could still become a
+ * `[[tone:value]]` tag. A bracket already followed by `]]`, or further back
+ * than the longest possible tag, cannot — everything up to it is emittable.
+ */
+function splitOnDanglingTag(text: string): { safe: string; hold: string } {
+  let idx = text.lastIndexOf("[");
+  if (idx === -1) return { safe: text, hold: "" };
+  // Back up over the run of brackets. `lastIndexOf` on "[[to" finds the
+  // *second* bracket, and holding from there emits the first one as speech —
+  // which is the same one-character leak this function exists to prevent.
+  while (idx > 0 && text[idx - 1] === "[") idx--;
+  if (text.length - idx > TONE_TAG_MAX_BUFFER_CHARS) return { safe: text, hold: "" };
+  if (text.includes("]]", idx)) return { safe: text, hold: "" };
+  return { safe: text.slice(0, idx), hold: text.slice(idx) };
 }

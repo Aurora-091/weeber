@@ -14,10 +14,29 @@ describe("stripToneTag", () => {
     expect(result.text).toBe("Hi there, how can I help?");
   });
 
-  it("only matches at the very start — a tag-shaped string mid-sentence is left alone", () => {
-    const result = stripToneTag("He said [[tone:calm]] to me once.");
+  // ADR-106 reverses this assertion. It used to read "only matches at the very
+  // start — a tag-shaped string mid-sentence is left alone", on the reasoning
+  // that a mid-sentence tag is never valid so leaving it alone is safe.
+  // Production call 25 spoke `[[tone:upbeat]]` out loud: not valid, still
+  // emitted, and the anchor's only effect was that the caller heard it. The tag
+  // is a control token — never speech, in any position.
+  it("strips a tag that appears mid-text, and applies its tone (ADR-106)", () => {
+    const result = stripToneTag("Sending that now... [[tone:calm]] And that's everything I need.");
+    expect(result.tone).toBe("calm");
+    expect(result.text).toBe("Sending that now... And that's everything I need.");
+  });
+
+  it("strips every tag when the model emits more than one", () => {
+    const result = stripToneTag("[[tone:calm]] One moment. [[tone:upbeat]] All set!");
+    // First recognized tone wins — a turn is spoken with one voice setting.
+    expect(result.tone).toBe("calm");
+    expect(result.text).toBe("One moment. All set!");
+  });
+
+  it("leaves a tag-shaped string that is not a tone tag alone", () => {
+    const result = stripToneTag("He said [[note:calm]] to me once.");
     expect(result.tone).toBeNull();
-    expect(result.text).toBe("He said [[tone:calm]] to me once.");
+    expect(result.text).toBe("He said [[note:calm]] to me once.");
   });
 
   it("still strips a well-formed tag whose value isn't in the known vocabulary (never let it reach the caller)", () => {
@@ -162,5 +181,44 @@ describe("createToneTagFilter", () => {
     c.filter.flush();
     c.filter.push(" One moment.");
     expect(c.spoken()).toBe("Sure. One moment.");
+  });
+  // ADR-106 — production call 25. The model emitted a stage direction before
+  // the tag, which is 23 characters and so blew TONE_TAG_MAX_BUFFER_CHARS: the
+  // filter correctly concluded "no leading tag is coming", resolved, and then
+  // forwarded the tag itself as speech because the resolved path was a raw
+  // pass-through.
+  it("strips a tag that arrives after the buffer cap already resolved the turn", () => {
+    const c = collect();
+    for (const delta of ["*Sending text ", "message...*", " [[tone:", "upbeat]]", " And that's everything I need."]) {
+      c.filter.push(delta);
+    }
+    c.filter.flush();
+    expect(c.spoken()).not.toContain("[[tone:");
+    expect(c.spoken()).toContain("And that's everything I need.");
+    expect(c.tones).toEqual(["upbeat"]);
+  });
+
+  it("strips a mid-turn tag split across deltas after a clean leading tag", () => {
+    const c = collect();
+    for (const delta of ["[[tone:calm]] One moment. [[to", "ne:upbeat]] All set!"]) {
+      c.filter.push(delta);
+    }
+    c.filter.flush();
+    expect(c.spoken()).not.toContain("[[");
+    expect(c.spoken()).toContain("All set!");
+  });
+
+  it("releases a turn that ends on a dangling bracket instead of muting it (ADR-101's class)", () => {
+    const c = collect();
+    c.filter.push("Your reference is A [");
+    c.filter.flush();
+    expect(c.spoken()).toBe("Your reference is A [");
+  });
+
+  it("adds no delay to a turn containing no brackets at all", () => {
+    const c = collect();
+    c.filter.push("Thanks for confirming that, ");
+    // Cap is 24 chars, so this resolved on the first delta and emitted it whole.
+    expect(c.spoken()).toBe("Thanks for confirming that, ");
   });
 });

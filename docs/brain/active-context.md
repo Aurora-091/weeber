@@ -12,6 +12,35 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The agent texted a caller a phone number that does not exist (2026-08-12, ADR-106 — shipped).**
+  Three more findings from the same call 25 as ADR-105, all about what the agent wrote and said while
+  making a promise it could not keep. It sent two SMS: one containing the literal
+  `[Advisor Desk Number]` — the exact shape ADR-104 stopped from being *spoken*, delivered in writing
+  five hours after that ADR shipped — and one containing `888-555-0199`, which exists nowhere
+  (`orgs.human_transfer_number` NULL on all 4 prod orgs, `insurance_advisors` empty, the caller never
+  said a number, nothing in the prompt had one). ADR-104's guard covered the token stream to TTS; the
+  channel that *persists* — `sendSms.body`, `crmSync.notes`, `bookAppointment.notes` — was unscreened.
+  It also read a stage direction aloud (*"\*Sending text message...\* [[tone:upbeat]] And that's
+  everything I need"*): the prefix is 23 chars, `TONE_TAG_MAX_BUFFER_CHARS` is 24, so the filter hit
+  the cap, correctly concluded "no leading tag is coming", released, and then forwarded the tag as
+  speech because the post-resolution path was a raw pass-through — the cap ADR-101 added to stop short
+  turns being muted is what let it through. And it framed an outbound call as inbound ("the line that
+  you reached out on", plus asking which number to use), whose answer is the utterance that ran the
+  phantom turn ADR-105 fixes. Shipped: `voice/outbound-text-guard.ts` reusing `scrubSpokenText`'s
+  findings plus `unverified-phone-number`, **refusing rather than scrubbing** (an SMS is atomic; a
+  scrubbed one reads as broken and still fails the caller), with the test being **provenance not
+  plausibility** — every shape check passes `888-555-0199`, so a number is allowed only if the server
+  put it in scope or the caller said it, tracked live in `callerSpokenNumbers` and read through a
+  closure. Wired via `withOutboundTextGuard` in `buildVoiceTools` (crmSync, bookAppointment) and in
+  `stream.ts` for `sendSms`, whose execute is signal-only; refusals log
+  `guardrail_events.category = fabricated-outbound-text` (a plain-text enum widening, no migration).
+  `stripToneTag` now strips the tag anywhere and the filter holds back only from a dangling `[`;
+  `output-guard.ts` deletes markdown asterisks but keeps the words, with the narration fixed at the
+  prompt layer instead. api tests 1,241 → 1,278. **Known and unfixed:** a refused SMS is a message the
+  caller expected and did not get, and the agent is not told, so it cannot correct itself mid-call —
+  feeding the refusal back into the turn is the next step. **Still unfiled:** `flagGuardrailEvent`
+  false positives, 6× and 4× on polite non-abusive callers.
+
 - **The best call this product has ever placed dropped a warm lead mid-promise (2026-08-12,
   ADR-105 — shipped).** Production call 25 reads `status = "completed"`, `disposition = "booked"`,
   `health_status = "healthy"`, `intent = "purchase_or_booking"`, and it closed with *"Let me connect

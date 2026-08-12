@@ -29,6 +29,11 @@ import { promoteLeadFromCall, getLeadGreetingContext } from "./leads/leads";
 import { getTwilioClientForOrg, getPublicUrl } from "./twilio-client";
 import { hangupPlivoCall, transferPlivoCall } from "./plivo-client";
 import { sendSmsForOrg } from "./send-sms";
+import {
+  screenOutboundText,
+  describeOutboundTextScreen,
+  extractPhoneCandidates,
+} from "./outbound-text-guard";
 import { buildDtmfAudio, isValidDtmfSequence } from "./dtmf";
 import { getCachedTtsAudio, setCachedTtsAudio, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
 import { getEffectiveFlags } from "./org-queries";
@@ -426,6 +431,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * and the safe default for a promise is not making it.
    */
   let transferCapability: TransferCapability = { canTransfer: false, reason: "no-org" };
+  /**
+   * ADR-106. `orgs.humanTransferNumber` for this call, kept because it is one
+   * of the two numbers the agent is allowed to put in writing — the other
+   * being `humanNumber`, the leg it is connected to.
+   */
+  let orgTransferNumber: string | undefined;
+  /**
+   * ADR-106. Numbers the caller themselves said, normalized. A number the
+   * caller reads out ("text me on 98765 43210") is theirs to give, so the
+   * agent may repeat it back; a number that appears from nowhere is an
+   * invention. This is the provenance record that tells the two apart, and it
+   * grows through the call, which is why the guard reads it through a closure
+   * rather than a snapshot.
+   */
+  const callerSpokenNumbers = new Set<string>();
   let callerMemoryFacts: Record<string, string> = {};
   /** Latency fix (2026-07-16): the fully-rendered, ready-to-speak literal
    * greeting text for this call (every {{merge_tag}} resolved), or
@@ -533,6 +553,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let transcriptWriteChain: Promise<unknown> = Promise.resolve();
 
   function logTranscript(role: "caller" | "agent", text: string) {
+    // ADR-106: harvested before the early return below, because a call with no
+    // `dbCallId` yet is still a call whose caller may have said a number, and
+    // the guard's whole value is that it never has to guess provenance.
+    if (role === "caller") for (const n of extractPhoneCandidates(text)) callerSpokenNumbers.add(n);
     if (!dbCallId) return;
     transcriptCount++;
     if (role === "caller") callerTranscriptCount++;
@@ -636,7 +660,33 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // (Misc-4), fire-and-forget so it never blocks the live call.
     if (name === "sendSms" && input && typeof input === "object" && "body" in input) {
       const smsBody = String((input as { body: unknown }).body);
-      if (humanNumber) {
+      // ADR-106. Screened here rather than in the tool's execute() because
+      // this is where the side effect is: `sendSms` is signal-only, so a
+      // refusal inside the tool would refuse nothing and the message would go
+      // out anyway. Same reasoning as the captureField screen above — guard the
+      // point where the text leaves the building.
+      //
+      // Production call 25 sent two of these: one containing the literal
+      // "[Advisor Desk Number]", one containing the invented "888-555-0199".
+      // The caller kept both.
+      const screen = screenOutboundText(smsBody, {
+        allowedNumbers: [humanNumber, orgTransferNumber, ...callerSpokenNumbers],
+      });
+      if (!screen.allowed) {
+        console.warn(`[voice] refused mid-call sendSms — ${describeOutboundTextScreen(screen)}`);
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "fabricated-outbound-text",
+              source: "outbound-text-guard",
+              detail: `refused sendSms — ${describeOutboundTextScreen(screen)}`,
+            })
+            .catch((err) => console.error("[voice] failed to log outbound-text-guard event", err));
+        }
+      } else if (humanNumber) {
         void sendSmsForOrg({ orgId: humanNumberOrgId, to: humanNumber, body: smsBody }).then((result) => {
           if (!result.ok) console.error(`[voice] mid-call sendSms failed: ${result.error}`);
         });
@@ -1757,6 +1807,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           cartRecovery: cartRecoveryContext,
           codOrder: codOrderContext,
           crmSync: crmSyncContext,
+          outboundText: {
+            // ADR-106. Read through a closure, not snapshotted: `humanNumber`
+            // resolves during the "start" handler, `orgTransferNumber` with it,
+            // and `callerSpokenNumbers` grows for the rest of the call.
+            allowedNumbers: () => [humanNumber, orgTransferNumber, ...callerSpokenNumbers],
+            onRefusal: (toolName, field, screen) => {
+              console.warn(
+                `[voice] refused ${toolName}.${field} — ${describeOutboundTextScreen(screen)}`,
+              );
+              if (!dbCallId) return;
+              void db
+                .insert(guardrailEvents)
+                .values({
+                  callId: dbCallId,
+                  orgId: humanNumberOrgId ?? null,
+                  category: "fabricated-outbound-text",
+                  source: "outbound-text-guard",
+                  detail: `refused ${toolName}.${field} — ${describeOutboundTextScreen(screen)}`,
+                })
+                .catch((err) => console.error("[voice] failed to log outbound-text-guard event", err));
+            },
+          },
           workflowMetadata,
           onSlowToolCall: (toolName) => {
             if (fillerPlayedThisTurn) return;
@@ -1816,6 +1888,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           orgId: humanNumberOrgId,
           codOrder: codOrderContext,
           crmSync: crmSyncContext,
+          outboundText: {
+            // ADR-106. Read through a closure, not snapshotted: `humanNumber`
+            // resolves during the "start" handler, `orgTransferNumber` with it,
+            // and `callerSpokenNumbers` grows for the rest of the call.
+            allowedNumbers: () => [humanNumber, orgTransferNumber, ...callerSpokenNumbers],
+            onRefusal: (toolName, field, screen) => {
+              console.warn(
+                `[voice] refused ${toolName}.${field} — ${describeOutboundTextScreen(screen)}`,
+              );
+              if (!dbCallId) return;
+              void db
+                .insert(guardrailEvents)
+                .values({
+                  callId: dbCallId,
+                  orgId: humanNumberOrgId ?? null,
+                  category: "fabricated-outbound-text",
+                  source: "outbound-text-guard",
+                  detail: `refused ${toolName}.${field} — ${describeOutboundTextScreen(screen)}`,
+                })
+                .catch((err) => console.error("[voice] failed to log outbound-text-guard event", err));
+            },
+          },
           workflowMetadata,
           onLatency: (ms, model) => {
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
@@ -2314,8 +2408,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // transfer available on this call" instead of being told a warm
             // transfer is the best possible outcome. That prompt seam already
             // existed; nothing was feeding it the truth.
+            orgTransferNumber = orgRow[0]?.humanTransferNumber ?? undefined;
             transferCapability = resolveTransferCapability({
-              transferNumber: orgRow[0]?.humanTransferNumber,
+              transferNumber: orgTransferNumber,
               provider,
               hasOrg: Boolean(humanNumberOrgId),
             });

@@ -23,13 +23,24 @@ export const GUARDRAIL_CATEGORIES = [
   // something, this is the agent attempting the write and being refused, which
   // means the prompt regressed or the model was talked past it.
   "regulated-capture",
+  // ADR-106: the agent put something in writing to a human that it was not
+  // given — an unresolved bracket placeholder, leaked tool syntax, or a phone
+  // number with no provenance. Same shape as `regulated-capture`: the agent
+  // attempted it and code refused, so the row is evidence of a prompt or model
+  // regression rather than of the caller doing anything.
+  "fabricated-outbound-text",
   "unknown",
 ] as const;
 
 export type GuardrailCategory = (typeof GUARDRAIL_CATEGORIES)[number];
-/** `capture-guard` is code refusing a write, not the agent reporting itself and
- * not a text heuristic — it is the only source here that blocked something. */
-export type GuardrailSource = "agent-self-report" | "heuristic-detector" | "capture-guard";
+/** `capture-guard` and `outbound-text-guard` (ADR-106) are code refusing a
+ * write, not the agent reporting itself and not a text heuristic — they are the
+ * sources here that blocked something rather than observed it. */
+export type GuardrailSource =
+  | "agent-self-report"
+  | "heuristic-detector"
+  | "capture-guard"
+  | "outbound-text-guard";
 
 export type GuardrailEventFields = {
   category: GuardrailCategory;

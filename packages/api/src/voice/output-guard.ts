@@ -81,6 +81,27 @@ const LEADING_JSON_RESIDUE = /^[\s\w.,:-]{0,8}["'`]?\s*[}\]]+\s*/;
  */
 const BRACKET_PLACEHOLDER = /\[(?!\[)[A-Z][A-Za-z0-9_ .:'-]{1,38}\]/g;
 
+/**
+ * Markdown emphasis (ADR-106). Production call 25 spoke:
+ *
+ *     *Sending text message...* [[tone:upbeat]] And that's everything I need...
+ *
+ * The asterisks are syntax and are deleted here on the same rule as
+ * everything above: a control character is never speech. The *words* inside
+ * them are deliberately kept, because this module's contract is "delete
+ * syntax, never rewrite a sentence" — an emphasis span can legitimately wrap
+ * a real word (`*really* important`), and there is no chunk-safe way to tell
+ * that apart from a stage direction when the guard sees the stream in deltas
+ * whose boundaries are not line boundaries.
+ *
+ * That leaves "Sending text message..." still spoken. It is a model
+ * self-narration defect, not a syntax defect, and it is fixed where it is
+ * caused — a call-control rule in agent.ts forbidding both the narration and
+ * the markdown. Two partial layers, stated plainly, in preference to one
+ * clever regex that eats a word every so often.
+ */
+const MARKDOWN_EMPHASIS = /\*+/g;
+
 /** Longest span any pattern above can match. Past this length an unclosed
  * bracket cannot become one of them, so it is ordinary text. */
 const MAX_PATTERN_SPAN = 44;
@@ -119,7 +140,7 @@ export function speakableSplit(text: string): { safe: string; hold: string } {
   return { safe: text, hold: "" };
 }
 
-export type OutputGuardFinding = "tool-syntax" | "json-residue" | "bracket-placeholder";
+export type OutputGuardFinding = "tool-syntax" | "json-residue" | "bracket-placeholder" | "markdown-syntax";
 
 /**
  * Cleans one already-complete string. Exported for the non-streaming callers
@@ -155,6 +176,12 @@ export function scrubSpokenText(text: string, options?: { atTurnStart?: boolean 
   if (BRACKET_PLACEHOLDER.test(out)) {
     findings.push("bracket-placeholder");
     out = out.replace(BRACKET_PLACEHOLDER, "");
+  }
+
+  MARKDOWN_EMPHASIS.lastIndex = 0;
+  if (MARKDOWN_EMPHASIS.test(out)) {
+    findings.push("markdown-syntax");
+    out = out.replace(MARKDOWN_EMPHASIS, "");
   }
 
   if (findings.length > 0) {
