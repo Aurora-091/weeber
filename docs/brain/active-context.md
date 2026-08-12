@@ -35,6 +35,29 @@ updated: 2026-08-12
   item — the 10 of 78 turns with no TTS byte — was investigated and closed the same day, see ADR-101
   below; **its "dead air" framing here was wrong** and is retracted there.
 
+- **A voice is an agent property, and the ElevenLabs failover leg had never worked (2026-08-12,
+  ADR-102).** Every TTS adapter read `voiceIdOverride || process.env.<PROVIDER>_VOICE_ID`, which
+  reintroduces ADR-070's hazard one layer lower: a voice belongs to an **agent**
+  (`org_agent_configs.voice_provider` + `voice_id`, set in the dashboard picker), an env var belongs to
+  a **deployment**, so the same agent row could speak as a different person depending on which
+  environment served the call. Of 43 Railway prod vars, `ELEVENLABS_VOICE_ID` and `SARVAM_VOICE_ID` are
+  **absent**; all 6 prod agent-config rows are Cartesia with `tts_fallback_order` null, so
+  `DEFAULT_TTS_FALLBACK_ORDER = [cartesia, elevenlabs, sarvam]` governs **every call ever placed** and
+  its second leg built `wss://api.elevenlabs.io/v1/text-to-speech/undefined/stream-input`. Silent at
+  boot, silent on the call record, discoverable only during a Cartesia incident — ADR-090's class.
+  Fixed with `FALLBACK_VOICE_BY_PROVIDER` as a `Record<TtsProvider, string>` code constant in
+  `tts/default-voices.ts` (a missing env var is `undefined` mid-call; a missing constant does not
+  typecheck), Cartesia pinned to the exact prod value so no agent's voice changes, blank-safe
+  `resolveVoiceId` as the only adapter path, voice IDs removed from `assertVoiceConfig` and both doc
+  surfaces, and a new boot `warn` per **dead failover leg** across both default chains. Tests assert at
+  the wire via `MockWebSocket` and were proven to fail for the right reason.
+  **Still open and a business call:** the ElevenLabs account returns `payment_issue` on every
+  generation, so the leg is now structurally correct and still non-functional — TTS is effectively
+  single-sourced on Cartesia until an invoice is paid (starter tier, 40k chars/month, break-glass at
+  best). **Also measured, not yet a decision:** prod LLM primary `google/gemini-3.1-flash-lite` is
+  ~929ms median TTFT vs ~334ms for `groq/llama-3.3-70b-versatile` on the same gateway; Cartesia
+  `sonic-3` first byte ~183ms needs no change. Measured from a sandbox, not Railway Singapore.
+
 - **A reply too short to trip the tone-tag buffer was never spoken at all (2026-08-12, ADR-101).**
   ADR-100's "10 of 78 turns produced no audio" was one label over two different things, and the label
   hid the row that mattered. 9 of the 10 are turns the caller aborted **before the first LLM token** —

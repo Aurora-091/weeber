@@ -1,4 +1,5 @@
 import type { ConnectTts } from "./types";
+import { resolveVoiceId } from "./default-voices";
 
 /**
  * Thin wrapper around Cartesia's streaming TTS WebSocket (Sonic model),
@@ -21,7 +22,7 @@ import type { ConnectTts } from "./types";
  */
 export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language, onWordTimestamp) => {
   const apiKey = process.env.CARTESIA_API_KEY ?? "";
-  const voiceId = voiceIdOverride || process.env.CARTESIA_VOICE_ID;
+  const voiceId = resolveVoiceId("cartesia", voiceIdOverride);
   const cartesiaLanguage = language && language !== "multi" ? language : undefined;
   const cartesiaVersion = "2025-11-04";
   const url = `wss://api.cartesia.ai/tts/websocket?api_key=${encodeURIComponent(apiKey)}&cartesia_version=${cartesiaVersion}`;

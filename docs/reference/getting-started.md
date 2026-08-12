@@ -36,9 +36,12 @@ DATABASE_URL=                # Turso/libSQL connection string
 ```
 TTS_PROVIDER=cartesia        # or "elevenlabs" or "sarvam"
 CARTESIA_API_KEY=
-CARTESIA_VOICE_ID=
 ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=
+# There is deliberately no CARTESIA_VOICE_ID / ELEVENLABS_VOICE_ID / SARVAM_VOICE_ID.
+# A voice belongs to an agent, not to a deployment: it is picked per agent in the
+# dashboard's voice picker (org_agent_configs.voice_provider + voice_id), and each
+# provider's fallback voice is a code constant in
+# packages/api/src/voice/tts/default-voices.ts. See ADR-102.
 # Optional — pronunciation dictionary for domain terms (COD, UPI, KYC, etc.) that get
 # mispronounced by default. Both required together; omitted = safe no-op. See
 # docs/voice-quality/hindi-hinglish-voice-support.md Phase 3 for the exact terms and how this was

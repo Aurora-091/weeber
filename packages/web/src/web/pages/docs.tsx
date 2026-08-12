@@ -177,7 +177,7 @@ we send Twilio a "clear" event and abort the in-flight LLM/TTS immediately.`}
               lang=".env"
               code={`DEEPGRAM_API_KEY=            # Deepgram live STT
 ELEVENLABS_API_KEY=          # ElevenLabs TTS
-ELEVENLABS_VOICE_ID=         # Voice to use for the agent
+# No *_VOICE_ID vars — the voice is picked per agent in the dashboard, not per deployment
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=         # e.g. +15551234567 — used as caller ID for outbound calls

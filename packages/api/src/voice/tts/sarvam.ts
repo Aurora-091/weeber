@@ -1,4 +1,5 @@
 import type { ConnectTts } from "./types";
+import { resolveVoiceId } from "./default-voices";
 
 /**
  * Thin wrapper around Sarvam's streaming TTS WebSocket (Bulbul), for
@@ -10,7 +11,8 @@ import type { ConnectTts } from "./types";
  * mu-law decoded — see stt/sarvam.ts and audio-codec.ts).
  */
 const SAMPLE_RATE = 8000;
-const DEFAULT_SPEAKER = "shubh"; // bulbul:v3 default speaker
+// The default speaker moved to default-voices.ts's FALLBACK_VOICE_BY_PROVIDER
+// so all three providers' fallback voices are declared in one place.
 const DEFAULT_LANGUAGE_CODE = "hi-IN";
 
 /** ISO-ish agent-frame language code -> Sarvam's BCP-47 target_language_code. */
@@ -26,7 +28,7 @@ export function toSarvamLanguageCode(language?: string): string {
 
 export const connectSarvamTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, languageOverride) => {
   const apiKey = process.env.SARVAM_API_KEY ?? "";
-  const speaker = voiceIdOverride || process.env.SARVAM_VOICE_ID || DEFAULT_SPEAKER;
+  const speaker = resolveVoiceId("sarvam", voiceIdOverride);
   const languageCode = toSarvamLanguageCode(languageOverride);
   const url = `wss://api.sarvam.ai/text-to-speech/ws?model=bulbul:v3&send_completion_event=true`;
 

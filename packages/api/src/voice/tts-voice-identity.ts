@@ -14,13 +14,20 @@ import type { TtsProvider } from "./tts/types";
  *    (`org_agent_configs.voice_provider` + `voice_id`, rendered by a picker
  *    that is already scoped to the selected provider).
  * 2. **Every adapter fails open on a foreign ID.** `tts/cartesia.ts`,
- *    `tts/elevenlabs.ts` and `tts/sarvam.ts` all do
- *    `voiceIdOverride || process.env.<PROVIDER>_VOICE_ID` (Sarvam then falls
- *    back again to its own `DEFAULT_SPEAKER`), so handing provider B an ID
- *    belonging to provider A either errors the turn outright or silently
- *    synthesizes in B's env-default voice. Neither surfaces as a config error;
- *    both are heard by the caller as the agent becoming a different person
- *    mid-call.
+ *    `tts/elevenlabs.ts` and `tts/sarvam.ts` all fall back to that provider's
+ *    own voice (`resolveVoiceId`, tts/default-voices.ts) rather than rejecting
+ *    an ID that isn't theirs, so handing provider B an ID belonging to
+ *    provider A either errors the turn outright or silently synthesizes in B's
+ *    fallback voice. Neither surfaces as a config error; both are heard by the
+ *    caller as the agent becoming a different person mid-call.
+ *
+ *    Corrected 2026-08-12 (ADR-102): that fallback used to be
+ *    `process.env.<PROVIDER>_VOICE_ID`, which made this module's "no ID is
+ *    safer than a foreign ID" guarantee depend on a deployment-level env var
+ *    that was never set for ElevenLabs in production — so the withheld-ID path
+ *    this module deliberately takes during failover produced a request against
+ *    voice `undefined`, not a voice. The fallback is a code constant now, so
+ *    "no ID" genuinely means "that provider's own voice".
  *
  * `stream.ts` can switch TTS provider mid-call in exactly one place: the
  * per-turn cross-provider failover chain (`voice/failover.ts`). This module is

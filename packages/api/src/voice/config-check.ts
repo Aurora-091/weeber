@@ -1,6 +1,16 @@
 import { resolveTtsProvider } from "./tts";
 import { resolveSttProvider } from "./stt";
 import { resolveLlmProvider } from "./llm";
+import { DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER } from "./failover";
+
+/** Which env var(s) let a provider connect at all. Deepgram and Cartesia are
+ * TTS-or-STT-specific; ElevenLabs and Sarvam use one account key for both. */
+const PROVIDER_API_KEY_ENV: Record<string, string[]> = {
+  deepgram: ["DEEPGRAM_API_KEY"],
+  cartesia: ["CARTESIA_API_KEY"],
+  elevenlabs: ["ELEVENLABS_API_KEY"],
+  sarvam: ["SARVAM_API_KEY"],
+};
 
 /**
  * Boot-time config validation — fails loudly at startup if the *active*
@@ -11,14 +21,17 @@ import { resolveLlmProvider } from "./llm";
 export function assertVoiceConfig(): void {
   const problems: string[] = [];
 
+  // Voice IDs are deliberately absent from this check: a voice is an agent
+  // property (org_agent_configs.voice_provider + voice_id), with a per-provider
+  // code constant underneath it — see tts/default-voices.ts. There is no
+  // <PROVIDER>_VOICE_ID env var to validate, and a missing constant is a
+  // typecheck failure rather than a runtime one.
   const ttsProvider = resolveTtsProvider();
-  if (ttsProvider === "cartesia") {
-    if (!process.env.CARTESIA_API_KEY) problems.push("TTS_PROVIDER=cartesia requires CARTESIA_API_KEY");
-    if (!process.env.CARTESIA_VOICE_ID) problems.push("TTS_PROVIDER=cartesia requires CARTESIA_VOICE_ID");
+  if (ttsProvider === "cartesia" && !process.env.CARTESIA_API_KEY) {
+    problems.push("TTS_PROVIDER=cartesia requires CARTESIA_API_KEY");
   }
-  if (ttsProvider === "elevenlabs") {
-    if (!process.env.ELEVENLABS_API_KEY) problems.push("TTS_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY");
-    if (!process.env.ELEVENLABS_VOICE_ID) problems.push("TTS_PROVIDER=elevenlabs requires ELEVENLABS_VOICE_ID");
+  if (ttsProvider === "elevenlabs" && !process.env.ELEVENLABS_API_KEY) {
+    problems.push("TTS_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY");
   }
   if (ttsProvider === "sarvam" && !process.env.SARVAM_API_KEY) {
     problems.push("TTS_PROVIDER=sarvam requires SARVAM_API_KEY");
@@ -44,6 +57,31 @@ export function assertVoiceConfig(): void {
     problems.push("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required");
   }
   if (!process.env.PUBLIC_APP_URL) problems.push("PUBLIC_APP_URL is required (Twilio needs a public URL)");
+
+  // Dead failover legs. Every call gets DEFAULT_{STT,TTS}_FALLBACK_ORDER unless
+  // its agent row overrides it, so a provider in that chain without an API key
+  // is a leg that is guaranteed to fail the moment it's actually needed — i.e.
+  // during an incident, which is the worst possible time to discover it. Not a
+  // `problem`: the primary path still works and calls still connect, so this
+  // must not read as "calls will fail".
+  const deadLegs: string[] = [];
+  for (const p of DEFAULT_TTS_FALLBACK_ORDER) {
+    if (p !== ttsProvider && !PROVIDER_API_KEY_ENV[p].some((k) => process.env[k])) {
+      deadLegs.push(`TTS failover leg "${p}" has no ${PROVIDER_API_KEY_ENV[p].join("/")} — it will fail if reached`);
+    }
+  }
+  for (const p of DEFAULT_STT_FALLBACK_ORDER) {
+    if (p !== sttProvider && !PROVIDER_API_KEY_ENV[p].some((k) => process.env[k])) {
+      deadLegs.push(`STT failover leg "${p}" has no ${PROVIDER_API_KEY_ENV[p].join("/")} — it will fail if reached`);
+    }
+  }
+  if (deadLegs.length > 0) {
+    console.warn(
+      `[config-check] Configured provider failover chains contain legs that cannot connect:\n` +
+        deadLegs.map((p) => `  - ${p}`).join("\n") +
+        `\nThe primary provider still works; these only bite during a mid-call provider failure.`,
+    );
+  }
 
   if (problems.length > 0) {
     console.error(

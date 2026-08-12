@@ -1,4 +1,5 @@
 import type { ConnectTts } from "./types";
+import { resolveVoiceId } from "./default-voices";
 
 /**
  * Thin wrapper around ElevenLabs' streaming TTS WebSocket ("stream-input"),
@@ -31,7 +32,7 @@ import type { ConnectTts } from "./types";
  * no-op-by-default pattern as `language_code` above.
  */
 export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language) => {
-  const voiceId = voiceIdOverride || process.env.ELEVENLABS_VOICE_ID;
+  const voiceId = resolveVoiceId("elevenlabs", voiceIdOverride);
   const dictionaryId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
   const dictionaryVersionId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
   // "multi" is Deepgram STT's own code-switching mode (agent-frame.ts's
