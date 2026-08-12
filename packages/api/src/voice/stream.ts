@@ -52,6 +52,12 @@ import { db } from "../database";
 import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
 import { classifyCallHealth } from "./call-health";
+import {
+  describeTransferBlock,
+  narrowToolsForTransferCapability,
+  resolveTransferCapability,
+  type TransferCapability,
+} from "./handoff";
 import { eq } from "drizzle-orm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
@@ -409,6 +415,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * model name a contact.
    */
   let crmSyncContext: CrmSyncContext | undefined;
+  /**
+   * ADR-105: whether this call can genuinely hand off to a human — resolved
+   * once at "start" from `orgs.humanTransferNumber` + the telephony provider,
+   * then fixed for the life of the call for the same reason `crmSyncContext`
+   * is: what the agent is allowed to promise must not shift mid-conversation.
+   *
+   * Defaults to "blocked, no org" rather than to capable. A call that fails
+   * before the start handler resolves an org has no verified transfer target,
+   * and the safe default for a promise is not making it.
+   */
+  let transferCapability: TransferCapability = { canTransfer: false, reason: "no-org" };
   let callerMemoryFacts: Record<string, string> = {};
   /** Latency fix (2026-07-16): the fully-rendered, ready-to-speak literal
    * greeting text for this call (every {{merge_tag}} resolved), or
@@ -1867,6 +1884,37 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
           if (!speechFinal || !isFinal || !text.trim()) return;
 
+          // ADR-105 (F2): a hand-off is latched, so this call's agent leg is
+          // over — no further turn may run.
+          //
+          // `transferLatched` used to gate `hangUp` alone (ADR-082), which left
+          // the whole turn path open during the seconds between the model
+          // requesting the transfer and `performTransfer` bridging the leg at
+          // speak()'s tail. STT stays connected across that window, so one more
+          // caller utterance ran a complete extra turn. Production call 25 is
+          // the reference case: the caller said "You're gonna use the same
+          // number", STT then delivered the near-duplicate "You can use the
+          // same number" seven seconds later, and that phantom turn re-fired
+          // transferToHuman and crmSync, sent a SECOND and contradictory SMS,
+          // and re-spoke "You're connected — the advisor will take great care
+          // of you. Thanks!" word for word. That duplicated closing line was
+          // filed as a rendering/tone-tag defect for two sessions; it was
+          // really a second turn nobody had forbidden.
+          //
+          // Dropping the utterance is right rather than merely regrettable:
+          // whatever the caller says here belongs to the human they are about
+          // to be handed to, and answering it would mean the agent is still
+          // negotiating a call it has already declared finished. The text is
+          // still logged to `transcripts` so the record stays faithful to what
+          // the caller actually said — it just gets no reply.
+          if (transferLatched) {
+            console.warn(
+              `[voice] ignoring caller turn: a transferToHuman is already latched for this call${callSid ? ` (${callSid})` : ""}`,
+            );
+            logTranscript("caller", text);
+            return;
+          }
+
           // A real end-of-turn is being consumed — the current utterance is
           // over, so reset the backchannel utterance timer for the next one.
           callerUtteranceStartedAt = null;
@@ -2134,11 +2182,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                     direction: (row?.direction ?? session?.direction) === "outbound" ? "outbound" : "inbound",
                   }),
               humanNumberOrgId ? getEffectiveFlags(humanNumberOrgId).catch(() => ({})) : Promise.resolve({}),
-              // Only needed to fill {{merchant_name}}/{{company_name}} in a
+              // Needed to fill {{merchant_name}}/{{company_name}} in a
               // literalGreetingTemplate (see below) — folded into the same
               // batch rather than a separate later round-trip.
+              // ADR-105: `humanTransferNumber` rides along on this same select
+              // rather than as its own query, because the hand-off capability
+              // has to be known BEFORE the tool list is built (see
+              // `transferCapability` below) and this batch is the last thing
+              // that runs before that. Adding a column costs nothing; adding a
+              // round-trip here would land directly on pickup-to-first-word.
               humanNumberOrgId
-                ? db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, humanNumberOrgId)).limit(1).catch(() => [])
+                ? db
+                    .select({ name: orgs.name, humanTransferNumber: orgs.humanTransferNumber })
+                    .from(orgs)
+                    .where(eq(orgs.id, humanNumberOrgId))
+                    .limit(1)
+                    .catch(() => [])
                 : Promise.resolve([]),
               // ADR-085: the lead's own name/intake fields, for outbound
               // templates that open by naming the person ({{lead_name}},
@@ -2243,7 +2302,38 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 );
               }
             }
-            enabledToolsOverride = agentConfig.enabledTools;
+            // ADR-105: a call that cannot reach a person must not be handed a
+            // `transferToHuman` tool. Resolved here, once, from config this
+            // server can actually verify — never from the model's confidence —
+            // and applied by removing the tool outright, the same shape
+            // `crmSync` uses when there's no bindable contact (G1.4/ADR-069).
+            //
+            // Dropping the tool also rewrites the persona, for free and by
+            // design: `buildCallControlBlock` derives its `canTransfer` line
+            // from this same list, so the model is told "there's no live
+            // transfer available on this call" instead of being told a warm
+            // transfer is the best possible outcome. That prompt seam already
+            // existed; nothing was feeding it the truth.
+            transferCapability = resolveTransferCapability({
+              transferNumber: orgRow[0]?.humanTransferNumber,
+              provider,
+              hasOrg: Boolean(humanNumberOrgId),
+            });
+            enabledToolsOverride = narrowToolsForTransferCapability(agentConfig.enabledTools, transferCapability);
+            if (!transferCapability.canTransfer && transferCapability.reason) {
+              // Warned, not silent: on an insurance qualifier this is the
+              // difference between a warm lead reaching a licensed advisor and
+              // the agent qualifying them for nobody. `no-org` is the expected
+              // state for test-chat/harness/preview surfaces, so it logs at a
+              // lower level than a real misconfigured org.
+              const detail = describeTransferBlock(transferCapability.reason);
+              const suffix = callSid ? ` (${callSid})` : "";
+              if (transferCapability.reason === "no-org") {
+                console.log(`[voice] transferToHuman not offered on this call: ${detail}${suffix}`);
+              } else {
+                console.warn(`[voice] transferToHuman withheld — ${detail}${suffix}`);
+              }
+            }
             llmModelOverride = agentConfig.llmModel;
             ttsVoiceIdOverride = agentConfig.voiceId;
             // Per-agent frame config takes precedence over per-number config, which

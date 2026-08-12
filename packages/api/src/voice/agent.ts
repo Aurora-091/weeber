@@ -165,7 +165,17 @@ function buildCallControlBlock(
       "- Never call hangUp in the same turn as transferToHuman, and never call it after one.\n" +
       "  The transfer is what ends your part of the call — the caller carries on talking to\n" +
       "  a person. A short acknowledgement like \"okay\" right after you offer a handoff means\n" +
-      "  yes, take me to them; it is not a goodbye."
+      "  yes, take me to them; it is not a goodbye.\n" +
+      // ADR-105: production call 25 spoke "You're connected — the advisor will take great
+      // care of you. Thanks!" and was then hung up on, because the bridge had not been
+      // attempted yet (it happens after this turn's audio finishes) and could not have
+      // succeeded (the org had no transfer number). Connecting is not the model's action to
+      // narrate: it is this server's, it happens strictly after the model stops talking, and
+      // it can still fail. So the model may promise the handoff and must not report it.
+      "- Say you are connecting them; never say you HAVE connected them. \"Let me get you to\n" +
+      "  an advisor now, one moment\" is right. \"You're connected\", \"you're through to them\"\n" +
+      "  or \"they're on the line now\" is wrong — the connection happens after you finish\n" +
+      "  speaking and is not yours to announce. Never sign off as though the handoff is done."
     : "- If the caller explicitly wants a person, or asks something genuinely outside what\n" +
       "  you can help with, say so plainly and try to actually help within what you can do —\n" +
       "  there's no live transfer available on this call.";

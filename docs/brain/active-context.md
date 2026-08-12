@@ -12,6 +12,36 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The best call this product has ever placed dropped a warm lead mid-promise (2026-08-12,
+  ADR-105 — shipped).** Production call 25 reads `status = "completed"`, `disposition = "booked"`,
+  `health_status = "healthy"`, `intent = "purchase_or_booking"`, and it closed with *"Let me connect
+  you with a licensed advisor right now… **You're connected — the advisor will take great care of
+  you.**"* Nobody was connected; the line was hung up on them. `orgs.human_transfer_number` is
+  **NULL on 4 of 4 prod orgs** and `insurance_advisors` is still empty (ADR-098), so `performTransfer`
+  resolved no target and hung up. Every layer behaved as written — the defect was upstream: the model
+  was handed a `transferToHuman` tool on a call where it could not possibly succeed, plus a persona
+  saying the best outcome is a live warm transfer. **The launch vertical's only conversion event is
+  structurally impossible in production today.** Second finding, same call: the closing line, the
+  transfer, `crmSync` and `sendSms` all fired **twice** — filed for two sessions as "duplicated agent
+  text", it was a whole phantom turn, because ADR-082's `transferLatched` gated `hangUp` and nothing
+  else while the bridge waits at `speak()`'s tail with STT still connected. Shipped: pure
+  `voice/handoff.ts` resolving transfer capability once at `"start"` (reasons `no-org` /
+  `provider-unsupported` / `no-transfer-number`), `narrowToolsForTransferCapability` dropping the tool
+  (which rewrites the prompt for free via `buildCallControlBlock`, and materializes
+  `AVAILABLE_TOOL_NAMES` in the `undefined` = "all tools" case that covers most prod calls),
+  `bookAppointment` left intact as the fallback, a rule that the model may *promise* the handoff but
+  never *report* it, the latch extended to short-circuit whole turns (transcript still written), and
+  `handoff.test.ts` asserting against `stream.ts` source text that the duplicated decision stays in
+  agreement. api tests 1,221 → 1,241. Also corrected a wrong claim on the record per ADR-078:
+  "hand-off spoken but never recorded" was an ADR-103 *harness* finding, not prod behaviour — prod
+  records the tool call **and** hangs up, which is worse. **Still open:** nothing tells an operator to
+  set the number beyond a `console.warn` (dashboard surfacing is unbuilt), and `call-health.ts` still
+  calls call 25 healthy — nothing in the stack notices a broken promise. **Next: ADR-106** (F3/F4/F5
+  from the same call — `sendSms` sent a fabricated advisor number `888-555-0199` and an unresolved
+  `[Advisor Desk Number]` placeholder, the tone-tag stripper is `^`-anchored so `[[tone:upbeat]]`
+  mid-string is spoken, `*Sending text message...*` stage directions reached TTS, and the agent framed
+  an outbound call as inbound).
+
 - **The personas were authoring documents shipped verbatim to the model (2026-08-12, ADR-104 —
   shipped in code, NOT yet true in production).** Production call 22 spoke *"Hello, is this ? This is
   calling on behalf of krisn"* and call 24 spoke *"Hi, is this **[Caller Name]**? This is **[Agent
