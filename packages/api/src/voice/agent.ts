@@ -1232,6 +1232,15 @@ export async function runVoiceAgentTurn({
  * aren't met with silence while waiting for Deepgram to hear them speak first.
  * Runs as a normal agent turn with an instruction to open the conversation.
  */
+/**
+ * The seed "user" turn that makes the model open the call instead of waiting
+ * to be spoken to. Exported (ADR-103) so the synthetic harness's
+ * agent-speaks-first mode drives the agent through the *same* opening
+ * instruction a live outbound call uses, rather than a paraphrase that can
+ * drift away from this one silently.
+ */
+export const GREETING_TURN_SEED = "[The call has just connected. Greet the caller briefly and ask how you can help.]";
+
 export function runVoiceAgentGreeting({
   persona,
   onTextDelta,
@@ -1284,7 +1293,7 @@ export function runVoiceAgentGreeting({
     history: [
       {
         role: "user",
-        content: "[The call has just connected. Greet the caller briefly and ask how you can help.]",
+        content: GREETING_TURN_SEED,
       },
     ],
     persona,

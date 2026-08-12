@@ -831,7 +831,10 @@ export const voice = new Hono()
   .get("/synthetic-scenarios", async (c) => {
     const { SYNTHETIC_SCENARIOS } = await import("./synthetic-scenarios");
     return c.json(
-      { scenarios: SYNTHETIC_SCENARIOS.map((s) => ({ key: s.key, label: s.label })) },
+      // ADR-103: `firstSpeaker` is surfaced so a merchant picking a scenario can
+      // see whether it models an inbound or an outbound (agent-speaks-first)
+      // call — the two exercise different opening behaviour.
+      { scenarios: SYNTHETIC_SCENARIOS.map((s) => ({ key: s.key, label: s.label, firstSpeaker: s.firstSpeaker ?? "caller" })) },
       200,
     );
   })

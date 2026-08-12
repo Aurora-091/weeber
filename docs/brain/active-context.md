@@ -12,6 +12,50 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The only automated behavioural check this product has could not fail the tests it claimed to run
+  (2026-08-12, ADR-103).** An A/B model comparison used the synthetic harness as an instrument and the
+  instrument was the finding. `wrong-info` had **never** passed and could not — reactive persona, caller
+  speaks first from an empty transcript, caller model returns `""`, silent `break` on turn zero, lone
+  assertion scored against an empty transcript (0 turns, ~1.7s, both models, both templates). Every
+  scenario was **inbound** while production is 10 outbound / 1 inbound. All eight were ecommerce-shaped
+  against six insurance templates, so ADR-081's boundary was prose only. Worst of the four: the scripted
+  caller runs on an **aligned** model that **refuses adversarial personas** — asked to volunteer a
+  fabricated SSN it answered in its own assistant voice and offered *the agent* a menu of insurance
+  topics, and both data-handling scenarios **passed** with the agent never challenged. Shipped:
+  `firstSpeaker` (Vapi's `firstMessageMode` axis; agent-first drives the exported `GREETING_TURN_SEED`,
+  not a paraphrase), `callerMustSay` → `endedBy: "caller-off-script"` with `allPassed` forced false,
+  per-scenario `callerModel` pin (boundary scenarios on direct Groq `llama-3.3-70b-versatile`, where the
+  caller pushed the SSN four times and the agent refused every time), `endedBy: "caller-silent"`,
+  `toolCalledAnyOf`, four outbound scenarios, both new non-results surfaced in the dashboard.
+  `wrong-info` now runs 8 turns and passes. The harness is **on-demand, not in CI**, so the two
+  scenarios that fail today are findings, not a red build.
+  **Good news, now evidence instead of assumption: the ADR-081 boundary holds** under adversarial
+  pressure — no premium quoted, no coverage bound, no start date confirmed, SSN and routing refused,
+  licensure never claimed.
+  **Three defects to act on, none fixed yet.** (1) *The hand-off is spoken and never recorded* — the
+  agent promises an advisor callback and calls neither `bookAppointment` nor `transferToHuman`, so a
+  warm lead who verbally agreed leaves **no row**. That is the launch vertical's only conversion event
+  and it is ADR-090's class in the product itself. Highest value item in this batch. (2)
+  `flagGuardrailEvent` fires **6×** on a polite-but-persistent caller and 4× on another — sales friction
+  is being logged as abuse, which makes the signal unreadable. (3) A turn emitted duplicated text with a
+  tone tag mid-sentence — **fourth** defect in that feature after ADR-082/-083/-101.
+  Also: the "agent sounds scripted" complaint is now reproducible on demand — the same canned advisor
+  line recited near-verbatim across turns, six consecutive refusals with no alternative offered.
+
+- **The tail of production's LLM failover chain is ~40% broken (measured 2026-08-12, ADR-103, NOT
+  fixed — needs an env decision).** Direct Groq supports tool use in streaming on all four models
+  probed (`llama-3.3-70b-versatile` 256ms TTFT, `llama-3.1-8b-instant` 160ms, `qwen/qwen3.6-27b` 533ms,
+  `openai/gpt-oss-120b` 229ms **with** content — which contradicts an earlier note in this repo). But
+  `groq/llama-3.3-70b-versatile` **via the gateway failed 4 of 10** identical requests, and the routing
+  metadata is explicit: `resolvedProvider: "groq"`, `canonicalSlug: "meta/llama-3.3-70b"`, and
+  `providerAttempts` = **bedrock first** returning 400 *"This model doesn't support tool use in
+  streaming mode"*, then groq 503. It is **Bedrock's** Llama-3.3-70B that lacks streaming tool use, not
+  Groq's — so the earlier conclusion "that model can't do tool use" was wrong about the cause. That slug
+  is the **last link of `AI_GATEWAY_FALLBACK_MODELS`** in prod, so the declared third leg of failover
+  does not work for a 10-tool streaming workload. `google/gemini-3.1-flash-lite` (10/10, 1040ms p50) and
+  `openai/gpt-5.4-mini` (10/10, 923ms p50) are sound. Decision needed: replace the tail slug, or accept
+  a two-deep chain and say so.
+
 - **The voice pipeline was measured before anything was changed (2026-08-12, ADR-100).**
   Real numbers, 44 turns with a complete measurement: `v2v` p50 **1863ms**, p90 4180, p95 4394, max
   8173; `pickup_to_first_audio_ms` 1770–2588ms on all 11 calls. One decomposed turn is pre-LLM 129ms

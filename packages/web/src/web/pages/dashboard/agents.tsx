@@ -29,7 +29,8 @@ type SyntheticResult = {
   scenarioKey: string;
   transcript: { role: "caller" | "agent"; text: string }[];
   toolCallsByAgent: string[];
-  endedBy: "hangup" | "max-turns";
+  endedBy: "hangup" | "max-turns" | "caller-silent" | "caller-off-script";
+  callerOffScript?: string[];
   assertions: { assertion: { description: string }; passed: boolean }[];
   allPassed: boolean;
 };
@@ -45,7 +46,7 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
     queryFn: async () => {
       const res = await apiFetch("/api/voice/synthetic-scenarios", { headers: adminHeaders() });
       if (!res.ok) throw new Error(`${res.status}`);
-      return (await res.json()) as { scenarios: { key: string; label: string }[] };
+      return (await res.json()) as { scenarios: { key: string; label: string; firstSpeaker?: "caller" | "agent" }[] };
     },
   });
 
@@ -79,7 +80,12 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
           <div className="flex gap-2">
             <select value={scenarioKey} onChange={(e) => setScenarioKey(e.target.value)} className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none">
               <option value="">Select a scenario…</option>
-              {(scenarios.data?.scenarios ?? []).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              {(scenarios.data?.scenarios ?? []).map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                  {s.firstSpeaker === "agent" ? " (outbound)" : ""}
+                </option>
+              ))}
             </select>
             <Button size="sm" onClick={() => run.mutate()} disabled={!scenarioKey || run.isPending}>
               {run.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
@@ -90,7 +96,17 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
             <div className="space-y-2">
               <p className={`text-sm font-medium ${result.allPassed ? "text-emerald-600" : "text-destructive"}`}>
                 {result.allPassed ? "All assertions passed" : "Some assertions failed"}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">— ended by {result.endedBy === "hangup" ? "agent hangUp" : "max turns"}</span>
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {/* ADR-103: "caller-silent" is a scenario/persona defect, not agent behaviour —
+                      call it out instead of rendering it as an ordinary end-of-run. */}
+                  {result.endedBy === "hangup"
+                    ? "— ended by agent hangUp"
+                    : result.endedBy === "caller-silent"
+                      ? "— stopped early: the scripted caller had nothing to say, so this result is not meaningful"
+                      : result.endedBy === "caller-off-script"
+                        ? `— invalid run: the scripted caller never said ${(result.callerOffScript ?? []).join(", ")}, so the agent was never tested on it`
+                        : "— ended by max turns"}
+                </span>
               </p>
               <ul className="space-y-1">
                 {result.assertions.map((a, i) => (
