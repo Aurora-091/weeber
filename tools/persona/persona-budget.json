@@ -1,0 +1,17 @@
+{
+  "notSeeded": [
+    "00-insurance-regulatory-reference.md"
+  ],
+  "maxRuntimeChars": {
+    "01-cart-recovery-agent.md": 6806,
+    "02-cod-confirmation-agent.md": 6498,
+    "03-feedback-agent.md": 5696,
+    "04-insurance-policy-renewal-agent.md": 8580,
+    "05-insurance-lead-followup-agent.md": 8729,
+    "06-insurance-appointment-setter-agent.md": 8462,
+    "07-insurance-post-sale-welcome-agent.md": 9444,
+    "08-insurance-feedback-nps-agent.md": 7814,
+    "09-insurance-final-expense-qualifier-agent.md": 11754
+  },
+  "maxTotalRuntimeChars": 73783
+}

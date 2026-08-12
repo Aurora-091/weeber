@@ -26,6 +26,7 @@ import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, 
 import { resolveLocalizedGreeting } from "./insurance-greetings";
 import { TONE_INSTRUCTION_BLOCK } from "./tone-tags";
 import { scrubSystemPrompt } from "./merge-tags";
+import { createOutputGuard } from "./output-guard";
 import { TOPIC_BOUNDARY_LINES, INJECTION_LINES, abuseHandlingLine } from "./prompt-lines";
 import { buildWorkflowFactsBlock } from "./workflows/variables";
 
@@ -1165,13 +1166,39 @@ export async function runVoiceAgentTurn({
 
     let full = "";
     const calledToolNames: string[] = [];
+    /**
+     * ADR-104: the single chokepoint. Every consumer of onTextDelta speaks what
+     * it is given (stream.ts and test-call-stream.ts both hand it to TTS) and
+     * `full` becomes the stored transcript, so guarding here covers live calls,
+     * the test chat, the synthetic harness and the preview drawer at once —
+     * rather than asking four call sites to each remember to do it. `full` is
+     * accumulated from the guarded text, not the raw deltas, so the transcript
+     * records what the caller actually heard.
+     */
+    const guard = createOutputGuard({
+      onText: (text) => {
+        full += text;
+        onTextDelta(text);
+      },
+    });
     for await (const delta of result.textStream) {
       if (firstTokenAt === null) {
         firstTokenAt = Date.now();
         onLatency?.(firstTokenAt - turnStartedAt, getActiveModelLabel(llmProvider, llmModel));
       }
-      full += delta;
-      onTextDelta(delta);
+      guard.push(delta);
+    }
+    guard.flush();
+    const guardFindings = guard.findings();
+    if (guardFindings.length > 0) {
+      // Loud on purpose. A finding means a model tried to speak its own control
+      // tokens or a persona still contains a placeholder slot — the guard stops
+      // the caller hearing it, but the underlying cause is a real defect
+      // somewhere upstream and must not be silently absorbed.
+      console.warn("[voice-agent] spoken-output guard removed non-speech from a turn", {
+        model: getActiveModelLabel(llmProvider, llmModel),
+        findings: guardFindings,
+      });
     }
 
     // The model ran (possibly called tools) but produced no spoken text —

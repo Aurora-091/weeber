@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "./seed";
+import { extractRuntimePersona, findRuntimeLeaks } from "../voice/persona-source";
 
 /**
  * Prompt hygiene guard (G1.3 + G1.4, 2026-08-01).
@@ -64,11 +65,36 @@ async function readPrompt(fileName: string): Promise<string> {
   return file.text();
 }
 
+/**
+ * The seeded persona, not the authoring document (ADR-104).
+ *
+ * This file's two hygiene rules below were written when `seed.ts` loaded each
+ * markdown file *verbatim*, so "the file" and "the prompt" were the same bytes
+ * and scanning the file was the only way to scan the prompt. They are no longer
+ * the same bytes: the seeder now extracts only the `runtime:begin`/`runtime:end`
+ * region, and everything outside it — the `**File:**` header, the regulatory
+ * grounding pointer, the tools mapping table, the authoring note — is
+ * maintainer-facing and never reaches the model.
+ *
+ * So these rules are re-pointed at the extracted region rather than the file.
+ * That is a tightening, not a relaxation: G1.4 below now runs against all nine
+ * templates instead of only the three Shopify ones, because with the editorial
+ * prose out of scope the insurance six pass it too. Scanning the whole file
+ * would now fail on the authoring notes themselves, which is a false positive —
+ * an ADR reference in a maintainer note is not something an agent can say.
+ *
+ * `extractRuntimePersona` throws when a file has no markers, so a new prompt
+ * file that forgets them fails here as well as at seed time.
+ */
+async function readRuntimePersona(fileName: string): Promise<string> {
+  return extractRuntimePersona(await readPrompt(fileName), fileName).runtime;
+}
+
 describe("seeded agent prompts — merge-tag hygiene (G1.3)", () => {
   for (const template of AGENT_TEMPLATES) {
     const migrated = !MERGE_TAG_MIGRATION_BACKLOG.has(template.fileName);
     it(`${template.fileName} ${migrated ? "contains no merge tags" : "(backlog) is tracked, not forgotten"}`, async () => {
-      const content = await readPrompt(template.fileName);
+      const content = await readRuntimePersona(template.fileName);
       const tags = [...new Set([...content.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]!))];
       if (migrated) {
         expect(
@@ -96,15 +122,15 @@ describe("seeded agent prompts — merge-tag hygiene (G1.3)", () => {
 });
 
 describe("seeded agent prompts — no engineering metadata (G1.4)", () => {
-  // Scoped to the Shopify templates, the ones rewritten in this pass. The
-  // insurance set is queued behind the same migration as the tag backlog.
-  const migratedFileNames = AGENT_TEMPLATES.filter((t) => !MERGE_TAG_MIGRATION_BACKLOG.has(t.fileName)).map(
-    (t) => t.fileName,
-  );
+  // ADR-104: was scoped to the three Shopify templates, because the insurance
+  // six carried their editorial header inside the seeded bytes and could not
+  // pass. With the runtime/authoring split that prose is out of the prompt, so
+  // this now runs against all nine.
+  const allFileNames = AGENT_TEMPLATES.map((t) => t.fileName);
 
-  for (const fileName of migratedFileNames) {
+  for (const fileName of allFileNames) {
     it(`${fileName} reads as agent instruction, not as documentation`, async () => {
-      const content = await readPrompt(fileName);
+      const content = await readRuntimePersona(fileName);
       const offences: string[] = [];
       for (const { label, pattern } of ENGINEERING_METADATA_PATTERNS) {
         const match = content.match(pattern);
@@ -114,8 +140,9 @@ describe("seeded agent prompts — no engineering metadata (G1.4)", () => {
       }
       expect(
         offences,
-        `${fileName} is loaded verbatim as a system prompt. Move engineering context to ` +
-          `docs/agent-prompts/notes/, which the seeder never reads.`,
+        `${fileName}'s runtime region becomes system-prompt text on every turn. Move engineering ` +
+          `context outside the runtime markers, or to docs/agent-prompts/notes/, which the seeder ` +
+          `never reads.`,
       ).toEqual([]);
     });
   }
@@ -189,6 +216,59 @@ describe("seeded agent prompts — tool-call examples match the tools' real sche
         offences,
         `${template.fileName} instructs the model to pass a parameter the tool does not declare. ` +
           `The call will fail schema validation at runtime and the tool will never execute.`,
+      ).toEqual([]);
+    });
+  }
+});
+
+/**
+ * The runtime/authoring contract itself (ADR-104).
+ *
+ * Root cause this locks down, measured from real production calls: because the
+ * whole markdown document was seeded as the persona, 13-40% of every system
+ * prompt was prose addressed to a maintainer, and the launch agent's persona was
+ * 19,480 characters of which 40% was metadata. Production call 22 spoke
+ * "Hello, is this ? This is calling on behalf of krisn" and call 24 spoke
+ * "Hi, is this [Caller Name]? This is [Agent Name] with presistentads" — the
+ * second of those is a bracket-grammar slot read aloud verbatim, because the
+ * merge layer only resolves double-brace tags and left the brackets standing.
+ *
+ * Three properties are asserted here, all of which shipped broken:
+ *  1. Every seeded file declares runtime markers, so nothing is seeded by
+ *     accident. `extractRuntimePersona` throws otherwise.
+ *  2. No maintainer prose and no bracket-grammar slot survives into the region
+ *     that becomes the prompt.
+ *  3. The region reads as guidance, not as a numbered script with lettered
+ *     branches. "SECTION 3", "Branch C" and "Step 4" are cross-references to a
+ *     document the model cannot see, and an agent handed a numbered script
+ *     recites it instead of having a conversation.
+ */
+describe("seeded agent prompts — runtime/authoring split (ADR-104)", () => {
+  for (const template of AGENT_TEMPLATES) {
+    it(`${template.fileName} declares a runtime region and keeps authoring prose out of it`, async () => {
+      const raw = await readPrompt(template.fileName);
+      // Throws with an actionable message when markers are missing/unbalanced.
+      const { runtime, regionCount } = extractRuntimePersona(raw, template.fileName);
+      expect(regionCount).toBeGreaterThan(0);
+      expect(runtime.length).toBeGreaterThan(0);
+      expect(
+        findRuntimeLeaks(runtime),
+        `${template.fileName} leaks maintainer prose or an unresolvable bracket placeholder into the ` +
+          `seeded persona. Move it outside the runtime markers; a bracket slot specifically is what ` +
+          `produced the "Hi, is this [Caller Name]?" line on a real call.`,
+      ).toEqual([]);
+    });
+
+    it(`${template.fileName} reads as goal-based guidance, not a numbered script`, async () => {
+      const runtime = await readRuntimePersona(template.fileName);
+      const scaffolding = [
+        ...new Set([...runtime.matchAll(/\b(SECTION \d+|Branch [A-D]\b|Step \d+|Reschedule Module)/g)].map((m) => m[0])),
+      ];
+      expect(
+        scaffolding,
+        `${template.fileName}'s runtime region still refers to script scaffolding. Those are ` +
+          `cross-references to a document the model never sees, and they make the agent recite ` +
+          `rather than converse — describe the goal and let it decide the order.`,
       ).toEqual([]);
     });
   }

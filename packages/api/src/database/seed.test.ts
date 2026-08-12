@@ -50,6 +50,7 @@ mock.module("./index", () => {
 
 import { seedAgentTemplates, AGENT_TEMPLATES } from "./seed";
 import { AVAILABLE_TOOL_NAMES } from "../voice/agent-frame";
+import { join } from "node:path";
 
 /**
  * Regression guard (2026-07-16 audit follow-up) for the confirmCodOrder/
@@ -146,7 +147,23 @@ describe("seedAgentTemplates", () => {
       // writing this test: 01-cart-recovery-agent.md's known-gap prose mentions `sendSms` as a
       // different system's action, not something this agent calls — only the table itself
       // reflects what the agent actually calls).
-      const afterHeading = row.defaultPersonaPrompt.split("## Tools")[1] ?? "";
+      // Read the tools table off the FILE, not off `row.defaultPersonaPrompt`.
+      // ADR-104 moved the "## Tools — explicit mapping" table outside the
+      // runtime markers, so the seeded prompt no longer contains it — leaving
+      // this read pointed at the seeded value would have made the whole check
+      // silently vacuous (empty section, zero tool names, always green), which
+      // is the exact defect class ADR-090 is about. The table is still the
+      // authoritative statement of what each agent is instructed to call, so
+      // the guard follows it to the file.
+      const fileText = await Bun.file(
+        join(import.meta.dir, "../../../../docs/agent-prompts", template.fileName),
+      ).text();
+      const afterHeading = fileText.split("## Tools")[1] ?? "";
+      expect(
+        afterHeading.length,
+        `${template.fileName} has no "## Tools" section — this guard reads it to check the template's ` +
+          `defaultTools list, and would silently pass on an empty string.`,
+      ).toBeGreaterThan(0);
       const toolsSection = afterHeading
         .split("\n")
         .filter((line) => line.trim().startsWith("|"))

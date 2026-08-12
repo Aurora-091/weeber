@@ -152,6 +152,28 @@ jobs:
         # existing debt does not block. See docs/decisions/adr-090-*.md.
         run: bun run knip:gate
 
+  persona-size:
+    name: Persona size ratchet (seeded agent prompts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Persona size ratchet
+        # docs/agent-prompts/*.md are authoring documents; only the region
+        # between the runtime:begin/runtime:end markers is seeded into
+        # agent_templates.default_persona_prompt and re-sent as system-prompt
+        # text on every turn of every call. Before ADR-104 the whole file was
+        # seeded and 13-40% of each persona was prose written to a maintainer.
+        # Budgets in tools/persona/persona-budget.json are the measured sizes at
+        # that commit and may only go DOWN — a bigger persona needs an ADR, not a
+        # bigger number. Also re-checks that no authoring prose or bracket
+        # placeholder leaked back inside the markers.
+        run: bun run persona:gate
+
   design-guard:
     name: Design drift ratchet + contrast gate
     runs-on: ubuntu-latest
@@ -269,7 +291,7 @@ jobs:
   ci-success:
     name: CI success
     if: always()
-    needs: [typecheck, test, build, lint, migration-drift, e2e, dead-code, design-guard, visual, a11y, fonts]
+    needs: [typecheck, test, build, lint, migration-drift, e2e, dead-code, persona-size, design-guard, visual, a11y, fonts]
     runs-on: ubuntu-latest
     steps:
       - name: Every dependent job must have SUCCEEDED

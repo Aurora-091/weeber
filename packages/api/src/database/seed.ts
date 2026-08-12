@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { join } from "path";
 import { SHOPIFY_WORKFLOW_TEMPLATES } from "../voice/workflows/seed-graph";
 import { validateLockedNodesEnforced } from "../voice/workflows/scaffold";
+import { extractRuntimePersona } from "../voice/persona-source";
 
 /**
  * Single source of truth for the seeded agent templates — exported (not
@@ -164,7 +165,17 @@ export async function seedAgentTemplates() {
         skippedCount++;
         continue;
       }
-      const promptContent = await file.text();
+      // ADR-104: seed the RUNTIME region only, not the whole document. These
+      // files are authoring documents — they carry a `**File:**` header, a
+      // regulatory-grounding pointer, a "Why this template exists" rationale, a
+      // tools mapping table and a "Known gap" note, all written to a human
+      // maintainer. Writing the file verbatim into defaultPersonaPrompt meant
+      // the model was handed 13-40% maintainer prose as if it were call
+      // instructions. extractRuntimePersona THROWS when the markers are absent
+      // rather than falling back to the whole file: the catch below turns that
+      // into a loud per-template skip, which is the correct outcome, because a
+      // silent whole-file fallback is precisely the defect being removed.
+      const { runtime: promptContent } = extractRuntimePersona(await file.text(), t.fileName);
 
       const existing = await db
         .select()

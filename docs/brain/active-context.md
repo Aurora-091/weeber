@@ -12,6 +12,29 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The personas were authoring documents shipped verbatim to the model (2026-08-12, ADR-104 —
+  shipped in code, NOT yet true in production).** Production call 22 spoke *"Hello, is this ? This is
+  calling on behalf of krisn"* and call 24 spoke *"Hi, is this **[Caller Name]**? This is **[Agent
+  Name]** with presistentads"* — six of nine personas opened with `You are [Agent_name: {{agent_name}}]`
+  and the merge layer resolves only `{{tag}}`, so it stripped the tag from *inside* the brackets and left
+  the label standing to be read aloud. Underneath, `seedAgentTemplates()` wrote the **whole file** into
+  `default_persona_prompt`, so **13-40% of every persona was prose addressed to a maintainer** (the
+  `**File:**` header, the regulatory pointer, the variables table, the tools table, the "Known gap"
+  note), worst on the launch agent at 19,711 chars / 272 lines / 40% metadata — re-sent every turn of
+  every call. What remained was a numbered script with lettered branches, which is exactly why ADR-103's
+  harness caught near-verbatim recitation. Shipped: `runtime:begin`/`runtime:end` markers,
+  `extractRuntimePersona` that **throws** instead of falling back to the whole file, all nine runtime
+  regions rewritten goal-based with every guardrail and audited line verbatim, `voice/output-guard.ts`
+  scrubbing tool syntax / JSON residue / bracket slots at the single `onTextDelta` chokepoint (a gateway
+  8B model leaked `3"}</function>…` as speech in 4 of 6 probe runs), a new `persona:gate` CI ratchet, and
+  G1.3/G1.4 re-pointed at the seeded region so G1.4 covers all 9 templates instead of 3. Measured:
+  103,752 → 73,783 persona chars (−29%), launch agent −40%, api tests 1,188 → 1,221.
+  **Next, and required for any of this to matter: re-seed `agent_templates` on production.** All four
+  prod orgs still hold the old whole-file personas, so live calls keep reciting until that runs. Nothing
+  in that table is hand-edited, so a full re-seed is safe — but it is a deliberate write to prod.
+  Also still open: whether the goal-based rewrite actually reduces recitation is **unverified** — re-run
+  the ADR-103 synthetic scenarios after the re-seed to find out.
+
 - **The only automated behavioural check this product has could not fail the tests it claimed to run
   (2026-08-12, ADR-103).** An A/B model comparison used the synthetic harness as an instrument and the
   instrument was the finding. `wrong-info` had **never** passed and could not — reactive persona, caller
