@@ -31,8 +31,32 @@ updated: 2026-08-12
   **data** defect: 3 of 4 `leads` rows have `name = NULL` and `fields = {}`. Fixing the lead rows is
   worth more than any code change in this batch. No prod data was written.
   Explicitly deferred as unearned: the LLM TTFT fat tail (p50 1376 → p95 3826 — needs per-request
-  gateway-vs-model timing before naming a cause), the 10 of 78 turns that reserved a turn index and
-  produced no TTS byte, and Cartesia-vs-ElevenLabs at n=2.
+  gateway-vs-model timing before naming a cause) and Cartesia-vs-ElevenLabs at n=2. The third deferred
+  item — the 10 of 78 turns with no TTS byte — was investigated and closed the same day, see ADR-101
+  below; **its "dead air" framing here was wrong** and is retracted there.
+
+- **A reply too short to trip the tone-tag buffer was never spoken at all (2026-08-12, ADR-101).**
+  ADR-100's "10 of 78 turns produced no audio" was one label over two different things, and the label
+  hid the row that mattered. 9 of the 10 are turns the caller aborted **before the first LLM token** —
+  correct barge-in, and provable: call 25 has 27 turn rows and 23 agent transcript lines, and the 4
+  all-NULL rows are exactly the 4 turns with no agent line, each between two caller lines under 1.5s
+  apart. A further 8 rows read as "no LLM ran" are just `speakCannedLine` re-prompts, where no LLM is
+  supposed to run. **The 1 real one is call 21 turn 3**: `llm_ttft_ms = 2779`, `tts_first_byte_ms`
+  NULL, transcript recording `"OK."` as spoken, caller transferred having heard silence.
+  Cause: ADR-082's tone-tag filter released its hold-back on the first of three conditions (complete
+  tag / any `]]` / 24 chars) and had **no condition for end of stream**, so a reply shorter than the cap
+  with no `]]` was still entirely buffered when the turn ended; ADR-083's lazy connect meant no socket
+  existed, `endTurn()` took its "no speakable text" branch, and nothing errored or logged. Every short
+  untagged reply was exposed — rare only because the model usually does emit the tag.
+  **Third defect in this one feature** (ADR-082 unwired `setTone`, ADR-083 the socket lifetime) and
+  ADR-090's class at its purest: a closure in a 2000-line `stream.ts` no test could reach.
+  Fixed: the filter is now `createToneTagFilter` in `tone-tags.ts` with an idempotent `flush()` called
+  in `speak()`'s `finally` before `endTurn()` — not on a barge-in, where abandoning the text is
+  correct — plus a `DEAD AIR on turn N` error log, because a NULL `tts_first_byte_ms` was
+  indistinguishable from three benign causes and that ambiguity is the whole reason this sat unexamined.
+  **Next thing to look at from the same reconciliation, deliberately not fixed:** the silence re-prompt
+  fired 3× in call 25 and the caller answered within ~3s each time — the agent interrupts people who
+  are thinking. Timer tuning on n=1 call; needs a decision, not a patch.
 
 - **CI on `main` is green again; the cause was an unversioned third-party input (2026-08-11, ADR-099).**
   `main` had been red for four commits — `visual`, `fonts`, `CI success` — while the whole range

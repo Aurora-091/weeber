@@ -117,3 +117,84 @@ export const TONE_INSTRUCTION_BLOCK = `Delivery:
 - Never mention, explain, or speak the tag itself. It is stripped before anyone hears it — it
   exists purely to tell the voice how to say the words that follow, not to be read aloud.
 - Example: [[tone:apologetic]] I'm sorry about that — let me see what I can do.`;
+
+/**
+ * Streaming tone-tag filter — the per-turn state machine that pulls a leading
+ * `[[tone:value]]` marker out of an LLM's *streamed* deltas before any of it
+ * reaches TTS. Lifted out of a closure inside stream.ts's speak() on
+ * 2026-08-12 for one reason: as a closure in a 2000-line file it had no
+ * caller a test could reach, and it was silently muting turns in production
+ * (see ADR-101). Same defect class as ADR-090 — untestable placement is how
+ * this survived.
+ *
+ * The hold-back: until the tag is resolved, deltas accumulate instead of
+ * being forwarded, because `[[tone:calm]]` arrives split across several
+ * deltas and half a tag must never be spoken. Resolution happens on the
+ * first of: a complete tag matched, any `]]` seen (malformed tag — stop
+ * waiting), or TONE_TAG_MAX_BUFFER_CHARS accumulated (no tag is coming).
+ *
+ * `flush()` is the part that was missing. A turn whose ENTIRE text is
+ * shorter than the cap and contains no `]]` never hits any of the three
+ * resolution conditions, so the buffer was still holding every character of
+ * it when the turn ended — and the caller heard pure silence while the
+ * transcript recorded the line as spoken. Call 21 turn 3 in production
+ * (2026-08-09) is the reference case: the LLM produced "OK.", TTS was handed
+ * nothing at all (`turn_latency.tts_first_byte_ms` is NULL on that row while
+ * `llm_ttft_ms` is 2779), and the caller was then transferred having heard
+ * dead air. Every short reply — "Sure, one moment." "Got it, thanks." — was
+ * exposed to this whenever the model skipped the tag it was asked for.
+ */
+export interface ToneTagFilter {
+  /** Feed one streamed delta. Forwards speakable text to `onText` as soon as
+   * the tag question is settled, holding it back until then. */
+  push(delta: string): void;
+  /**
+   * End of stream — release anything still held back. Returns the text it
+   * emitted (empty string when there was nothing left, which is the normal
+   * case), so a caller can tell "this turn was rescued from the buffer"
+   * apart from "nothing was pending" and log accordingly.
+   *
+   * Safe to call more than once, and safe to call on a turn that already
+   * resolved normally.
+   */
+  flush(): string;
+}
+
+export function createToneTagFilter(sink: {
+  /** Called at most once per turn, only when a *recognized* tone was
+   * matched. Whether to act on it is the caller's decision (stream.ts gates
+   * it on EXPRESSIVE_DELIVERY_FLAG); the tag is stripped either way. */
+  onTone?: (tone: ToneValue) => void;
+  onText: (text: string) => void;
+}): ToneTagFilter {
+  let buffer = "";
+  let resolved = false;
+
+  /** Shared by push() and flush(): strip whatever tag is there (if any),
+   * mark the turn resolved, and emit the remainder. Returns what it emitted. */
+  function release(): string {
+    const { tone, text } = stripToneTag(buffer);
+    resolved = true;
+    buffer = "";
+    if (tone !== null) sink.onTone?.(tone);
+    if (text) sink.onText(text);
+    return text;
+  }
+
+  return {
+    push(delta: string) {
+      if (resolved) {
+        if (delta) sink.onText(delta);
+        return;
+      }
+      buffer += delta;
+      const complete = TONE_TAG_REGEX.test(buffer);
+      const malformed = buffer.includes("]]");
+      if (complete || malformed || buffer.length >= TONE_TAG_MAX_BUFFER_CHARS) release();
+    },
+    flush(): string {
+      if (resolved || buffer.length === 0) return "";
+      return release();
+    },
+  };
+}

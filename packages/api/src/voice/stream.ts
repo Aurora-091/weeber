@@ -38,7 +38,7 @@ import { createRollingNoiseFilter, applyNoiseFilterToMulaw, ADAPTIVE_NOISE_FILTE
 import type { NoiseFilter } from "./audio-noise-filter";
 import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } from "./wind-noise-filter";
 import type { HighPassFilter } from "./wind-noise-filter";
-import { stripToneTag, CARTESIA_EMOTION_BY_TONE, TONE_TAG_MAX_BUFFER_CHARS, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
+import { stripToneTag, createToneTagFilter, CARTESIA_EMOTION_BY_TONE, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backchannel";
 import {
   createTurnDetector,
@@ -1265,30 +1265,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * at the 24-char cap; the cap only matters as a fallback if the model
    * ever omits the tag entirely, so a turn is never held back indefinitely
    * waiting for a tag that isn't coming.
+   *
+   * ADR-101 (2026-08-12): the state machine itself now lives in
+   * tone-tags.ts as `createToneTagFilter`, and it has a `flush()` — as a
+   * closure right here it was unreachable from any test, and a turn whose
+   * whole text was under the cap with no `]]` never satisfied any of the
+   * three release conditions, so TTS was handed nothing and the caller heard
+   * silence. See createToneTagFilter's doc comment for the production
+   * reference case.
    */
-  let toneTagBuffer = "";
-  let toneTagResolved = false;
+  let toneTagFilter = newToneTagFilter();
 
-  function sendTtsTextWithTone(text: string) {
-    if (toneTagResolved) {
-      tts?.sendText(text);
-      return;
-    }
-    toneTagBuffer += text;
-    const { tone, text: stripped } = stripToneTag(toneTagBuffer);
-    const looksLikeClosedTag = /\]\]/.test(toneTagBuffer);
-    if (tone !== null || looksLikeClosedTag || toneTagBuffer.length >= TONE_TAG_MAX_BUFFER_CHARS) {
-      toneTagResolved = true;
-      if (tone !== null && expressiveDeliveryEnabled) {
+  function newToneTagFilter() {
+    return createToneTagFilter({
+      onTone: (tone) => {
+        if (!expressiveDeliveryEnabled) return;
         const emotion = CARTESIA_EMOTION_BY_TONE[tone];
         if (emotion) tts?.setTone?.(emotion);
-      }
-      if (stripped) tts?.sendText(stripped);
-      toneTagBuffer = "";
-      return;
-    }
-    // Still might be a tag forming (no closing "]]" seen yet, under the
-    // buffer cap) — hold this chunk back until the next delta resolves it.
+      },
+      onText: (text) => tts?.sendText(text),
+    });
+  }
+
+  function sendTtsTextWithTone(text: string) {
+    toneTagFilter.push(text);
   }
 
   /** Shared turn runner — used for both the opening greeting and normal replies. */
@@ -1320,8 +1320,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     turnAbortController = new AbortController();
     agentIsSpeaking = true;
     // Expressive delivery (2026-07-17) — fresh tone-tag state for this turn.
-    toneTagBuffer = "";
-    toneTagResolved = false;
+    toneTagFilter = newToneTagFilter();
 
     const ttsRequestedAt = Date.now();
     let turnTtsFirstByteMs: number | undefined;
@@ -1567,6 +1566,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         wasInterrupted = true;
       }
     } finally {
+      // ADR-101: release anything the tone-tag filter is still holding back
+      // BEFORE ending the turn, or a reply short enough to fit entirely
+      // inside the hold-back buffer is never spoken at all. Skipped when the
+      // caller barged in — that text was correctly abandoned, and speaking it
+      // now would talk over someone who just interrupted.
+      if (!wasInterrupted) {
+        const rescued = toneTagFilter.flush();
+        if (rescued) {
+          console.warn(
+            `[voice] tone-tag filter still held the whole turn at end-of-stream (${rescued.length} chars, no tag emitted by the model) — flushed to TTS instead of dropping it`,
+          );
+        }
+      }
       tts?.endTurn();
     }
 
@@ -1594,6 +1606,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     const thisTurnIndex = reserveTurnIndex();
     void (async () => {
       await Promise.race([ttsDone, sleep(8000)]);
+      // ADR-101 — the alarm that was missing. A turn that produced text but
+      // never got a single audio byte out of TTS is dead air the caller sat
+      // through, and until now it was recorded only as a turn_latency row
+      // with a NULL tts_first_byte_ms: indistinguishable from the three
+      // benign reasons that column is NULL (a barge-in aborted before the
+      // first token, a pure tool turn, an interrupted turn). That ambiguity
+      // is why the tone-tag hold-back bug sat in production unnoticed —
+      // 9 of the 10 NULL rows on 2026-08-12 were legitimate aborts and the
+      // 1 real defect hid among them. `wasInterrupted` is excluded on
+      // purpose: cutting the agent off is the caller's choice, not a fault.
+      if (fullText && turnTtsFirstByteMs === undefined && !wasInterrupted) {
+        console.error(
+          `[voice] DEAD AIR on turn ${thisTurnIndex}: the LLM produced ${fullText.length} chars but TTS never emitted a single audio byte — the caller heard silence while the transcript records this as spoken`,
+        );
+      }
       await persistTurnLatency(thisTurnIndex, {
         llmTtftMs: options?.turnLlmTtftRef?.value,
         ttsFirstByteMs: turnTtsFirstByteMs,
