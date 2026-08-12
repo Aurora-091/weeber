@@ -150,6 +150,8 @@ export const HEADER_ALIASES: Record<string, string> = {
   coverage_type: "product_interest",
   interest: "product_interest",
   interest_area: "interest_area",
+  interaction_type: "interaction_type",
+  interaction: "interaction_type",
   existing_policy: "existing_policy",
   already_covered: "existing_policy",
   has_coverage: "existing_policy",

@@ -155,3 +155,39 @@ describe("interest_area survives the ingest pipeline, not just the lookup", () =
     expect(ctx.interest_area).toBeUndefined();
   });
 });
+
+/**
+ * `interaction_type` is the identical defect to `interest_area` above, found by
+ * the same method one audit later (2026-08-12): the insurance-feedback-nps
+ * opener says "I'm following up on {{interaction_type}}" and no producer for
+ * that key existed anywhere, so the tag could never resolve and every feedback
+ * call fell back to an LLM-generated greeting at full time-to-first-token.
+ *
+ * These assert the same round trip, because the lookup working is not the thing
+ * that was broken — the ingest pipeline delivering the key is.
+ */
+describe("interaction_type survives the ingest pipeline", () => {
+  it("accepts interaction_type through the insurance intake schema", async () => {
+    const { validateFields, defaultIntakeSchema } = await import("./intake-schema");
+    const result = validateFields(
+      { full_name: "Margaret Ellison", interaction_type: "your recent policy review call" },
+      defaultIntakeSchema("insurance"),
+    );
+    // Previously in droppedUnknown, so the NPS opener could never resolve.
+    expect(result.droppedUnknown).not.toContain("interaction_type");
+    expect(result.accepted.interaction_type).toBe("your recent policy review call");
+    expect(result.rejectedRegulated).toEqual([]);
+  });
+
+  it("exposes a stored interaction_type as a merge tag", async () => {
+    leadRows = [{ name: "Margaret Ellison", fields: { interaction_type: "your recent claim" } }];
+    const ctx = await getLeadGreetingContext("org_1", "+15551234567");
+    expect(ctx.interaction_type).toBe("your recent claim");
+  });
+
+  it("maps the CSV header aliases onto interaction_type", async () => {
+    const { HEADER_ALIASES } = await import("./csv-import");
+    expect(HEADER_ALIASES.interaction_type).toBe("interaction_type");
+    expect(HEADER_ALIASES.interaction).toBe("interaction_type");
+  });
+});

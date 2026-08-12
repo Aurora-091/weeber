@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-11
+updated: 2026-08-12
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,28 @@ updated: 2026-08-11
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **The voice pipeline was measured before anything was changed (2026-08-12, ADR-100).**
+  Real numbers, 44 turns with a complete measurement: `v2v` p50 **1863ms**, p90 4180, p95 4394, max
+  8173; `pickup_to_first_audio_ms` 1770–2588ms on all 11 calls. One decomposed turn is pre-LLM 129ms
+  (8%) | **LLM TTFT 1136ms (71%)** | TTS 336ms (21%). **The model is the cost; nothing else is close.**
+  Two traps in this data, both of which I fell into first: `voiceToVoiceMs` is `speech_final` → first
+  TTS byte **server-side**, so the US→India Twilio leg inflates what a tester hears but not what the
+  table records (the numbers are not geographically poisoned); and `tts_first_byte_ms` is **cumulative
+  from turn start**, not the TTS stage, so reading it as a duration overstates TTS.
+  Fixed only what was being paid for nothing: caller-transcript INSERT off the hot path (it sat between
+  `speech_final` and the LLM request, cross-region Singapore→Mumbai, writing a table the model never
+  reads — **chained**, not fire-and-forget, because rows are read back ordered by identity column and
+  racing inserts reorder a conversation; drained in `finalizeCall` with a 2000ms cap); the
+  literal-greeting fallback now names the unresolved tag instead of failing silently; merchant free text
+  trimmed where it becomes speech; `{{interaction_type}}` given a producer.
+  **The finding to act on: the literal-greeting fast path is 0 for 11 — it has never fired in
+  production**, so every call ever placed paid ~1.3s of LLM TTFT for an authored sentence. It is a
+  **data** defect: 3 of 4 `leads` rows have `name = NULL` and `fields = {}`. Fixing the lead rows is
+  worth more than any code change in this batch. No prod data was written.
+  Explicitly deferred as unearned: the LLM TTFT fat tail (p50 1376 → p95 3826 — needs per-request
+  gateway-vs-model timing before naming a cause), the 10 of 78 turns that reserved a turn index and
+  produced no TTS byte, and Cartesia-vs-ElevenLabs at n=2.
 
 - **CI on `main` is green again; the cause was an unversioned third-party input (2026-08-11, ADR-099).**
   `main` had been red for four commits — `visual`, `fonts`, `CI success` — while the whole range

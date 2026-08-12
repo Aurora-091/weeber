@@ -116,6 +116,22 @@ const INSURANCE_DEFAULT: LeadFieldDef[] = [
   // Kept free text and deliberately generic: it is read aloud verbatim to a
   // consumer, so it must never carry a plan name, a carrier, or a number.
   { key: "interest_area", label: "Interest area (spoken)", type: "text" },
+  // `interaction_type` is the same class of bug as `interest_area` above, found
+  // by the same method one audit later (2026-08-12): the insurance-feedback-nps
+  // opener is "I'm following up on {{interaction_type}}", and NOTHING in this
+  // codebase has ever written that key — not the intake schema, not the CSV
+  // importer, not captureField. So the tag could never resolve, the
+  // unresolved-tag guard rejected the opener 100% of the time, and every
+  // feedback call paid full LLM time-to-first-token on pickup for a line that is
+  // deterministic. Adding the producer is the fix, in preference to editing the
+  // spoken line: the English wording and its audited Hindi/Hinglish
+  // translations (insurance-greetings.ts) all carry this tag, and rewording an
+  // audited spoken line is a compliance review, not a latency fix.
+  //
+  // Same read-aloud constraints as `interest_area`: free text, generic, names
+  // the interaction and never a plan, carrier, or amount ("your recent claim",
+  // "your policy review call").
+  { key: "interaction_type", label: "Interaction type (spoken)", type: "text" },
   { key: "existing_policy", label: "Already covered?", type: "boolean" },
   {
     key: "budget_band",

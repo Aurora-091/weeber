@@ -494,11 +494,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   // tell us the conversation was two-sided.
   let callerTranscriptCount = 0;
 
-  async function logTranscript(role: "caller" | "agent", text: string) {
+  /**
+   * Serialises transcript INSERTs without blocking whoever logged them.
+   *
+   * Latency fix (2026-08-12): `logTranscript` used to be awaited on the turn hot
+   * path — the caller's final transcript is written between STT's `speech_final`
+   * and the LLM request, so its full round-trip sat inside the caller-perceived
+   * voice-to-voice gap. That round-trip is cross-region in production (the API
+   * runs in Railway Singapore, Postgres is Supabase ap-south-1/Mumbai), and it
+   * buys the caller nothing: the model is fed from the in-memory `history`
+   * array, never from this table. `transcripts` exists for the dashboard and the
+   * post-call record.
+   *
+   * Fire-and-forget alone would have been wrong. Rows are read back ordered by
+   * their identity column, so two un-awaited inserts racing would let a turn's
+   * agent line be stored before the caller line it replies to — a transcript
+   * that reads as the agent answering a question nobody asked yet. Chaining
+   * through this single promise instead preserves insert order exactly, while
+   * the hot path only pays the cost of appending to the chain.
+   */
+  let transcriptWriteChain: Promise<unknown> = Promise.resolve();
+
+  function logTranscript(role: "caller" | "agent", text: string) {
     if (!dbCallId) return;
     transcriptCount++;
     if (role === "caller") callerTranscriptCount++;
-    await db.insert(transcripts).values({ callId: dbCallId, role, text }).catch(() => undefined as unknown);
+    const callIdForInsert = dbCallId;
+    transcriptWriteChain = transcriptWriteChain
+      .then(() => db.insert(transcripts).values({ callId: callIdForInsert, role, text }))
+      .catch(() => undefined as unknown);
     void dispatchWebhook(webhookUrl, "call.transcript", { callSid, callId: dbCallId, role, text });
   }
 
@@ -681,6 +705,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     turnAbortController?.abort();
     if (maxDurationTimer) clearTimeout(maxDurationTimer);
     clearSilenceTimer();
+    // Transcript writes are no longer awaited on the hot path (see
+    // logTranscript), so the last turn's rows can still be in flight when the
+    // call ends. Drain the chain here — without this, a call that finalizes
+    // immediately after the final turn (a hangUp tool call, or the caller
+    // hanging up mid-sentence) would lose exactly the transcript lines that
+    // explain why it ended. Best-effort: the chain already swallows its own
+    // insert errors, and a slow drain must not block finalization.
+    await Promise.race([transcriptWriteChain, sleep(2000)]);
     if (callSid) {
       const priorSession = await sessionStore.get(callSid);
       const previousAttempt = priorSession?.workflowAttempt;
@@ -1584,7 +1616,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
     if (fullText) {
       history.push({ role: "assistant", content: fullText });
-      await logTranscript("agent", fullText);
+      logTranscript("agent", fullText);
     }
 
     // hangUp/transferToHuman requested this turn — let the closing/handoff
@@ -1858,7 +1890,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           }
 
           history.push({ role: "user", content: text });
-          await logTranscript("caller", text);
+          // Not awaited (2026-08-12): this INSERT is cross-region in production
+          // and sat directly inside the caller-perceived voice-to-voice gap. The
+          // model reads `history`, not this table — see logTranscript.
+          logTranscript("caller", text);
           await runTurn(ws, turnStartedAt);
         } catch (err) {
           console.error("[voice] error handling transcript event", err);
@@ -2141,15 +2176,44 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               const greetingContext: Record<string, string> = {
                 ...leadGreetingContext,
                 ...capturedState,
-                agent_name: agentConfig.agentName ?? "our team",
+                // Trimmed (2026-08-12): these strings are merchant-typed free text
+                // (`org_agent_configs.name`, `orgs.name`) and prod already contains
+                // `"alice "` with a trailing space. Untrimmed, that renders as
+                // "This is alice  calling from ..." — a doubled space that the TTS
+                // provider can voice as an audible stumble mid-introduction. Trim at
+                // the render site rather than on write: the bad rows already exist,
+                // and this is the only place the values become speech.
+                agent_name: agentConfig.agentName?.trim() || "our team",
               };
-              if (merchantName) {
-                greetingContext.merchant_name = merchantName;
-                greetingContext.company_name = merchantName;
+              if (merchantName?.trim()) {
+                greetingContext.merchant_name = merchantName.trim();
+                greetingContext.company_name = merchantName.trim();
               }
               const rendered = renderTemplate(agentConfig.literalGreetingTemplate, greetingContext);
-              if (!/\{\{\w+\}\}/.test(rendered)) {
+              const unresolvedGreetingTags = [...new Set(Array.from(rendered.matchAll(/\{\{(\w+)\}\}/g), (m) => m[1]!))];
+              if (unresolvedGreetingTags.length === 0) {
                 literalGreetingText = rendered;
+              } else {
+                // Latency diagnostic (2026-08-12). This fallback used to be
+                // completely silent, and it fires far more often than anyone
+                // realised: across all 11 calls ever placed in production, the
+                // literal greeting was rejected 11/11 times, so every single call
+                // paid ~1.3-1.9s of LLM time-to-first-token for a line that is
+                // deterministic — the largest single component of caller-perceived
+                // "dead air on pickup" (pickupToFirstAudioMs 1770-2588ms).
+                //
+                // Knowing the fallback happened was never the hard part; knowing
+                // WHICH tag had no value is, and that was unrecoverable after the
+                // fact because the rendered string was tested and thrown away. Most
+                // of these resolve from the `leads` row (see
+                // getLeadGreetingContext), so an empty/absent lead silently costs a
+                // second of latency on every call to that number. Logged at warn
+                // with the tag names so the cause is a grep away instead of an
+                // investigation.
+                console.warn(
+                  `[voice] literal greeting rejected — falling back to LLM greeting (+~1.3s TTFT on pickup)` +
+                    `${callSid ? ` (${callSid})` : ""}: unresolved ${unresolvedGreetingTags.map((t) => `{{${t}}}`).join(", ")}`,
+                );
               }
             }
             enabledToolsOverride = agentConfig.enabledTools;
