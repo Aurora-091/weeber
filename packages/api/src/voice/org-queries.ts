@@ -59,6 +59,11 @@ export const ONBOARDING_STEP_KEYS = [
   "connect_tools",
   "create_agent",
   "setup_number",
+  // 2026-08-13: "are you testing, or calling real customers?" — the answer,
+  // not the state. "Real customers" leaves the bypass off and is still a
+  // complete answer, so this cannot be derived from
+  // orgs.calling_window_test_mode_until.
+  "test_mode_choice",
   "test_and_golive",
 ] as const;
 

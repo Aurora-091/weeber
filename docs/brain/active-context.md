@@ -12,6 +12,17 @@ updated: 2026-08-13
 
 ## Current focus
 
+- **The escape hatch was only findable after it was needed (2026-08-13, ADR-113 — shipped).** Test
+  mode existed on Settings and nowhere in onboarding, so a fresh org's first call was refused with the
+  TRAI/1600-series paragraph before anyone learned the toggle exists. New **fifth onboarding step**
+  ("testing" vs "real customers", both answers complete it), **no new endpoint**, flag
+  `test_mode_choice` = *the answer, not the state*, patched only **after** the POST succeeds. Pure
+  `web/lib/test-mode-onboarding.ts` holds the one rule worth testing: "yes" always posts, "no" posts
+  **only when a window is live**, and never for a never-configured or **expired** timestamp — clearing
+  an expired one erases ADR-108's diagnostic evidence. Copy names DNC and the repeat-attempt cap as
+  never lifted. web tests 85 → 95, non-vacuity proven; all six ratchets green, nothing widened.
+  **Watch out:** the bypass is still **blanket** for every destination — the question makes the choice
+  explicit, not the bypass narrower — and onboarding still never asks for `orgs.human_transfer_number`.
 - **A BYO number nothing recorded (2026-08-13, ADR-112 — shipped; migration NOT applied).** All
   platform-rented Twilio numbers were **released** on the founder's instruction (parent + both live
   sub-accounts hold zero, nothing billing), so BYO is now the default path — and only

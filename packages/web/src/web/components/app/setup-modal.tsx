@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight, Phone, ShieldCheck } from "lucide-react";
+import { Check, Loader as Loader2, Store, Bot, Rocket, ArrowRight, Phone, ShieldCheck, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { useUser } from "./user-shell";
 import { VERTICAL_OPTIONS, getVertical } from "../../lib/verticals";
+import { resolveTestModeState, shouldPostTestMode, summarizeTestMode } from "../../lib/test-mode-onboarding";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -30,7 +31,15 @@ import { cn } from "../../lib/utils";
  *   4. Phone number (NEW) — BYO Twilio is the emphasized/primary path,
  *      platform auto-provisioning is the fallback if they skip BYO. Agents
  *      could previously be turned on with nowhere to actually call from.
- *   5. Review & activate — now vertical/phone-aware.
+ *   5. Test mode (NEW 2026-08-13) — "are you testing, or calling real
+ *      customers?". Not a settings toggle relocated: the 24h calling-window /
+ *      insurance-config bypass already existed (POST /compliance/test-mode,
+ *      ADR-108) and was discoverable only on the Settings page *after* the
+ *      first call had already been refused. Asking during setup is the
+ *      difference between a demo that works and a full TRAI/1600-series
+ *      paragraph read out in front of a prospect. Answering "real customers"
+ *      is a complete answer, not a skip.
+ *   6. Review & activate — now vertical/phone-aware.
  *
  * Step completion is mirrored into onboarding_state via PATCH
  * /api/app/onboarding so the dashboard's checklist card (home.tsx) and the
@@ -413,6 +422,42 @@ export function SetupModal({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["app-onboarding"] }),
   });
 
+  // Arms (or revokes) the 24h calling-window / insurance-config bypass. Same
+  // endpoint as the Settings toggle — deliberately no new route, since the
+  // capability already existed and only its discoverability was broken.
+  const setTestMode = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await appFetch("/api/app/compliance/test-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to update test mode");
+      return data as { callingWindowTestModeUntil: string | null };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["app-me"] });
+      toast.success(data.callingWindowTestModeUntil ? "Test mode on for 24 hours" : "Test mode off");
+    },
+    onError: (err: Error) => toast.error("Couldn't change test mode", { description: err.message }),
+  });
+
+  // The answer is recorded either way, and it is recorded *after* the write it
+  // depends on succeeds — marking the step done on a failed POST would leave an
+  // org believing it is in test mode when the next call will be refused.
+  async function answerTestMode(answer: "testing" | "real-customers") {
+    if (shouldPostTestMode(answer, testModeState)) {
+      try {
+        await setTestMode.mutateAsync(answer === "testing");
+      } catch {
+        return;
+      }
+    }
+    patchOnboarding.mutate({ test_mode_choice: true });
+    goNext();
+  }
+
   // Saves the business name AND vertical together on the first step — orgs.name
   // is the agent's spoken company name + Twilio friendly name, so it's captured
   // here rather than left to be derived from the email.
@@ -477,15 +522,22 @@ export function SetupModal({
   const enabledRows = rows.filter((r) => r.config?.enabled);
   const hasShop = status.data?.hasShop ?? false;
   const hasNumber = Boolean(telephonyStatus.data?.telephony?.outboundNumber);
+  const testModeState = resolveTestModeState(me.org.callingWindowTestModeUntil);
 
   // Persisted flags for steps that can't be derived from live data alone.
   const verticalConfirmed = onboarding.data?.steps?.pick_vertical === true;
   const numberStepDone = onboarding.data?.steps?.setup_number === true || hasNumber;
+  // Answered, not "on" — "real customers" is a valid answer that leaves the
+  // bypass off, so this flag can only be derived from the persisted bag.
+  const testModeAnswered = onboarding.data?.steps?.test_mode_choice === true;
 
   // Dynamic step list — "Connect store" only exists for verticals with a
   // real integration (see VerticalDefinition.hasLiveIntegration's doc comment).
   const stepKeys = useMemo(
-    () => (["vertical", vertical.hasLiveIntegration ? "connect" : null, "agents", "number", "review"].filter(Boolean) as string[]),
+    () =>
+      (["vertical", vertical.hasLiveIntegration ? "connect" : null, "agents", "number", "testing", "review"].filter(
+        Boolean,
+      ) as string[]),
     [vertical.hasLiveIntegration],
   );
   const stepLabels = stepKeys.map((k) =>
@@ -497,7 +549,9 @@ export function SetupModal({
           ? "Pick agents"
           : k === "number"
             ? "Phone number"
-            : "Review & activate",
+            : k === "testing"
+              ? "Test mode"
+              : "Review & activate",
   );
   const stepDone = stepKeys.map((k) =>
     k === "vertical"
@@ -508,7 +562,9 @@ export function SetupModal({
           ? enabledRows.length > 0
           : k === "number"
             ? numberStepDone
-            : verticalConfirmed && (vertical.hasLiveIntegration ? hasShop : true) && enabledRows.length > 0,
+            : k === "testing"
+              ? testModeAnswered
+              : verticalConfirmed && (vertical.hasLiveIntegration ? hasShop : true) && enabledRows.length > 0,
   );
   const firstIncomplete = stepDone.findIndex((d) => !d);
   const current = manualStep ?? (firstIncomplete === -1 ? stepKeys.length - 1 : firstIncomplete);
@@ -541,10 +597,15 @@ export function SetupModal({
     patchOnboarding.mutate({
       connect_tools: vertical.hasLiveIntegration ? hasShop : true,
       create_agent: enabledRows.length > 0,
-      test_and_golive: verticalConfirmed && (vertical.hasLiveIntegration ? hasShop : true) && enabledRows.length > 0 && numberStepDone,
+      test_and_golive:
+        verticalConfirmed &&
+        (vertical.hasLiveIntegration ? hasShop : true) &&
+        enabledRows.length > 0 &&
+        numberStepDone &&
+        testModeAnswered,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hasShop, enabledRows.length, vertical.hasLiveIntegration, verticalConfirmed, numberStepDone]);
+  }, [open, hasShop, enabledRows.length, vertical.hasLiveIntegration, verticalConfirmed, numberStepDone, testModeAnswered]);
 
   // Reset the provisioning guard whenever the modal closes so a later reopen
   // can re-run the (idempotent) provisioning for the current vertical.
@@ -749,6 +810,70 @@ export function SetupModal({
               </div>
             )}
 
+            {currentKey === "testing" && (
+              <div key="step-testing" className="slide-in-right">
+                <div className="flex items-start gap-3">
+                  <FlaskConical className="mt-0.5 size-5 text-primary" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-medium">Are you testing first, or calling real customers?</h2>
+                    <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                      Pick testing and we'll relax the checks that block a demo call — calling outside local
+                      business hours, and the insurance registration paperwork you may not have yet. It turns
+                      itself off after 24 hours.
+                    </p>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+                        <h3 className="text-sm font-medium">I'm testing</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Calling your own phone or an invited demo. Expires in 24 hours on its own — you can
+                          turn it back on any time in Settings.
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-3"
+                          disabled={setTestMode.isPending || patchOnboarding.isPending}
+                          onClick={() => void answerTestMode("testing")}
+                        >
+                          {setTestMode.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                          Turn on test mode
+                        </Button>
+                      </div>
+
+                      <div className="rounded-lg border border-border p-4">
+                        <h3 className="text-sm font-medium">These are real customers</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Every check stays on. This is the right answer for anything you'd call outreach.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-3"
+                          disabled={setTestMode.isPending || patchOnboarding.isPending}
+                          onClick={() => void answerTestMode("real-customers")}
+                        >
+                          Keep every check on
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="mt-4 max-w-xl text-xs text-muted-foreground">
+                      Test mode never touches two things: <span className="text-foreground">do-not-call</span>{" "}
+                      and the <span className="text-foreground">limit on repeat call attempts</span>. Those
+                      apply to every call on this platform, in every mode, with no override.
+                    </p>
+                    {testModeState.active && (
+                      <p className="mt-2 text-xs text-warning">Test mode is already on and expires within 24 hours.</p>
+                    )}
+
+                    <Button variant="outline" className="mt-4" onClick={goBack}>
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {currentKey === "review" && (
               <div key="step-review" className="slide-in-right relative">
                 <div className="flex items-start gap-3">
@@ -775,6 +900,10 @@ export function SetupModal({
                       <div className="flex gap-2">
                         <dt className="text-muted-foreground">Phone number:</dt>
                         <dd className="font-mono">{telephonyStatus.data?.telephony?.outboundNumber ?? "not connected yet"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground">Test mode:</dt>
+                        <dd>{summarizeTestMode(testModeState)}</dd>
                       </div>
                     </dl>
                     <p className="mt-3 max-w-xl text-sm text-muted-foreground">

@@ -98,6 +98,7 @@ const STEP_LABELS: Record<string, string> = {
   connect_tools: "Connect your store",
   create_agent: "Turn on an agent",
   setup_number: "Connect a phone number",
+  test_mode_choice: "Choose testing or live calling",
   test_and_golive: "Review and go live",
 };
 
