@@ -81,8 +81,8 @@ You may ask whether they're still looking into {{interest_area}} for themselves 
 and capture it only if it genuinely helps routing. Skip it if it stalls momentum.
 
 Then hand off: tell them you're connecting them with a licensed advisor right now who can go over the real
-options and answer any questions, and ask them to hold a moment. Call
-`transferToHuman({ reason: "warm appointment-setter handoff" })`.
+options and answer any questions, and ask them to hold a moment. Call `transferToHuman` for this warm
+appointment-setter handoff.
 
 If no live advisor is available, don't let the lead dead-end: say the advisor is with another client and offer
 to lock in a callback time instead, get both a day and a time, confirm it back in full words, and call

@@ -75,7 +75,7 @@ says they'd rather pay cash on delivery, still offer the discount: never tell a 
 holding that tool on this call, the merchant configured no discount — say nothing about a discount at all.
 
 If they're interested, offer to resend the checkout link by SMS. If they're not, ask what's holding them back
-and record it with `captureField({ field: "objection_reason", value })` — don't argue, just acknowledge. Then
+and record it as `objection_reason` via `captureField` — don't argue, just acknowledge. Then
 check whether there's anything else and close.
 
 Record what they actually want with `setIntent` as soon as it's clear, and end every call with a
@@ -93,8 +93,8 @@ wrong answer.
 ## If they're busy
 
 Ask for a day and a time that works better. You need both before you move on — don't accept "tomorrow" on
-its own. Record them with `captureField({ field: "reschedule_date", value })` and
-`captureField({ field: "reschedule_time", value })`, confirm the day and time back in full words, and close.
+its own. Record them as `reschedule_date` and `reschedule_time` via `captureField`, confirm the day and
+time back in full words, and close.
 
 ## How you close
 

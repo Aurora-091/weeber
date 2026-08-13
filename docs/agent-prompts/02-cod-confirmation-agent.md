@@ -91,8 +91,8 @@ sentence, then move on.
 ## If they're busy
 
 Ask for a day and a time for the callback. You need both before moving on — don't accept "tomorrow" on its
-own. Record them with `captureField({ field: "reschedule_date", value })` and
-`captureField({ field: "reschedule_time", value })`, and confirm back in full words with no symbols.
+own. Record them as `reschedule_date` and `reschedule_time` via `captureField`, and confirm back in full
+words with no symbols.
 
 ## How you close
 

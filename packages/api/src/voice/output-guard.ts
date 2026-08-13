@@ -49,6 +49,24 @@
  * Qwen/Hermes-style (`<tool_call>`), DeepSeek (`<|tool▁calls▁begin|>` and its
  * unicode-triangle siblings), Mistral (`[TOOL_CALLS]`), plus the generic
  * `<|...|>` special-token shape used across all of them.
+ *
+ * Three more shapes below, all measured 2026-08-13 on `groq/llama-3.3-70b-versatile`
+ * and `gateway/llama-3.3-70b-versatile` running the insurance-final-expense-qualifier
+ * persona (calls 8 and 9). Root cause traced upstream: that persona's default
+ * prompt teaches every tool with an inline call-syntax example —
+ * `` `captureField({ field: "x", value })` `` — instead of describing it in
+ * plain language, and the model imitates that literal surface form as output
+ * text instead of (or alongside) a real structured tool call. The three leaks
+ * observed don't share one grammar, so each gets its own pattern:
+ *
+ *   1. `<function=captureField({"field":"x"})` — the same Llama envelope
+ *      above, but never closed with `>`. The turn just ends there, so the
+ *      first pattern's `[^>]*>` requirement never finds its terminator.
+ *   2. `<captureField{"field":"x"}</captureField>` — closed, but with the
+ *      tool's own name as the tag instead of the literal word `function`.
+ *   3. `transferToHuman{"reason":"x"}` — no delimiter at all, just an
+ *      identifier immediately followed by a JSON-object-literal argument.
+ *      Never a shape ordinary speech produces, so safe to delete on sight.
  */
 const TOOL_SYNTAX_PATTERNS: RegExp[] = [
   /<\/?function(?:=[^>]*)?>/g,
@@ -56,6 +74,14 @@ const TOOL_SYNTAX_PATTERNS: RegExp[] = [
   /<\/?tool▁call[^>]*>/g,
   /\[\/?TOOL_CALLS\]/g,
   /<\|[^|>]{0,40}\|>/g,
+  // Unclosed `<function=name({...})` — see (1) above. Runs after the closed-tag
+  // pattern, so anything still matching here is, by construction, unclosed.
+  /<function=\w+\(\{[^{}]*\}\)\)?/g,
+  // `<toolName{...}</toolName>` — see (2) above. Backreference requires the
+  // closing tag to name the same tool, so ordinary bracketed prose can't match.
+  /<([A-Za-z]\w*)\{[^{}]*\}<\/\1>/g,
+  // Bare `toolName{"key":"value", ...}` — see (3) above.
+  /\b[a-zA-Z_]\w*\{"[a-zA-Z_]+"\s*:\s*[^{}]*\}/g,
 ];
 
 /**

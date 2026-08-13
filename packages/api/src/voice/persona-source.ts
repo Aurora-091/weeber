@@ -86,6 +86,24 @@ export const AUTHORING_MARKERS: readonly string[] = [
  */
 export const BRACKET_SLOT_PATTERN = /\[[A-Z][A-Za-z]*(?:[ _][A-Za-z]+){0,3}(?::[^\]]*)?\]/g;
 
+/**
+ * Backtick-wrapped call-literal syntax, e.g. `` `captureField({ field: "x", value })` `` or
+ * `` `transferToHuman({ reason: "..." })` ``. Referencing a tool by its bare name in backticks
+ * (`` `crmSync` ``) is fine — Vapi's and Retell AI's own prompting guides both document that as
+ * the correct pattern: describe *when* and *why* to call a tool, never spell out its call syntax,
+ * because the model's real tool schema already comes from the API's structured `tools` parameter
+ * and does not need to be taught again in prose.
+ *
+ * What is not fine is writing out the argument shape as if it were code. Measured 2026-08-13 on
+ * `insurance-final-expense-qualifier` (calls 8 and 9): a model that has seen enough of this exact
+ * shape in the prompt will occasionally reproduce it verbatim as spoken output instead of (or
+ * alongside) issuing a real structured tool call — see output-guard.ts's TOOL_SYNTAX_PATTERNS,
+ * which catches the leak at the last line of defense. This check is the first line: 8 of the 9
+ * seeded personas had this pattern in their runtime region when the check was added, so it is
+ * enforced across every persona rather than patched once for the one that happened to break first.
+ */
+export const TOOL_CALL_LITERAL_PATTERN = /`[a-zA-Z_]\w*\(\{[^}]*\}\)`/g;
+
 export interface PersonaExtraction {
   /** The runtime regions, joined, trimmed. This is what the model receives. */
   runtime: string;
@@ -172,6 +190,14 @@ export function findRuntimeLeaks(runtime: string): string[] {
   if (slots) {
     for (const slot of new Set(slots)) {
       findings.push(`bracket placeholder slot the merge layer cannot resolve: ${slot}`);
+    }
+  }
+  const callLiterals = runtime.match(TOOL_CALL_LITERAL_PATTERN);
+  if (callLiterals) {
+    for (const literal of new Set(callLiterals)) {
+      findings.push(
+        `tool call spelled out as code syntax instead of plain language (name the tool, don't show its call shape): ${literal}`,
+      );
     }
   }
   return findings;

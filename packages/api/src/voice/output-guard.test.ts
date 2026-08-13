@@ -48,6 +48,34 @@ describe("scrubSpokenText", () => {
     }
   });
 
+  it("strips the unclosed <function=name({...}) envelope measured on calls 8/9 (2026-08-13)", () => {
+    const leaked =
+      `I'm going to make a note that you're looking to cover final expenses. ` +
+      `<function=captureField({"field": "coverage_purpose", "value": "final expenses"})`;
+    const result = scrubSpokenText(leaked);
+    expect(result.text.trim()).toBe("I'm going to make a note that you're looking to cover final expenses.");
+    expect(result.findings).toContain("tool-syntax");
+  });
+
+  it("strips the <toolName{...}</toolName> envelope measured on call 9 (2026-08-13)", () => {
+    const leaked =
+      `<captureField{"field": "coverage_purpose", "value": "leave something behind for family"}</captureField>\n` +
+      `<captureField{"field": "beneficiary_relationship", "value": "daughter"}</captureField>\n` +
+      `It sounds like you're looking into final expense coverage.`;
+    const result = scrubSpokenText(leaked);
+    expect(result.text.trim()).toBe("It sounds like you're looking into final expense coverage.");
+    expect(result.findings).toContain("tool-syntax");
+  });
+
+  it("strips bare toolName{...} calls with no delimiter, measured on call 9's final turn (2026-08-13)", () => {
+    const leaked =
+      `transferToHuman{"reason": "final-expense qualified handoff"}\n` +
+      `hangUp{"reason": "caller transferred to licensed advisor"}`;
+    const result = scrubSpokenText(leaked);
+    expect(result.text.trim()).toBe("");
+    expect(result.findings).toContain("tool-syntax");
+  });
+
   it("strips the bracket placeholders production calls 22 and 24 spoke aloud", () => {
     const result = scrubSpokenText("Hi, is this [Caller Name]? This is [Agent Name] with presistentads.");
     expect(result.text).toBe("Hi, is this? This is with presistentads.");

@@ -95,4 +95,18 @@ describe("findRuntimeLeaks", () => {
   it("passes clean guidance prose", () => {
     expect(findRuntimeLeaks("You are {{agent_name}}, a warm intake assistant for {{company_name}}.")).toEqual([]);
   });
+
+  it("flags a tool's call syntax spelled out as code — the calls 8/9 defect (2026-08-13)", () => {
+    const leaks = findRuntimeLeaks(
+      'Capture it → `captureField({ field: "coverage_purpose", value })`. When ready, call ' +
+        '`transferToHuman({ reason: "final-expense qualified handoff" })`.',
+    );
+    expect(leaks).toHaveLength(2);
+    expect(leaks.join(" ")).toContain('captureField({ field: "coverage_purpose", value })');
+    expect(leaks.join(" ")).toContain('transferToHuman({ reason: "final-expense qualified handoff" })');
+  });
+
+  it("does not flag a tool referenced by its bare name — the Vapi/Retell-recommended pattern", () => {
+    expect(findRuntimeLeaks("Once you have enough, call `crmSync` and then `transferToHuman`.")).toEqual([]);
+  });
 });
