@@ -11,14 +11,14 @@ flowchart TB
         A2 --> A3["Sees every org, platform-wide"]
     end
 
-    subgraph User["/app/* — merchant/clinic app"]
+    subgraph User["/app/* — customer/merchant app (Shopify & Insurance)"]
         direction TB
         U1["Supabase Auth<br/>(email+password, magic link)"] --> U2{First login?}
         U2 -->|Yes| U3["resolveOrCreateMembership<br/>bootstraps a new org<br/>(unique-per-user, race-safe)"]
         U2 -->|No| U4["Loads existing org"]
         U3 --> U5["/app home —<br/>setup-modal.tsx auto-opens<br/>(?welcome=1 or zero agents)"]
         U4 --> U6["/app home"]
-        U5 --> U7["Setup modal:<br/>pick vertical -> connect Shopify<br/>(weebersh OAuth) -> configure first agent<br/>-> test call"]
+        U5 --> U7["Setup modal:<br/>pick vertical (Shopify / Insurance) -><br/>connect platform/carrier -> configure first agent<br/>-> test mode / test call"]
         U6 --> U8["Full nav: Home / Agents / Workflows /<br/>Conversations / Analytics / Billing /<br/>Integrations / Settings"]
         U7 --> U8
     end

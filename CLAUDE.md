@@ -19,16 +19,12 @@ one-per-file in [`docs/decisions/`](./docs/decisions/README.md); what-shipped-wh
 
 ## MCP servers (Claude Code only)
 
-`.mcp.json` wires up five MCP servers for whoever's driving Claude Code in this repo:
+`.mcp.json` wires up three MCP servers for whoever's driving Claude Code in this repo:
 
-- **`shopify-dev-mcp`** (official, `@shopify/dev-mcp`) — live access to Shopify's Admin API/GraphQL
-  schema docs. Same server `weebersh` uses; needs no credentials.
 - **`supabase`** (official, hosted HTTP MCP at `mcp.supabase.com/mcp`, scoped to the Weeber project via
   `?project_ref=`) — no env vars or access token; authenticates via OAuth on first connect (run `/mcp`,
   pick `supabase`, choose Authenticate). The project ref in the URL is public (it's in the served
   frontend bundle anyway), not a secret.
-- **`twilio`** (official, `@twilio-alpha/mcp`) — same pattern, needs `TWILIO_ACCOUNT_SID` /
-  `TWILIO_AUTH_TOKEN` as shell env vars.
 - **`railway`** (official, hosted HTTP MCP at `mcp.railway.com` — the URL is the bare host, no `/mcp`
   path) — no env var; authenticates via OAuth on first connect (tokens are short-lived, revocable from
   Railway account settings).

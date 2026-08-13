@@ -43,8 +43,9 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../..");
 const TOKENS_PATH = resolve(HERE, "tokens.json");
 const CONTRAST_PY = resolve(HERE, "contrast.py");
@@ -142,9 +143,11 @@ function resolveToken(
 }
 
 /** Ask contrast.py for the WCAG ratio of one pair. */
+const PYTHON_CMD = process.platform === "win32" ? "python" : "python3";
+
 function measure(fg: string, bg: string): number {
   const res = spawnSync(
-    "python3",
+    PYTHON_CMD,
     [CONTRAST_PY, "--pair", `fg=${fg}`, `bg=${bg}`, "--ui"],
     { encoding: "utf8" },
   );

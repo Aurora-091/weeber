@@ -26,6 +26,7 @@
     "kill:port": "lsof -t -i :${PORT:-4200} | xargs kill -9",
     "contrast:gate": "bun tools/ui-guard/contrast-gate.ts",
     "design:guard": "bun tools/ui-guard/design-guard.ts",
+    "audit:daily": "bun tools/sentinel/daily-audit.ts",
     "knip": "bunx knip-bun --no-progress",
     "knip:gate": "bun tools/dead-code/knip-gate.ts",
     "persona:gate": "bun tools/persona/persona-gate.ts"

@@ -20,8 +20,9 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../..");
 const BUDGET_PATH = resolve(HERE, "design-budget.json");
 const JSON_OUT = process.argv.includes("--json");

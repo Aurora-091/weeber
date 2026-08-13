@@ -20,6 +20,8 @@ erDiagram
     workflow_templates ||--o{ org_workflow_configs : "overridden by"
     workflow_templates ||--o{ workflow_runs : executes
 
+    orgs ||--o{ org_phone_numbers : has
+    orgs ||--o{ guardrail_events : logs
     calls ||--o{ transcripts : has
     calls ||--o{ tool_calls : has
     calls ||--o| call_latency : measures
@@ -27,7 +29,7 @@ erDiagram
 
     orgs {
         text id PK
-        text vertical "shopify | insurance | ..."
+        text vertical "shopify | insurance"
         text plan_name
         text currency
         text country_code
@@ -41,6 +43,15 @@ erDiagram
         text org_id FK
         text role "owner (no multi-seat yet — Phase C, Q)"
     }
+    org_phone_numbers {
+        int id PK
+        text org_id FK
+        text provider "twilio | plivo | exotel"
+        text phone_number
+        text status "active | released"
+        text number_series "140 | 160 | 1600 (nullable)"
+        text source "purchased | byo (ADR-112)"
+    }
     agent_templates {
         text id PK
         text vertical
@@ -49,6 +60,7 @@ erDiagram
     org_agent_configs {
         text org_id FK
         text template_key FK
+        int phone_number_id FK
         text voice_provider "elevenlabs | cartesia | sarvam"
         text stt_provider "deepgram | sarvam | elevenlabs"
         text llm_provider
@@ -67,6 +79,14 @@ erDiagram
         numeric recovered_amount
         timestamp run_at
         text status
+    }
+    guardrail_events {
+        int id PK
+        text org_id FK
+        text call_id FK
+        text guardrail_type
+        text action_taken
+        jsonb metadata
     }
     do_not_call {
         int id PK
@@ -95,7 +115,7 @@ erDiagram
     }
 ```
 
-## Notable absences (as of 2026-07-13 — tracked in `WEEBER-PLAN.md`)
+## Notable absences (tracked in `WEEBER-PLAN.md`)
 
 - **No `knowledge_base`/`documents`/embedding table** — persona prompts reference a merchant-uploaded
   KB, but no such table exists yet (Phase A gap, not a differentiator gap).
@@ -105,7 +125,3 @@ erDiagram
   exists (Phase C, workstream Q).
 - **No `crm_connections`/per-org-token table** — HubSpot/Salesforce/GoHighLevel/Google Calendar adapters
   all read one shared, globally-configured token per integration (Phase C, workstream R).
-- **No `org_phone_numbers` table** — `orgs.outboundNumber` is a single column, one number per org, no
-  per-agent assignment, no release/decommission path. Full spec for the replacement table + the
-  Numbers page + the agent-page number dropdown is in `WEEBER-PLAN.md`, Phase C, workstream C2b
-  (confirmed real gap 2026-07-13, not just unverified).
