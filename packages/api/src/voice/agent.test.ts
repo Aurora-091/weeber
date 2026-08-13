@@ -1,6 +1,46 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { buildKnownFactsBlock, buildWorkflowContextBlock, resolveAgentConfig } from "./agent";
+import { buildKnownFactsBlock, buildWorkflowContextBlock, resolveAgentConfig, toTurnTokenUsage } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
+
+describe("toTurnTokenUsage", () => {
+  it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (Groq/OpenAI automatic caching)", () => {
+    const usage = toTurnTokenUsage("groq/llama-3.3-70b-versatile", {
+      inputTokens: 2000,
+      outputTokens: 40,
+      inputTokenDetails: { textTokens: 500, cacheReadTokens: 1500 },
+    });
+    expect(usage).toEqual({
+      model: "groq/llama-3.3-70b-versatile",
+      inputTokens: 2000,
+      outputTokens: 40,
+      cachedInputTokens: 1500,
+    });
+  });
+
+  it("falls back to a cachedTokens field when a provider names it differently", () => {
+    const usage = toTurnTokenUsage("gateway/openai/gpt-5.4-mini", {
+      inputTokens: 1800,
+      outputTokens: 30,
+      inputTokenDetails: { cachedTokens: 1200 },
+    });
+    expect(usage.cachedInputTokens).toBe(1200);
+  });
+
+  it("never throws on a provider that reports nothing, or on undefined usage", () => {
+    expect(toTurnTokenUsage("m", undefined)).toEqual({
+      model: "m",
+      inputTokens: undefined,
+      outputTokens: undefined,
+      cachedInputTokens: undefined,
+    });
+    expect(toTurnTokenUsage("m", {})).toEqual({
+      model: "m",
+      inputTokens: undefined,
+      outputTokens: undefined,
+      cachedInputTokens: undefined,
+    });
+  });
+});
 
 describe("buildKnownFactsBlock", () => {
   it("returns an empty string when there is no captured state", () => {

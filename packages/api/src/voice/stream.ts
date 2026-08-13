@@ -1848,6 +1848,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             recordLlmLatency(ms);
             turnLlmTtftRef.value = ms;
           },
+          onUsage: (usage) => {
+            const cacheHitPct =
+              usage.inputTokens && usage.cachedInputTokens
+                ? `, ${Math.round((usage.cachedInputTokens / usage.inputTokens) * 100)}% cached`
+                : "";
+            console.log(
+              `[voice] turn token usage: ${usage.inputTokens ?? "?"} in / ${usage.outputTokens ?? "?"} out` +
+                `${usage.cachedInputTokens ? ` (${usage.cachedInputTokens} from cache${cacheHitPct})` : ""} (${usage.model})`,
+            );
+          },
           llmProvider: llmProviderOverride,
           llmModel: llmModelOverride,
           llmFallbackModels: llmFallbackModelsOverride,
@@ -1966,6 +1976,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
             turnLlmTtftRef.value = ms;
+          },
+          onUsage: (usage) => {
+            console.log(
+              `[voice] greeting token usage: ${usage.inputTokens ?? "?"} in / ${usage.outputTokens ?? "?"} out` +
+                `${usage.cachedInputTokens ? ` (${usage.cachedInputTokens} from cache)` : ""} (${usage.model})`,
+            );
           },
         }),
       // No turnStartedAt for the greeting — it's agent-initiated, not a

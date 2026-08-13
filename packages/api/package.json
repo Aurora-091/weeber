@@ -16,7 +16,8 @@
     "db:migrate:run": "bun --env-file=../../.env run scripts/migrate.ts",
     "db:push": "bun --env-file=../../.env drizzle-kit push",
     "db:studio": "bun --env-file=../../.env drizzle-kit studio",
-    "bench:latency": "bun --env-file=../../.env run scripts/latency-benchmark.ts"
+    "bench:latency": "bun --env-file=../../.env run scripts/latency-benchmark.ts",
+    "call-quality:audit": "bun --env-file=../../.env run scripts/call-quality-audit.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.5",

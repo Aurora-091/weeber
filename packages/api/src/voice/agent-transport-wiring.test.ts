@@ -44,8 +44,12 @@ describe("ADR-109 is wired into the live turn loop", () => {
    */
   test("latency and diagnostics name the link that actually produced output", () => {
     expect(agentSource).not.toContain("getActiveModelLabel(");
-    // TTFT callback, guard-findings warning, empty-turn diagnostics.
-    expect(agentSource.split("formatActiveModelLabel(activeLink)").length - 1).toBe(3);
+    // TTFT callback (inline, inside the streaming loop) + the one
+    // post-loop `activeModelLabel` assignment shared by the guard-findings
+    // warning, onUsage, and empty-turn diagnostics (2026-08-14: collapsed
+    // from three separate calls into one shared const when onUsage was
+    // added, so this count did not grow with the new consumer).
+    expect(agentSource.split("formatActiveModelLabel(activeLink)").length - 1).toBe(2);
   });
 
   test("the flag is off unless explicitly enabled", () => {

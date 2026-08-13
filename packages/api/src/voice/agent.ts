@@ -1139,12 +1139,44 @@ export function buildCallerMemoryBlock(callerMemory?: Record<string, string>): s
 // If the model produces no text at all for a turn (e.g. gets stuck only
 // calling tools, or the provider returns empty output), we still need to say
 // *something* — dead air on a live call reads as a dropped connection.
-const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you say that again?";
+// Exported so call-quality.ts can recognize this exact line in a stored
+// transcript — two or more of these in one call is the fallback-loop shape
+// diagnosed 2026-08-13 (calls 4-7), not a caller who is hard to hear.
+export const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you say that again?";
 
 // Hard ceiling per turn so a stuck generation can never hang the call
 // indefinitely. Twilio's own low-level timeouts would eventually kill the
 // call anyway, but we want to recover gracefully well before that happens.
 const TURN_TIMEOUT_MS = 12_000;
+
+/** One turn's token accounting, normalized across whatever subset of fields
+ * the active provider actually reports — every field is best-effort. */
+export interface TurnTokenUsage {
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Tokens served from the provider's automatic prompt cache, when reported
+   * (Groq and OpenAI-class models report this without any opt-in). */
+  cachedInputTokens?: number;
+}
+
+/** Best-effort extraction — the AI SDK's usage shape varies by provider and
+ * every field here is optional, so this never throws on a provider that
+ * reports less than the richest one does. */
+export function toTurnTokenUsage(model: string, usage: unknown): TurnTokenUsage {
+  const u = (usage ?? {}) as {
+    inputTokens?: number;
+    outputTokens?: number;
+    inputTokenDetails?: { cacheReadTokens?: number; cachedTokens?: number };
+    cachedInputTokens?: number;
+  };
+  return {
+    model,
+    inputTokens: u.inputTokens,
+    outputTokens: u.outputTokens,
+    cachedInputTokens: u.inputTokenDetails?.cacheReadTokens ?? u.inputTokenDetails?.cachedTokens ?? u.cachedInputTokens,
+  };
+}
 
 /**
  * Runs one agent turn for a live call, streaming text deltas as they arrive so
@@ -1160,6 +1192,7 @@ export async function runVoiceAgentTurn({
   onToolCall,
   signal,
   onLatency,
+  onUsage,
   llmProvider,
   llmModel,
   llmFallbackModels,
@@ -1181,6 +1214,18 @@ export async function runVoiceAgentTurn({
   signal?: AbortSignal;
   /** Reports time-to-first-token, useful for comparing LLM providers (see llm/). */
   onLatency?: (ms: number, model: string) => void;
+  /**
+   * Reports this turn's token usage, including cache-read tokens when the
+   * provider reports them. Groq and OpenAI-class models cache a request's
+   * shared prefix automatically (no code required, no explicit opt-in) —
+   * this platform's system prompt is already structured for it, stable
+   * persona/context text first, the per-turn-growing "known facts" block
+   * last (buildKnownFactsBlock) — so cache hits should already be
+   * happening. Nothing measured that before this callback existed; it's the
+   * only way to confirm the automatic caching is actually landing and to
+   * quantify the savings, rather than assuming it from the prompt shape.
+   */
+  onUsage?: (usage: TurnTokenUsage) => void;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
   llmProvider?: "gateway" | "groq";
   /** Per-agent explicit model id override (agent-frame.ts's llmModel) — bypasses
@@ -1347,6 +1392,10 @@ export async function runVoiceAgentTurn({
       guard.push(delta);
     }
     guard.flush();
+    // Computed once and reused by everything below — `activeLink` is the link
+    // that actually spoke, not the one asked first (ADR-109), so every
+    // downstream label, warning, and diagnostic describes the model that ran.
+    const activeModelLabel = formatActiveModelLabel(activeLink);
     const guardFindings = guard.findings();
     if (guardFindings.length > 0) {
       // Loud on purpose. A finding means a model tried to speak its own control
@@ -1354,9 +1403,20 @@ export async function runVoiceAgentTurn({
       // the caller hearing it, but the underlying cause is a real defect
       // somewhere upstream and must not be silently absorbed.
       console.warn("[voice-agent] spoken-output guard removed non-speech from a turn", {
-        model: formatActiveModelLabel(activeLink),
+        model: activeModelLabel,
         findings: guardFindings,
       });
+    }
+
+    // Fetched once and reused below. Swallowed to undefined on rejection so a
+    // usage-reporting hiccup can never be the thing that breaks a turn.
+    const rawUsage = await Promise.resolve(result?.usage).catch(() => undefined);
+    if (onUsage) {
+      try {
+        onUsage(toTurnTokenUsage(activeModelLabel, rawUsage));
+      } catch (usageErr) {
+        console.error("[voice-agent] onUsage callback threw", usageErr);
+      }
     }
 
     // The model ran (possibly called tools) but produced no spoken text —
@@ -1370,14 +1430,9 @@ export async function runVoiceAgentTurn({
       // "length"/"content-filter". Log everything needed to tell those apart
       // without needing to reproduce the call.
       try {
-        // `result` is the handle of the link that actually opened. It is only
-        // undefined if no link opened at all, which throws instead of reaching
-        // here — but the diagnostic must not be the thing that crashes the turn,
-        // so it degrades rather than asserts.
         const opened = result;
-        const [finishReason, usage, steps] = await Promise.all([
+        const [finishReason, steps] = await Promise.all([
           Promise.resolve(opened?.finishReason).catch(() => "unknown"),
-          Promise.resolve(opened?.usage).catch(() => undefined),
           Promise.resolve(opened?.steps ?? []).catch(() => []),
         ]);
         for (const step of steps as Array<{ toolCalls?: Array<{ toolName: string }> }>) {
@@ -1386,9 +1441,9 @@ export async function runVoiceAgentTurn({
         console.warn(
           "[voice-agent] turn produced no spoken text — falling back",
           {
-            model: formatActiveModelLabel(activeLink),
+            model: activeModelLabel,
             finishReason,
-            usage,
+            usage: rawUsage,
             stepCount: (steps as unknown[]).length,
             toolCallsThisTurn: calledToolNames,
             historyLength: history.length,
@@ -1437,6 +1492,7 @@ export function runVoiceAgentGreeting({
   signal,
   capturedState,
   onLatency,
+  onUsage,
   callerMemory,
   llmProvider,
   llmModel,
@@ -1456,6 +1512,8 @@ export function runVoiceAgentGreeting({
   /** Reports time-to-first-token — the greeting is usually the first turn of the call, so this is
    * typically what feeds the call-level LLM TTFT metric (see stream.ts's callLatency capture). */
   onLatency?: (ms: number, model: string) => void;
+  /** See runVoiceAgentTurn's onUsage. */
+  onUsage?: (usage: TurnTokenUsage) => void;
   /** Rolling facts from previous calls with this same number (ADR-023). */
   callerMemory?: Record<string, string>;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
@@ -1495,6 +1553,7 @@ export function runVoiceAgentGreeting({
     signal,
     capturedState,
     onLatency,
+    onUsage,
     callerMemory,
     llmProvider,
     llmModel,
