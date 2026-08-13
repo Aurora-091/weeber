@@ -1,5 +1,6 @@
 import { createGroq } from "@ai-sdk/groq";
 import { gateway, VOICE_AGENT_MODEL as GATEWAY_MODEL } from "../gateway";
+import type { LlmTransportLink } from "./transport-chain";
 
 export type LlmProvider = "gateway" | "groq";
 
@@ -76,6 +77,40 @@ export function buildGatewayProviderOptions(
           .filter(Boolean);
   if (fallbackModels.length === 0) return undefined;
   return { gateway: { models: fallbackModels } };
+}
+
+/**
+ * ADR-109 — the primary link of the transport chain, expressed in the same
+ * shape as its fallbacks so the chain is homogeneous. Derived from exactly the
+ * same inputs `resolveVoiceModel` uses, so the primary can never disagree with
+ * the model actually instantiated.
+ */
+export function resolvePrimaryTransportLink(
+  override?: LlmProvider,
+  modelOverride?: string,
+): LlmTransportLink {
+  const provider = resolveLlmProvider(override);
+  return {
+    transport: provider,
+    model: modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL),
+  };
+}
+
+/** Instantiates the model for one link. The link's transport is authoritative
+ * here — it must NOT be re-resolved from env, or a fallback link would be
+ * silently served by the primary's transport. */
+export function modelForTransportLink(link: LlmTransportLink) {
+  return link.transport === "groq" ? groq(link.model) : gateway(link.model);
+}
+
+/**
+ * ADR-109 — the label for the link that actually ran. Deliberately produces the
+ * SAME `transport/model` shape as `getActiveModelLabel` below, so
+ * `turn_latency.llm_provider_used` stays comparable across the cutover and no
+ * dashboard has to learn a second format.
+ */
+export function formatActiveModelLabel(link: LlmTransportLink): string {
+  return `${link.transport}/${link.model}`;
 }
 
 export function getActiveModelLabel(override?: LlmProvider, modelOverride?: string): string {

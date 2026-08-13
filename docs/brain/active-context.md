@@ -12,6 +12,19 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The chain's last resort was its weakest link (2026-08-13, ADR-109 — shipped dark).** Gateway
+  `groq/llama-3.3-70b-versatile` fails ~4 of 10 streaming-tool requests (bedrock attempted first, 400,
+  then groq 503) and is the **last link** of production's `AI_GATEWAY_FALLBACK_MODELS`. Fix is
+  **cross-transport** failover — direct Groq primary, gateway as the last link — not a Groq-only model
+  chain, which would protect against capacity rather than against the transport being unreachable.
+  Transport-qualified ids use a `direct:` colon scheme because `groq/<model>` is *already* a valid
+  gateway id and production's current value, so a bare prefix would have redefined live config
+  silently. Config reuses `org_agent_configs.llm_fallback_models` (no migration). The retry window
+  **closes at the first token** — after that, retrying makes the agent say two things in one turn.
+  Behind `LLM_TRANSPORT_FAILOVER`, **default off everywhere**; flag off ⇒ empty chain ⇒ unchanged
+  gateway-native path. **Open:** whether to enable it on staging (which isolates nothing while staging
+  shares `DATABASE_URL` and the Twilio account with prod), and a Railway-side latency soak — the
+  ~130 ms hop is a dev-sandbox reading and must not be quoted as production.
 - **The `+91` dial was refused by design; the expiry was invisible (2026-08-12, ADR-108 — shipped).**
   Nothing was broken. ADR-096 made `assertOutboundCallAllowed` the single fail-closed chokepoint and
   closed the three ungated paths live testing used, so an insurance org dialing `+91` now hits the

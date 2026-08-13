@@ -17,7 +17,14 @@ import {
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
 import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
-import { resolveVoiceModel, getActiveModelLabel, buildGatewayProviderOptions } from "./llm";
+import {
+  buildGatewayProviderOptions,
+  resolvePrimaryTransportLink,
+  modelForTransportLink,
+  formatActiveModelLabel,
+} from "./llm";
+import { resolveLlmTransportChain } from "./llm/transport-chain";
+import { streamWithTransportFailover } from "./llm/transport-stream";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
 import { visibleTemplatesForOrg, loadVisibleTemplate } from "./template-visibility";
@@ -1254,20 +1261,62 @@ export async function runVoiceAgentTurn({
   );
 
   try {
-    const result = streamText({
-      model: resolveVoiceModel(llmProvider, llmModel),
-      providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
-      system: systemPrompt,
-      messages: history,
-      tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText),
-      stopWhen: stepCountIs(6),
-      abortSignal: combinedSignal,
-      onStepFinish: (step) => {
-        for (const call of step.toolCalls ?? []) {
-          const result = step.toolResults?.find((r) => r.toolCallId === call.toolCallId);
-          onToolCall?.(call.toolName, call.input, result?.output);
-        }
+    /**
+     * ADR-109 — cross-transport LLM failover, dark behind LLM_TRANSPORT_FAILOVER.
+     *
+     * With the flag off `chain` is empty, `links` is the single primary link and
+     * `providerOptions` is exactly what it was before this ADR, so the gateway
+     * keeps doing its own native multi-model failover and this path is
+     * behaviourally unchanged.
+     *
+     * With the flag on we execute the chain, and `providerOptions` becomes
+     * undefined *on purpose*: every link is one concrete model, so handing the
+     * same list to the gateway as well would retry it at two layers and multiply
+     * one refusal by the turn's whole latency budget. That invariant is asserted
+     * in transport-chain.test.ts.
+     */
+    const primaryLink = resolvePrimaryTransportLink(llmProvider, llmModel);
+    const chain = resolveLlmTransportChain({ primary: primaryLink, override: llmFallbackModels });
+    const links = [primaryLink, ...chain];
+    // The result handle of whichever link actually produced output — the
+    // empty-turn diagnostics below must describe the model that ran, not the one
+    // that was asked first (ADR-107: a reading attributed to the wrong stage is
+    // worse than no reading).
+    //
+    // Typed by inference off `makeStream` rather than annotated as
+    // `ReturnType<typeof streamText>`: that bare form resolves its ToolSet
+    // parameter to the empty default, which is not assignable from the concrete
+    // tool set `buildVoiceTools` returns. Inferring keeps the tool types.
+    const makeStream = (link: typeof primaryLink) =>
+      streamText({
+        model: modelForTransportLink(link),
+        providerOptions:
+          chain.length > 0 ? undefined : buildGatewayProviderOptions(llmProvider, llmFallbackModels),
+        system: systemPrompt,
+        messages: history,
+        tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText),
+        stopWhen: stepCountIs(6),
+        abortSignal: combinedSignal,
+        onStepFinish: (step) => {
+          for (const call of step.toolCalls ?? []) {
+            const toolResult = step.toolResults?.find((r) => r.toolCallId === call.toolCallId);
+            onToolCall?.(call.toolName, call.input, toolResult?.output);
+          }
+        },
+      });
+    let result: ReturnType<typeof makeStream> | undefined;
+    let activeLink = primaryLink;
+    const openLink = (link: typeof primaryLink) => {
+      result = makeStream(link);
+      return result.textStream;
+    };
+    const textStream = streamWithTransportFailover<string>({
+      links,
+      open: openLink,
+      onLinkResolved: (link) => {
+        activeLink = link;
       },
+      isAborted: () => combinedSignal.aborted,
     });
 
     let full = "";
@@ -1287,10 +1336,13 @@ export async function runVoiceAgentTurn({
         onTextDelta(text);
       },
     });
-    for await (const delta of result.textStream) {
+    for await (const delta of textStream) {
       if (firstTokenAt === null) {
         firstTokenAt = Date.now();
-        onLatency?.(firstTokenAt - turnStartedAt, getActiveModelLabel(llmProvider, llmModel));
+        // ADR-109: labelled with the link that actually spoke, not the one asked
+        // first — otherwise a fallback's TTFT is booked against the primary and
+        // the soak comparing the two transports measures nothing.
+        onLatency?.(firstTokenAt - turnStartedAt, formatActiveModelLabel(activeLink));
       }
       guard.push(delta);
     }
@@ -1302,7 +1354,7 @@ export async function runVoiceAgentTurn({
       // the caller hearing it, but the underlying cause is a real defect
       // somewhere upstream and must not be silently absorbed.
       console.warn("[voice-agent] spoken-output guard removed non-speech from a turn", {
-        model: getActiveModelLabel(llmProvider, llmModel),
+        model: formatActiveModelLabel(activeLink),
         findings: guardFindings,
       });
     }
@@ -1318,10 +1370,15 @@ export async function runVoiceAgentTurn({
       // "length"/"content-filter". Log everything needed to tell those apart
       // without needing to reproduce the call.
       try {
+        // `result` is the handle of the link that actually opened. It is only
+        // undefined if no link opened at all, which throws instead of reaching
+        // here — but the diagnostic must not be the thing that crashes the turn,
+        // so it degrades rather than asserts.
+        const opened = result;
         const [finishReason, usage, steps] = await Promise.all([
-          Promise.resolve(result.finishReason).catch(() => "unknown"),
-          Promise.resolve(result.usage).catch(() => undefined),
-          Promise.resolve(result.steps).catch(() => []),
+          Promise.resolve(opened?.finishReason).catch(() => "unknown"),
+          Promise.resolve(opened?.usage).catch(() => undefined),
+          Promise.resolve(opened?.steps ?? []).catch(() => []),
         ]);
         for (const step of steps as Array<{ toolCalls?: Array<{ toolName: string }> }>) {
           for (const call of step.toolCalls ?? []) calledToolNames.push(call.toolName);
@@ -1329,7 +1386,7 @@ export async function runVoiceAgentTurn({
         console.warn(
           "[voice-agent] turn produced no spoken text — falling back",
           {
-            model: getActiveModelLabel(llmProvider, llmModel),
+            model: formatActiveModelLabel(activeLink),
             finishReason,
             usage,
             stepCount: (steps as unknown[]).length,

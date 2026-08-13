@@ -492,6 +492,19 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   // Same idea for the LLM — a list of AI Gateway model ids to add to
   // providerOptions.gateway.models alongside llmModel/GATEWAY_MODEL above.
   // Null means "use AI_GATEWAY_FALLBACK_MODELS env var" (platform default).
+  //
+  // ADR-109 REDEFINES the *contents* of this column, not its shape: an entry
+  // may now be transport-qualified. `direct:groq/<model>` means "call Groq
+  // directly, bypassing the gateway"; `gateway:<id>` is accepted and
+  // redundant; an UNQUALIFIED id keeps its exact current meaning, a gateway
+  // model id. The colon scheme exists precisely so nothing already stored here
+  // changes meaning — `groq/llama-3.3-70b-versatile` is a valid *gateway* id
+  // (gateway routing to groq compute) and is production's current value, so
+  // reading a bare `groq/` prefix as direct-Groq would have been a silent
+  // redefinition. No migration: same column, same jsonb string[], additive
+  // vocabulary. Qualified entries are only executed when
+  // LLM_TRANSPORT_FAILOVER=true; with the flag off the whole list is handed to
+  // the gateway as before.
   llmFallbackModels: jsonb("llm_fallback_models").$type<string[]>(),
   toolsEnabled: jsonb("tools_enabled").$type<unknown[]>(),
   guardrails: jsonb("guardrails").$type<Record<string, unknown>>(),
