@@ -7,7 +7,7 @@ import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
-import { formatDateTime } from "../../lib/format";
+import { formatDateTime, formatTimeRemaining } from "../../lib/format";
 import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -184,6 +184,14 @@ export function UserSettingsPage() {
 
   const testModeUntil = me.org.callingWindowTestModeUntil ? new Date(me.org.callingWindowTestModeUntil) : null;
   const testModeActive = Boolean(testModeUntil && testModeUntil.getTime() > Date.now());
+  const testModeLeft = testModeActive && testModeUntil ? formatTimeRemaining(testModeUntil) : null;
+  const testModeLapsing = Boolean(
+    testModeActive && testModeUntil && testModeUntil.getTime() - Date.now() < 3 * 60 * 60 * 1000,
+  );
+  // An expired timestamp is the state worth naming loudest: the toggle reads
+  // "off" either way, but here the org was demoing recently and its next call
+  // will be refused by a gate that was passing yesterday.
+  const testModeExpired = Boolean(testModeUntil && !testModeActive);
 
   const testMode = useMutation({
     mutationFn: async (enabled: boolean) => {
@@ -471,8 +479,26 @@ export function UserSettingsPage() {
             </span>
           </label>
           {testModeActive && testModeUntil && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Turns back on automatically at {formatDateTime(testModeUntil)}.
+            <p
+              className={`mt-2 text-xs ${testModeLapsing ? "font-medium text-warning" : "text-muted-foreground"}`}
+            >
+              {testModeLapsing ? (
+                <>
+                  Lapses in {testModeLeft} — at {formatDateTime(testModeUntil)} compliance turns back on and
+                  outbound demo calls start getting refused. Toggle it off and on to re-arm for another 24 hours.
+                </>
+              ) : (
+                <>
+                  Compliance turns back on automatically at {formatDateTime(testModeUntil)} ({testModeLeft} left).
+                </>
+              )}
+            </p>
+          )}
+          {testModeExpired && testModeUntil && (
+            <p className="mt-2 text-xs font-medium text-warning">
+              Expired {formatDateTime(testModeUntil)}. Calls that were going through during your last demo will
+              now be refused by the calling-window and insurance registration gates — turn this back on before
+              your next one.
             </p>
           )}
 

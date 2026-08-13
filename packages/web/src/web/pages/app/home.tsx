@@ -17,7 +17,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { StatCard } from "../../components/charts/stat-card";
 import { BreakdownList } from "../../components/charts/breakdown-list";
 import { DateRangeSelector } from "../../components/charts/date-range-selector";
-import { formatMoney, formatDateTime } from "../../lib/format";
+import { formatMoney, formatDateTime, formatTimeRemaining } from "../../lib/format";
 
 const CHART_COLORS = [
   "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
@@ -429,6 +429,13 @@ export function UserHomePage() {
 
   const testModeUntil = me.org.callingWindowTestModeUntil ? new Date(me.org.callingWindowTestModeUntil) : null;
   const testModeActive = Boolean(testModeUntil && testModeUntil.getTime() > Date.now());
+  // Surfaced on the badge because the 24h expiry is silent otherwise: the first
+  // signal you get is a 403 mid-demo. "Lapsing" is the last 3 hours, long enough
+  // to re-arm before a scheduled call.
+  const testModeLeft = testModeActive && testModeUntil ? formatTimeRemaining(testModeUntil) : null;
+  const testModeLapsing = Boolean(
+    testModeActive && testModeUntil && testModeUntil.getTime() - Date.now() < 3 * 60 * 60 * 1000,
+  );
 
   return (
     <div className="page-enter space-y-6">
@@ -441,10 +448,15 @@ export function UserHomePage() {
           {testModeActive && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-xs font-medium text-warning"
-              title={`Calling-window compliance is bypassed until ${formatDateTime(testModeUntil!)}. Turn off on the Settings page.`}
+              title={`Calling-window compliance is bypassed until ${formatDateTime(testModeUntil!)}. Outbound demo calls stop passing the gates when it lapses. Turn off or re-arm on the Settings page.`}
             >
               <TriangleAlert className="size-3 shrink-0" aria-hidden />
               Compliance test mode — calling window OFF
+              {testModeLeft && (
+                <span className={testModeLapsing ? "font-semibold" : "opacity-80"}>
+                  · {testModeLapsing ? `lapses in ${testModeLeft}` : `${testModeLeft} left`}
+                </span>
+              )}
             </span>
           )}
           <DateRangeSelector value={days} onChange={setDays} options={[7, 14, 30]} />

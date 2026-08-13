@@ -12,6 +12,22 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **The `+91` dial was refused by design; the expiry was invisible (2026-08-12, ADR-108 — shipped).**
+  Nothing was broken. ADR-096 made `assertOutboundCallAllowed` the single fail-closed chokepoint and
+  closed the three ungated paths live testing used, so an insurance org dialing `+91` now hits the
+  unconditional TRAI 1600-series gate. The escape hatch already existed —
+  `orgs.callingWindowTestModeUntil` (24h, `POST /api/app/compliance/test-mode`) bypasses it before any
+  number lookup, DNC still enforced — but it had **lapsed the previous evening**, and an expired
+  bypass produces a refusal byte-identical to a never-configured org's. Shipped: refusals now name the
+  lapsed test mode (scoped to `TEST_MODE_BYPASSABLE`; `dnc`/`attempt_cap` deliberately excluded,
+  additive to the original reason, silent when NULL or still active, best-effort so it can never throw)
+  and the dashboard/settings show `Xh left` → bolded `lapses in Xh` under 3h → an explicit expired
+  warning. A per-org test-number allowlist was rejected: demos go to whoever is in the room, so the
+  destination cannot be pre-registered. api tests 1,281 → 1,287.
+  **Before demoing `+91`: flip the Settings test-mode toggle first.** Still open — test mode is a
+  blanket lift for every destination, not demo-scoped (fine for invited demos, not for cold outreach);
+  the countdown does not tick.
+
 - **The latency dashboard was blaming the wrong stage (2026-08-12, ADR-107 — shipped).**
   `turn_latency` said voice-to-voice p50 was 1878 ms with **1748 ms of it TTS**, on a turn `llm_ttft`
   already claimed 1381 ms of. `v2v - tts` was pinned at ~127 ms on *every* row across a two-second

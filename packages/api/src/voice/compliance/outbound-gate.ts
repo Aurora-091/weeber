@@ -107,7 +107,7 @@ function nonProdBypassActive(): boolean {
  * `agentKey`-passing callers are the two test-call endpoints, which must keep
  * working for a paused agent. It stays a scheduler gate.
  */
-export async function assertOutboundCallAllowed(
+async function runOutboundGates(
   orgId: string | null | undefined,
   to: string,
 ): Promise<OutboundGateResult> {
@@ -163,4 +163,80 @@ export async function assertOutboundCallAllowed(
   }
 
   return { allowed: true };
+}
+
+/**
+ * The three gates a live demo is expected to run without: the calling window and
+ * the two insurance-vertical *configuration* gates. `orgs.callingWindowTestModeUntil`
+ * lifts exactly these. DNC and the FTSA attempt cap are absent on purpose — they are
+ * never bypassed, so a refusal from either is never a test-mode problem and must not
+ * be described as one.
+ */
+const TEST_MODE_BYPASSABLE: ReadonlySet<OutboundGate> = new Set([
+  "calling_window",
+  "insurance_number_series",
+  "insurance_producer_licensing",
+]);
+
+function formatElapsed(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/**
+ * Why this exists: test mode is self-expiring by design (24h, so it cannot be left
+ * on in production), and the failure it produces on expiry is indistinguishable from
+ * "this org was never configured". A founder mid-demo got the full TRAI 1600-series
+ * registration paragraph — accurate, and the wrong thing to read out when the actual
+ * remedy is one toggle. This appends the diagnosis to the gate's own reason instead
+ * of replacing it: the registration requirement is still real and still stated.
+ *
+ * Only runs on the refusal path, so the happy path pays nothing. Deliberately
+ * best-effort: this is an error-message improvement, and it must never turn a clean
+ * refusal into a thrown exception, so any failure here yields no suffix at all.
+ */
+async function expiredTestModeHint(
+  orgId: string | null | undefined,
+  gate: OutboundGate,
+): Promise<string> {
+  if (!orgId || !TEST_MODE_BYPASSABLE.has(gate)) return "";
+  try {
+    const [org] = await db
+      .select({ callingWindowTestModeUntil: orgs.callingWindowTestModeUntil })
+      .from(orgs)
+      .where(eq(orgs.id, orgId))
+      .limit(1);
+    const until = org?.callingWindowTestModeUntil;
+    // Never set: this org has no demo history, so a test-mode hint would be noise.
+    // Still active: the refusal came from a gate test mode does not lift, so
+    // blaming test mode would actively mislead.
+    if (!until || until.getTime() > Date.now()) return "";
+    return (
+      ` — NOTE: demo/test mode expired ${formatElapsed(Date.now() - until.getTime())}` +
+      ` (${until.toISOString()}), and it is what was allowing this call.` +
+      ` Re-enable it on the Settings page for another 24 hours, or complete the registration above.`
+    );
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Public chokepoint. `runOutboundGates` owns the fail-closed decision and is left
+ * untouched by this wrapper; all this adds is a legible reason on refusal. Keeping
+ * the two separate means the enforcement logic stays readable on its own and the
+ * message-decoration path cannot alter an allow/deny outcome.
+ */
+export async function assertOutboundCallAllowed(
+  orgId: string | null | undefined,
+  to: string,
+): Promise<OutboundGateResult> {
+  const result = await runOutboundGates(orgId, to);
+  if (result.allowed) return result;
+  const hint = await expiredTestModeHint(orgId, result.gate);
+  return hint ? { ...result, reason: `${result.reason}${hint}` } : result;
 }

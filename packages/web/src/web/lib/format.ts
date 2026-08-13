@@ -113,3 +113,22 @@ export function formatCompactNumber(value: number | null | undefined, locale = "
     maximumFractionDigits: 1,
   }).format(value);
 }
+
+/**
+ * Time left on the org's self-expiring compliance test mode, as a short label
+ * ("47m", "3h", "1d"). Returns null once it has lapsed, so callers must handle
+ * the expired case explicitly rather than rendering a misleading "0m" while the
+ * bypass is in fact already off — the whole point of surfacing this is that the
+ * moment it flips is the moment a live demo call starts getting refused.
+ */
+export function formatTimeRemaining(input: Date | string | number): string | null {
+  const date = toDate(input);
+  if (!date) return null;
+  const ms = date.getTime() - Date.now();
+  if (ms <= 0) return null;
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
