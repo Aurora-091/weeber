@@ -59,32 +59,96 @@ function useAgentConfigs() {
 // ---------------------------------------------------------------------------
 
 export type AgentReadiness = {
-  state: "live" | "needs-number" | "paused";
+  state: "live" | "degraded" | "needs-number" | "paused";
   label: string;
+  /** One merchant-readable line naming the gap, or null when there is none.
+   * Shared by the card and the detail banner so the two can't describe the
+   * same gap differently. The link/affordance stays with each surface. */
+  detail: string | null;
   /** Semantic token classes — never raw Tailwind colours on product surfaces. */
   pillCls: string;
   dotCls: string;
 };
 
+/**
+ * Capabilities the agent's own row cannot answer — they live on the org, and
+ * their absence silently *narrows* the agent rather than stopping it.
+ *
+ * Required, not optional: an optional bag would default to "no gaps", which is
+ * exactly how a new surface would quietly go back to rendering a narrowed agent
+ * as fully Live. Make the caller state what it knows.
+ */
+export type AgentCapabilityContext = {
+  /** Is `transferToHuman` in this agent's enabled tool list? */
+  transferToHumanEnabled: boolean;
+  /** Is `orgs.human_transfer_number` set? NULL on every production org as of
+   * 2026-08-12, which is what makes this the gap worth surfacing first. */
+  hasHumanTransferNumber: boolean;
+};
+
 /** The classification itself, on plain booleans. The detail page passes live
  * form state (so the banner tracks an unsaved toggle); the grid passes what's
- * saved. Both go through here so they can't disagree. */
-export function classifyReadiness(enabled: boolean, hasCallerId: boolean): AgentReadiness {
+ * saved. Both go through here so they can't disagree.
+ *
+ * Precedence is paused → needs-number → degraded → live, i.e. always report the
+ * gap that bites first. A paused agent isn't "limited", and an agent that can't
+ * dial at all shouldn't be described by what it can't do *during* a call.
+ *
+ * "degraded" exists because ADR-105 narrows `transferToHuman` out of the tool
+ * set at call time when the org has no transfer number: the agent dials, talks,
+ * qualifies a lead, and then has nowhere to send it — and the previous readiness
+ * model rendered that agent as a green "Live" pill. A state that only knows
+ * `enabled` + caller ID cannot describe a call that connects and then dead-ends.
+ */
+export function classifyReadiness(
+  enabled: boolean,
+  hasCallerId: boolean,
+  caps: AgentCapabilityContext,
+): AgentReadiness {
   if (!enabled) {
-    return { state: "paused", label: "Paused", pillCls: "bg-muted text-muted-foreground", dotCls: "bg-muted-foreground/60" };
+    return { state: "paused", label: "Paused", detail: null, pillCls: "bg-muted text-muted-foreground", dotCls: "bg-muted-foreground/60" };
   }
   if (!hasCallerId) {
-    return { state: "needs-number", label: "Needs a number", pillCls: "bg-warning-soft text-warning", dotCls: "bg-warning" };
+    return {
+      state: "needs-number",
+      label: "Needs a number",
+      detail: "Turned on, but no caller ID — it can't place calls yet.",
+      pillCls: "bg-warning-soft text-warning",
+      dotCls: "bg-warning",
+    };
   }
-  return { state: "live", label: "Live", pillCls: "bg-success-soft text-success", dotCls: "bg-success" };
+  if (caps.transferToHumanEnabled && !caps.hasHumanTransferNumber) {
+    // Same warning tokens as needs-number on purpose: both mean "you need to do
+    // something", and reusing the pair adds no new colour combination for the
+    // contrast gate to check. The label carries the difference.
+    return {
+      state: "degraded",
+      label: "Live · limited",
+      detail: "Transfer to a human is on, but no transfer number is set — qualified callers can't be handed over.",
+      pillCls: "bg-warning-soft text-warning",
+      dotCls: "bg-warning",
+    };
+  }
+  return { state: "live", label: "Live", detail: null, pillCls: "bg-success-soft text-success", dotCls: "bg-success" };
 }
 
-export function agentReadiness(row: AgentConfigRow, hasOrgFallbackNumber: boolean): AgentReadiness {
+/** True when this agent will try to transfer. Mirrors the card's own default:
+ * an agent that has never been saved runs on the full tool set. */
+export function agentUsesTransferToHuman(row: AgentConfigRow): boolean {
+  return (row.config?.toolsEnabled ?? AVAILABLE_TOOL_NAMES).includes("transferToHuman");
+}
+
+export function agentReadiness(
+  row: AgentConfigRow,
+  hasOrgFallbackNumber: boolean,
+  hasHumanTransferNumber: boolean,
+): AgentReadiness {
   // `config` is null until the merchant saves once — an unsaved agent still
   // runs on template defaults, and toFormState defaults `enabled` to true.
   return classifyReadiness(
     row.config?.enabled ?? true,
     row.config?.phoneNumberId != null || hasOrgFallbackNumber,
+    { transferToHumanEnabled: agentUsesTransferToHuman(row), hasHumanTransferNumber },
   );
 }
 
@@ -123,10 +187,8 @@ function AgentCard({ row, readiness }: { row: AgentConfigRow; readiness: AgentRe
         </span>
       </div>
 
-      {readiness.state === "needs-number" && (
-        <p className="text-[11px] text-warning leading-relaxed">
-          Turned on, but no caller ID — it can't place calls yet.
-        </p>
+      {readiness.detail && (
+        <p className="text-[11px] text-warning leading-relaxed">{readiness.detail}</p>
       )}
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground">
@@ -147,7 +209,7 @@ function AgentCard({ row, readiness }: { row: AgentConfigRow; readiness: AgentRe
  * and bounced straight back. Frontend-only change — `GET /agent-configs`
  * already returns every agent merged with its template. */
 export function UserAgentsPage() {
-  const { vertical } = useUser();
+  const { vertical, me } = useUser();
   const configs = useAgentConfigs();
   const rows = configs.data?.agentConfigs ?? [];
 
@@ -178,8 +240,19 @@ export function UserAgentsPage() {
     );
   }
 
-  const readiness = rows.map((r) => ({ row: r, readiness: agentReadiness(r, hasOrgFallbackNumber) }));
+  // `me` is already loaded by the shell, so the transfer-number gap costs no
+  // extra request — the reason this gap is the one the classifier learned first.
+  const hasHumanTransferNumber = Boolean(me.org.humanTransferNumber);
+
+  const readiness = rows.map((r) => ({
+    row: r,
+    readiness: agentReadiness(r, hasOrgFallbackNumber, hasHumanTransferNumber),
+  }));
+  // "live" here means fully live: a degraded agent is counted separately rather
+  // than folded into the green number, otherwise the strip would report the same
+  // reassuring count it did before this state existed.
   const liveCount = readiness.filter((r) => r.readiness.state === "live").length;
+  const degradedCount = readiness.filter((r) => r.readiness.state === "degraded").length;
   const attentionCount = readiness.filter((r) => r.readiness.state === "needs-number").length;
   const pausedCount = readiness.filter((r) => r.readiness.state === "paused").length;
 
@@ -196,6 +269,14 @@ export function UserAgentsPage() {
         {attentionCount > 0 && (
           <span className="text-warning">
             <span className="font-medium">{attentionCount}</span> need a phone number
+          </span>
+        )}
+        {degradedCount > 0 && (
+          <span className="text-warning">
+            <span className="font-medium">{degradedCount}</span> can't transfer to a human —{" "}
+            <a href={appPath("/settings")} className="underline underline-offset-2 hover:text-foreground">
+              set a transfer number
+            </a>
           </span>
         )}
       </div>
@@ -689,6 +770,7 @@ const TABS = [
 
 function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConfigRow[] }) {
   const queryClient = useQueryClient();
+  const { me } = useUser();
   const [, setLocation] = useLocation();
   const [form, setForm] = useState<FormState>(() => toFormState(row));
   const [dirty, setDirty] = useState(false);
@@ -778,7 +860,13 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
   // can never disagree about when an agent is really callable. `form.enabled`
   // (not `row.config.enabled`) so the banner tracks the unsaved toggle.
   const hasCallerId = row.config?.phoneNumberId != null || hasOrgFallbackNumber;
-  const missingCallerId = classifyReadiness(form.enabled, hasCallerId).state === "needs-number";
+  // `form.toolsEnabled`, not the saved row: tick transferToHuman on the Tools
+  // tab and the banner should warn before you save, not after the first call
+  // dead-ends.
+  const readiness = classifyReadiness(form.enabled, hasCallerId, {
+    transferToHumanEnabled: form.toolsEnabled.includes("transferToHuman"),
+    hasHumanTransferNumber: Boolean(me.org.humanTransferNumber),
+  });
 
   const tabProps: TabProps = { row, form, set };
 
@@ -800,13 +888,13 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
           </div>
           <label className="ml-2 flex shrink-0 items-center gap-2 text-sm font-medium">
             <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} aria-label="Agent enabled" />
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ${
-              form.enabled
-                ? "bg-emerald-500/15 text-emerald-400"
-                : "bg-zinc-500/15 text-zinc-400"
-            }`}>
-              <span className={`size-1.5 rounded-full ${form.enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
-              {form.enabled ? "Live" : "Paused"}
+            {/* Was a hand-rolled two-state pill on raw `emerald-*`/`zinc-*`
+                values: it said "Live" whenever the toggle was on, disagreeing
+                with the grid's own pill, and its dark-only colours were a
+                design:guard violation. Now the shared classifier drives it. */}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ${readiness.pillCls}`}>
+              <span className={`size-1.5 rounded-full ${readiness.dotCls}`} />
+              {readiness.label}
             </span>
           </label>
         </div>
@@ -838,15 +926,15 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       </div>
 
       {/* Readiness — why an agent may not actually be running even when toggled on. */}
-      {!form.enabled ? (
-        <div className="flex items-start gap-2.5 rounded-lg border border-zinc-500/20 bg-zinc-500/5 px-4 py-3 text-xs text-muted-foreground">
-          <Info className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden />
+      {readiness.state === "paused" ? (
+        <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
           <p>
             <span className="font-medium text-foreground/80">Paused.</span> This agent won't place or receive any
             calls until you turn it on with the toggle above.
           </p>
         </div>
-      ) : missingCallerId ? (
+      ) : readiness.state === "needs-number" ? (
         // Semantic warning tokens, not raw Tailwind `amber-*`. This banner used
         // to hardcode dark-mode-only values (`text-amber-200/90` on
         // `bg-amber-500/10`), which rendered as near-white text on a pale
@@ -858,6 +946,23 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
             <span className="font-medium text-foreground">Live, but no phone number to call from.</span> Assign a
             caller ID on the <button type="button" onClick={() => setTab("calling")} className="underline underline-offset-2 hover:text-foreground">Calling &amp; Model</button> tab
             (or buy one on the Phone Numbers page) — until then this agent can't actually place calls.
+          </p>
+        </div>
+      ) : readiness.state === "degraded" ? (
+        // ADR-105: the backend drops `transferToHuman` from the tool set when the
+        // org has no transfer number, so the agent runs a full call and then has
+        // nowhere to send a qualified lead. It is not a refusal and not an error,
+        // which is why it needs its own banner rather than a toast at call time.
+        <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-xs">
+          <PhoneCall className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <p className="text-foreground/80">
+            <span className="font-medium text-foreground">Live, but it can't hand anyone over.</span>{" "}
+            "Transfer to a human" is switched on, but your org has no transfer number, so the agent
+            quietly loses that ability on every call — it ends the call politely instead of connecting
+            a person.{" "}
+            <a href={appPath("/settings")} className="underline underline-offset-2 hover:text-foreground">Set a transfer number in Settings</a>,
+            or switch the ability off on the Tools &amp; Guardrails tab so the agent stops implying a
+            handover it can't do.
           </p>
         </div>
       ) : null}

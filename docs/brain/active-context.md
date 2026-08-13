@@ -12,6 +12,25 @@ updated: 2026-08-13
 
 ## Current focus
 
+- **A green pill on an agent that cannot hand anyone over (2026-08-13, ADR-111 — shipped, UI-only).**
+  `classifyReadiness` judged agents from `enabled` + `hasCallerId` only, so an agent whose
+  `transferToHuman` ADR-105 had **narrowed away** (org `human_transfer_number` NULL) rendered green
+  **Live**. Fourth state **`degraded`** / **"Live · limited"** added, precedence
+  `paused` → `needs-number` → `degraded` → `live`. The capability context is a **required** third arg on
+  purpose — an optional bag defaults to "no gaps" and is how the next surface silently regresses to green.
+  `detail` now comes from the classifier so grid card, detail banner and detail header are three renderings
+  of one verdict; the detail header pill was previously hand-rolled two-state on raw `emerald-*`/`zinc-*`
+  and **disagreed with the banner beneath it**. Detail page classifies from `form.toolsEnabled`, so the
+  warning appears before you save. Zero extra requests (`me.org.humanTransferNumber`). Deliberately fed
+  **only** the ADR-105 gap: ADR-098's empty roster is org-wide and does not narrow this agent, ADR-108's
+  lapsed window already has a countdown on Home/Settings. Reused `warning-soft`/`warning` (no `info` token
+  in `.theme-weeber`, contrast gate already carries 9 declared failures) and **refused to widen
+  `design:guard` `rawButton` 111 → 112** for a tab-jump `<button>` — plain text instead. Tests 12 → 19,
+  non-vacuity proven (4 of 19 fail when the branch is stubbed out); all six ratchets green, none widened.
+  **Watch out:** `app-agents` visual baselines render the *empty* state and protect none of this (verified
+  by driving the built harness with fulfilled API responses instead; seeding the harness is the follow-up),
+  and `provider-unsupported` is still invisible — an **Exotel** org with a transfer number set shows
+  **Live** and cannot transfer.
 - **Market focus is an authoring fact, not a gate (2026-08-13, ADR-110 — shipped, allow-and-warn).**
   "Insurance = US, Shopify = India" is now written down in exactly one place in code
   (`voice/compliance/market-alignment.ts`) and **nothing branches on it**. `noteMarketAlignment` runs on
