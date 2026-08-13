@@ -34,6 +34,7 @@ import { dncAdapter } from "./adapters";
 import { checkFtsaAttemptCap } from "./attempt-cap";
 import { checkInsuranceNumberSeriesCompliance, checkInsuranceProducerLicensing } from "./insurance-gates";
 import { checkIndiaNumberSeriesCompliance } from "./number-series-gate";
+import { warnOnMarketMisalignment } from "./market-alignment";
 
 /** Which gate refused, for callers that branch on it (the scheduler defers on
  * a calling-window refusal and cancels on DNC — see `dispatchScheduledCall`). */
@@ -226,6 +227,36 @@ async function expiredTestModeHint(
 }
 
 /**
+ * ADR-110 — observation, not enforcement.
+ *
+ * Runs only on the ALLOWED path, after every gate has passed, and its return
+ * value is discarded: a market misalignment is not a refusal and must never
+ * become one (see market-alignment.ts for why refusing shopify→US would be the
+ * wrong trade). It exists so that an agent running outside the market its
+ * persona was authored for leaves a greppable line instead of nothing.
+ *
+ * Costs one PK-indexed select per allowed dial. That is dial-time, not turn-time
+ * — it is not on the voice hot path ADR-100/-107 measure, and it is not folded
+ * into the insurance gates' existing `vertical` read on purpose, because those
+ * gates are legal enforcement and this is telemetry; sharing a query would
+ * couple a thing that may be deleted to a thing that may not.
+ *
+ * Best-effort by construction, same discipline as `expiredTestModeHint`: a
+ * telemetry read must never convert an allowed call into a refusal, so every
+ * failure is swallowed.
+ */
+async function noteMarketAlignment(orgId: string | null | undefined, to: string): Promise<void> {
+  if (!orgId) return;
+  try {
+    const [org] = await db.select({ vertical: orgs.vertical }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    if (!org?.vertical) return;
+    warnOnMarketMisalignment(orgId, org.vertical, to);
+  } catch {
+    // Deliberately silent — see doc comment.
+  }
+}
+
+/**
  * Public chokepoint. `runOutboundGates` owns the fail-closed decision and is left
  * untouched by this wrapper; all this adds is a legible reason on refusal. Keeping
  * the two separate means the enforcement logic stays readable on its own and the
@@ -236,7 +267,10 @@ export async function assertOutboundCallAllowed(
   to: string,
 ): Promise<OutboundGateResult> {
   const result = await runOutboundGates(orgId, to);
-  if (result.allowed) return result;
+  if (result.allowed) {
+    await noteMarketAlignment(orgId, to);
+    return result;
+  }
   const hint = await expiredTestModeHint(orgId, result.gate);
   return hint ? { ...result, reason: `${result.reason}${hint}` } : result;
 }

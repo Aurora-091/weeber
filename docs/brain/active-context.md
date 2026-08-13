@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Active context — what's happening right now
@@ -12,6 +12,21 @@ updated: 2026-08-12
 
 ## Current focus
 
+- **Market focus is an authoring fact, not a gate (2026-08-13, ADR-110 — shipped, allow-and-warn).**
+  "Insurance = US, Shopify = India" is now written down in exactly one place in code
+  (`voice/compliance/market-alignment.ts`) and **nothing branches on it**. `noteMarketAlignment` runs on
+  the **allowed path only** of `assertOutboundCallAllowed`, its result discarded, `runOutboundGates`
+  untouched, failures swallowed — so this can never refuse a call, and three source-text tests hold that
+  invariant. `console.warn`, not a `guardrail_events` row. **`orgs.market` was rejected, so ADR-095 stays
+  `Proposed`**: every gate that needs geography already resolves it from the destination (DNC, calling
+  window, FTSA cap, 1600-series, producer licensing, India DLT), so a column would not change one
+  decision, and a stale market column looks more authoritative than a prefix inference. Refusing
+  shopify→US was rejected too — it would encode a fact only true at zero customers and be load-bearing by
+  the first US store. **Correction on the record (ADR-078):** the FTSA attempt cap is **not** insurance-only
+  — it is called unconditionally and scoped by Florida area code, so shopify→US runs DNC + US calling
+  window + FTSA cap. api tests 1,307 → 1,324; all six ratchets green, none widened. **Watch out:**
+  `orgs.vertical` is unconstrained `text` defaulting to `"shopify"` and **neither** insert path sets it, so
+  a fresh signup is a Shopify org until someone opens Settings.
 - **The chain's last resort was its weakest link (2026-08-13, ADR-109 — shipped dark).** Gateway
   `groq/llama-3.3-70b-versatile` fails ~4 of 10 streaming-tool requests (bedrock attempted first, 400,
   then groq 503) and is the **last link** of production's `AI_GATEWAY_FALLBACK_MODELS`. Fix is
