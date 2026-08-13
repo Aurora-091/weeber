@@ -12,6 +12,23 @@ updated: 2026-08-13
 
 ## Current focus
 
+- **A BYO number nothing recorded (2026-08-13, ADR-112 — shipped; migration NOT applied).** All
+  platform-rented Twilio numbers were **released** on the founder's instruction (parent + both live
+  sub-accounts hold zero, nothing billing), so BYO is now the default path — and only
+  `buyNumberForOrg` had ever written an `org_phone_numbers` row. The three BYO functions wrote
+  `orgs.outbound_number` only, so a BYO org had a working caller ID, an **empty Numbers page** (hence
+  no way to declare `numberSeries`, making the India DLT and insurance 1600-series gates
+  unsatisfiable by construction), **dead per-agent routing** (`phone_number_id` is an FK into that
+  table), and numbers outside webhook repair. New `voice/register-byo-number.ts` shared helper called
+  from all three; new nullable `org_phone_numbers.source` enum(`purchased`,`byo`) with **no backfill**;
+  supersession is a **pure** `supersededByoNumberIds` scoped to `byo` only — `purchased` is billed and
+  dialable, `NULL` is unknown provenance and untouchable — extracted because **no `db` mock here
+  evaluates `where` predicates**. Also: the org-level branch of `resolveOutboundRouting` was an
+  unordered `limit(1)`, i.e. a **nondeterministic caller ID** for an org with two active rows; now
+  `asc(id)`. api tests 1,324 → 1,336, non-vacuity proven twice. **Watch out:** migration
+  `0049_daffy_beyonder.sql` is generated and **not applied**, so `registerByoNumber` fails against the
+  real DB until it runs; and `TWILIO_PHONE_NUMBER` on Railway names a **released** number, so step 4
+  of the routing chain dials from a number we do not own (Railway work is paused).
 - **A green pill on an agent that cannot hand anyone over (2026-08-13, ADR-111 — shipped, UI-only).**
   `classifyReadiness` judged agents from `enabled` + `hasCallerId` only, so an agent whose
   `transferToHuman` ADR-105 had **narrowed away** (org `human_transfer_number` NULL) rendered green

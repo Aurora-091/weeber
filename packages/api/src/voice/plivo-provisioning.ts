@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { orgs } from "../database/schema";
 import { storeCredential, PLIVO_FIELDS } from "../database/credential-vault";
+import { registerByoNumber } from "./register-byo-number";
 
 export type PlivoStatus = {
   connected: boolean;
@@ -75,6 +76,10 @@ export async function setPlivoByoCredentials(
 
   await storeCredential(orgId, PLIVO_FIELDS.authId, authId);
   await storeCredential(orgId, PLIVO_FIELDS.authToken, authToken);
+
+  // ADR-112 — see registerByoNumber. Plivo orgs are the India-side BYO path, so
+  // this row is also the only place a TRAI 140/160 series can be declared.
+  await registerByoNumber(orgId, "plivo", phoneNumber);
 
   return { ok: true };
 }

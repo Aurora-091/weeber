@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { db } from "../database";
 import { orgs, orgAgentConfigs, orgPhoneNumbers } from "../database/schema";
 import { getTwilioClientForOrg, getPublicUrl, getWsUrl } from "./twilio-client";
@@ -65,10 +65,21 @@ export async function resolveOutboundRouting(
       }
     }
     if (!assignedNumber) {
+      // ADR-112: ordered, not arbitrary. This branch used a bare `.limit(1)`
+      // with no `orderBy`, so an org holding more than one active number dialed
+      // from whichever row Postgres happened to return — and that could differ
+      // between two calls from the same agent, which makes caller ID
+      // nondeterministic and any "why did it call from that number" question
+      // unanswerable. Oldest-first (`id asc`) is the stable choice: an org's
+      // first number is the one it has had longest and most likely published,
+      // and unlike newest-first the answer does not change when a number is
+      // added. Per-agent assignment above remains the way to say something
+      // different on purpose.
       const [orgNumberRow] = await db
         .select({ phoneNumber: orgPhoneNumbers.phoneNumber })
         .from(orgPhoneNumbers)
         .where(and(eq(orgPhoneNumbers.orgId, orgId), eq(orgPhoneNumbers.status, "active")))
+        .orderBy(asc(orgPhoneNumbers.id))
         .limit(1);
       assignedNumber = orgNumberRow?.phoneNumber;
     }

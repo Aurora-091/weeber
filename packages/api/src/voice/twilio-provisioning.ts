@@ -10,6 +10,7 @@ import { db } from "../database";
 import { orgs, orgPhoneNumbers } from "../database/schema";
 import { storeCredential, deleteCredential, TWILIO_FIELDS, TELEPHONY_VAULT_FIELDS } from "../database/credential-vault";
 import { twilioClient, resolveOrgTwilioCreds, getPublicUrl } from "./twilio-client";
+import { registerByoNumber } from "./register-byo-number";
 
 export type TwilioStatus = {
   mode: "platform" | "byo";
@@ -594,6 +595,12 @@ export async function setByoCredentials(
 
   await storeCredential(orgId, TWILIO_FIELDS.accountSid, accountSid);
   await storeCredential(orgId, TWILIO_FIELDS.authToken, authToken);
+
+  // ADR-112 — record the number in org_phone_numbers, not just in the legacy
+  // orgs.outboundNumber column. Without this row the Numbers page cannot show
+  // the number, no TRAI/DLT series can be declared against it, and per-agent
+  // assignment (orgAgentConfigs.phoneNumberId) has nothing to point at.
+  await registerByoNumber(orgId, "twilio", phoneNumber);
 
   return { ok: true };
 }

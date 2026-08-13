@@ -27,6 +27,10 @@ function thenable(rows: unknown[]) {
   const promise = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
   promise.where = () => thenable(rows);
   promise.limit = () => thenable(rows);
+  // ADR-112 made the org-level number lookup deterministic with an explicit
+  // ordering; a mock that stops one step short of the real builder fails the
+  // production code for the mock's shape, not for a defect.
+  promise.orderBy = () => thenable(rows);
   return promise;
 }
 

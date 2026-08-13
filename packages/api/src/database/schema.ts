@@ -554,6 +554,20 @@ export const orgPhoneNumbers = pgTable("org_phone_numbers", {
   // every non-insurance org and for orgs outside India — this column only matters when
   // checkInsuranceNumberSeriesCompliance actually evaluates it.
   numberSeries: text("number_series", { enum: ["140", "160", "1600"] }),
+  // ADR-112 — how this number came to be here. Before this column the table
+  // could not express the difference between a number we rented on the org's
+  // behalf under a platform sub-account and a number the org already owned and
+  // brought with it, and that distinction is what decides whether a stale
+  // active row may be cleaned up automatically: BYO is single-number by
+  // construction (`orgs.outboundNumber` is one field), so registering a new BYO
+  // number supersedes the previous one; a purchased number is paid-for and
+  // dialable and must never be released as a side effect of anything.
+  //
+  // Nullable on purpose rather than defaulted: rows written before this column
+  // existed have an unknown provenance and must not be back-labelled as either
+  // value. `registerByoNumber` treats NULL as "not mine to touch", i.e. the
+  // same as `purchased`, which is the safe direction to be wrong in.
+  source: text("source", { enum: ["purchased", "byo"] }),
   purchasedAt: timestamp("purchased_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("org_phone_numbers_org_id_idx").on(table.orgId),

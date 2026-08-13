@@ -20,7 +20,11 @@ mock.module("../database", () => {
       select: () => ({
         from: () => ({
           where: () => ({
-            limit: () => mockSelectedOrgs
+            limit: () => mockSelectedOrgs,
+            // ADR-112: the org-level number lookup now orders explicitly, so
+            // .orderBy() must stay chainable into .limit() the way the real
+            // builder is.
+            orderBy: () => ({ limit: () => mockSelectedOrgs })
           })
         })
       }),

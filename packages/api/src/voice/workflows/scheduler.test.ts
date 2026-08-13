@@ -40,6 +40,8 @@ mock.module("../../database", () => {
               }
               const mockQuery: any = [...result];
               mockQuery.limit = () => result;
+              // ADR-112: the org-level number lookup now orders explicitly.
+              mockQuery.orderBy = () => mockQuery;
               return mockQuery;
             }
           };

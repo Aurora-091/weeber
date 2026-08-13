@@ -1,6 +1,7 @@
 # Runbook — fresh insurance-vertical org to first real call
 
-**Last verified against code:** 2026-08-13, commit `7a31a0c`.
+**Last verified against code:** 2026-08-13, ADR-112 (Step 5 rewritten — the
+platform now owns no phone numbers).
 **Status of the path itself:** never completed end-to-end. No insurance call has
 ever run on this platform. Every step below is read from code and schema, not
 from a passing call. Treat the first run as the test of this runbook, not as a
@@ -91,27 +92,41 @@ not list `bookAppointment`.
 
 ---
 
-## Step 5 — caller ID
+## Step 5 — caller ID (the org must supply one)
 
-The platform has exactly **one** number: `+19129551304`
-(`PNb994642eadd629abc23f5b1dd2491050`, US Twilio). It is
-`TWILIO_PHONE_NUMBER`, i.e. step 4 of `resolveOutboundRouting`'s fallback
-chain, and with `org_phone_numbers` empty it is what every call dials from.
+**Rewritten 2026-08-13.** The platform now owns **zero** phone numbers. Every
+Twilio number was released on the founder's instruction: the parent account and
+both live sub-accounts hold none, and nothing bills monthly. There is no
+platform default caller ID any more.
 
-Numbers are per-org and per-agent by design — the chain is:
+`resolveOutboundRouting`'s chain is unchanged:
 
 1. `org_agent_configs.phone_number_id` (per-agent assignment)
-2. any active `org_phone_numbers` row for the org (per-org)
+2. the org's oldest active `org_phone_numbers` row (per-org; `asc(id)` since
+   ADR-112 — it used to be an unordered `limit(1)`)
 3. legacy `orgs.outbound_number`
-4. `TWILIO_PHONE_NUMBER` env default ← **you are here**
+4. `TWILIO_PHONE_NUMBER` env default
 
-So a real pilot org should buy its own number and let step 1 or 2 win. For the
-first test call, step 4 is fine and requires no purchase.
+**Step 4 is now a trap, not a fallback.** `TWILIO_PHONE_NUMBER` on Railway still
+names the released number `+19129551304`, so any org that reaches step 4 will
+hand Twilio a `from` it does not own and the dial fails at the provider with an
+unhelpful error. The var is deliberately untouched (all Railway work is paused),
+so the runbook's job is to make sure you never reach step 4.
 
-**Do not release `+19129551304`.** It is the last number and the platform
-default; releasing it makes `resolveOutboundRouting` return
-`from: undefined` for every org that has not bought its own, which fails the
-dial at the provider with an unhelpful error.
+So the org must have its own number before the first call. Two ways, both
+offered by onboarding's `PhoneNumberStep`:
+
+- **Bring your own** — enter Twilio/Plivo/Exotel credentials plus the number.
+  Since ADR-112 this also writes an `org_phone_numbers` row with
+  `source = 'byo'`, which is what makes the number visible on the Numbers page,
+  assignable per agent, and eligible for `numberSeries`. **Requires migration
+  `0049_daffy_beyonder.sql` to have been applied** — until then the insert
+  fails on the missing `source` column.
+- **Auto-provision** — `buyNumberForOrg` rents a number into the org's own
+  sub-account (`source = 'purchased'`, billed monthly to the platform).
+
+Verify before dialing: the org has at least one `org_phone_numbers` row with
+`status = 'active'`, and `resolveOutboundRouting` therefore stops at step 1 or 2.
 
 ---
 

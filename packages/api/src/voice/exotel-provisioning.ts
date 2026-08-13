@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { orgs } from "../database/schema";
 import { storeCredential, EXOTEL_FIELDS } from "../database/credential-vault";
+import { registerByoNumber } from "./register-byo-number";
 
 export type ExotelStatus = {
   connected: boolean;
@@ -87,6 +88,10 @@ export async function setExotelByoCredentials(
   await storeCredential(orgId, EXOTEL_FIELDS.sid, sid);
   await storeCredential(orgId, EXOTEL_FIELDS.apiKey, apiKey);
   await storeCredential(orgId, EXOTEL_FIELDS.apiToken, apiToken);
+
+  // ADR-112 — see registerByoNumber. Exotel is India-only, so this row is also
+  // the only place a TRAI 140/160 series can be declared for an Exotel org.
+  await registerByoNumber(orgId, "exotel", phoneNumber);
 
   return { ok: true };
 }
