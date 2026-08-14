@@ -72,15 +72,56 @@ export type TransferCapableProvider = (typeof TRANSFER_CAPABLE_PROVIDERS)[number
 
 /** Why a call cannot hand off to a person. `null` when it can. */
 export type TransferBlockedReason =
-  /** No `orgs.humanTransferNumber` — true on all four production orgs as of 2026-08-12. */
+  /** Neither `orgAgentConfigs.humanTransferNumber` (ADR-114) nor `orgs.humanTransferNumber`
+   * is set — the latter was NULL on all four production orgs as of 2026-08-12. */
   | "no-transfer-number"
   /** Call has no resolved org, so there is no per-org number to resolve at all. */
   | "no-org"
   /** Provider has no wired-up mid-call transfer API (e.g. Exotel). */
   | "provider-unsupported";
 
+/** Which configuration level supplied the transfer target. */
+export type TransferTargetLevel = "agent" | "org" | "none";
+
+export interface TransferTarget {
+  /** The number to dial, or undefined when neither level configured one. */
+  number: string | undefined;
+  level: TransferTargetLevel;
+}
+
+/**
+ * The one place the agent-over-org precedence for a transfer target is
+ * expressed (ADR-114).
+ *
+ * `orgAgentConfigs.humanTransferNumber` overrides `orgs.humanTransferNumber`;
+ * null/blank at the agent level means inherit, matching every other per-agent
+ * override on that table. Blank-or-whitespace counts as absent at BOTH levels,
+ * for the same reason `resolveTransferCapability` treats it that way: a stored
+ * empty string is a configuration mistake, not a target — and treating it as
+ * present at the agent level would let an accidentally-cleared field shadow a
+ * perfectly good org number and silently disable hand-off for that agent.
+ *
+ * Its output feeds `resolveTransferCapability` (does the model get the tool?)
+ * and `performTransfer` (what do we dial?) from the SAME value. Two independent
+ * reads of the transfer number is exactly the shape that produced ADR-105's
+ * transcript, and adding a per-agent column to only one of them would have
+ * reproduced ADR-090's defect class: correct code, no reachable caller.
+ */
+export function resolveTransferTarget(input: {
+  /** `orgAgentConfigs.humanTransferNumber` for the resolved agent, if any. */
+  agentNumber: string | null | undefined;
+  /** `orgs.humanTransferNumber` for this call's org, if any. */
+  orgNumber: string | null | undefined;
+}): TransferTarget {
+  const agent = input.agentNumber?.trim();
+  if (agent) return { number: agent, level: "agent" };
+  const org = input.orgNumber?.trim();
+  if (org) return { number: org, level: "org" };
+  return { number: undefined, level: "none" };
+}
+
 export interface TransferCapabilityInput {
-  /** `orgs.humanTransferNumber` for this call's org, already resolved. */
+  /** The resolved transfer target for this call — `resolveTransferTarget().number`. */
   transferNumber: string | null | undefined;
   /** This call's telephony provider, as recorded on the call row. */
   provider: string | undefined;
@@ -154,7 +195,7 @@ export function narrowToolsForTransferCapability(
 export function describeTransferBlock(reason: TransferBlockedReason): string {
   switch (reason) {
     case "no-transfer-number":
-      return "this org has no humanTransferNumber configured — set one in Settings so qualified leads can reach a person";
+      return "no humanTransferNumber configured for this agent or its org — set one on the agent, or in Settings for the whole org, so qualified leads can reach a person";
     case "no-org":
       return "this call has no resolved org, so there is no per-org transfer number to resolve";
     case "provider-unsupported":

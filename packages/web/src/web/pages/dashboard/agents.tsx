@@ -337,6 +337,26 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               ))}
             </div>
 
+            {/* ADR-114: the admin twin of the merchant field. Present here too
+                because support fixes a mis-routed hand-off from this page, and a
+                field that exists on only one of the two editors is a field the
+                other one silently clears on its next save. */}
+            <SectionDivider>Transfer destination</SectionDivider>
+            <div>
+              <label htmlFor={`htn-${row.templateKey}`} className={labelCls}>
+                humanTransferNumber (blank = inherit orgs.humanTransferNumber)
+              </label>
+              <input
+                id={`htn-${row.templateKey}`}
+                type="tel"
+                inputMode="tel"
+                value={form.humanTransferNumber}
+                onChange={(e) => set("humanTransferNumber", e.target.value)}
+                placeholder="+15551234567"
+                className={`${fieldCls} sm:max-w-xs font-mono`}
+              />
+            </div>
+
             <SectionDivider>Guardrails</SectionDivider>
             <div className="grid sm:grid-cols-3 gap-4">
               <div>

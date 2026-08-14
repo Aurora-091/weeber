@@ -351,6 +351,13 @@
       "when": 1786619165254,
       "tag": "0049_daffy_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786628574632,
+      "tag": "0050_colorful_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

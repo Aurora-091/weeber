@@ -32,9 +32,11 @@ export type UserMe = {
     timezone: string | null;
     contactEmail: string | null;
     webhookUrl: string | null;
-    /** Real phone number transfer-to-human dials — no shared/global fallback exists (removed
-     * 2026-07-17, see stream.ts's resolveHumanTransferNumber). Null = transfer requests end the
-     * call gracefully instead of connecting anywhere. Set from Settings' "Human Transfer" section. */
+    /** Org-wide fallback phone number transfer-to-human dials, used when the agent has no
+     * `humanTransferNumber` of its own (ADR-114, see resolveTransferTarget in voice/handoff.ts).
+     * No shared/global fallback exists below this (removed 2026-07-17). Null here AND on the
+     * agent = transfer requests end the call gracefully instead of connecting anywhere.
+     * Set from Settings' "Human Transfer" section. */
     humanTransferNumber: string | null;
     /** Non-null and in the future = calling-window compliance test mode is
      * active for this org (2026-07-16) — see Settings' toggle and Home's

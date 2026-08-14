@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { agentReadiness, agentUsesTransferToHuman, classifyReadiness } from "./agents";
+import { agentReadiness, agentUsesTransferToHuman, classifyReadiness, resolveAgentTransferNumber } from "./agents";
 import type { AgentConfigRow } from "../../lib/agent-config";
 
 /**
@@ -123,31 +123,76 @@ describe("agentUsesTransferToHuman", () => {
   });
 });
 
+/**
+ * ADR-114. The web mirror of the backend's `resolveTransferTarget` — same
+ * precedence, same blank-is-absent rule. If these two ever disagree, the UI
+ * tells a merchant one thing and the dialler does another.
+ */
+describe("resolveAgentTransferNumber", () => {
+  const ORG = "+18005550199";
+
+  it("prefers the agent's own number over the org's", () => {
+    expect(resolveAgentTransferNumber("+18005550111", ORG)).toBe("+18005550111");
+  });
+
+  it("inherits the org number when the agent has none", () => {
+    expect(resolveAgentTransferNumber(null, ORG)).toBe(ORG);
+    expect(resolveAgentTransferNumber(undefined, ORG)).toBe(ORG);
+  });
+
+  it("treats a blank agent value as inherit, not as an override", () => {
+    expect(resolveAgentTransferNumber("", ORG)).toBe(ORG);
+    expect(resolveAgentTransferNumber("   ", ORG)).toBe(ORG);
+  });
+
+  it("returns null when neither level has one", () => {
+    expect(resolveAgentTransferNumber(null, null)).toBeNull();
+    expect(resolveAgentTransferNumber("  ", "")).toBeNull();
+  });
+});
+
 describe("agentReadiness", () => {
+  // ADR-114 changed the third argument from "does the ORG have a transfer
+  // number" (boolean) to the org's number itself, because the agent's own
+  // override has to be resolved per row.
+  const ORG_TRANSFER = "+18005550199";
+
   it("treats a never-saved agent (config null) as enabled, matching toFormState's default", () => {
-    expect(agentReadiness(row(null), true, true).state).toBe("live");
+    expect(agentReadiness(row(null), true, ORG_TRANSFER).state).toBe("live");
   });
 
   it("an agent's own number satisfies the caller ID even with no org fallback", () => {
-    expect(agentReadiness(row({ phoneNumberId: 7 }), false, true).state).toBe("live");
+    expect(agentReadiness(row({ phoneNumberId: 7 }), false, ORG_TRANSFER).state).toBe("live");
   });
 
   it("falls back to the org outbound number when the agent has none of its own", () => {
-    expect(agentReadiness(row({ phoneNumberId: null }), true, true).state).toBe("live");
-    expect(agentReadiness(row({ phoneNumberId: null }), false, true).state).toBe("needs-number");
+    expect(agentReadiness(row({ phoneNumberId: null }), true, ORG_TRANSFER).state).toBe("live");
+    expect(agentReadiness(row({ phoneNumberId: null }), false, ORG_TRANSFER).state).toBe("needs-number");
   });
 
   it("respects an explicit disable even when fully numbered", () => {
-    expect(agentReadiness(row({ enabled: false, phoneNumberId: 7 }), true, true).state).toBe("paused");
+    expect(agentReadiness(row({ enabled: false, phoneNumberId: 7 }), true, ORG_TRANSFER).state).toBe("paused");
   });
 
   it("the fresh-org shape — numbered, never saved, no transfer number — is degraded", () => {
     // Every production org had human_transfer_number NULL as of 2026-08-12 and
     // the DB is now wiped, so this is the state the first real signup lands in.
-    expect(agentReadiness(row(null), true, false).state).toBe("degraded");
+    expect(agentReadiness(row(null), true, null).state).toBe("degraded");
   });
 
   it("an agent with transfer switched off is live on that same org", () => {
-    expect(agentReadiness(row({ toolsEnabled: ["lookupInfo"] }), true, false).state).toBe("live");
+    expect(agentReadiness(row({ toolsEnabled: ["lookupInfo"] }), true, null).state).toBe("live");
+  });
+
+  // ADR-114's headline case, and the regression the per-agent column exists to
+  // prevent: this agent CAN transfer, so warning the merchant to go and fix
+  // org Settings would be false.
+  it("an agent with its own transfer number is fully live on an org that has none", () => {
+    expect(agentReadiness(row({ humanTransferNumber: "+18005550111" }), true, null).state).toBe("live");
+  });
+
+  it("a blank per-agent number does not shadow the org's — it inherits", () => {
+    expect(agentReadiness(row({ humanTransferNumber: "" }), true, ORG_TRANSFER).state).toBe("live");
+    expect(agentReadiness(row({ humanTransferNumber: "  " }), true, null).state).toBe("degraded");
   });
 });

@@ -588,6 +588,12 @@ export type ResolvedAgentConfig = {
   llmFallbackModels?: string[];
   /** Drives both STT and TTS for the call (agent-frame.ts's `language`) — see RECOMMENDED_LANGUAGES. */
   language?: string;
+  /** ADR-114: this agent's own warm-transfer destination
+   * (`orgAgentConfigs.humanTransferNumber`). Undefined = inherit
+   * `orgs.humanTransferNumber`; the precedence itself lives in
+   * `resolveTransferTarget` (voice/handoff.ts), which is the single input to
+   * both the tool-offering decision and the number `performTransfer` dials. */
+  humanTransferNumber?: string;
   /** Per-org agent display name (agent-frame.ts's `name`, e.g. "Amit") — used to fill
    * `{{agent_name}}` in `literalGreetingTemplate` below. Undefined = no org override configured. */
   agentName?: string;
@@ -697,6 +703,7 @@ export async function resolveAgentConfig(opts: {
         llmFallbackModels: (config.llmFallbackModels as string[] | null) ?? undefined,
         language: config.language ?? undefined,
         agentName: config.name ?? undefined,
+        humanTransferNumber: config.humanTransferNumber ?? undefined,
         disclosureText: disclosure.text,
         disclosureVersion: disclosure.version,
         // Latency fix (2026-07-16): only offer the literal (LLM-free)
@@ -813,6 +820,12 @@ export async function buildPreviewAgentConfig(
     ttsFallbackOrder: override.ttsFallbackOrder,
     llmFallbackModels: override.llmFallbackModels,
     language: override.language,
+    // ADR-114: threaded through the preview/test-call path too. A test call
+    // placed from the drawer runs on this override instead of the saved row
+    // (stream.ts's `resolvedConfigOverride`), so omitting it would make the
+    // one surface a merchant uses to VERIFY a transfer number the one surface
+    // that ignores it.
+    humanTransferNumber: override.humanTransferNumber ?? undefined,
     disclosureText: disclosure.text,
     disclosureVersion: disclosure.version,
   };

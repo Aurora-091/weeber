@@ -1,4 +1,5 @@
 import z from "zod";
+import { isValidE164 } from "./validation";
 
 /**
  * The agent "frame" — the fixed, structured set of fields a user (or
@@ -134,6 +135,24 @@ export const AgentFrameSchema = z.object({
    * (fed into providerOptions.gateway.models — see voice/llm/index.ts).
    * Unset = AI_GATEWAY_FALLBACK_MODELS env var (platform default). */
   llmFallbackModels: z.array(z.string()).max(5).optional(),
+  /**
+   * ADR-114: this agent's own warm-transfer destination, overriding
+   * `orgs.humanTransferNumber`. E.164, validated with the same shared
+   * `isValidE164` the org-level write path uses (app/routes.ts) rather than a
+   * second regex — two spellings of "valid number" is how one surface starts
+   * accepting a value the dialler rejects.
+   *
+   * `.nullable()`, unlike its neighbours, and deliberately: `undefined` means
+   * "leave the stored value alone" (drizzle omits undefined from the SET
+   * clause), so an override that could only ever be set and never cleared would
+   * strand a call routing to a decommissioned line. `null` is the explicit
+   * "inherit the org number again" instruction, and the agent UI sends it.
+   */
+  humanTransferNumber: z
+    .string()
+    .refine(isValidE164, "must be a valid E.164 phone number, e.g. +15551234567")
+    .nullable()
+    .optional(),
   toolsEnabled: z.array(z.enum(AVAILABLE_TOOL_NAMES)).optional(),
   guardrails: GuardrailSettingsSchema.optional(),
   enabled: z.boolean().optional(),

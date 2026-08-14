@@ -527,6 +527,22 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   // unset, so nothing breaks for single-number orgs. See
   // resolveOutboundNumberForAgent in voice/org-queries.ts.
   phoneNumberId: integer("phone_number_id").references(() => orgPhoneNumbers.id, { onDelete: "set null" }),
+  // ADR-114: which human this specific agent warm-transfers to. Nullable, and
+  // null means INHERIT `orgs.human_transfer_number` — same
+  // agent-overrides-org, null-means-inherit semantics as every other column on
+  // this table. It is not a second independent setting: `resolveTransferTarget`
+  // in voice/handoff.ts is the only place the precedence is expressed, and the
+  // resolved value feeds BOTH the tool-offering decision
+  // (resolveTransferCapability) and the number `performTransfer` dials, because
+  // ADR-105's whole point is that those are one decision.
+  //
+  // Why per-agent at all: one org routinely needs different destinations per
+  // agent — a renewal agent belongs with retention, a final-expense qualifier
+  // with a licensed producer (ADR-081 allows nothing else). Org-level only
+  // meant the qualifier's warm lead landed on whatever line the org set last.
+  // Stored E.164, validated with `isValidE164` on the write path — same rule as
+  // the org-level column (app/routes.ts).
+  humanTransferNumber: text("human_transfer_number"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [

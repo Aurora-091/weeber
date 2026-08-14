@@ -8,6 +8,7 @@ import {
   isTransferCapableProvider,
   narrowToolsForTransferCapability,
   resolveTransferCapability,
+  resolveTransferTarget,
   type TransferBlockedReason,
 } from "./handoff";
 
@@ -137,6 +138,71 @@ describe("narrowToolsForTransferCapability", () => {
   });
 });
 
+/**
+ * ADR-114. The per-agent override exists because one org needs different
+ * destinations per agent (a renewal agent belongs with retention, a
+ * final-expense qualifier with a licensed producer — ADR-081 permits nothing
+ * else). These cases are the whole contract.
+ */
+describe("resolveTransferTarget", () => {
+  test("an agent-level number overrides the org number", () => {
+    expect(resolveTransferTarget({ agentNumber: "+18005550111", orgNumber: "+18005550199" })).toEqual({
+      number: "+18005550111",
+      level: "agent",
+    });
+  });
+
+  test("no agent-level number inherits the org number", () => {
+    expect(resolveTransferTarget({ agentNumber: null, orgNumber: "+18005550199" })).toEqual({
+      number: "+18005550199",
+      level: "org",
+    });
+    expect(resolveTransferTarget({ agentNumber: undefined, orgNumber: "+18005550199" })).toEqual({
+      number: "+18005550199",
+      level: "org",
+    });
+  });
+
+  // The failure mode this guards: an agent whose field was cleared to "" would
+  // otherwise shadow a perfectly good org number and silently lose hand-off for
+  // that agent only — the hardest version of ADR-105's bug to notice.
+  test("a blank agent-level number inherits rather than shadowing the org", () => {
+    expect(resolveTransferTarget({ agentNumber: "", orgNumber: "+18005550199" }).level).toBe("org");
+    expect(resolveTransferTarget({ agentNumber: "   ", orgNumber: "+18005550199" }).level).toBe("org");
+  });
+
+  test("an agent number still applies when the org has none", () => {
+    expect(resolveTransferTarget({ agentNumber: "+18005550111", orgNumber: null })).toEqual({
+      number: "+18005550111",
+      level: "agent",
+    });
+  });
+
+  test("neither level configured is reported as none, not as an empty string", () => {
+    expect(resolveTransferTarget({ agentNumber: null, orgNumber: null })).toEqual({
+      number: undefined,
+      level: "none",
+    });
+    expect(resolveTransferTarget({ agentNumber: "  ", orgNumber: "" })).toEqual({
+      number: undefined,
+      level: "none",
+    });
+  });
+
+  test("whitespace around a stored number is trimmed before it is dialled", () => {
+    expect(resolveTransferTarget({ agentNumber: " +18005550111 ", orgNumber: null }).number).toBe("+18005550111");
+  });
+
+  test("its output is exactly what resolveTransferCapability consumes", () => {
+    // The two functions are only safe as a pair: capability must be decided on
+    // the same resolved value performTransfer dials.
+    const target = resolveTransferTarget({ agentNumber: null, orgNumber: null });
+    expect(resolveTransferCapability({ transferNumber: target.number, provider: "twilio", hasOrg: true })).toEqual(
+      blocked("no-transfer-number"),
+    );
+  });
+});
+
 describe("describeTransferBlock", () => {
   test("every reason has a message, and the fixable one says how to fix it", () => {
     const reasons: TransferBlockedReason[] = ["no-transfer-number", "no-org", "provider-unsupported"];
@@ -176,6 +242,21 @@ describe("the two transfer decisions cannot silently diverge", () => {
     const narrowAt = streamSource.indexOf("enabledToolsOverride = narrowToolsForTransferCapability(");
     expect(capabilityAt).toBeGreaterThan(-1);
     expect(narrowAt).toBeGreaterThan(capabilityAt);
+  });
+
+  test("performTransfer dials the single resolved target, not its own second lookup", () => {
+    // ADR-114. Before this, `performTransfer` re-read `orgs` for the number
+    // while the capability decision used the value resolved at "start" — two
+    // independent reads of the same setting. Adding a per-agent override to
+    // only one of them would have been ADR-090's defect class again: correct
+    // code, no reachable caller. If this fails, that split is back.
+    expect(streamSource).toContain("const transferNumber = orgTransferNumber;");
+    expect(streamSource).not.toContain("resolveHumanTransferNumber");
+  });
+
+  test("the resolved target respects the per-agent override", () => {
+    expect(streamSource).toContain("resolveTransferTarget({");
+    expect(streamSource).toContain("agentNumber: agentConfig.humanTransferNumber");
   });
 
   test("the latch blocks caller turns, not just hangUp", () => {

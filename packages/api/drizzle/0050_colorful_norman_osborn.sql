@@ -1,0 +1,1 @@
+ALTER TABLE "org_agent_configs" ADD COLUMN "human_transfer_number" text;

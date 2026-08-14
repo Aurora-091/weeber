@@ -322,6 +322,11 @@ export type AgentConfigRow = {
     retryDelayMinutes: number | null;
     maxAttempts: number | null;
     phoneNumberId: number | null;
+    /** ADR-114: this agent's own warm-transfer destination. null = inherit
+     * `orgs.humanTransferNumber` (see resolveAgentTransferNumber in
+     * pages/app/agents.tsx — the web mirror of the backend's
+     * resolveTransferTarget). */
+    humanTransferNumber: string | null;
   } | null;
 };
 
@@ -348,6 +353,9 @@ export type FormState = {
   firstCallDelayMinutes: string;
   retryDelayMinutes: string;
   maxAttempts: string;
+  /** ADR-114. Empty string = inherit the org number (sent as an explicit null
+   * so the backend clears any previously-saved override). */
+  humanTransferNumber: string;
 };
 
 export function toFormState(row: AgentConfigRow): FormState {
@@ -375,6 +383,7 @@ export function toFormState(row: AgentConfigRow): FormState {
     firstCallDelayMinutes: c?.firstCallDelayMinutes != null ? String(c.firstCallDelayMinutes) : "",
     retryDelayMinutes: c?.retryDelayMinutes != null ? String(c.retryDelayMinutes) : "",
     maxAttempts: c?.maxAttempts != null ? String(c.maxAttempts) : "",
+    humanTransferNumber: c?.humanTransferNumber ?? "",
   };
 }
 
@@ -407,6 +416,11 @@ export function formToAgentFrame(form: FormState) {
     firstCallDelayMinutes: form.firstCallDelayMinutes.trim() ? Number(form.firstCallDelayMinutes) : undefined,
     retryDelayMinutes: form.retryDelayMinutes.trim() ? Number(form.retryDelayMinutes) : undefined,
     maxAttempts: form.maxAttempts.trim() ? Number(form.maxAttempts) : undefined,
+    // ADR-114: `null`, not `undefined`, when the field is empty. `undefined`
+    // would be omitted from the UPDATE and leave a previously-saved override in
+    // place — an agent still routing warm leads to a number the merchant just
+    // deleted from the form. Explicit null is "inherit the org number again".
+    humanTransferNumber: form.humanTransferNumber.trim() || null,
   };
 }
 

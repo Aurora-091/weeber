@@ -375,6 +375,10 @@ export async function upsertAgentConfig(
     ttsFallbackOrder: frame.ttsFallbackOrder,
     llmFallbackModels: frame.llmFallbackModels,
     toolsEnabled: frame.toolsEnabled,
+    // ADR-114. Passed through as-is on purpose: `null` clears the per-agent
+    // override (the agent inherits `orgs.humanTransferNumber` again),
+    // `undefined` leaves the stored value untouched.
+    humanTransferNumber: frame.humanTransferNumber,
     guardrails: frame.guardrails,
     firstCallDelayMinutes: frame.firstCallDelayMinutes,
     retryDelayMinutes: frame.retryDelayMinutes,

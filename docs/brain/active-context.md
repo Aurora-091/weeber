@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-13
+updated: 2026-08-14
 ---
 
 # Active context — what's happening right now
@@ -12,6 +12,23 @@ updated: 2026-08-13
 
 ## Current focus
 
+- **One setting read twice is two settings (2026-08-14, ADR-114 — shipped; migration NOT applied).**
+  `transferToHuman` had one org-wide destination, `orgs.human_transfer_number`. Wrong for the launch
+  vertical: an insurance org's six agents hand off to different people, and ADR-081 lets the
+  final-expense qualifier reach a **licensed producer** and nobody else. New nullable
+  `org_agent_configs.human_transfer_number` (migration **`0050`**, additive, null = inherit). The
+  bigger half: the number was already read **twice** — once at `"start"` for the capability decision
+  and ADR-106's provenance set, once again inside `performTransfer` via a second `select *`. That is
+  ADR-105's shape, so `resolveHumanTransferNumber` is **deleted** and one pure
+  `resolveTransferTarget` in `handoff.ts` feeds both halves, guarded by a source-text assertion.
+  `AgentFrameSchema` field is `.nullable().optional()` so an override can be **cleared**, validated
+  with the shared `isValidE164`. ADR-111's readiness pill is now **per-agent**, otherwise an agent
+  with its own number renders "Live · limited" and sends the merchant to fix nothing. api 1354 →
+  1363, web 95 → 101, non-vacuity proven both sides, nothing widened. **Still open:** `0050` and
+  ADR-112's `0049` are both generated and applied **nowhere**, so an agent-config save fails against
+  the real DB until they run; onboarding still asks for no transfer number at either level;
+  `insurance_advisors` still empty so the producer destination is a hand-typed number;
+  `provider-unsupported` still invisible in the UI.
 - **The escape hatch was only findable after it was needed (2026-08-13, ADR-113 — shipped).** Test
   mode existed on Settings and nowhere in onboarding, so a fresh org's first call was refused with the
   TRAI/1600-series paragraph before anyone learned the toggle exists. New **fifth onboarding step**
@@ -789,4 +806,4 @@ messages), minor polish. See `WEEBER-PLAN.md` Phase B and ADR-060.
   ingest→call activation router is still the open product decision (CLAUDE.md gate #4). Ask before
   building the routing UI.
 
-_Last updated by: outbound pilot prep ADR-081…089 + the dead-code reachability ratchet ADR-090, and a doc-staleness sweep (ADR index had stopped at 080), 2026-08-09._
+_Last updated by: ADR-114 (per-agent transfer destination, and collapsing the two independent reads of the transfer number into one), 2026-08-14._

@@ -61,6 +61,7 @@ import {
   describeTransferBlock,
   narrowToolsForTransferCapability,
   resolveTransferCapability,
+  resolveTransferTarget,
   type TransferCapability,
 } from "./handoff";
 import { eq } from "drizzle-orm";
@@ -422,7 +423,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let crmSyncContext: CrmSyncContext | undefined;
   /**
    * ADR-105: whether this call can genuinely hand off to a human — resolved
-   * once at "start" from `orgs.humanTransferNumber` + the telephony provider,
+   * once at "start" from the resolved transfer target (per-agent number over
+   * `orgs.humanTransferNumber`, ADR-114) + the telephony provider,
    * then fixed for the life of the call for the same reason `crmSyncContext`
    * is: what the agent is allowed to promise must not shift mid-conversation.
    *
@@ -432,9 +434,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   let transferCapability: TransferCapability = { canTransfer: false, reason: "no-org" };
   /**
-   * ADR-106. `orgs.humanTransferNumber` for this call, kept because it is one
+   * ADR-106. The resolved transfer target for this call, kept because it is one
    * of the two numbers the agent is allowed to put in writing — the other
    * being `humanNumber`, the leg it is connected to.
+   *
+   * ADR-114 widened where it comes from (the agent's own
+   * `orgAgentConfigs.humanTransferNumber` overriding `orgs.humanTransferNumber`)
+   * and narrowed who reads it: this is now the ONLY transfer number in the
+   * file, consumed by the capability decision, the ADR-106 provenance set, and
+   * `performTransfer`'s dial. The name is kept as-is rather than renamed
+   * because it is referenced in ADR-106's text and in three provenance call
+   * sites; the doc comment carries the correction (ADR-078).
    */
   let orgTransferNumber: string | undefined;
   /**
@@ -921,17 +931,6 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     void finalizeCall("failed");
   }
 
-  /** `orgs.humanTransferNumber` for this call's org — per-org only, no global fallback (2026-07-17
-   * decision: a shared HUMAN_TRANSFER_NUMBER env var meant any org without its own number configured
-   * would silently transfer callers to a DIFFERENT org's human line, which is worse than just
-   * hanging up — removed rather than left as a footgun). An org with nothing configured here simply
-   * can't transfer; performTransfer falls back to a hang-up in that case, same as any other
-   * "no transfer number configured" path. */
-  async function resolveHumanTransferNumber(orgId: string): Promise<string | undefined> {
-    const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1).catch(() => [] as never[]);
-    return org?.humanTransferNumber ?? undefined;
-  }
-
   /** Actually ends the call — terminates the real Twilio call leg (not just
    * our WebSocket), since the media stream closing on its own doesn't
    * guarantee the underlying PSTN call hangs up.
@@ -1045,10 +1044,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       return;
     }
 
-    // No global env-var fallback (2026-07-17) — see resolveHumanTransferNumber's doc comment. A
-    // call with no resolved org can't transfer at all; falls through to the "no transfer number
-    // configured" hang-up below, same as an org that simply hasn't set one.
-    const transferNumber = humanNumberOrgId ? await resolveHumanTransferNumber(humanNumberOrgId) : undefined;
+    // ADR-114: the target resolved ONCE at "start" (`resolveTransferTarget`,
+    // agent override over org), not a second lookup of its own. This function
+    // used to re-read `orgs` here while the tool-offering decision used the
+    // value from the start batch — two independent reads of one setting, which
+    // is the shape that produced ADR-105's "You're connected" transcript. It is
+    // now provably the same value `resolveTransferCapability` judged, and one
+    // fewer mid-call `select *` on the transfer path.
+    //
+    // No global env-var fallback (2026-07-17 decision, kept): a shared
+    // HUMAN_TRANSFER_NUMBER env var meant an org without its own number would
+    // silently transfer callers to a DIFFERENT org's human line, worse than
+    // hanging up. A call with no resolved org has no target and falls through to
+    // the "no transfer number configured" hang-up below.
+    const transferNumber = orgTransferNumber;
 
     if (!transferNumber) {
       console.error("[voice] transferToHuman requested but no transfer number is configured anywhere — hanging up instead");
@@ -2475,7 +2484,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // transfer available on this call" instead of being told a warm
             // transfer is the best possible outcome. That prompt seam already
             // existed; nothing was feeding it the truth.
-            orgTransferNumber = orgRow[0]?.humanTransferNumber ?? undefined;
+            //
+            // ADR-114: the agent's own `humanTransferNumber` overrides the
+            // org's. Resolved here, in the one place, and used for both the
+            // capability decision below and the number `performTransfer`
+            // dials — see resolveTransferTarget's doc comment for why those
+            // must not be two lookups.
+            const transferTarget = resolveTransferTarget({
+              agentNumber: agentConfig.humanTransferNumber,
+              orgNumber: orgRow[0]?.humanTransferNumber,
+            });
+            orgTransferNumber = transferTarget.number;
+            if (transferTarget.level === "agent") {
+              console.log(`[voice] transfer target from per-agent config (ADR-114)${callSid ? ` (${callSid})` : ""}`);
+            }
             transferCapability = resolveTransferCapability({
               transferNumber: orgTransferNumber,
               provider,

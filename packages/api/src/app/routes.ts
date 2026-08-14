@@ -323,7 +323,7 @@ export const userApp = new Hono<UserEnv>()
         }
         // Real regression this closes (2026-07-17): transfer-to-human had a global
         // HUMAN_TRANSFER_NUMBER env-var fallback removed same day for a real cross-org
-        // safety reason (see stream.ts's resolveHumanTransferNumber) — which left zero
+        // safety reason (see resolveTransferTarget in voice/handoff.ts) — which left zero
         // way for an org to configure this at all, since no UI/API route existed either.
         // E.164-validated so a malformed number never silently reaches Twilio's transfer API.
         if (key === "humanTransferNumber" && val && !isValidE164(val)) {

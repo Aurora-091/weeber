@@ -81,8 +81,14 @@ export type AgentReadiness = {
 export type AgentCapabilityContext = {
   /** Is `transferToHuman` in this agent's enabled tool list? */
   transferToHumanEnabled: boolean;
-  /** Is `orgs.human_transfer_number` set? NULL on every production org as of
-   * 2026-08-12, which is what makes this the gap worth surfacing first. */
+  /** Does this agent have a transfer destination AT ALL — its own
+   * `org_agent_configs.human_transfer_number` (ADR-114) or, failing that, the
+   * org's `orgs.human_transfer_number`? The org column was NULL on every
+   * production org as of 2026-08-12, which is what made this the gap worth
+   * surfacing first. Resolve it with `resolveAgentTransferNumber`, never from
+   * the org value alone: an agent carrying its own number is fully live even
+   * when the org has none, and the reverse warning would send a merchant to
+   * Settings to fix something that isn't broken. */
   hasHumanTransferNumber: boolean;
 };
 
@@ -124,7 +130,7 @@ export function classifyReadiness(
     return {
       state: "degraded",
       label: "Live · limited",
-      detail: "Transfer to a human is on, but no transfer number is set — qualified callers can't be handed over.",
+      detail: "Transfer to a human is on, but no transfer number is set for this agent or your org — qualified callers can't be handed over.",
       pillCls: "bg-warning-soft text-warning",
       dotCls: "bg-warning",
     };
@@ -138,17 +144,41 @@ export function agentUsesTransferToHuman(row: AgentConfigRow): boolean {
   return (row.config?.toolsEnabled ?? AVAILABLE_TOOL_NAMES).includes("transferToHuman");
 }
 
+/**
+ * Which number this agent would actually transfer to — the web mirror of the
+ * backend's `resolveTransferTarget` (voice/handoff.ts, ADR-114): the agent's own
+ * override wins, blank counts as unset at both levels, null means neither.
+ *
+ * Duplicated rather than imported because the one-way dependency rule allows
+ * `web → api` for TYPES only, and this is runtime logic. The precedence is three
+ * lines and the shape is asserted on both sides; a shared runtime module here
+ * would mean shipping server code to the browser.
+ */
+export function resolveAgentTransferNumber(
+  agentNumber: string | null | undefined,
+  orgNumber: string | null | undefined,
+): string | null {
+  return agentNumber?.trim() || orgNumber?.trim() || null;
+}
+
 export function agentReadiness(
   row: AgentConfigRow,
   hasOrgFallbackNumber: boolean,
-  hasHumanTransferNumber: boolean,
+  orgHumanTransferNumber: string | null | undefined,
 ): AgentReadiness {
   // `config` is null until the merchant saves once — an unsaved agent still
   // runs on template defaults, and toFormState defaults `enabled` to true.
   return classifyReadiness(
     row.config?.enabled ?? true,
     row.config?.phoneNumberId != null || hasOrgFallbackNumber,
-    { transferToHumanEnabled: agentUsesTransferToHuman(row), hasHumanTransferNumber },
+    {
+      transferToHumanEnabled: agentUsesTransferToHuman(row),
+      // ADR-114: per-agent first. Passing the org value straight through here is
+      // what made an agent with its own number render as "Live · limited".
+      hasHumanTransferNumber: Boolean(
+        resolveAgentTransferNumber(row.config?.humanTransferNumber, orgHumanTransferNumber),
+      ),
+    },
   );
 }
 
@@ -242,11 +272,13 @@ export function UserAgentsPage() {
 
   // `me` is already loaded by the shell, so the transfer-number gap costs no
   // extra request — the reason this gap is the one the classifier learned first.
-  const hasHumanTransferNumber = Boolean(me.org.humanTransferNumber);
+  // ADR-114: the ORG-level value only, deliberately — each row resolves its own
+  // per-agent override against it inside `agentReadiness`.
+  const orgHumanTransferNumber = me.org.humanTransferNumber;
 
   const readiness = rows.map((r) => ({
     row: r,
-    readiness: agentReadiness(r, hasOrgFallbackNumber, hasHumanTransferNumber),
+    readiness: agentReadiness(r, hasOrgFallbackNumber, orgHumanTransferNumber),
   }));
   // "live" here means fully live: a degraded agent is counted separately rather
   // than folded into the green number, otherwise the strip would report the same
@@ -372,6 +404,10 @@ type TabProps = {
   row: AgentConfigRow;
   form: FormState;
   set: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  /** ADR-114: the org-level fallback transfer number, shown as the inherited
+   * value under the per-agent field. Optional so the design-probe page
+   * (__preview.tsx) can keep rendering these tabs without a session. */
+  orgTransferNumber?: string | null;
 };
 
 function IdentityTab({ row, form, set }: TabProps) {
@@ -542,7 +578,7 @@ function GuardrailConsequence({ text }: { text: string }) {
  * mount this tab with local state — the real agents page needs a loaded org and
  * agent row, which the harness has no backend for. Not used in production code
  * outside this file. */
-export function ToolsGuardrailsTab({ row, form, set }: TabProps) {
+export function ToolsGuardrailsTab({ row, form, set, orgTransferNumber }: TabProps) {
   function toggleTool(name: string) {
     set(
       "toolsEnabled",
@@ -625,6 +661,54 @@ export function ToolsGuardrailsTab({ row, form, set }: TabProps) {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ADR-114. Sits with the ability that uses it, not in org Settings: the
+          number is the destination of THIS agent's hand-off, and a renewal
+          agent and a final-expense qualifier belong with different people
+          (ADR-081 lets the qualifier hand off to a licensed producer and to
+          nobody else). Rendered even when the ability is off, so the field a
+          merchant is about to need is visible before they need it. */}
+      <div className="border-t border-border/50 pt-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-1">
+          <PhoneCall className="size-4 text-muted-foreground" /> Transfer destination
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Where this agent hands a caller over when it transfers to a human. Leave it empty to use your
+          organisation's number from Settings.
+        </p>
+        <div>
+          <label htmlFor={`htn-${row.templateKey}`} className={labelCls}>Transfer to (phone number)</label>
+          <input
+            id={`htn-${row.templateKey}`}
+            type="tel"
+            inputMode="tel"
+            value={form.humanTransferNumber}
+            onChange={(e) => set("humanTransferNumber", e.target.value)}
+            placeholder={orgTransferNumber ?? "+15551234567"}
+            className={`${fieldCls} sm:max-w-xs font-mono`}
+          />
+          {/* Says what will actually happen on the next call, in all three
+              states — an empty field with no org number is the state that
+              produced ADR-105's "You're connected" to nobody. */}
+          {/* `text-xs`, not the arbitrary-pixel size its siblings use:
+              `design:guard`'s arbitraryPx budget is 365 and baselines are never
+              widened to go green (ADR-111's precedent), so new copy does not add
+              two more. Deliberately not written out here either — the guard
+              greps source text, so naming the class in a comment scores it. */}
+          <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
+            {form.humanTransferNumber.trim()
+              ? "This agent transfers here, overriding your organisation's number."
+              : orgTransferNumber
+                ? `Using your organisation's number, ${orgTransferNumber}.`
+                : "No number set here or in Settings — this agent will not be able to transfer, so it is never told it can."}
+          </p>
+          {!form.toolsEnabled.includes("transferToHuman") && (
+            <p className="mt-1.5 text-xs leading-snug text-muted-foreground/80">
+              "Transfer to a human" is switched off above, so this number is not used yet.
+            </p>
+          )}
         </div>
       </div>
 
@@ -865,10 +949,15 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
   // dead-ends.
   const readiness = classifyReadiness(form.enabled, hasCallerId, {
     transferToHumanEnabled: form.toolsEnabled.includes("transferToHuman"),
-    hasHumanTransferNumber: Boolean(me.org.humanTransferNumber),
+    // ADR-114: `form.humanTransferNumber` (not the saved row) for the same
+    // reason as the tool list above — type a per-agent number and the banner
+    // should clear before you save, not after the next call.
+    hasHumanTransferNumber: Boolean(
+      resolveAgentTransferNumber(form.humanTransferNumber, me.org.humanTransferNumber),
+    ),
   });
 
-  const tabProps: TabProps = { row, form, set };
+  const tabProps: TabProps = { row, form, set, orgTransferNumber: me.org.humanTransferNumber };
 
   return (
     <div className="page-enter space-y-6">
