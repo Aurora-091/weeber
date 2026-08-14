@@ -195,6 +195,7 @@ function AgentsGridProbe() {
       llmModel: null, sttFallbackOrder: null, ttsFallbackOrder: null, llmFallbackModels: null,
       toolsEnabled: null, guardrails: null, enabled: true,
       firstCallDelayMinutes: null, retryDelayMinutes: null, maxAttempts: null, phoneNumberId: null,
+      humanTransferNumber: null,
     } satisfies NonNullable<AgentConfigRow["config"]>;
 
     previewClient.setQueryData(["app-agent-configs"], {
