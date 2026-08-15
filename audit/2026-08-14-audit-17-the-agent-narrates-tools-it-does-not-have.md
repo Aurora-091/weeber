@@ -348,3 +348,87 @@ the two 17:00:41+ dialects and would not stop the tenth.
    guardrail event) are now better read as **consequences** of the post-boundary state than as
    independent defects — the model emitted the call as text, nothing executed, and it then
    narrated the result as though something had.
+
+---
+
+# Addendum 2 — 2026-08-15: I could not reproduce the leak, and the provider column is not a measurement
+
+ADR-078 dated entry. **Supersedes the context-growth hypothesis in Addendum 1** and adds a finding
+that undermines every provider-attributed number in this document, including ones in Addendum 1.
+
+## The experiment
+
+`/home/user/replay11.ts` replays call 11's 12 real caller turns against the **real** persona
+(pulled from the production `agent_templates` row, 11,677 chars) and the **real** tool definitions
+(imported from `voice/agent.ts`, not re-declared), on the exact model config 6 names:
+`direct:groq/llama-3.3-70b-versatile`, `maxRetries: 0`, one step per turn so nothing papers over a
+malformed call with a retry. Six runs, 72 assistant turns.
+
+**Zero leaks into text. Not one.**
+
+What happens instead is a Groq 400:
+
+```
+tool call validation failed: attempted to call tool
+'captureField({"field": "callback_availability", "value": "anytime"})'
+which was not in request.tools
+```
+
+The model does emit the malformed literal — it puts the entire call expression in the *tool name
+field* — and Groq's validator rejects the request outright. It never becomes content. Roughly
+10–25% of turns fail this way, run to run.
+
+## What this kills
+
+**Context growth is not the mechanism.** Failures cluster at turns 0, 1, 3, 5, 8, 9 — the
+*smallest* contexts in the run — and context is nearly flat across the whole call (4.8k → 5.5k
+tokens; the persona dominates and the conversation barely moves it). Addendum 1 offered this as
+the best-fitting hypothesis. It does not fit.
+
+**"The model was told to use a tool that wasn't in the request" is not the mechanism either.** The
+obvious story for F1 and F4 — `transferToHuman` stripped by `filterTransferTool`, `bookAppointment`
+unregistered with no calendar, so the model writes them as text — predicts leaks. Re-ran with both
+tools removed from the request (`replay11b.ts`, 2 runs, 24 turns): still zero leaks, and the model
+simply routed around the missing tools. Rejected.
+
+## The finding that explains why I keep being wrong
+
+`calls.llm_provider_used` **is not a measurement.** `stream.ts:861` writes
+`llmProviderUsed: llmProviderOverride ?? null` at finalize, and `llmProviderOverride` is assigned
+exactly once, at `stream.ts:2527`, from `agentConfig.llmProvider ?? session?.llmProvider ??
+numberConfig.llmProvider`. It is the **configured** provider, copied to the call row. Nothing
+updates it if the request is served elsewhere, and nothing records the model.
+
+Note the line directly above it: `ttsProviderUsed: activeTtsProvider ?? ttsProviderOverride` —
+TTS records what actually ran, with the configured value only as a fallback. The LLM has no
+equivalent of `activeTtsProvider`. The distinction was understood and implemented for one provider
+and not the other.
+
+So the groq-vs-gateway split in section 5, and the per-call table in Addendum 1's Correction 1, are
+both groupings by **a config field**. Not by who served the traffic. Addendum 1 corrected section
+5's causal read and still reused the same untrustworthy grouping — that is my error twice over on
+the same column, and the reason Correction 2's instrumentation item is not a nice-to-have.
+
+## Where that leaves the leak
+
+A malformed call on direct Groq produces a 400, not text. Call 11 produced text. Therefore call 11's
+nine leaked turns were **very likely not served by direct Groq**, whatever the `llm_provider_used`
+column says — and the column cannot tell us what did serve them. Gateway-routed requests are the
+obvious candidate: a gateway that catches an upstream validation failure and returns the raw
+generation as content would produce exactly the observed shapes, and would also explain the two
+distinct dialects and the sharp 17:00:41 boundary as a route change rather than a model degrading.
+
+Untested, because it is not testable from here: the sandbox `RAILWAY_TOKEN` is dead, so I cannot
+read the logs that would show the 400s, the retries, or the route.
+
+## Revised, again
+
+1. **Instrument the LLM path.** Per-turn transport + model + finish reason, and an
+   `activeLlmProvider` mirroring `activeTtsProvider` so the call row records what ran. This has now
+   blocked three separate conclusions and is the only item worth doing before anything else.
+2. **Pull the Railway logs for 17:00:41 on 2026-08-14** — needs a token. The 400s and the route are
+   in there and nowhere else.
+3. Do **not** add a fourth output-guard regex, and do **not** rewrite the persona again. Six runs
+   of the real persona on the real tools leak nothing; the persona is not what is producing this.
+4. F1 still stands on its own and is still first to fix. It does not depend on any of the above:
+   the agent promises a transfer, `orgs.human_transfer_number` is NULL, and the tool is stripped.

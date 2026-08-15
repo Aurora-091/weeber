@@ -36,6 +36,20 @@ updated: 2026-08-15
   (`stream.ts:1579`) and STT (`stream.ts:2167`), never by the LLM, so no production data records
   which model served which turn. Blocking next step is instrumentation — per-turn transport+model
   and an LLM failover counter — before any model-swap experiment.
+  **Addendum 2 (2026-08-15):** the leak does **not reproduce**. Replaying call 11's 12 real caller
+  turns against the real persona and real tool defs on `direct:groq/llama-3.3-70b-versatile`
+  (`/home/user/replay11.ts`, 6 runs, 72 turns) produced **zero** text leaks — the malformed literal
+  goes into the tool-name field and Groq 400s it (`which was not in request.tools`), ~10-25% of
+  turns. Context growth is dead as a hypothesis (failures hit the *smallest* contexts; the persona
+  keeps context flat at 4.8-5.5k tok), and so is "a tool the model was told to use isn't registered"
+  (re-run without `transferToHuman`/`bookAppointment`: still zero leaks). Root cause of the repeated
+  wrong reads: **`calls.llm_provider_used` is a config field, not a measurement** — `stream.ts:861`
+  writes `llmProviderOverride`, assigned once at `stream.ts:2527` from `agentConfig.llmProvider`,
+  never updated by what actually served the turn; contrast `ttsProviderUsed: activeTtsProvider ??
+  ...` on the line above. Every provider-attributed number in audit 17 is grouped by configuration.
+  Since direct Groq 400s instead of leaking, call 11's nine leaked turns were probably not served by
+  direct Groq at all — a gateway surfacing an upstream validation failure as content fits the shapes
+  and the sharp boundary. Needs Railway logs to confirm.
   **Blocked:** the Railway token in the sandbox is dead (`Not Authorized`), so the deployed SHA and
   its boot time are unknown — we cannot say which commit served call 11, and no deploy can be
   triggered from here.
