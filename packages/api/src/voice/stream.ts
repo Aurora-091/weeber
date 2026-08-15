@@ -8,7 +8,7 @@ import type { TtsConnection, TtsProvider } from "./tts";
 import { voiceIdForProvider } from "./tts-voice-identity";
 import { toolCallReason } from "./call-control";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
-import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig } from "./agent";
+import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, composeSystemPrompt } from "./agent";
 import {
   resolveCartRecoveryContext,
   type CartRecoveryDiscountContext,
@@ -58,6 +58,7 @@ import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
 import { classifyCallHealth } from "./call-health";
 import {
+  applyTransferBlockedPrompt,
   describeTransferBlock,
   narrowToolsForTransferCapability,
   resolveTransferCapability,
@@ -2478,12 +2479,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // and applied by removing the tool outright, the same shape
             // `crmSync` uses when there's no bindable contact (G1.4/ADR-069).
             //
-            // Dropping the tool also rewrites the persona, for free and by
-            // design: `buildCallControlBlock` derives its `canTransfer` line
-            // from this same list, so the model is told "there's no live
-            // transfer available on this call" instead of being told a warm
-            // transfer is the best possible outcome. That prompt seam already
-            // existed; nothing was feeding it the truth.
+            // CORRECTION 2026-08-15 (ADR-115, audit-17 F1): this comment used
+            // to claim that dropping the tool "also rewrites the persona, for
+            // free and by design", because `buildCallControlBlock` derives its
+            // `canTransfer` line from a tool list. It does — from a different
+            // one. `agentConfig.systemPrompt` was composed inside
+            // `resolveAgentConfig` from the SAVED `orgAgentConfigs.toolsEnabled`
+            // row, in the very Promise.all above, before this narrowing exists.
+            // So for three months the model was handed the transfer-capable
+            // call-control text ("say you are connecting them") on calls that
+            // had no transfer tool and no transfer target. The prompt seam is
+            // fed below, explicitly, by `applyTransferBlockedPrompt`.
             //
             // ADR-114: the agent's own `humanTransferNumber` overrides the
             // org's. Resolved here, in the one place, and used for both the
@@ -2517,6 +2523,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               } else {
                 console.warn(`[voice] transferToHuman withheld — ${detail}${suffix}`);
               }
+            }
+            // ADR-115. The tool list and the prompt are two separate inputs to
+            // the same turn, and until now only the first one knew this call
+            // cannot hand off.
+            //
+            // Both halves are load-bearing, and the append alone is NOT enough
+            // — measured, not assumed. Replaying the real config-6 prompt
+            // against the real narrowed tool list on the model config 6 runs
+            // (5 conversations x 8 caller turns, pushed straight at the
+            // hand-off): the shipped prompt spoke 4 hand-off promises and
+            // attempted `transferToHuman` 7 times; appending the override
+            // while leaving the transfer-capable call-control text in place
+            // barely moved it; recomposing from the narrowed list AND
+            // appending gave 0 attempts and 0 promises, with the model instead
+            // saying it cannot put someone on the line. A prompt that
+            // contradicts itself gets obeyed about half the time, which is the
+            // whole reason the capable text has to go rather than be argued
+            // with.
+            //
+            // Recomposition is pure string work on inputs already in memory —
+            // no query, nothing added to pickup-to-first-word. `persona` is the
+            // string every later turn and the greeting read, and is assigned
+            // rather than mutating `agentConfig`, which the preview/test-call
+            // path shares.
+            if (persona && !transferCapability.canTransfer) {
+              const recomposed = agentConfig.promptInputs
+                ? composeSystemPrompt({ ...agentConfig.promptInputs, toolsEnabled: enabledToolsOverride }).text
+                : persona;
+              persona = applyTransferBlockedPrompt(recomposed, transferCapability);
             }
             llmModelOverride = agentConfig.llmModel;
             ttsVoiceIdOverride = agentConfig.voiceId;

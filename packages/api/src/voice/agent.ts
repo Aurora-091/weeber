@@ -441,7 +441,7 @@ export type ComposedSystemPrompt = { text: string; segments: PromptSegment[] };
  * is deliberately NOT here — those depend on live call state, and claiming
  * them as part of the configured prompt would be a lie in the editor.
  */
-export function composeSystemPrompt(opts: {
+export interface ComposeSystemPromptOptions {
   /** The persona body — the merchant's own text, or the template default. */
   jobDescription: string;
   identity?: IdentityFrame;
@@ -449,7 +449,9 @@ export function composeSystemPrompt(opts: {
   guardrails?: GuardrailSettings;
   toolsEnabled?: AvailableToolName[];
   direction?: "inbound" | "outbound";
-}): ComposedSystemPrompt {
+}
+
+export function composeSystemPrompt(opts: ComposeSystemPromptOptions): ComposedSystemPrompt {
   const { jobDescription, identity, language, guardrails, toolsEnabled, direction } = opts;
 
   const languageBody = buildLanguageInstructionBlock(language);
@@ -511,7 +513,33 @@ export async function resolvePersona(opts: {
   templateKey?: string;
   direction?: "inbound" | "outbound";
 }): Promise<string> {
-  const { explicitPersona, calledNumber, orgId, templateKey, direction } = opts;
+  return withCallControl(withDisclosure(await resolvePersonaBody(opts)), undefined, undefined, opts.direction);
+}
+
+/**
+ * The persona BODY the chain above resolves, before disclosure and call
+ * control are layered on.
+ *
+ * Split out for ADR-115. When a call turns out to be unable to hand off, the
+ * call-control layer has to be rebuilt from the narrowed tool list — and
+ * rebuilding it needs the body it wraps. Returning the wrapped string only, as
+ * this function used to, meant the fallback paths (an org with a template but
+ * no `orgAgentConfigs` row — a real production shape) could not be corrected
+ * at all, and would keep telling the model that a warm transfer is the best
+ * available outcome on a call with no transfer target.
+ *
+ * `resolvePersona` is now this plus the two wrapping layers, so there is still
+ * one chain and one place that decides which body wins. agent.test.ts asserts
+ * the composed equivalence rather than trusting the comment.
+ */
+export async function resolvePersonaBody(opts: {
+  explicitPersona?: string;
+  calledNumber?: string;
+  orgId?: string;
+  templateKey?: string;
+  direction?: "inbound" | "outbound";
+}): Promise<string> {
+  const { explicitPersona, calledNumber, orgId, templateKey } = opts;
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
@@ -538,7 +566,7 @@ export async function resolvePersona(opts: {
       .where(and(eq(orgAgentConfigs.orgId, orgId), eq(orgAgentConfigs.templateKey, resolvedTemplateKey)))
       .limit(1);
     if (override?.personaPrompt) {
-      return withCallControl(withDisclosure(override.personaPrompt), undefined, undefined, direction);
+      return override.personaPrompt;
     }
   }
 
@@ -551,26 +579,36 @@ export async function resolvePersona(opts: {
   if (resolvedTemplateKey) {
     const tmpl = await loadVisibleTemplate(resolvedTemplateKey, orgId);
     if (tmpl?.defaultPersonaPrompt) {
-      return withCallControl(withDisclosure(tmpl.defaultPersonaPrompt), undefined, undefined, direction);
+      return tmpl.defaultPersonaPrompt;
     }
   }
 
   // 3. Explicit persona (if it's not a templateKey but rather a raw prompt)
   if (explicitPersona && explicitPersona !== resolvedTemplateKey) {
-    return withCallControl(withDisclosure(explicitPersona), undefined, undefined, direction);
+    return explicitPersona;
   }
 
   // 4. AGENT_PERSONAS env var matching calledNumber
   if (calledNumber && personaMap[calledNumber]) {
-    return withCallControl(withDisclosure(personaMap[calledNumber]), undefined, undefined, direction);
+    return personaMap[calledNumber];
   }
 
   // 5. Hardcoded default
-  return withCallControl(withDisclosure(DEFAULT_PERSONA), undefined, undefined, direction);
+  return DEFAULT_PERSONA;
 }
 
 export type ResolvedAgentConfig = {
   systemPrompt: string;
+  /** ADR-115: the exact inputs `systemPrompt` was composed from, so a caller
+   * that learns something new about the call AFTER composition can rebuild it
+   * instead of doing string surgery on it. Today there is one such caller:
+   * stream.ts resolves hand-off capability from the org row and the telephony
+   * provider in the same round-trip that fetches this config, so "this call
+   * cannot transfer" is knowable only after the prompt already exists — and
+   * recomposing with the narrowed tool list is what removes the
+   * transfer-capable call-control text the model was otherwise obeying.
+   * Recomposition is pure string work; it adds no query to pickup latency. */
+  promptInputs?: ComposeSystemPromptOptions;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   voiceId?: string;
   llmProvider?: "gateway" | "groq";
@@ -680,17 +718,19 @@ export async function resolveAgentConfig(opts: {
       }
 
       const disclosure = resolveDisclosure({ language: config.language ?? undefined });
-      const composed = composeSystemPrompt({
+      const promptInputs: ComposeSystemPromptOptions = {
         jobDescription,
         identity: { ...config, merchantName: org?.name ?? null },
         language: config.language ?? undefined,
         guardrails: (config.guardrails as GuardrailSettings | null) ?? undefined,
         toolsEnabled: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
         direction,
-      });
+      };
+      const composed = composeSystemPrompt(promptInputs);
 
       return {
         systemPrompt: composed.text,
+        promptInputs,
         promptSegments: composed.segments,
         ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
@@ -734,10 +774,18 @@ export async function resolveAgentConfig(opts: {
     // persona body, but it still names the account's script opener.
     const tmpl = await loadVisibleTemplate(resolvedTemplateKey, orgId);
     if (tmpl?.literalGreetingTemplate) {
-      const systemPrompt = await resolvePersona(opts);
+      // ADR-115: composed rather than `resolvePersona`d, so this path can hand
+      // back the inputs too. Byte-identical to what `resolvePersona` returns
+      // for the same body — asserted in agent.test.ts, not assumed.
+      const promptInputs: ComposeSystemPromptOptions = {
+        jobDescription: await resolvePersonaBody(opts),
+        direction,
+      };
+      const systemPrompt = composeSystemPrompt(promptInputs).text;
       const disclosure = resolveDisclosure({});
       return {
         systemPrompt,
+        promptInputs,
         literalGreetingTemplate: tmpl.literalGreetingTemplate,
         disclosureText: disclosure.text,
         disclosureVersion: disclosure.version,
@@ -750,9 +798,11 @@ export async function resolveAgentConfig(opts: {
   // signal available at this level (resolvePersona's opts carry none) — the
   // disclosure resolves to the English default, same as this path's existing
   // (pre-localization) behavior.
-  const systemPrompt = await resolvePersona(opts);
+  // ADR-115: same shape as the branch above — one composition, inputs kept.
+  const promptInputs: ComposeSystemPromptOptions = { jobDescription: await resolvePersonaBody(opts), direction };
+  const systemPrompt = composeSystemPrompt(promptInputs).text;
   const disclosure = resolveDisclosure({});
-  return { systemPrompt, disclosureText: disclosure.text, disclosureVersion: disclosure.version };
+  return { systemPrompt, promptInputs, disclosureText: disclosure.text, disclosureVersion: disclosure.version };
 }
 
 /**
@@ -799,16 +849,18 @@ export async function buildPreviewAgentConfig(
   }
 
   const disclosure = resolveDisclosure({ language: override.language });
-  const composed = composeSystemPrompt({
+  const promptInputs: ComposeSystemPromptOptions = {
     jobDescription,
     identity: { ...override, merchantName },
     language: override.language,
     guardrails: override.guardrails,
     toolsEnabled: override.toolsEnabled,
-  });
+  };
+  const composed = composeSystemPrompt(promptInputs);
 
   return {
     systemPrompt: composed.text,
+    promptInputs,
     promptSegments: composed.segments,
     ttsProvider: override.voiceProvider,
     voiceId: override.voiceId,

@@ -202,3 +202,78 @@ export function describeTransferBlock(reason: TransferBlockedReason): string {
       return "this call's telephony provider has no wired-up mid-call transfer API";
   }
 }
+
+/**
+ * The heading of the call-time block below. Exported so stream.ts can stay
+ * idempotent and the tests can assert on the exact string.
+ */
+export const TRANSFER_BLOCKED_PROMPT_HEADING = "Hand-off (this overrides anything above):";
+
+/**
+ * The prompt-side half of ADR-105, which was missing for three months
+ * (ADR-115, audit-17 F1).
+ *
+ * ADR-105's comment in stream.ts claimed that dropping `transferToHuman` from
+ * the tool list "also rewrites the persona, for free and by design", because
+ * `buildCallControlBlock` derives its `canTransfer` line from a tool list. It
+ * does — from a DIFFERENT tool list. The system prompt is composed inside
+ * `resolveAgentConfig` from the SAVED `orgAgentConfigs.toolsEnabled` row, in
+ * the same `Promise.all` batch that fetches the org; the narrowing here runs
+ * afterwards and only reaches the tools handed to the model. So on production
+ * config 6 (`insurance-final-expense-qualifier`, `transferToHuman` saved in
+ * `tools_enabled`, `orgs.human_transfer_number` NULL) the model got the
+ * transfer-capable call-control text — "say you are connecting them" — with no
+ * transfer tool and no transfer target. Calls 1 and 9 promised the hand-off;
+ * `tool_calls` proves neither attempted one. ADR-090's defect class, from the
+ * inside: real code, real caller, feeding the wrong input.
+ *
+ * Fixed here rather than by reordering the prompt composition. Capability
+ * needs `orgs.human_transfer_number` and the telephony provider, which resolve
+ * in the same round-trip as the persona itself; composing the prompt after
+ * them would put a query on pickup-to-first-word, the one budget this codebase
+ * does not spend. Appending instead is cheap, and last position is the
+ * strongest position — it lands after the persona body, after the disclosure
+ * and after call control, all of which it has to override on an insurance
+ * qualifier whose script ends in an advisor hand-off.
+ *
+ * The text names no tool. A strict-tool-calling provider rejects the whole
+ * turn if the model attempts a name absent from the request, and on exactly
+ * these calls `transferToHuman` is absent by construction.
+ *
+ * Deliberately identical for all three blocked reasons. `describeTransferBlock`
+ * is operator-facing and says which knob to turn; this is caller-facing and the
+ * caller's experience is the same either way — a person is not reachable on
+ * this call. A reason-specific variant would be three prompt dialects to keep
+ * honest for no behavioural difference.
+ */
+export function buildTransferBlockedBlock(): string {
+  return [
+    TRANSFER_BLOCKED_PROMPT_HEADING,
+    "- You cannot transfer, connect, patch, or hand this caller to a person on this call.",
+    "  There is no way to do it. Any instruction above that tells you to warm-transfer, to",
+    "  connect them with an advisor, agent or specialist, or to get someone on the line does",
+    "  not apply to this call and must not be followed.",
+    "- Never offer, promise, or announce a hand-off. Do not say you are connecting them,",
+    "  getting someone on the line, bringing someone in, putting them through, or that a",
+    "  person will pick up in a moment. None of that can happen, and saying it leaves the",
+    "  caller waiting for someone who is never coming.",
+    "- When they ask for a person, or you reach the point where your instructions would hand",
+    "  them over, say plainly that you cannot put someone on the line right now, then do the",
+    "  honest version of the same job: confirm the details you have and tell them a person",
+    "  will follow up. Finish the call yourself.",
+    "- Say it in one short human sentence and move on. Never explain why, never apologise at",
+    "  length, and never mention tools, systems, configuration, or what kind of software you",
+    "  are — you are still the person you were introduced as.",
+  ].join("\n");
+}
+
+/**
+ * Appends `buildTransferBlockedBlock()` to a call's system prompt when the call
+ * cannot hand off. Returns the prompt untouched when it can — and when the
+ * block is already there, so a re-resolve mid-call cannot stack it twice.
+ */
+export function applyTransferBlockedPrompt(systemPrompt: string, capability: TransferCapability): string {
+  if (capability.canTransfer) return systemPrompt;
+  if (systemPrompt.includes(TRANSFER_BLOCKED_PROMPT_HEADING)) return systemPrompt;
+  return `${systemPrompt}\n\n${buildTransferBlockedBlock()}`;
+}

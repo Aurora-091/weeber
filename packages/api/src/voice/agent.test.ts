@@ -758,3 +758,43 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(changed).toEqual(["call-control"]);
   });
 });
+
+/**
+ * ADR-115. `resolveAgentConfig` now hands back the inputs its prompt was
+ * composed from so stream.ts can rebuild the call-control layer once it learns
+ * the call cannot hand off. Two things have to stay true for that to be safe:
+ * recomposing the inputs must reproduce the prompt byte-for-byte, and the
+ * fallback paths that used to call `resolvePersona` must not have drifted from
+ * it.
+ */
+import { test } from "bun:test";
+import { resolvePersonaBody } from "./agent";
+
+describe("promptInputs (ADR-115)", () => {
+  const body = "You are Sara. Qualify the caller, then hand them to a licensed advisor.";
+
+  test("composing the inputs reproduces resolvePersona's output byte-for-byte", async () => {
+    for (const direction of ["inbound", "outbound"] as const) {
+      const viaPersona = await resolvePersona({ explicitPersona: body, direction });
+      const viaCompose = composeSystemPrompt({ jobDescription: body, direction }).text;
+      expect(viaCompose).toBe(viaPersona);
+    }
+  });
+
+  test("resolvePersonaBody returns the body without the layers", async () => {
+    const bodyOnly = await resolvePersonaBody({ explicitPersona: body });
+    expect(bodyOnly).toBe(body);
+    expect(bodyOnly).not.toContain("Call control:");
+  });
+
+  test("recomposing with the narrowed list drops the transfer-capable text", () => {
+    const withTransfer = composeSystemPrompt({
+      jobDescription: body,
+      toolsEnabled: ["hangUp", "transferToHuman"],
+    }).text;
+    const narrowed = composeSystemPrompt({ jobDescription: body, toolsEnabled: ["hangUp"] }).text;
+    expect(withTransfer).toContain("Say you are connecting them");
+    expect(narrowed).not.toContain("Say you are connecting them");
+    expect(narrowed).toContain("there's no live transfer available on this call");
+  });
+});

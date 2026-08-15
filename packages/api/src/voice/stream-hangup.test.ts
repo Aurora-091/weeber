@@ -115,6 +115,11 @@ mock.module("./agent", () => {
     return "Thanks for calling, goodbye.";
   };
   return {
+    // ADR-115: stream.ts composes the call-control layer again when a call
+    // turns out to be unable to hand off, so the mocked module has to expose
+    // this export too. These configs carry no `promptInputs`, so the
+    // recomposition is skipped and only the override block is appended.
+    composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
     resolveAgentConfig: async () => ({
       systemPrompt: "You are a test agent.",
       ttsProvider: "cartesia",

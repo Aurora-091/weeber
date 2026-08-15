@@ -6,6 +6,9 @@ import {
   TRANSFER_CAPABLE_PROVIDERS,
   describeTransferBlock,
   isTransferCapableProvider,
+  TRANSFER_BLOCKED_PROMPT_HEADING,
+  applyTransferBlockedPrompt,
+  buildTransferBlockedBlock,
   narrowToolsForTransferCapability,
   resolveTransferCapability,
   resolveTransferTarget,
@@ -263,5 +266,89 @@ describe("the two transfer decisions cannot silently diverge", () => {
     // ADR-105 F2. If this assertion is what breaks, production call 25's
     // duplicated "You're connected" turn is back.
     expect(streamSource).toContain("[voice] ignoring caller turn: a transferToHuman is already latched");
+  });
+});
+
+/**
+ * ADR-115 / audit-17 F1. ADR-105 stripped the tool and believed the prompt
+ * followed. It did not: the system prompt is composed from the SAVED
+ * `toolsEnabled` row, before this narrowing runs. Production calls 1 and 9
+ * promised a hand-off with no transfer tool in the request and no target to
+ * dial. These tests are the two halves that were missing — the text exists,
+ * and something real appends it.
+ */
+describe("applyTransferBlockedPrompt", () => {
+  const persona = "You are Sara.\n\nCall control:\n- Say you are connecting them to an advisor.";
+
+  test("a call that can transfer is left byte-for-byte alone", () => {
+    expect(applyTransferBlockedPrompt(persona, capable)).toBe(persona);
+  });
+
+  test("every blocked reason gets the same override appended, at the end", () => {
+    for (const reason of ["no-transfer-number", "no-org", "provider-unsupported"] as TransferBlockedReason[]) {
+      const out = applyTransferBlockedPrompt(persona, blocked(reason));
+      expect(out.startsWith(persona)).toBe(true);
+      expect(out.endsWith(buildTransferBlockedBlock())).toBe(true);
+    }
+  });
+
+  test("the override contradicts the promise the persona scripts", () => {
+    const out = applyTransferBlockedPrompt(persona, blocked("no-transfer-number"));
+    expect(out).toContain("You cannot transfer, connect, patch, or hand this caller to a person");
+    expect(out).toContain("Never offer, promise, or announce a hand-off");
+    expect(out).toContain("must not be followed");
+    // It has to reach the model AFTER the line it overrides, or recency works
+    // against us.
+    expect(out.indexOf(TRANSFER_BLOCKED_PROMPT_HEADING)).toBeGreaterThan(
+      out.indexOf("Say you are connecting them to an advisor"),
+    );
+  });
+
+  test("it names no tool", () => {
+    // Groq rejects the entire turn if the model attempts a tool absent from
+    // the request, and `transferToHuman` is absent on exactly these calls.
+    for (const name of AVAILABLE_TOOL_NAMES) {
+      expect(buildTransferBlockedBlock()).not.toContain(name);
+    }
+  });
+
+  test("applying it twice does not stack it", () => {
+    const once = applyTransferBlockedPrompt(persona, blocked("no-org"));
+    expect(applyTransferBlockedPrompt(once, blocked("no-org"))).toBe(once);
+  });
+});
+
+describe("the prompt learns about the block, not just the tool list", () => {
+  const streamSource = readFileSync(join(import.meta.dir, "stream.ts"), "utf8");
+
+  test("stream.ts actually applies it to the persona it runs turns on", () => {
+    expect(streamSource).toContain("persona = applyTransferBlockedPrompt(recomposed, transferCapability);");
+  });
+
+  test("stream.ts recomposes from the NARROWED tool list, not just appends", () => {
+    // The append alone measurably does not work (see the ADR-115 note at the
+    // call site): the transfer-capable call-control text has to be gone, not
+    // argued with. If this recomposition is removed, the model goes back to
+    // being told "say you are connecting them" on a call that cannot connect
+    // anyone.
+    expect(streamSource).toContain(
+      "composeSystemPrompt({ ...agentConfig.promptInputs, toolsEnabled: enabledToolsOverride }).text",
+    );
+    const narrowAt = streamSource.indexOf("enabledToolsOverride = narrowToolsForTransferCapability(");
+    const recomposeAt = streamSource.indexOf("...agentConfig.promptInputs");
+    expect(recomposeAt).toBeGreaterThan(narrowAt);
+  });
+
+  test("it is applied after the capability is resolved", () => {
+    const capabilityAt = streamSource.indexOf("transferCapability = resolveTransferCapability(");
+    const applyAt = streamSource.indexOf("persona = applyTransferBlockedPrompt(");
+    expect(capabilityAt).toBeGreaterThan(-1);
+    expect(applyAt).toBeGreaterThan(capabilityAt);
+  });
+
+  test("the ADR-105 claim that the persona rewrites itself for free is gone", () => {
+    // If this string is back, someone has re-asserted the belief that produced
+    // audit-17 F1.
+    expect(streamSource).not.toContain("also rewrites the persona, for free and by");
   });
 });

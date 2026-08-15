@@ -12,11 +12,28 @@ updated: 2026-08-15
 
 ## Current focus
 
-- **The agent narrates tools it does not have (2026-08-15, audit 17 — findings only, nothing fixed).**
+- **ADR-115 — audit-17 F1 is FIXED (2026-08-15, shipped).** The tool list knew the call could not
+  transfer and the prompt did not. ADR-105's tool-stripping half worked; the half its comment claimed
+  was free never existed — the system prompt is composed inside `resolveAgentConfig` from the **saved**
+  `org_agent_configs.tools_enabled`, before `narrowToolsForTransferCapability` runs, so prod config 6
+  (`transferToHuman` saved, org `human_transfer_number` NULL) shipped the transfer-**capable**
+  call-control text on every call. Fix is both halves: `resolveAgentConfig` now returns `promptInputs`,
+  `stream.ts` recomposes with the narrowed list once capability is known (pure, no query, nothing on
+  pickup-to-first-word), then appends the new pure `applyTransferBlockedPrompt`. Chosen by
+  measurement, not taste — real prompt, real narrowed tools, `direct:groq/llama-3.3-70b-versatile`,
+  5 x 8 caller turns per arm: shipped **4 promises / 7 tool attempts**, append-only **3 / 2**,
+  recompose+append **0 / 0**. `resolvePersona` split into `resolvePersonaBody` + its two layers so the
+  no-config-row paths are correctable too. api 1363 → 1375, web 101, five ratchets unchanged.
+  **Not verified on a real call** — Railway API access is still dead. `test-call-stream.ts` still does
+  no narrowing at all, and the residual hand-off line has moved into the greeting (persona copy).
+  `docs/decisions/adr-115-the-tool-list-knew-and-the-prompt-did-not.md`.
+
+- **The agent narrates tools it does not have (2026-08-15, audit 17 — F1 fixed by ADR-115, the rest open).**
   First 11 real conversational test calls (2026-08-13/14) read back out of production.
-  **F1 (P0):** `orgs.human_transfer_number` is NULL, so `filterTransferTool` strips `transferToHuman`
-  — but the persona still scripts the handoff, so calls 1 and 9 promised a transfer that
-  `tool_calls` shows never happened. The gate removed the capability and left the claim.
+  **F1 (P0) — FIXED 2026-08-15, ADR-115.** `orgs.human_transfer_number` is NULL, so
+  `narrowToolsForTransferCapability` strips `transferToHuman` — but the *prompt* was composed from the
+  saved tool list and still told the model to narrate the handoff, so calls 1 and 9 promised a
+  transfer that `tool_calls` shows never happened. The gate removed the capability and left the claim.
   **F2/F3 (P0):** the 2026-08-13 fix (`eafc762`) did ship — all 9 `agent_templates` persona rows match
   `extractRuntimePersona()` of the post-fix files byte-for-byte, and the seeder runs on every boot, so
   re-seeding is a **verified no-op**. The leak continued anyway: call 11 spoke 9 literal tool-syntax
