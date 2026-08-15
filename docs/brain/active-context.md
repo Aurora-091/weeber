@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-14
+updated: 2026-08-15
 ---
 
 # Active context — what's happening right now
@@ -12,7 +12,25 @@ updated: 2026-08-14
 
 ## Current focus
 
-- **One setting read twice is two settings (2026-08-14, ADR-114 — shipped; migration NOT applied).**
+- **The agent narrates tools it does not have (2026-08-15, audit 17 — findings only, nothing fixed).**
+  First 11 real conversational test calls (2026-08-13/14) read back out of production.
+  **F1 (P0):** `orgs.human_transfer_number` is NULL, so `filterTransferTool` strips `transferToHuman`
+  — but the persona still scripts the handoff, so calls 1 and 9 promised a transfer that
+  `tool_calls` shows never happened. The gate removed the capability and left the claim.
+  **F2/F3 (P0):** the 2026-08-13 fix (`eafc762`) did ship — all 9 `agent_templates` persona rows match
+  `extractRuntimePersona()` of the post-fix files byte-for-byte, and the seeder runs on every boot, so
+  re-seeding is a **verified no-op**. The leak continued anyway: call 11 spoke 9 literal tool-syntax
+  lines, and both of its shapes pass `scrubSpokenText` uncaught at HEAD `7f1d308`. Prompt and regex
+  have both been pulled and both failed; the untried lever is the model. Defects track the
+  **persona** (`insurance-final-expense-qualifier`, 11.7k chars, 13 tools), not the provider.
+  **F4:** `bookAppointment` fabricated a callback confirmation with no calendar connected.
+  **F5:** `FALLBACK_REPLY` blames the caller for a model failure and fired as the *opening* line twice.
+  Latency from 72 turns: v2v p50 1591 ms overall, but **groq 1122 ms vs gateway 1793 ms** — a 672 ms
+  p50 gap that is an open provider decision. `audit/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`.
+  **Blocked:** the Railway token in the sandbox is dead (`Not Authorized`), so the deployed SHA and
+  its boot time are unknown — we cannot say which commit served call 11, and no deploy can be
+  triggered from here.
+- **One setting read twice is two settings (2026-08-14, ADR-114 — shipped; migration `0050` APPLIED to production 2026-08-15).**
   `transferToHuman` had one org-wide destination, `orgs.human_transfer_number`. Wrong for the launch
   vertical: an insurance org's six agents hand off to different people, and ADR-081 lets the
   final-expense qualifier reach a **licensed producer** and nobody else. New nullable
@@ -29,6 +47,12 @@ updated: 2026-08-14
   the real DB until they run; onboarding still asks for no transfer number at either level;
   `insurance_advisors` still empty so the producer destination is a hand-typed number;
   `provider-unsupported` still invisible in the UI.
+  **Update 2026-08-15:** `0050` was applied to production via `packages/api/scripts/migrate.ts` after a
+  full backup (`weeber-full-backup-pre-0050-20260815.json`, 196,709 bytes).
+  `drizzle.__drizzle_migrations` 50 → 51; `org_agent_configs.human_transfer_number` exists as nullable
+  `text`; all 6 config rows intact, none with an override set. `0049` had already been applied
+  2026-08-13 11:06, so the "applied nowhere" note above is closed for both. Still true:
+  `orgs.human_transfer_number` is NULL on the only production org, which is audit-17 F1.
 - **The escape hatch was only findable after it was needed (2026-08-13, ADR-113 — shipped).** Test
   mode existed on Settings and nowhere in onboarding, so a fresh org's first call was refused with the
   TRAI/1600-series paragraph before anyone learned the toggle exists. New **fifth onboarding step**
