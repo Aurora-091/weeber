@@ -17,6 +17,7 @@ import { getOrg } from "../voice/org-queries";
 import { resolveIntakeSchema } from "../voice/leads/schema-store";
 import { validateFields } from "../voice/leads/intake-schema";
 import { upsertLead } from "../voice/leads/leads";
+import { normalizePhone } from "../voice/leads/csv-import";
 import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
 
 // Per-(ip+org) submit limiter for the hosted intake form — a public,
@@ -210,9 +211,21 @@ export const publicRoutes = new Hono()
     const schema = await resolveIntakeSchema(orgId, org.vertical);
     const { accepted } = validateFields(fields as Record<string, unknown> | null | undefined, schema);
 
+    // Bug fix (2026-08-15, pilot latency audit F1): a public form is the
+    // likeliest place to get a bare national number ("4155551234", no country
+    // code) — normalize it the same way the CSV bulk-import path already
+    // does, using the org's configured country as the default, or the lead is
+    // stored in a shape `getLeadGreetingContext` can never match against the
+    // provider's E.164 caller ID at call time (see leads.ts::createLeadManual
+    // for the full explanation).
+    const normalizedPhone = normalizePhone(phone.trim(), org.countryCode ?? undefined);
+    if (!normalizedPhone) {
+      return c.json({ error: "Could not parse that phone number. Please include a country code, e.g. +1 415 555 1234." }, 400);
+    }
+
     const { id, created } = await upsertLead({
       orgId,
-      phone: phone.trim(),
+      phone: normalizedPhone,
       name: typeof name === "string" ? name : null,
       fields: accepted,
       source: "form",

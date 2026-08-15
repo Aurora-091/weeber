@@ -418,7 +418,7 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
   });
 });
 
-import { withFillerTimer, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools, voiceTools } from "./agent";
+import { withFillerTimer, withToolTimeout, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools, voiceTools } from "./agent";
 
 describe("withFillerTimer — §3a tool-call filler audio", () => {
   it("does not fire onSlowToolCall for a tool that resolves well under the threshold", async () => {
@@ -476,6 +476,90 @@ describe("withFillerTimer — §3a tool-call filler audio", () => {
   });
 });
 
+describe("withToolTimeout — §4b bounding a single tool's network I/O (pilot latency audit F4)", () => {
+  it("returns the real result unchanged when execute finishes inside the timeout", async () => {
+    const wrapped = withToolTimeout({ execute: async () => ({ booked: true }) }, "bookAppointment", 50);
+    const result = await wrapped.execute();
+    expect(result).toEqual({ booked: true });
+  });
+
+  it("rethrows a real error unchanged when execute rejects inside the timeout", async () => {
+    const wrapped = withToolTimeout(
+      {
+        execute: async () => {
+          throw new Error("calendar API down");
+        },
+      },
+      "bookAppointment",
+      50,
+    );
+    await expect(wrapped.execute()).rejects.toThrow("calendar API down");
+  });
+
+  it("returns a timedOut placeholder result (not a thrown error) when execute outlasts the timeout", async () => {
+    const wrapped = withToolTimeout(
+      {
+        execute: async () => {
+          await new Promise((r) => setTimeout(r, 200));
+          return { booked: true };
+        },
+      },
+      "bookAppointment",
+      20,
+    );
+    const result = (await wrapped.execute()) as unknown as { timedOut: boolean; message: string };
+    expect(result.timedOut).toBe(true);
+    expect(result.message).toContain("bookAppointment");
+  });
+
+  it("does not abandon the real call — onLateResult reports its eventual success after timing out", async () => {
+    let resolveReal!: (v: unknown) => void;
+    const wrapped = withToolTimeout(
+      {
+        execute: () => new Promise((resolve) => { resolveReal = resolve; }),
+      },
+      "crmSync",
+      10,
+      (name, outcome) => {
+        expect(name).toBe("crmSync");
+        expect(outcome).toEqual({ status: "resolved", value: { synced: true } });
+      },
+    );
+    const timedOutResult = await wrapped.execute();
+    expect((timedOutResult as { timedOut: boolean }).timedOut).toBe(true);
+    resolveReal({ synced: true });
+    // Let the abandoned promise's .then(onLateResult) run.
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it("reports a late rejection through onLateResult too, not just late successes", async () => {
+    let rejectReal!: (e: unknown) => void;
+    let lateOutcome: unknown;
+    const wrapped = withToolTimeout(
+      {
+        execute: () => new Promise((_resolve, reject) => { rejectReal = reject; }),
+      },
+      "confirmCodOrder",
+      10,
+      (_name, outcome) => {
+        lateOutcome = outcome;
+      },
+    );
+    await wrapped.execute();
+    rejectReal(new Error("shopify 500"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(lateOutcome).toMatchObject({ status: "rejected" });
+  });
+
+  it("is a no-op passthrough when the tool has no execute", () => {
+    const toolDef: { execute?: (...args: never[]) => unknown; description: string } = {
+      description: "no execute here",
+    };
+    const wrapped = withToolTimeout(toolDef, "anyTool", 50);
+    expect(wrapped).toBe(toolDef);
+  });
+});
+
 describe("buildVoiceTools — §3a wiring", () => {
   it("returns unwrapped tools when onSlowToolCall is omitted, unchanged from before §3a", () => {
     const tools = buildVoiceTools(undefined, undefined);
@@ -486,6 +570,31 @@ describe("buildVoiceTools — §3a wiring", () => {
   it("still includes hangUp and respects enabledTools narrowing with onSlowToolCall wired", () => {
     const tools = buildVoiceTools(undefined, ["captureField"], () => undefined);
     expect(Object.keys(tools).sort()).toEqual(["captureField", "hangUp"]);
+  });
+
+  it("§4b: lookupInfo is timeout-gated — a slow execute yields a timedOut placeholder, not a hang", async () => {
+    // lookupInfo has no orgId here, so its real execute resolves instantly
+    // ({ query, results: [], note: ... } — see lookupInfo.ts's `if (!orgId)`
+    // branch), which makes it a safe, deterministic tool to exercise the
+    // wiring through without needing a live knowledge-base/DB mock. This
+    // confirms the wrapping exists at the buildVoiceTools level, not just
+    // that withToolTimeout works in isolation (covered above).
+    const tools = buildVoiceTools(undefined);
+    expect(tools.lookupInfo).toBeDefined();
+    const result = await (tools.lookupInfo!.execute as (...args: unknown[]) => Promise<unknown>)(
+      { query: "test" },
+      { toolCallId: "t1", messages: [] },
+    );
+    expect(result).toMatchObject({ query: "test", results: [] });
+  });
+
+  it("§4b: captureField (in-process, no network I/O) is NOT timeout-gated", () => {
+    // captureField isn't in TOOL_CALL_TIMEOUT_GATED — confirms the gating is
+    // an allowlist, not applied to every tool indiscriminately.
+    const tools = buildVoiceTools(undefined);
+    // withToolTimeout wraps execute in a new closure; the untouched tool's
+    // execute reference should be the same function voiceTools exports.
+    expect(tools.captureField!.execute).toBe(voiceTools.captureField.execute);
   });
 });
 

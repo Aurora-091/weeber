@@ -47,6 +47,7 @@ import { toolCallReason } from "./call-control";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, buildPreviewAgentConfig } from "./agent";
 import type { TestCallTokenPayload } from "./test-call-tokens";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
+import { decideBargeIn } from "./barge-in";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
 
@@ -64,6 +65,11 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
   let agentIsSpeaking = false;
   let ended = false;
   let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Barge-in gate state — see barge-in.ts and stream.ts's identical field for
+   * the full rationale. Kept in sync with the real call path (2026-08-15,
+   * pilot call-quality audit F5) so the preview/test-call experience isn't
+   * more prone to false-positive interruptions than a live call. */
+  let bargeInStreak = 0;
 
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
@@ -232,8 +238,14 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
     stt = connectStt(
       async ({ text, isFinal, speechFinal }) => {
         try {
-          if (agentIsSpeaking && text.trim().length > 0) {
-            // Barge-in — same behavior as a real call.
+          // Barge-in — gated through decideBargeIn (barge-in.ts), same
+          // behavior as the real call path (stream.ts). Fix (2026-08-15,
+          // pilot call-quality audit F5): previously fired on ANY non-empty
+          // interim text, so a stray noise blip could cut the agent off
+          // mid-sentence in the preview/test-call experience too.
+          const bargeIn = decideBargeIn({ agentIsSpeaking, text, priorStreak: bargeInStreak });
+          bargeInStreak = bargeIn.nextStreak;
+          if (bargeIn.fire) {
             ws.send(JSON.stringify({ type: "clear" }));
             turnAbortController?.abort();
             tts?.close();

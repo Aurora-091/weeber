@@ -45,6 +45,7 @@ import { createHighPassFilter, applyHighPassToMulaw, WIND_NOISE_FILTER_FLAG } fr
 import type { HighPassFilter } from "./wind-noise-filter";
 import { stripToneTag, createToneTagFilter, CARTESIA_EMOTION_BY_TONE, EXPRESSIVE_DELIVERY_FLAG } from "./tone-tags";
 import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backchannel";
+import { decideBargeIn } from "./barge-in";
 import {
   createTurnDetector,
   HeuristicTurnDetector,
@@ -293,6 +294,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let backchannelsEnabled = false;
   let callerUtteranceStartedAt: number | null = null;
   let lastBackchannelAt: number | null = null;
+  /** Barge-in gate (barge-in.ts) — consecutive-hit counter for the current
+   * utterance's short-fragment streak. See decideBargeIn's doc comment for
+   * why this exists: an isolated noise blip (cough, click, line bleed)
+   * shouldn't be able to cut the agent off on its own. Reset to 0 whenever a
+   * barge-in fires or the streak breaks (empty text / agent stops speaking). */
+  let bargeInStreak = 0;
   /**
    * Phase V (2026-07-31): the pluggable end-of-turn detector, built once per
    * call from SEMANTIC_TURN_DETECTION_FLAG. Default is the plain heuristic
@@ -1907,6 +1914,24 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             console.log(`[voice] tool call "${toolName}" still running past the filler threshold — playing filler audio`);
             void maybePlayToolCallFiller(ws);
           },
+          // §4b: the model already moved on with a `timedOut` placeholder by
+          // the time this fires — this is purely for logging/audit so a late
+          // Calendar/CRM/Shopify success or failure isn't silently lost. Not
+          // pushed into `history` (the turn that asked for it is already
+          // over) and not spoken — there is no live turn left to speak it on.
+          onLateToolResult: (toolName, outcome) => {
+            if (outcome.status === "resolved") {
+              console.log(`[voice] tool call "${toolName}" finished after the caller-facing turn moved on`, outcome.value);
+            } else {
+              console.error(`[voice] tool call "${toolName}" failed after the caller-facing turn moved on`, outcome.error);
+            }
+            void logToolCall(
+              ws,
+              toolName,
+              { late: true },
+              outcome.status === "resolved" ? outcome.value : { error: String(outcome.error) },
+            );
+          },
         }),
       { turnStartedAt, turnLlmTtftRef },
     );
@@ -2018,8 +2043,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       async ({ text, isFinal, speechFinal }) => {
         try {
           // Barge-in: if the agent is mid-response and the caller starts
-          // talking again, cut the agent off immediately.
-          if (agentIsSpeaking && text.trim().length > 0) {
+          // talking again, cut the agent off — gated through decideBargeIn
+          // (barge-in.ts) rather than firing on any non-empty interim text.
+          // Fix (2026-08-15, pilot call-quality audit F5): the old version
+          // cut the agent off on ANY interim hit, so a cough, a click, or the
+          // agent's own audio bleeding back into the line could kill a turn
+          // mid-sentence. See barge-in.ts's doc comment for the full
+          // rationale — short/urgent interruptions still fire on the first
+          // hit; only short, isolated fragments require a second consecutive
+          // hit before they're trusted.
+          const bargeIn = decideBargeIn({ agentIsSpeaking, text, priorStreak: bargeInStreak });
+          bargeInStreak = bargeIn.nextStreak;
+          if (bargeIn.fire) {
             if (streamSid) ws.send(transport.buildClear(streamSid));
             turnAbortController?.abort();
             tts?.close();

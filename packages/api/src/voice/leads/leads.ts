@@ -15,6 +15,7 @@ import { leads, calls, orgs } from "../../database/schema";
 import { withRetry } from "../../database/with-retry";
 import { validateFields, type LeadFieldDef } from "./intake-schema";
 import { resolveIntakeSchema } from "./schema-store";
+import { normalizePhone } from "./csv-import";
 
 /** Local org-vertical lookup — kept here (not imported from org-queries) so the
  * leads module has no cross-module dependency for a single-column read. */
@@ -350,12 +351,41 @@ export async function createLeadManual(args: {
   name?: string | null;
   fields?: Record<string, unknown>;
   vertical: string | null | undefined;
-}): Promise<{ id: number; created: boolean; rejectedRegulated: string[] }> {
+  /** Org's configured country (e.g. `"+1"`), for promoting a bare national
+   * number a merchant typed into the dashboard (`"4155551234"`). Without it,
+   * a non-E.164 phone is rejected rather than guessed — same contract as
+   * `normalizePhone`. */
+  defaultCountryCode?: string | null;
+}): Promise<
+  | { id: number; created: boolean; rejectedRegulated: string[]; phoneError?: undefined }
+  | { id?: undefined; created: false; rejectedRegulated: []; phoneError: string }
+> {
+  // Bug fix (2026-08-15, pilot latency audit F1): this used to store
+  // `args.phone` verbatim. `getLeadGreetingContext` looks the row up by an
+  // exact match against the E.164 number the telephony provider reports
+  // (`event.from`/`event.to`), so any lead entered here in a non-E.164 shape
+  // — the overwhelmingly common case for a human typing into a dashboard
+  // field — could never match at call time. The literal-greeting fast path
+  // (stream.ts) falls back to a full LLM turn (~1.3-1.9s TTFT) whenever a
+  // template needs `{{lead_name}}`/`{{interest_area}}`/etc. and the lookup
+  // came back empty, which is indistinguishable from "no lead exists". Only
+  // the CSV bulk-import path (csv-import.ts) normalized before this fix;
+  // this brings manual entry in line with it using the same `normalizePhone`.
+  const normalizedPhone = normalizePhone(args.phone, args.defaultCountryCode ?? undefined);
+  if (!normalizedPhone) {
+    return {
+      created: false,
+      rejectedRegulated: [],
+      phoneError: args.defaultCountryCode
+        ? `Could not parse "${args.phone}" as a phone number.`
+        : `Could not parse "${args.phone}" as a phone number, and this org has no default country code configured. Enter it in E.164 form (e.g. +14155551234) or set the org's country code.`,
+    };
+  }
   const schema = await resolveIntakeSchema(args.orgId, args.vertical);
   const { accepted, rejectedRegulated } = validateFields(args.fields, schema);
   const { id, created } = await upsertLead({
     orgId: args.orgId,
-    phone: args.phone,
+    phone: normalizedPhone,
     name: args.name,
     fields: accepted,
     source: "manual",

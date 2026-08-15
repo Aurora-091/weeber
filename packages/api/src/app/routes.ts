@@ -898,7 +898,9 @@ export const userApp = new Hono<UserEnv>()
       name: typeof b.name === "string" ? b.name : null,
       fields: (b.fields && typeof b.fields === "object" ? b.fields : {}) as Record<string, unknown>,
       vertical: org?.vertical,
+      defaultCountryCode: org?.countryCode,
     });
+    if (result.phoneError) return c.json({ error: result.phoneError }, 400);
     return c.json(result, result.created ? 201 : 200);
   })
 

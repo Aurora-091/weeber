@@ -11,10 +11,11 @@ process.env.DATABASE_URL ??= "file:./.test-hosted-form.db";
 
 import { defaultIntakeSchema } from "../voice/leads/intake-schema";
 
-let org: { id: string; name: string | null; vertical: string | null } | null = {
+let org: { id: string; name: string | null; vertical: string | null; countryCode?: string | null } | null = {
   id: "org_1",
   name: "Acme Insurance",
   vertical: "insurance",
+  countryCode: "+1",
 };
 const upsertCalls: Array<Record<string, unknown>> = [];
 
@@ -45,7 +46,7 @@ function post(orgId: string, body: unknown, headers: Record<string, string> = {}
 }
 
 beforeEach(() => {
-  org = { id: "org_1", name: "Acme Insurance", vertical: "insurance" };
+  org = { id: "org_1", name: "Acme Insurance", vertical: "insurance", countryCode: "+1" };
   upsertCalls.length = 0;
 });
 
@@ -101,5 +102,23 @@ describe("POST /leads/:orgId/form", () => {
       if (res.status === 429) limited = true;
     }
     expect(limited).toBe(true);
+  });
+});
+
+describe("POST /leads/:orgId/form — phone normalization (pilot latency audit F1)", () => {
+  // A human filling a public form is the likeliest source of a bare national
+  // number. Before this fix it was stored verbatim, so it could never match
+  // `getLeadGreetingContext`'s exact E.164 lookup at call time.
+
+  it("normalizes a bare national number using the org's country code", async () => {
+    const res = await post("org_1", { phone: "(555) 123-4567", name: "Jane" });
+    expect([200, 201]).toContain(res.status);
+    expect(upsertCalls[0]!.phone).toBe("+15551234567");
+  });
+
+  it("400s on an unparseable phone rather than storing it verbatim", async () => {
+    const res = await post("org_1", { phone: "abc" });
+    expect(res.status).toBe(400);
+    expect(upsertCalls).toHaveLength(0);
   });
 });

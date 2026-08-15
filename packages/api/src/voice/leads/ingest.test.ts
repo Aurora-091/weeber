@@ -24,7 +24,7 @@ mock.module("./api-keys", () => ({
 }));
 
 mock.module("../org-queries", () => ({
-  getOrg: async () => ({ id: "org_1", vertical: "insurance" }),
+  getOrg: async () => ({ id: "org_1", vertical: "insurance", countryCode: "+1" }),
 }));
 
 mock.module("./leads", () => ({
@@ -117,6 +117,30 @@ describe("POST /ingest — validation", () => {
     expect(JSON.stringify(upsertCalls[0]!.fields)).not.toContain(secret);
     // The whole response must never echo the secret value.
     expect(JSON.stringify(json)).not.toContain(secret);
+  });
+});
+
+describe("POST /ingest — phone normalization (pilot latency audit F1)", () => {
+  // Regression coverage for the bug behind "literal greeting rejected 11/11
+  // times": this endpoint used to store `phone.trim()` verbatim, so a
+  // non-E.164 lead could never match `getLeadGreetingContext`'s exact-string
+  // lookup against the telephony provider's E.164 caller ID at call time.
+
+  it("normalizes a bare national number using the org's country code before storing", async () => {
+    const res = await post({ phone: "(555) 123-4567" }, { Authorization: "Bearer wlk_good" });
+    expect(res.status).toBe(201);
+    expect(upsertCalls[0]!.phone).toBe("+15551234567");
+  });
+
+  it("stores an already-E.164 number unchanged", async () => {
+    await post({ phone: "+15551234567" }, { Authorization: "Bearer wlk_good" });
+    expect(upsertCalls[0]!.phone).toBe("+15551234567");
+  });
+
+  it("400s on an unparseable phone rather than storing it verbatim", async () => {
+    const res = await post({ phone: "not-a-phone-number" }, { Authorization: "Bearer wlk_good" });
+    expect(res.status).toBe(400);
+    expect(upsertCalls).toHaveLength(0);
   });
 });
 

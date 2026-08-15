@@ -256,6 +256,30 @@ describe("test-call-stream", () => {
     expect(clearEvent).toBeDefined();
   });
 
+  it("barge-in gate: a single short/isolated fragment does NOT interrupt the agent (audit F5 regression)", async () => {
+    const ws = makeFakeWs();
+    const handlers = createTestCallStreamHandlers({ orgId: "org_5b", templateKey: "shopify-support", actor: "org_5b" });
+    await handlers.onOpen(ws);
+
+    ws.sent.length = 0;
+    // A short, isolated interim — the shape a cough or click produces —
+    // must not cut the agent off on its own.
+    lastSttCall!.onTranscript({ text: "uh", isFinal: false, speechFinal: false });
+    expect(ws.sent.find((m: any) => m.type === "clear")).toBeUndefined();
+  });
+
+  it("barge-in gate: the same short fragment DOES interrupt once it repeats (real, sustained speech)", async () => {
+    const ws = makeFakeWs();
+    const handlers = createTestCallStreamHandlers({ orgId: "org_5c", templateKey: "shopify-support", actor: "org_5c" });
+    await handlers.onOpen(ws);
+
+    ws.sent.length = 0;
+    lastSttCall!.onTranscript({ text: "no", isFinal: false, speechFinal: false });
+    expect(ws.sent.find((m: any) => m.type === "clear")).toBeUndefined();
+    lastSttCall!.onTranscript({ text: "no", isFinal: false, speechFinal: false });
+    expect(ws.sent.find((m: any) => m.type === "clear")).toBeDefined();
+  });
+
   it("forwards TTS audio chunks to the socket as {type:'audio'}", async () => {
     const ws = makeFakeWs();
     const handlers = createTestCallStreamHandlers({ orgId: "org_6", templateKey: "shopify-support", actor: "org_6" });

@@ -24,7 +24,7 @@ import { resolveLeadApiKey } from "./api-keys";
 import { validateFields } from "./intake-schema";
 import { resolveIntakeSchema } from "./schema-store";
 import { upsertLead, type LeadSource } from "./leads";
-import { planCsvImport, summarizePlan } from "./csv-import";
+import { planCsvImport, summarizePlan, normalizePhone } from "./csv-import";
 
 const INGEST_SOURCES: LeadSource[] = ["form", "webhook", "pipedream", "crm", "manual"];
 
@@ -85,9 +85,29 @@ export const leadsIngest = new Hono()
       schema,
     );
 
+    // Bug fix (2026-08-15, pilot latency audit F1): the docstring above has
+    // always told integrators to send E.164, but nothing enforced it — a raw
+    // "(415) 555-1234" was stored as-is. `getLeadGreetingContext` does an
+    // exact match against the E.164 number the telephony provider reports, so
+    // a non-normalized row here can never be found at call time; the caller
+    // pays the full LLM-greeting latency (~1.3-1.9s TTFT) with no error or
+    // signal that the lead data even existed. Normalizing at the door — with
+    // the org's configured country code as the fallback for a bare national
+    // number — makes this endpoint match the CSV bulk-import path, which
+    // already normalized.
+    const normalizedPhone = normalizePhone(phone.trim(), org?.countryCode ?? undefined);
+    if (!normalizedPhone) {
+      return c.json(
+        {
+          error: `Could not parse "${phone.trim()}" as a phone number. Send E.164 (e.g. +14155551234), or set this org's default country code.`,
+        },
+        400,
+      );
+    }
+
     const { id, created } = await upsertLead({
       orgId,
-      phone: phone.trim(),
+      phone: normalizedPhone,
       name: typeof name === "string" ? name : null,
       fields: accepted,
       source: resolvedSource,

@@ -928,6 +928,71 @@ export const voiceTools = {
  */
 export const TOOL_CALL_FILLER_THRESHOLD_MS = 400;
 
+/** Default bound for `withToolTimeout` — chosen to sit well inside the 12s
+ * whole-turn TURN_TIMEOUT_MS (leaving room for LLM TTFT + TTS on either
+ * side of the tool call) while still being generous enough that a normal
+ * CRM/Calendar/Shopify API call under typical latency completes inside it. */
+export const TOOL_CALL_TIMEOUT_MS = 4000;
+
+/**
+ * §4b (pilot latency audit F4): bounds how long a single tool's `execute` is
+ * allowed to hold up the caller's turn, independent of the 12s whole-turn
+ * timeout. Before this, `lookupInfo`/`bookAppointment`/`crmSync`/
+ * `confirmCodOrder`/`offerCartRecoveryDiscount` did awaited external network
+ * I/O with nothing bounding it but the entire turn budget — a slow CRM or
+ * Shopify response could consume the whole 12s, and the caller heard the
+ * 400ms filler line loop with nothing after it until the hard abort.
+ *
+ * On timeout this returns a normal tool result (not a thrown error) telling
+ * the model to say it's still working and will follow up, rather than
+ * leaving the turn to hang silently. Critically, the real call is NOT
+ * cancelled — a booking, discount code, or CRM write that finishes a moment
+ * late must still complete and be recorded; only the caller-facing turn
+ * stops waiting on it. `onLateResult` fires (if given) whichever way the
+ * abandoned call eventually settles, so a live call can still log/audit the
+ * real outcome after the model has already moved on.
+ */
+export function withToolTimeout<T extends { execute?: (...args: never[]) => unknown }>(
+  toolDef: T,
+  name: string,
+  timeoutMs: number = TOOL_CALL_TIMEOUT_MS,
+  onLateResult?: (toolName: string, outcome: { status: "resolved"; value: unknown } | { status: "rejected"; error: unknown }) => void,
+): T {
+  if (!toolDef.execute) return toolDef;
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    execute: async (...args: never[]) => {
+      const real = (async (): Promise<{ status: "resolved"; value: unknown } | { status: "rejected"; error: unknown }> => {
+        try {
+          return { status: "resolved", value: await originalExecute(...args) };
+        } catch (error) {
+          return { status: "rejected", error };
+        }
+      })();
+
+      const timeout = new Promise<{ status: "timeout" }>((resolve) => {
+        setTimeout(() => resolve({ status: "timeout" }), timeoutMs);
+      });
+
+      const winner = await Promise.race([real, timeout]);
+      if (winner.status === "timeout") {
+        // Don't let the real call vanish just because the turn stopped
+        // waiting on it — report its eventual outcome once it lands.
+        void real.then((outcome) => onLateResult?.(name, outcome));
+        return {
+          timedOut: true,
+          message:
+            `"${name}" is taking longer than expected and hasn't finished yet. Tell the caller you're ` +
+            `still working on it and will follow up shortly — do not say it's done and do not invent a result.`,
+        };
+      }
+      if (winner.status === "rejected") throw winner.error;
+      return winner.value;
+    },
+  };
+}
+
 /**
  * §3a: wraps a single AI-SDK tool's `execute` with a threshold timer —
  * fires `onSlowToolCall(name)` once if `execute` is still running after
@@ -1073,6 +1138,20 @@ export type OutboundTextContext = {
  * drawer, none of which should be writing contacts into a merchant's live
  * CRM.
  */
+/** The tools that do awaited external network I/O and are therefore worth
+ * bounding independently of the whole-turn timeout — see withToolTimeout.
+ * Deliberately excludes captureField/hangUp/transferToHuman/setDisposition/
+ * setIntent/sendSms/sendDtmf/flagGuardrailEvent: all in-process, fire-and-
+ * forget from the tool's own perspective, or otherwise not doing a blocking
+ * network call inside execute(). */
+const TOOL_CALL_TIMEOUT_GATED = new Set<AvailableToolName>([
+  "lookupInfo",
+  "bookAppointment",
+  "crmSync",
+  "confirmCodOrder",
+  "offerCartRecoveryDiscount",
+]);
+
 export function buildVoiceTools(
   orgId: string | undefined,
   enabledTools?: AvailableToolName[],
@@ -1081,6 +1160,10 @@ export function buildVoiceTools(
   codOrder?: CodOrderContext,
   crmSync?: CrmSyncContext,
   outboundText?: OutboundTextContext,
+  onLateToolResult?: (
+    toolName: string,
+    outcome: { status: "resolved"; value: unknown } | { status: "rejected"; error: unknown },
+  ) => void,
 ) {
   const baseTools = {
     ...voiceTools,
@@ -1113,13 +1196,25 @@ export function buildVoiceTools(
         ),
       )
     : allTools;
+  // §4b: bound the five tools that do awaited external network I/O
+  // (KB search, Calendar, CRM, Shopify) so a slow provider can't consume the
+  // whole 12s turn budget in silence. Applied before the outbound-text guard
+  // so a refused call (which never reaches originalExecute) never starts the
+  // timeout race in the first place.
+  const timeoutGated = Object.fromEntries(
+    Object.entries(narrowed).map(([name, def]) =>
+      TOOL_CALL_TIMEOUT_GATED.has(name as AvailableToolName)
+        ? [name, withToolTimeout(def, name, TOOL_CALL_TIMEOUT_MS, onLateToolResult)]
+        : [name, def],
+    ),
+  );
   // Screen first, then wrap for filler audio: the filler timer measures how
   // long a tool takes, and a refused call does no work at all.
   const guarded = outboundText
     ? Object.fromEntries(
-        Object.entries(narrowed).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
+        Object.entries(timeoutGated).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
       )
-    : narrowed;
+    : timeoutGated;
   if (!onSlowToolCall) return guarded;
   return Object.fromEntries(
     Object.entries(guarded).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
@@ -1271,6 +1366,7 @@ export async function runVoiceAgentTurn({
   crmSync,
   outboundText,
   workflowMetadata,
+  onLateToolResult,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -1337,6 +1433,14 @@ export async function runVoiceAgentTurn({
    * default for the text test-chat and the synthetic harness, neither of which
    * can send an SMS or write a CRM note to a real person. */
   outboundText?: OutboundTextContext;
+  /** §4b: fires when a timeout-gated tool call (see TOOL_CALL_TIMEOUT_GATED)
+   * finishes AFTER the model already moved on with a `timedOut` placeholder
+   * result — the real outcome, for logging/audit. Live-call-only, same as
+   * onSlowToolCall; text test-chat and the synthetic harness omit it. */
+  onLateToolResult?: (
+    toolName: string,
+    outcome: { status: "resolved"; value: unknown } | { status: "rejected"; error: unknown },
+  ) => void;
   /** G1.3: the merchant workflow's pre-call context for this call
    * (`scheduledCalls.metadata`, carried on the session as `workflowMetadata`).
    * Rendered by buildWorkflowContextBlock. Undefined on inbound calls and any
@@ -1404,7 +1508,7 @@ export async function runVoiceAgentTurn({
           chain.length > 0 ? undefined : buildGatewayProviderOptions(llmProvider, llmFallbackModels),
         system: systemPrompt,
         messages: history,
-        tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText),
+        tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText, onLateToolResult),
         stopWhen: stepCountIs(6),
         abortSignal: combinedSignal,
         onStepFinish: (step) => {
