@@ -27,6 +27,15 @@ updated: 2026-08-15
   **F5:** `FALLBACK_REPLY` blames the caller for a model failure and fired as the *opening* line twice.
   Latency from 72 turns: v2v p50 1591 ms overall, but **groq 1122 ms vs gateway 1793 ms** — a 672 ms
   p50 gap that is an open provider decision. `audit/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`.
+  **Addendum 2026-08-15:** per-turn data breaks call 11 into a clean half (4 tool executions,
+  0 leaks, TTFT 3194/3862 ms) and a broken half from 17:00:41 (9 turns, 9 leaks, 0 tools, TTFT
+  ~650 ms). The persona and provider are constant across that boundary, so "defects track the
+  persona" cannot be the explanation. Two corrections: the groq-vs-gateway latency gap is
+  **confounded by tool execution** (a real tool call is two round trips, a leak is one) and does
+  not support flipping the primary; and `provider_failover_count` is incremented **only** by TTS
+  (`stream.ts:1579`) and STT (`stream.ts:2167`), never by the LLM, so no production data records
+  which model served which turn. Blocking next step is instrumentation — per-turn transport+model
+  and an LLM failover counter — before any model-swap experiment.
   **Blocked:** the Railway token in the sandbox is dead (`Not Authorized`), so the deployed SHA and
   its boot time are unknown — we cannot say which commit served call 11, and no deploy can be
   triggered from here.

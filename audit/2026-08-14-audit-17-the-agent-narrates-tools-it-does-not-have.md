@@ -252,3 +252,99 @@ still present with no override set. `0049` had already been applied 2026-08-13.
 Re-seeding `agent_templates` was authorized but is a **no-op** — the rows already match the
 files, and the seeder runs on every boot regardless. Not executed. No Railway change was made;
 the token is dead. No code change. Everything else here is findings only.
+
+---
+
+# Addendum — 2026-08-15: the step change inside call 11
+
+Written after the body above was committed (`7c5cfb4`). ADR-078: this is a new dated entry, not
+an edit to the paragraphs above. It **corrects two conclusions in section 3 and section 5** and
+supersedes remediation item 2. Everything here is per-turn data from `turn_latency`,
+`tool_calls`, and `transcripts` on call 11 — one call, one persona, one provider.
+
+## The observation the body missed
+
+Audit 17 counted leaks per call. Counting them **per turn** shows call 11 is not a leaky call.
+It is a clean call followed by a broken one, with a hard boundary:
+
+| turn | at | TTFT | real tool row? | leaked syntax? |
+|---|---|---|---|---|
+| 0 | 16:59:37 | 705 ms | — | no |
+| 1 | 16:59:48 | 463 ms | — | no |
+| 2 | 17:00:06 | **3194 ms** | ✅ `captureField` 17:00:02 | no |
+| 3 | 17:00:25 | **3862 ms** | ✅ `flagGuardrailEvent`, `setIntent`, `captureField` 17:00:21–22 | no |
+| 4 | 17:00:44 | 1025 ms | ✗ | **yes** |
+| 5–12 | 17:01:04 → 17:03:47 | 495–681 ms | ✗ (zero rows after 17:00:22) | **yes, every turn** |
+
+Nine agent turns after 17:00:41. Nine leaks. Zero tool executions. Before it: four tool
+executions, zero leaks. The persona did not change at 17:00:41. The provider did not change. The
+org config did not change. **A constant cannot explain a step change**, which is the problem with
+the body's conclusion that the defect "tracks the persona, not the provider" — the persona is
+equally present in the clean half of this call.
+
+## Correction 1 — the provider latency comparison is confounded
+
+Section 5 reported groq v2v p50 1122 ms against gateway 1793 ms and treated it as a provider
+result. It is not. TTFT tracks **whether the turn executed a tool**, not who served it:
+
+| call | provider | tool rows | leaks | p50 TTFT |
+|---|---|---|---|---|
+| 1 | gateway | 6 | 0 | 2357 ms |
+| 2 | gateway | 4 | 0 | 1481 ms |
+| 3 | gateway | 2 | 0 | 1237 ms |
+| 4, 5 | groq | 0 | 0 | 876 / 547 ms |
+| 8 | groq | 0 | 3 | 627 ms |
+| 9 | gateway | 0 | 5 | 1384 ms |
+| 11 | groq | 4 | 9 | 638 ms |
+
+Every call that actually ran tools is slow. Every call that did not is fast. A real tool call is
+two round trips — generate the call, execute, generate the reply — and the leak is one. The
+cleanest control is inside call 11, where provider and persona are held constant: turns 2–3
+(tools executed) average **3528 ms** TTFT, turns 4–12 (leaked) average **652 ms**.
+
+Groq was not 672 ms faster. Groq was, on these calls, mostly not doing the work. Any decision to
+flip the LLM primary to Groq on the strength of section 5's number should be considered
+unsupported until a comparison is run where both arms execute the same tools.
+
+## Correction 2 — `provider_failover_count` cannot be read as "the LLM switched"
+
+Call 11 carries `provider_failover_count = 2`, and the obvious story — two mid-call model
+switches, three dialects, hence the two distinct leak shapes (`<captureField={…})</captureField>`
+until 17:01:34, then `<function name="…" >{…}` from 17:01:54) — is **not supported by the code**.
+`recordProviderFailover()` has exactly two call sites: `stream.ts:1579` (TTS) and `stream.ts:2167`
+(STT). No LLM path increments it. Those two events are audio-path failovers.
+
+That is a finding in itself. `call-health.ts:191` degrades a call whenever the counter is
+non-zero, under the name "provider failover" — while the provider whose failure would matter most
+to a tool-driven conversation is the one never counted. LLM transport failover
+(`resolveLlmTransportChain`, default-off behind `LLM_TRANSPORT_FAILOVER`) is invisible in the
+call record, and no table records which model served which turn. So the question "did the model
+change at 17:00:41?" is **unanswerable from production data**, not answered in the negative.
+
+## What this leaves
+
+The boundary is real, sharp, and unexplained. The candidates that survive:
+
+1. **Context growth.** The boundary sits right after the first two tool round trips inflate the
+   message history. A 70B model losing its tool-calling grammar as context grows is the
+   hypothesis that best fits a step change partway through every affected call — and calls 8 and
+   9 also start clean and degrade.
+2. **A model or route change we cannot see**, per Correction 2.
+3. **A parse failure on the tool-call channel** that falls through to content, which would show
+   up in Railway logs and nowhere else.
+
+None of the three is the persona, and none is the scrubber. Adding a fourth regex would catch
+the two 17:00:41+ dialects and would not stop the tenth.
+
+## Revised order of work
+
+1. **Instrument before experimenting.** Record the transport + model per turn, and increment a
+   counter on LLM failover the way STT and TTS already do. Without this the model-swap test in
+   the body's item 2 produces a number nobody can attribute. This is the blocking item.
+2. **Then** the model swap — and measure it on *tool-executing turns only*, or it will reproduce
+   Correction 1's mistake.
+3. Everything else in the body stands, F1 first: the agent is still promising a transfer it
+   cannot perform. Note that F4 (the fabricated callback confirmation) and F10 (the false
+   guardrail event) are now better read as **consequences** of the post-boundary state than as
+   independent defects — the model emitted the call as text, nothing executed, and it then
+   narrated the result as though something had.
