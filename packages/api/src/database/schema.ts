@@ -306,6 +306,37 @@ export const turnLatency = pgTable("turn_latency", {
   llmTtftMs: integer("llm_ttft_ms"),
   ttsFirstByteMs: integer("tts_first_byte_ms"),
   voiceToVoiceMs: integer("voice_to_voice_ms"),
+  // SOTA-fix-marathon Phase 0.1 (2026-08-16): the `transport/model` link that
+  // actually served THIS turn (ADR-109's formatActiveModelLabel — post-
+  // failover, not the configured primary), not a config field. Fixes the gap
+  // audit-17's Addendum 2 found: `calls.llm_provider_used` records what was
+  // *asked for*, and nothing recorded what *ran*, which produced three wrong
+  // conclusions in a row (persona drift, then context growth, then a
+  // provider-latency comparison) before that audit traced the actual
+  // mechanism to this missing column. Null on rows captured before this
+  // column existed, same as every other latency column added after the fact.
+  llmProviderUsed: text("llm_provider_used"),
+  // SOTA-fix-marathon Phase 0.2 (2026-08-16): closes audit-13 §5.1's blind
+  // spot — `speech_final` (~300ms) and the synthetic `UtteranceEnd` VAD
+  // fallback (~1000ms) both set `speechFinal: true` on the transcript
+  // callback, so nothing in the data could previously tell them apart even
+  // though they differ by up to 700ms. Null on rows captured before this
+  // column existed, and on providers with no dual-signal concept (Sarvam,
+  // ElevenLabs — always "speech_final" there in effect, but genuinely
+  // unknown, so left null rather than guessed).
+  endpointSignal: text("endpoint_signal").$type<"speech_final" | "utterance_end">(),
+  // Phase 0.2: last-inbound-caller-audio-frame timestamp diffed against this
+  // turn's `speech_final`/`UtteranceEnd` instant — the portion of
+  // voiceToVoiceMs that is Deepgram's own endpointing wait, not our code.
+  // Previously only inferable from the `endpointing`/`utterance_end_ms`
+  // config values (stt/deepgram.ts), never measured per turn.
+  endpointingDelayMs: integer("endpointing_delay_ms"),
+  // Phase 0.3: audit-13 §3's open question — the TTS provider socket-open
+  // duration, separate from `ttsFirstByteMs` (which bundles connect time
+  // with actual synthesis time). Settles whether ADR-083's lazy-connect
+  // change (2026-08-09) is really what pushed Cartesia's first-byte number
+  // up, instead of continuing to infer it from a two-call sample.
+  ttsSocketOpenMs: integer("tts_socket_open_ms"),
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("turn_latency_call_id_idx").on(table.callId),

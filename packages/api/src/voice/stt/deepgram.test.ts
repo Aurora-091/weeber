@@ -96,7 +96,12 @@ describe("connectDeepgram — A1b VAD/endpointing audit", () => {
     });
 
     expect(onTranscript).toHaveBeenCalledTimes(1);
-    expect(onTranscript).toHaveBeenCalledWith({ text: "book me an appointment", isFinal: true, speechFinal: true });
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: "book me an appointment",
+      isFinal: true,
+      speechFinal: true,
+      endpointSignal: "speech_final",
+    });
   });
 
   test("UtteranceEnd replays accumulated final text as a synthetic speech_final when speech_final never fired", () => {
@@ -127,7 +132,12 @@ describe("connectDeepgram — A1b VAD/endpointing audit", () => {
     lastSocket!.emit("message", { data: JSON.stringify({ type: "UtteranceEnd" }) });
 
     expect(onTranscript).toHaveBeenCalledTimes(3);
-    expect(onTranscript).toHaveBeenLastCalledWith({ text: "book me an appointment", isFinal: true, speechFinal: true });
+    expect(onTranscript).toHaveBeenLastCalledWith({
+      text: "book me an appointment",
+      isFinal: true,
+      speechFinal: true,
+      endpointSignal: "utterance_end",
+    });
   });
 
   test("UtteranceEnd is a no-op when speech_final already fired normally", () => {

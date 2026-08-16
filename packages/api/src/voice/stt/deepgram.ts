@@ -149,7 +149,7 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
           if (pendingFinalText.trim()) {
             const text = pendingFinalText.trim();
             pendingFinalText = "";
-            onTranscript({ text, isFinal: true, speechFinal: true });
+            onTranscript({ text, isFinal: true, speechFinal: true, endpointSignal: "utterance_end" });
           }
           return;
         }
@@ -165,7 +165,7 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
           pendingFinalText = speechFinal ? "" : `${pendingFinalText} ${text}`.trim();
         }
 
-        onTranscript({ text, isFinal, speechFinal });
+        onTranscript({ text, isFinal, speechFinal, endpointSignal: speechFinal ? "speech_final" : undefined });
       } catch (err) {
         console.error("[deepgram] failed to parse message", err);
       }

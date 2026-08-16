@@ -31,7 +31,8 @@ import { resolveVoiceId } from "./default-voices";
  * this codebase creates per-call). Omitted entirely when unset, same
  * no-op-by-default pattern as `language_code` above.
  */
-export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language) => {
+export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language, _onWordTimestamp, onConnected) => {
+  const connectRequestedAt = Date.now();
   const voiceId = resolveVoiceId("elevenlabs", voiceIdOverride);
   const dictionaryId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
   const dictionaryVersionId = process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
@@ -50,6 +51,7 @@ export const connectElevenLabsTts: ConnectTts = (onAudioChunk, onDone, onError, 
   let finished = false;
 
   ws.addEventListener("open", () => {
+    onConnected?.(Date.now() - connectRequestedAt);
     // Initial handshake message — required before sending any text.
     ws.send(
       JSON.stringify({

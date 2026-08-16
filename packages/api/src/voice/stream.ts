@@ -9,6 +9,7 @@ import { voiceIdForProvider } from "./tts-voice-identity";
 import { toolCallReason } from "./call-control";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, composeSystemPrompt } from "./agent";
+import { getActiveModelLabel } from "./llm";
 import {
   resolveCartRecoveryContext,
   type CartRecoveryDiscountContext,
@@ -214,6 +215,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   let ttsVoiceIdProvider: TtsProvider | undefined;
   let activeTtsProvider: TtsProvider | undefined;
+  /**
+   * Phase 0.1 (SOTA-fix-marathon, 2026-08-16) — same "what actually ran, not
+   * what was configured" pattern as activeTtsProvider above, for the LLM.
+   * Set from onLatency's `model` param (ADR-109's formatActiveModelLabel —
+   * the link that actually spoke, post-failover), never from config. Fixes
+   * the gap audit-17's Addendum 2 named directly: `calls.llm_provider_used`
+   * used to be `llmProviderOverride` verbatim, so every provider-comparison
+   * conclusion drawn from it (including two inside that same audit) was
+   * grouping by a config field, not by who served the traffic.
+   */
+  let activeLlmProviderUsed: string | undefined;
   let llmModelOverride: string | undefined;
   let enabledToolsOverride: AvailableToolName[] | undefined;
   /**
@@ -294,6 +306,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let backchannelsEnabled = false;
   let callerUtteranceStartedAt: number | null = null;
   let lastBackchannelAt: number | null = null;
+  /** Phase 0.2 (2026-08-16): stamped on every inbound Twilio media frame —
+   * the anchor for endpointingDelayMs (this frame -> speech_final/
+   * UtteranceEnd), the part of voiceToVoiceMs that is Deepgram's own
+   * endpointing wait rather than our code (audit-13 §5.1). */
+  let lastCallerAudioFrameAt: number | undefined;
   /** Barge-in gate (barge-in.ts) — consecutive-hit counter for the current
    * utterance's short-fragment streak. See decideBargeIn's doc comment for
    * why this exists: an isolated noise blip (cough, click, line bleed)
@@ -400,7 +417,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
   async function persistTurnLatency(
     turnIndex: number,
-    metrics: { llmTtftMs?: number; ttsFirstByteMs?: number; voiceToVoiceMs?: number },
+    metrics: {
+      llmTtftMs?: number;
+      ttsFirstByteMs?: number;
+      voiceToVoiceMs?: number;
+      /** Phase 0.1: the transport/model that actually served this turn (ADR-109's
+       * formatActiveModelLabel) — undefined for the greeting turn or any turn
+       * whose onLatency never fired (aborted before a first token). */
+      llmProviderUsed?: string;
+      /** Phase 0.2: which STT signal ended this turn. Undefined for the greeting. */
+      endpointSignal?: "speech_final" | "utterance_end";
+      /** Phase 0.2: last-caller-audio-frame -> speech_final/UtteranceEnd gap. */
+      endpointingDelayMs?: number;
+      /** Phase 0.3: this turn's TTS socket-open duration. */
+      ttsSocketOpenMs?: number;
+    },
   ) {
     if (!dbCallId) return;
     await db
@@ -411,6 +442,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         llmTtftMs: metrics.llmTtftMs,
         ttsFirstByteMs: metrics.ttsFirstByteMs,
         voiceToVoiceMs: metrics.voiceToVoiceMs,
+        llmProviderUsed: metrics.llmProviderUsed,
+        endpointSignal: metrics.endpointSignal,
+        endpointingDelayMs: metrics.endpointingDelayMs,
+        ttsSocketOpenMs: metrics.ttsSocketOpenMs,
       })
       .catch((err) => console.error("[voice] failed to persist per-turn latency", err));
   }
@@ -866,7 +901,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               ...(capturedIntent ? { intent: capturedIntent } : {}),
               sttProviderUsed: sttProviderOverride ?? null,
               ttsProviderUsed: activeTtsProvider ?? ttsProviderOverride ?? null,
-              llmProviderUsed: llmProviderOverride ?? null,
+              // Phase 0.1: what actually served the call's last turn, falling
+              // back to config only if no turn ever reached onLatency (e.g.
+              // every turn aborted before a first token) — same fallback
+              // shape as ttsProviderUsed just above.
+              llmProviderUsed: activeLlmProviderUsed ?? llmProviderOverride ?? null,
               estimatedCostUsdCents,
               healthStatus: health.status,
               healthReasons: health.reasons,
@@ -1399,6 +1438,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
        * after speak() has already started, but this ref is read only after
        * generate() resolves, by which point onLatency has already fired. */
       turnLlmTtftRef?: { value?: number };
+      /** Phase 0.1: same ref pattern as turnLlmTtftRef, but for the
+       * transport/model label that actually served this turn. */
+      turnLlmModelRef?: { value?: string };
+      /** Phase 0.2: which STT signal ended this turn (speech_final vs the
+       * synthetic UtteranceEnd fallback) — undefined for the greeting. */
+      endpointSignal?: "speech_final" | "utterance_end";
+      /** Phase 0.2: last-caller-audio-frame -> speech_final/UtteranceEnd gap. */
+      endpointingDelayMs?: number;
     },
   ) {
     turnAbortController = new AbortController();
@@ -1435,6 +1482,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let ttsTextFirstSentAt: number | undefined;
     let turnFirstAudioAt: number | undefined;
     let turnTtsFirstByteMs: number | undefined;
+    // Phase 0.3 (2026-08-16): this turn's TTS socket-open duration, isolated
+    // from ttsFirstByteMs — see attemptTts's onConnected wiring below and
+    // schema.ts's turnLatency.ttsSocketOpenMs doc comment.
+    let turnTtsSocketOpenMs: number | undefined;
     // Resolved once the TTS provider reports it's sent every audio chunk for
     // this turn — used below to avoid cutting a hangUp/transfer closing line
     // off. Not a guarantee Twilio has finished *playing* it (see
@@ -1596,6 +1647,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider),
           languageOverride,
           (word) => spokenWords.push(word),
+          (ms) => {
+            // Phase 0.3: only the first socket of the turn counts as "this
+            // turn's connect cost" — a mid-turn failover's own connect time
+            // is a different (and separately interesting, but not this
+            // metric's) cost.
+            if (turnTtsSocketOpenMs === undefined) turnTtsSocketOpenMs = ms;
+          },
         );
         for (const text of replayText) real.sendText(text);
         wrapper = {
@@ -1762,6 +1820,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         voiceToVoiceMs: options?.turnStartedAt !== undefined && turnFirstAudioAt !== undefined
           ? turnFirstAudioAt - options.turnStartedAt
           : undefined,
+        llmProviderUsed: options?.turnLlmModelRef?.value,
+        endpointSignal: options?.endpointSignal,
+        endpointingDelayMs: options?.endpointingDelayMs,
+        ttsSocketOpenMs: turnTtsSocketOpenMs,
       });
     })();
 
@@ -1846,8 +1908,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * handler below so voiceToVoiceMs measures real caller-perceived wait,
    * not just work done inside this function.
    */
-  async function runTurn(ws: Sendable, turnStartedAt: number) {
+  async function runTurn(
+    ws: Sendable,
+    turnStartedAt: number,
+    endpointSignal?: "speech_final" | "utterance_end",
+    endpointingDelayMs?: number,
+  ) {
     const turnLlmTtftRef: { value?: number } = {};
+    const turnLlmModelRef: { value?: string } = {};
     // §3a: at most one filler line per turn — a turn with several sequential
     // slow tool calls should still only interject once, not once per call.
     let fillerPlayedThisTurn = false;
@@ -1864,6 +1932,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
             turnLlmTtftRef.value = ms;
+            turnLlmModelRef.value = model;
+            activeLlmProviderUsed = model;
+            // Phase 0.1: the only case this platform can currently detect a
+            // fallback for is its own transport chain (ADR-109,
+            // LLM_TRANSPORT_FAILOVER) — the gateway's native multi-model
+            // failover (buildGatewayProviderOptions) is invisible to us by
+            // construction, since it never changes which link streamText was
+            // asked to open. Comparing against what the primary link *would
+            // have been labelled* is cheap and catches the one case we can.
+            const expectedPrimaryLabel = getActiveModelLabel(llmProviderOverride, llmModelOverride);
+            if (model !== expectedPrimaryLabel) recordProviderFailover();
           },
           onUsage: (usage) => {
             const cacheHitPct =
@@ -1933,7 +2012,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             );
           },
         }),
-      { turnStartedAt, turnLlmTtftRef },
+      { turnStartedAt, turnLlmTtftRef, turnLlmModelRef, endpointSignal, endpointingDelayMs },
     );
   }
 
@@ -1968,6 +2047,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
 
     const turnLlmTtftRef: { value?: number } = {};
+    const turnLlmModelRef: { value?: string } = {};
     await speak(
       ws,
       (signal) =>
@@ -2011,6 +2091,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
             turnLlmTtftRef.value = ms;
+            turnLlmModelRef.value = model;
+            activeLlmProviderUsed = model;
+            const expectedPrimaryLabel = getActiveModelLabel(llmProviderOverride, llmModelOverride);
+            if (model !== expectedPrimaryLabel) recordProviderFailover();
           },
           onUsage: (usage) => {
             console.log(
@@ -2021,7 +2105,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }),
       // No turnStartedAt for the greeting — it's agent-initiated, not a
       // response to caller speech, so there's no voiceToVoiceMs to measure.
-      { turnLlmTtftRef },
+      { turnLlmTtftRef, turnLlmModelRef },
     );
     stampDisclosureFired();
   }
@@ -2040,7 +2124,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   function connectSttForCall(ws: Sendable, failoverProvider?: "deepgram" | "sarvam" | "elevenlabs") {
     stt = connectStt(
-      async ({ text, isFinal, speechFinal }) => {
+      async ({ text, isFinal, speechFinal, endpointSignal }) => {
         try {
           // Barge-in: if the agent is mid-response and the caller starts
           // talking again, cut the agent off — gated through decideBargeIn
@@ -2131,6 +2215,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // has to be taken here, before any of the awaits below (History
           // logging, guardrail checks) can add their own skew to it.
           const turnStartedAt = Date.now();
+          // Phase 0.2: the portion of this turn's endpointing wait that's
+          // Deepgram's, not ours — undefined only if no caller audio frame
+          // was ever seen this call (shouldn't happen once STT has produced
+          // a speech_final, kept optional rather than asserted).
+          const endpointingDelayMs =
+            lastCallerAudioFrameAt !== undefined ? turnStartedAt - lastCallerAudioFrameAt : undefined;
 
           // Caller actually responded — reset silence handling (a fresh
           // warning stage next time they go quiet, not an immediate hangup)
@@ -2175,7 +2265,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // and sat directly inside the caller-perceived voice-to-voice gap. The
           // model reads `history`, not this table — see logTranscript.
           logTranscript("caller", text);
-          await runTurn(ws, turnStartedAt);
+          await runTurn(ws, turnStartedAt, endpointSignal, endpointingDelayMs);
         } catch (err) {
           console.error("[voice] error handling transcript event", err);
         }
@@ -2485,6 +2575,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               const unresolvedGreetingTags = [...new Set(Array.from(rendered.matchAll(/\{\{(\w+)\}\}/g), (m) => m[1]!))];
               if (unresolvedGreetingTags.length === 0) {
                 literalGreetingText = rendered;
+                // Phase 0.6 (2026-08-16): the miss branch below was already
+                // logged (2026-08-12); the hit branch wasn't, so there was no
+                // way to grep the actual hit/miss ratio, only ever see misses.
+                // Both branches logging the same way is what makes "did the
+                // fast path actually fire" a log search instead of the
+                // database join audit-13 needed to first discover this.
+                console.log(`[voice] literal greeting fast path fired${callSid ? ` (${callSid})` : ""}`);
               } else {
                 // Latency diagnostic (2026-08-12). This fallback used to be
                 // completely silent, and it fires far more often than anyone
@@ -2662,6 +2759,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
 
         if (event.type === "media") {
+          lastCallerAudioFrameAt = Date.now();
           let audio = Buffer.from(event.mulawBase64, "base64");
           // Wind-noise filter runs *before* the adaptive noise filter on
           // purpose (2026-07-17, wind-noise-filter.ts) — stripping out

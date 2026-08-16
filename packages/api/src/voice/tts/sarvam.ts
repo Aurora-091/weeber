@@ -26,7 +26,8 @@ export function toSarvamLanguageCode(language?: string): string {
   return `${language}-IN`;
 }
 
-export const connectSarvamTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, languageOverride) => {
+export const connectSarvamTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, languageOverride, _onWordTimestamp, onConnected) => {
+  const connectRequestedAt = Date.now();
   const apiKey = process.env.SARVAM_API_KEY ?? "";
   const speaker = resolveVoiceId("sarvam", voiceIdOverride);
   const languageCode = toSarvamLanguageCode(languageOverride);
@@ -48,6 +49,7 @@ export const connectSarvamTts: ConnectTts = (onAudioChunk, onDone, onError, voic
   }
 
   ws.addEventListener("open", () => {
+    onConnected?.(Date.now() - connectRequestedAt);
     // Config must be the first message on the socket (Sarvam requirement).
     send({
       type: "config",

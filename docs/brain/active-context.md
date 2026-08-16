@@ -12,6 +12,21 @@ updated: 2026-08-16
 
 ## Current focus
 
+- **SOTA-fix-marathon Phase 0 — production truth is now measurable (2026-08-16).** Implemented
+  `docs/voice-quality/sota-runtime-fix-marathon-2026-08-16.md` items 0.1-0.4 and 0.6 (0.5, deployment
+  region, deliberately left open — see that item). Migration `0051_sharp_starbolt.sql` adds 4 columns to
+  `turn_latency`: `llmProviderUsed` (the transport/model that actually served the turn — ADR-109's
+  `formatActiveModelLabel`, not config — closing the exact gap audit-17's Addendum 2 named: three wrong
+  conclusions in a row were drawn from `calls.llm_provider_used` recording what was *asked for*, never
+  what *ran*), `endpointSignal`/`endpointingDelayMs` (distinguishes real `speech_final` from the synthetic
+  `UtteranceEnd` VAD fallback, which previously looked identical downstream despite a ~700ms gap — audit-13
+  §5.1), and `ttsSocketOpenMs` (isolates TTS connect time from synthesis time — settles whether ADR-083's
+  lazy connect is really what pushed Cartesia's first-byte number up). `calls.llmProviderUsed` now falls
+  back through the actual-served value the same way `ttsProviderUsed` already did. `recordProviderFailover()`
+  gained a third call site (LLM transport, previously invisible — only STT/TTS incremented it). `/health`
+  now reports `deploy: { buildSha, bootTime, region }` from Railway's own env vars. 1402/1402 tests pass,
+  typecheck/lint/knip clean. Not committed/pushed yet.
+
 - **UI/UX Audit Phase 1 & 2 — Direct Fixes & Conversion Polish Shipped (2026-08-16).**
   Addressed high-impact interaction, visual friction, and conversion points from `Weeber UI_UX Visual Audit — Working Findings.md`:
   1. **Recoverable Error States**: Replaced dead-end server error EmptyStates with `icon={AlertCircle}` and explicit `<Button onClick={() => refetch()}><RefreshCw /> Retry</Button>` actions in `pages/app/agents.tsx` (list + detail), `pages/app/workflows.tsx` (list + detail), and `pages/dashboard/agents.tsx`.

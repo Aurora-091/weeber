@@ -20,13 +20,14 @@ import { resolveVoiceId } from "./default-voices";
  * same as before this change; "multi" (Deepgram STT's own code-switching
  * mode, not a real language) is never forwarded either.
  */
-export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language, onWordTimestamp) => {
+export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, voiceIdOverride, language, onWordTimestamp, onConnected) => {
   const apiKey = process.env.CARTESIA_API_KEY ?? "";
   const voiceId = resolveVoiceId("cartesia", voiceIdOverride);
   const cartesiaLanguage = language && language !== "multi" ? language : undefined;
   const cartesiaVersion = "2025-11-04";
   const url = `wss://api.cartesia.ai/tts/websocket?api_key=${encodeURIComponent(apiKey)}&cartesia_version=${cartesiaVersion}`;
 
+  const connectRequestedAt = Date.now();
   const ws = new WebSocket(url);
   const contextId = `vent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   let closedIntentionally = false;
@@ -51,6 +52,7 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
 
   ws.addEventListener("open", () => {
     opened = true;
+    onConnected?.(Date.now() - connectRequestedAt);
     for (const json of pendingSends.splice(0)) ws.send(json);
   });
 

@@ -60,6 +60,8 @@ India-readiness.
 - `llm-provider-latency-case-study-2026-07-17.md` — reducing TTFT without dropping model quality tier
 - `voice-ai-breakthrough-leverage-study-2026-07-17.md` — survey of underused voice-model tech
   (OpenAI's new voice stack, Kyutai, ElevenLabs architecture) and what's actually worth picking up
+- `sota-runtime-fix-marathon-2026-08-16.md` — prioritized punch list turning the SOTA architecture
+  assessment's roadmap into file-level work items, cross-referenced against audit-13/audit-17; not started
 
 ### [`product-strategy/`](./product-strategy/)
 GTM, competitive research, and internal reasoning artifacts — not specs, not reference. Several are

@@ -54,4 +54,16 @@ export type ConnectTts = (
    * full-text behavior when that's the case.
    */
   onWordTimestamp?: (word: string, startMs: number, endMs: number) => void,
+  /**
+   * SOTA-fix-marathon Phase 0.3 (2026-08-16): fires once, the first time
+   * this specific socket opens, with milliseconds since `connectTts` was
+   * called — the TTS provider's own connect/handshake cost, isolated from
+   * synthesis time. Same shape as STT's `onConnected` (stt/types.ts).
+   * Exists to settle audit-13 §3 (P1): whether ADR-083's lazy TTS connect
+   * (opening the socket on first text instead of at the top of the turn) is
+   * really what pushed Cartesia's first-byte number up — until this,
+   * `ttsFirstByteMs` bundled connect time and synthesis time together, so
+   * the two candidate causes were unmeasurable apart from each other.
+   */
+  onConnected?: (ms: number) => void,
 ) => TtsConnection;

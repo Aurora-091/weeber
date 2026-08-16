@@ -8,6 +8,13 @@ export type SttTranscriptHandler = (params: {
   text: string;
   isFinal: boolean;
   speechFinal: boolean;
+  /** SOTA-fix-marathon Phase 0.2 (2026-08-16): which signal actually ended
+   * this turn — Deepgram's real `speech_final` (~300ms endpointing wait) or
+   * the synthetic `UtteranceEnd` VAD fallback (~1000ms). Both previously set
+   * `speechFinal: true` identically, so the two were indistinguishable
+   * downstream despite differing by up to 700ms (audit-13 §5.1). Undefined
+   * on providers with no such dual-signal concept (Sarvam, ElevenLabs). */
+  endpointSignal?: "speech_final" | "utterance_end";
 }) => void;
 
 export type SttStats = {

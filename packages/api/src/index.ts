@@ -23,6 +23,19 @@ import { assertCorsConfiguredForProduction, buildCorsOriginResolver } from "./mi
 // middleware/cors-config.ts.
 assertCorsConfiguredForProduction();
 
+/**
+ * SOTA-fix-marathon Phase 0.4 (2026-08-16) — three separate dated audits
+ * (13, 17, and 17's own addenda) each had to reason about "what commit is
+ * actually serving traffic" from `main` alone, because nothing running could
+ * answer it. Captured once at module load (= process boot), not computed
+ * per-request. `RAILWAY_GIT_COMMIT_SHA`/`RAILWAY_REPLICA_REGION` are
+ * Railway's own injected env vars (unset outside Railway, e.g. local dev —
+ * "unknown" there is correct, not a bug).
+ */
+const BOOT_TIME = new Date().toISOString();
+const BUILD_SHA = process.env.RAILWAY_GIT_COMMIT_SHA ?? "unknown";
+const DEPLOY_REGION = process.env.RAILWAY_REPLICA_REGION ?? "unknown";
+
 const app = new Hono()
   .basePath('api')
   .onError(errorHandler())
@@ -42,6 +55,11 @@ const app = new Hono()
     c.json(
       {
         status: 'ok',
+        deploy: {
+          buildSha: BUILD_SHA,
+          bootTime: BOOT_TIME,
+          region: DEPLOY_REGION,
+        },
         keysConfigured: {
           deepgram: Boolean(process.env.DEEPGRAM_API_KEY),
           elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),

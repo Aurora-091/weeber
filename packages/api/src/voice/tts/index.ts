@@ -49,9 +49,18 @@ export function connectTts(
   voiceIdOverride?: string,
   languageOverride?: string,
   onWordTimestamp?: (word: string, startMs: number, endMs: number) => void,
+  onConnected?: (ms: number) => void,
 ) {
   const provider = resolveTtsProvider(providerOverride, languageOverride);
-  return providers[provider](onAudioChunk, onDone, onError, voiceIdOverride, languageOverride, onWordTimestamp);
+  return providers[provider](
+    onAudioChunk,
+    onDone,
+    onError,
+    voiceIdOverride,
+    languageOverride,
+    onWordTimestamp,
+    onConnected,
+  );
 }
 
 export type { ConnectTts, TtsConnection, TtsProvider } from "./types";
