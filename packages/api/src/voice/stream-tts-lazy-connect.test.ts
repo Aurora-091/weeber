@@ -71,16 +71,18 @@ const callRow = {
   capturedState: {},
 };
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-    }),
-    insert: () => chain([]),
-    update: () => chain([]),
-    execute: async () => [],
-  },
-}));
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
+  }),
+  insert: () => chain([]),
+  update: () => chain([]),
+  execute: async () => [],
+};
+
+// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
+// imports both `db` and `dbBackground` — both must resolve here.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 mock.module("./stt", () => ({
   connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {

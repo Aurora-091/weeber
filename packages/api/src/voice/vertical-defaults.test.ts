@@ -26,31 +26,35 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
-    }),
-    insert: (table: unknown) => ({
-      // Accepts both a single row object and a batched array of rows (org-queries.ts's
-      // provisionVerticalDefaults inserts its whole default set in one multi-row insert).
-      values: (v: Record<string, unknown> | Record<string, unknown>[]) => {
-        const tableName = getTableName(table) ?? "";
-        const rows = Array.isArray(v) ? v : [v];
-        const result = rows.filter((row) => {
-          const conflicts = preexistingKeys.has(String(row.templateKey));
-          if (!conflicts) insertedRows.push({ table: tableName, values: row });
-          return !conflicts;
-        });
-        return {
-          onConflictDoNothing: () => ({ returning: () => Promise.resolve(result) }),
-          onConflictDoUpdate: () => ({ returning: () => Promise.resolve(result) }),
-          returning: () => Promise.resolve(result),
-        };
-      },
-    }),
-  },
-}));
+// ADR-116 addendum: org-queries.ts statically imports both `db` and
+// `dbBackground` from "../database" (provisionVerticalDefaults runs on the
+// background pool) — the mock must provide both names or the import throws,
+// even though this file only exercises the background path.
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
+  }),
+  insert: (table: unknown) => ({
+    // Accepts both a single row object and a batched array of rows (org-queries.ts's
+    // provisionVerticalDefaults inserts its whole default set in one multi-row insert).
+    values: (v: Record<string, unknown> | Record<string, unknown>[]) => {
+      const tableName = getTableName(table) ?? "";
+      const rows = Array.isArray(v) ? v : [v];
+      const result = rows.filter((row) => {
+        const conflicts = preexistingKeys.has(String(row.templateKey));
+        if (!conflicts) insertedRows.push({ table: tableName, values: row });
+        return !conflicts;
+      });
+      return {
+        onConflictDoNothing: () => ({ returning: () => Promise.resolve(result) }),
+        onConflictDoUpdate: () => ({ returning: () => Promise.resolve(result) }),
+        returning: () => Promise.resolve(result),
+      };
+    },
+  }),
+};
+
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 const { provisionVerticalDefaults } = await import("./org-queries");
 const { getRecommendedDefaults, RECOMMENDED_DEFAULTS } = await import("./vertical-defaults");

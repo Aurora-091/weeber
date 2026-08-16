@@ -6,8 +6,11 @@ let mockInserted: any[] = [];
 let mockUpdated: any[] = [];
 
 mock.module("../database", () => {
-  return {
-    db: {
+  // ADR-116 addendum: waitlist.ts and support.ts now import `dbBackground`
+  // (never on a live call's turn path) — build the fake once and export it
+  // under both names so public-routes.ts's own (unmoved) `db` import and
+  // waitlist.ts/support.ts's `dbBackground` import both resolve.
+  const dbLike = {
       select: (fields?: any) => {
         const chain: any = {
           from: () => chain,
@@ -53,8 +56,8 @@ mock.module("../database", () => {
           },
         }),
       }),
-    },
   };
+  return { db: dbLike, dbBackground: dbLike };
 });
 
 import { joinWaitlist, addWaitlistPhone, getWaitlistDisplayCount, unsubscribeByToken } from "./waitlist";

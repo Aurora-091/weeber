@@ -37,14 +37,16 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({ from: (table: unknown) => thenable(getTableName(table) === "orgs" ? [{ id: "org-1" }] : []) }),
-    insert: () => ({ values: () => ({ onConflictDoNothing: () => Promise.resolve(), returning: () => Promise.resolve([]) }) }),
-    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
-    delete: () => ({ where: () => Promise.resolve() }),
-  },
-}));
+const dbLike = {
+  select: () => ({ from: (table: unknown) => thenable(getTableName(table) === "orgs" ? [{ id: "org-1" }] : []) }),
+  insert: () => ({ values: () => ({ onConflictDoNothing: () => Promise.resolve(), returning: () => Promise.resolve([]) }) }),
+  update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+  delete: () => ({ where: () => Promise.resolve() }),
+};
+
+// ADR-116 addendum: admin-routes.ts now imports `dbBackground` — both names
+// must resolve here or the import throws.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 // mock.module swaps the whole module, so every export admin-routes imports
 // from twilio-provisioning has to exist here or the file fails to load.

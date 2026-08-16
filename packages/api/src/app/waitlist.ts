@@ -5,7 +5,9 @@
  * ADR-041 for the full port notes and what was deliberately simplified.
  */
 import { count as countRows, desc, eq, lte, ne, sql } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum: public marketing-site signup, never on a live call's turn
+// path — uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../database";
 import { waitlistSignups } from "../database/schema";
 import { sendTransactionalEmail } from "./email";
 import { waitlistConfirmationHtml, referralNotificationHtml } from "./email-templates";

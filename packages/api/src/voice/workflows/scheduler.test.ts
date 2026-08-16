@@ -21,8 +21,11 @@ function getTableName(table: any): string | undefined {
 }
 
 mock.module("../../database", () => {
-  return {
-    db: {
+  // ADR-116 addendum: scheduler.ts now imports `dbBackground` (a timer-driven
+  // sweep, never on a live call's turn path) — build the fake once and export
+  // it under both names so credential-vault.ts's own (unmoved) `db` import
+  // and scheduler.ts's `dbBackground` import both resolve.
+  const dbLike = {
       select: () => ({
         from: (table: any) => {
           const tableName = getTableName(table);
@@ -63,8 +66,8 @@ mock.module("../../database", () => {
       // db.execute() — no row means it falls through to the plaintext-column
       // path this mock's `select` above already covers via the "orgs" table.
       execute: async () => []
-    }
   };
+  return { db: dbLike, dbBackground: dbLike };
 });
 
 mock.module("../twilio-client", () => {

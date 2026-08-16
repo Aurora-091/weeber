@@ -19,7 +19,9 @@
  * org that logs back in is reactivated by the login path, not here.
  */
 import { and, eq, lte } from "drizzle-orm";
-import { db } from "../../database";
+// ADR-116 addendum: a timer-driven sweep, never on a live call's turn path —
+// uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../../database";
 import { orgs } from "../../database/schema";
 import { closeOrgTelephony } from "../twilio-provisioning";
 import { sendOrgLifecycleEmail } from "../../app/org-lifecycle-email";

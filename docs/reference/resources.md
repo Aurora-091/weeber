@@ -70,9 +70,12 @@ for the pooler-specific number at that time.
 
 ## Known bottlenecks, in the order they'd actually bite
 
-1. **DB connection pool — fixed 2026-07-17.** Was unconfigured (postgres-js default of 10); now
-   explicit via `DATABASE_POOL_MAX` (default 20), see the DB client pool row above for the
-   pooler-multiplexing nuance.
+1. **DB connection pool — fixed 2026-07-17, split 2026-08-17.** Was unconfigured (postgres-js default
+   of 10); now explicit via `DATABASE_POOL_MAX` (default 20), see the DB client pool row above for the
+   pooler-multiplexing nuance. ADR-116's addendum further split it in two: `db` (live-call turn path,
+   `DATABASE_POOL_MAX`) and `dbBackground` (sweeps/admin/analytics, `DATABASE_POOL_MAX_BACKGROUND`,
+   default 8) — same `DATABASE_URL`, so the two pools' combined size still counts against Supavisor's
+   ceiling together, but a saturated background workload can no longer queue out a live call's write.
 2. **Supabase compute tier — upgraded 2026-07-17.** Micro → Small in tandem with the Railway Pro
    upgrade, real headroom confirmed live (see "Supabase compute tier" above). Not a bottleneck at
    1 replica.

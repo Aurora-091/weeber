@@ -42,37 +42,39 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
-    }),
-    insert: (table: unknown) => ({
-      values: (data: Record<string, unknown>) => {
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
+  }),
+  insert: (table: unknown) => ({
+    values: (data: Record<string, unknown>) => {
+      const name = getTableName(table) ?? "";
+      (insertsByTable[name] ??= []).push(data);
+      const returned = conflictSkip ? [] : [{ id: 1, ...data }];
+      // Awaitable *and* chainable: callers do both (`await db.insert().values()`
+      // in audit-log, `.onConflictDoNothing().returning()` here).
+      const chain = Promise.resolve(returned) as Promise<unknown[]> & Record<string, unknown>;
+      chain.onConflictDoNothing = () => ({ returning: () => Promise.resolve(returned) });
+      chain.onConflictDoUpdate = () => ({ returning: () => Promise.resolve([{ id: 1, ...data }]) });
+      chain.returning = () => Promise.resolve([{ id: 1, ...data }]);
+      return chain;
+    },
+  }),
+  update: (table: unknown) => ({
+    set: (data: Record<string, unknown>) => ({
+      where: () => {
         const name = getTableName(table) ?? "";
-        (insertsByTable[name] ??= []).push(data);
-        const returned = conflictSkip ? [] : [{ id: 1, ...data }];
-        // Awaitable *and* chainable: callers do both (`await db.insert().values()`
-        // in audit-log, `.onConflictDoNothing().returning()` here).
-        const chain = Promise.resolve(returned) as Promise<unknown[]> & Record<string, unknown>;
-        chain.onConflictDoNothing = () => ({ returning: () => Promise.resolve(returned) });
-        chain.onConflictDoUpdate = () => ({ returning: () => Promise.resolve([{ id: 1, ...data }]) });
-        chain.returning = () => Promise.resolve([{ id: 1, ...data }]);
-        return chain;
+        (updatesByTable[name] ??= []).push(data);
+        return { returning: () => Promise.resolve([{ id: 1, ...data }]) };
       },
     }),
-    update: (table: unknown) => ({
-      set: (data: Record<string, unknown>) => ({
-        where: () => {
-          const name = getTableName(table) ?? "";
-          (updatesByTable[name] ??= []).push(data);
-          return { returning: () => Promise.resolve([{ id: 1, ...data }]) };
-        },
-      }),
-    }),
-    delete: () => ({ where: () => Promise.resolve() }),
-  },
-}));
+  }),
+  delete: () => ({ where: () => Promise.resolve() }),
+};
+
+// ADR-116 addendum: admin-routes.ts and audit-log.ts now import `dbBackground`
+// — both names must resolve here or the import throws.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 process.env.ADMIN_API_KEY = "test-admin-key";
 afterAll(() => {

@@ -36,37 +36,42 @@ let updateReturning: unknown[] = [];
  */
 let agentTemplateResponses: unknown[][] | undefined;
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => {
-        const name = getTableName(table) ?? "";
-        if (name === "agent_templates" && agentTemplateResponses?.length) {
-          return thenable(agentTemplateResponses.shift() ?? []);
-        }
-        return thenable(rowsByTable[name] ?? []);
-      },
-    }),
-    update: () => ({
-      set: (v: Record<string, unknown>) => {
-        lastUpdateValues = v;
-        return {
-          where: () => ({ returning: () => Promise.resolve(updateReturning) }),
-        };
-      },
-    }),
-    insert: () => ({
-      values: (v: Record<string, unknown>) => {
-        lastInsertValues = v;
-        return {
-          onConflictDoNothing: () => ({ returning: () => Promise.resolve([v]) }),
-          onConflictDoUpdate: () => ({ returning: () => Promise.resolve([v]) }),
-          returning: () => Promise.resolve([v]),
-        };
-      },
-    }),
-  },
-}));
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => {
+      const name = getTableName(table) ?? "";
+      if (name === "agent_templates" && agentTemplateResponses?.length) {
+        return thenable(agentTemplateResponses.shift() ?? []);
+      }
+      return thenable(rowsByTable[name] ?? []);
+    },
+  }),
+  update: () => ({
+    set: (v: Record<string, unknown>) => {
+      lastUpdateValues = v;
+      return {
+        where: () => ({ returning: () => Promise.resolve(updateReturning) }),
+      };
+    },
+  }),
+  insert: () => ({
+    values: (v: Record<string, unknown>) => {
+      lastInsertValues = v;
+      return {
+        onConflictDoNothing: () => ({ returning: () => Promise.resolve([v]) }),
+        onConflictDoUpdate: () => ({ returning: () => Promise.resolve([v]) }),
+        returning: () => Promise.resolve([v]),
+      };
+    },
+  }),
+};
+
+// ADR-116 addendum: org-queries.ts statically imports both `db` (aliased
+// dbHotPath, used only by getEffectiveFlags) and `dbBackground` (aliased db,
+// used by everything else) — both must resolve here or the import throws.
+// Same underlying fake since this file's tests don't care which pool a call
+// went through, only what rowsByTable returns.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 import {
   computeOrgAnalytics,

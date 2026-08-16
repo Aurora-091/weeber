@@ -15,8 +15,10 @@ function getTableName(table: any): string | undefined {
 }
 
 mock.module("../../database", () => {
-  return {
-    db: {
+  // ADR-116 addendum: routes.ts now imports `dbBackground` (inbound Shopify
+  // webhook ingestion, never on a live call's turn path) — export the same
+  // fake under both names so the import resolves.
+  const dbLike = {
       insert: (_table: any) => ({
         values: (data: any) => {
           mockInsertedCalls.push(data);
@@ -66,8 +68,8 @@ mock.module("../../database", () => {
           }
         };
       }
-    }
   };
+  return { db: dbLike, dbBackground: dbLike };
 });
 
 mock.module("./idempotency", () => {

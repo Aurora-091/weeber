@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import { randomUUID } from "crypto";
 import { eq, and, desc, gte } from "drizzle-orm";
-import { db } from "../../database";
+// ADR-116 addendum: inbound Shopify webhook ingestion, never on a live call's
+// turn path — uses the background connection pool so it can't compete with
+// call-latency writes.
+import { dbBackground as db } from "../../database";
 import { orgs, shopLinks, shopifyContacts, scheduledCalls, workflowTemplates, workflowRuns, orgWorkflowConfigs } from "../../database/schema";
 import { requireWeeberSecret } from "./secret-auth";
 import { alreadyProcessed, markProcessed } from "./idempotency";

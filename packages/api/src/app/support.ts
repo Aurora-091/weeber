@@ -4,7 +4,9 @@
  * (email-only, no account required — `orgId` stays null).
  */
 import { asc, desc, eq } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum: admin support queue, never on a live call's turn path —
+// uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../database";
 import { supportTickets, supportReplies } from "../database/schema";
 import { sendTransactionalEmail } from "./email";
 import { supportReplyHtml } from "./email-templates";

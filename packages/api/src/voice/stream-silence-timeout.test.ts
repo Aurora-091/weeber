@@ -80,22 +80,24 @@ const callRow = {
   capturedState: {},
 };
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-    }),
-    insert: (table: unknown) => {
-      const name = getTableName(table);
-      return chain([{ id: 1 }], undefined, (values) => dbInserts.push({ table: name, values }));
-    },
-    update: (table: unknown) => {
-      const name = getTableName(table);
-      return chain([], (values) => dbUpdates.push({ table: name, values }));
-    },
-    execute: async () => [],
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
+  }),
+  insert: (table: unknown) => {
+    const name = getTableName(table);
+    return chain([{ id: 1 }], undefined, (values) => dbInserts.push({ table: name, values }));
   },
-}));
+  update: (table: unknown) => {
+    const name = getTableName(table);
+    return chain([], (values) => dbUpdates.push({ table: name, values }));
+  },
+  execute: async () => [],
+};
+
+// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
+// imports both `db` and `dbBackground` — both must resolve here.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 let lastOnTranscript: ((p: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
 

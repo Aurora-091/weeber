@@ -6,7 +6,9 @@
  * never block the actual admin action it's describing.
  */
 import { desc } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum: admin action log, only ever called from admin-routes.ts,
+// never on a live call's turn path — uses the background connection pool.
+import { dbBackground as db } from "../database";
 import { adminAuditLog } from "../database/schema";
 
 export async function logAdminAction(actor: string, action: string, detail?: unknown): Promise<void> {

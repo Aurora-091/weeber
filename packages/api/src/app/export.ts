@@ -8,7 +8,9 @@
  */
 import ExcelJS from "exceljs";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum: dashboard data export, never on a live call's turn path —
+// uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../database";
 import { calls, callLatency, scheduledCalls, transcripts, leads } from "../database/schema";
 import { resolveIntakeSchema } from "../voice/leads/schema-store";
 

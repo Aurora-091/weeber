@@ -35,3 +35,28 @@ const client = postgres(process.env.DATABASE_URL!, {
 });
 
 export const db = drizzle(client, { schema, logger: new DrizzleLogger() });
+
+// ADR-116 addendum (2026-08-17) — a second pool, same database, for work
+// that is provably never on a live call's turn path: timer-driven sweeps
+// (scheduler.ts, webhooks.ts's delivery retry, org-lifecycle-sweep.ts) and
+// admin/merchant dashboard reads (admin-routes.ts, org-queries.ts's
+// analytics functions, support/broadcasts/waitlist/export/audit-log). Those
+// workloads run multi-row batch queries and multi-second aggregations; on
+// the single `db` pool above, one of them holding connections during a
+// burst could queue out a live call's per-turn `turnLatency`/`transcripts`
+// write behind it — the one failure mode this product can least afford.
+// Splitting the pool means a saturated background workload can only starve
+// itself, never the call path, without touching `max` on `db` at all.
+//
+// Deliberately NOT a read replica or a different Postgres instance — same
+// `DATABASE_URL`, same Supavisor pooler, same `prepare: false` requirement.
+// This is purely an application-side connection budget split, the cheapest
+// version of "smart separation" available without new infra. `max` defaults
+// to well under half of `db`'s, since Postgres of these two never need to
+// exceed the pooler-side ceiling that already bounds the sum of both.
+const backgroundClient = postgres(process.env.DATABASE_URL!, {
+  prepare: false,
+  max: Number(process.env.DATABASE_POOL_MAX_BACKGROUND ?? 8),
+});
+
+export const dbBackground = drizzle(backgroundClient, { schema, logger: new DrizzleLogger() });

@@ -26,30 +26,32 @@ function getTableName(table: unknown): string | undefined {
   return sym ? (table as Record<symbol, string>)[sym] : undefined;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => {
-        const name = getTableName(table) ?? "";
-        const rows = name === "orgs" ? orgRows : name === "org_phone_numbers" ? phoneRows : [];
-        const result = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-        result.where = () => {
-          const withLimit = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-          withLimit.limit = () => Promise.resolve(rows);
-          return withLimit;
-        };
-        return result;
-      },
-    }),
-    insert: (table: unknown) => ({
-      values: (values: Record<string, unknown>) => {
-        if (getTableName(table) === "calls") insertedCalls.push(values);
-        return { onConflictDoNothing: () => Promise.resolve() };
-      },
-    }),
-    execute: async () => [],
-  },
-}));
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => {
+      const name = getTableName(table) ?? "";
+      const rows = name === "orgs" ? orgRows : name === "org_phone_numbers" ? phoneRows : [];
+      const result = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
+      result.where = () => {
+        const withLimit = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
+        withLimit.limit = () => Promise.resolve(rows);
+        return withLimit;
+      };
+      return result;
+    },
+  }),
+  insert: (table: unknown) => ({
+    values: (values: Record<string, unknown>) => {
+      if (getTableName(table) === "calls") insertedCalls.push(values);
+      return { onConflictDoNothing: () => Promise.resolve() };
+    },
+  }),
+  execute: async () => [],
+};
+
+// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
+// imports both `db` and `dbBackground` — both must resolve here.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 mock.module("./twilio-client", () => ({
   twilioClient: {},

@@ -22,6 +22,21 @@ updated: 2026-08-17
   `.mcp.json`'s Supabase `project_ref` and every `DATABASE_URL`/Vercel/Railway env var once the new
   project exists.
 
+- **ADR-116 addendum — split the DB connection pool in two (2026-08-17).** Raised directly by the user
+  ("too many things interfering with each other, which drops performance") — checked, and it was real:
+  one shared 20-connection pool served both live-call turn writes and every timer-driven
+  sweep/admin/analytics workload. Added `dbBackground` (new `postgres.js` client, same `DATABASE_URL`,
+  `DATABASE_POOL_MAX_BACKGROUND` default 8) and repointed 13 files — whole-file for
+  `admin-routes.ts` (both), `workflows/scheduler.ts`, `workflows/org-lifecycle-sweep.ts`,
+  `app/support.ts`/`broadcasts.ts`/`waitlist.ts`/`export.ts`/`audit-log.ts`, `integrations/shopify/*`;
+  split-by-function for `webhooks.ts` (`dispatchWebhook` stays hot-path, the retry sweep moves) and
+  `org-queries.ts` (18 of 19 functions move, `getEffectiveFlags` alone stays since `stream.ts` calls it
+  per-turn). 15 test files' `mock.module("../database", ...)` factories needed `dbBackground` added
+  (Bun throws a loud `SyntaxError` at import time when a mocked module is missing an export another
+  file statically imports — that's how every affected file was found, by running the suite rather than
+  tracing imports by hand). 1402/1402 tests pass, typecheck/lint/knip:gate clean. See the ADR-116 doc's
+  "Addendum" section for the full file-by-file reasoning.
+
 - **ADR-116 — database-optimization pass before the new Supabase project's first migration
   (2026-08-17).** Six missing indexes added (`tool_calls` had zero; `calls`/`scheduled_calls` had an
   `org_id`-only index that couldn't serve their real org+time-range query shape; `webhook_outbox`'s

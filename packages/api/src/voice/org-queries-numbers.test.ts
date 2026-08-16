@@ -22,33 +22,35 @@ function getTableName(table: unknown): string | undefined {
   return sym ? (table as Record<symbol, string>)[sym] : undefined;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: () => {
-            const name = getTableName(table);
-            if (name === "org_phone_numbers") return mockPhoneNumberRows;
-            if (name === "agent_templates") return mockTemplateRows;
-            return [];
-          },
-        }),
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => ({
+      where: () => ({
+        limit: () => {
+          const name = getTableName(table);
+          if (name === "org_phone_numbers") return mockPhoneNumberRows;
+          if (name === "agent_templates") return mockTemplateRows;
+          return [];
+        },
       }),
     }),
-    insert: () => ({
-      values: (values: Record<string, unknown>) => {
-        insertedValues = values;
-        return {
-          onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
-            conflictSet = set;
-            return Promise.resolve();
-          },
-        };
-      },
-    }),
-  },
-}));
+  }),
+  insert: () => ({
+    values: (values: Record<string, unknown>) => {
+      insertedValues = values;
+      return {
+        onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
+          conflictSet = set;
+          return Promise.resolve();
+        },
+      };
+    },
+  }),
+};
+
+// ADR-116 addendum: org-queries.ts statically imports both `db` and
+// `dbBackground` from "../database" — both must resolve or the import throws.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 const { assignPhoneNumberToAgent } = await import("./org-queries");
 

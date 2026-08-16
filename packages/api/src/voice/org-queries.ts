@@ -7,7 +7,13 @@
  * panel shows.
  */
 import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum (2026-08-17): every function in this file is admin panel /
+// merchant dashboard / onboarding — never on a live call's turn path — EXCEPT
+// getEffectiveFlags, which stream.ts also calls per-turn. So `db` here is
+// aliased to the background pool for the whole file, and getEffectiveFlags
+// alone uses `dbHotPath` explicitly. Do not add a new hot-path caller of any
+// other function in this file without re-pointing it at dbHotPath first.
+import { db as dbHotPath, dbBackground as db } from "../database";
 import {
   agentTemplates,
   calls,
@@ -615,7 +621,8 @@ export async function computeUsage(orgId: string, days = 30) {
 
 /** Effective feature flags for an org: org-scoped rows overlay global (`orgId: ""`) rows. */
 export async function getEffectiveFlags(orgId: string): Promise<Record<string, boolean>> {
-  const rows = await db
+  // Hot-path exception — see the file-header comment on the db/dbHotPath import.
+  const rows = await dbHotPath
     .select({ key: featureFlags.key, orgId: featureFlags.orgId, enabled: featureFlags.enabled })
     .from(featureFlags)
     .where(inArray(featureFlags.orgId, ["", orgId]));

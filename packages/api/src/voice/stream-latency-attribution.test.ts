@@ -55,26 +55,28 @@ function getTableName(table: unknown): string {
   return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-    }),
-    // Capture only turn_latency inserts; everything else behaves as before.
-    insert: (table: unknown) => {
-      const c = chain([]);
-      if (getTableName(table) === "turn_latency") {
-        c.values = (row: TurnLatencyRow) => {
-          turnLatencyRows.push(row);
-          return chain([]);
-        };
-      }
-      return c;
-    },
-    update: () => chain([]),
-    execute: async () => [],
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
+  }),
+  // Capture only turn_latency inserts; everything else behaves as before.
+  insert: (table: unknown) => {
+    const c = chain([]);
+    if (getTableName(table) === "turn_latency") {
+      c.values = (row: TurnLatencyRow) => {
+        turnLatencyRows.push(row);
+        return chain([]);
+      };
+    }
+    return c;
   },
-}));
+  update: () => chain([]),
+  execute: async () => [],
+};
+
+// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
+// imports both `db` and `dbBackground` — both must resolve here.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 let lastOnTranscript:
   | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)

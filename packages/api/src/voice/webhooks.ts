@@ -8,7 +8,10 @@
  * triggering an outbound call, or stored on the call row) > WEBHOOK_URL env
  * var (global default) > no-op if neither is set.
  */
-import { db } from "../database";
+// ADR-116 addendum: dispatchWebhook (the enqueue) is called from stream.ts
+// mid-call and stays on the default hot-path pool; processWebhookOutbox/
+// markFailed (the timer-driven delivery sweep) use the background pool.
+import { db, dbBackground } from "../database";
 import { webhookOutbox } from "../database/schema";
 import { eq, and, lte, inArray } from "drizzle-orm";
 
@@ -58,7 +61,7 @@ const BACKOFF_SECONDS = [30, 120, 600, 3600, 21600];
  */
 export async function processWebhookOutbox(batchSize = 10): Promise<number> {
   const now = new Date();
-  const due = await db
+  const due = await dbBackground
     .select()
     .from(webhookOutbox)
     .where(
@@ -73,7 +76,7 @@ export async function processWebhookOutbox(batchSize = 10): Promise<number> {
 
   for (const row of due) {
     // Claim via CAS — set status to 'delivering' only if still pending/failed
-    const claimed = await db
+    const claimed = await dbBackground
       .update(webhookOutbox)
       .set({ status: "delivering" })
       .where(
@@ -94,7 +97,7 @@ export async function processWebhookOutbox(batchSize = 10): Promise<number> {
       });
 
       if (res.ok) {
-        await db
+        await dbBackground
           .update(webhookOutbox)
           .set({ status: "delivered", deliveredAt: new Date(), attempts: row.attempts + 1 })
           .where(eq(webhookOutbox.id, row.id));
@@ -116,7 +119,7 @@ async function markFailed(id: number, attempts: number, error: string, maxAttemp
   const backoffIdx = Math.min(newAttempts - 1, BACKOFF_SECONDS.length - 1);
   const nextRetry = new Date(Date.now() + BACKOFF_SECONDS[backoffIdx] * 1000);
 
-  await db
+  await dbBackground
     .update(webhookOutbox)
     .set({
       status: isDead ? "dead" : "failed",

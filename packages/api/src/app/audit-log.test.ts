@@ -3,23 +3,25 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 let inserted: Array<Record<string, unknown>> = [];
 let selectRows: Array<Record<string, unknown>> = [];
 
-mock.module("../database", () => ({
-  db: {
-    insert: (_table: unknown) => ({
-      values: (data: Record<string, unknown>) => {
-        inserted.push(data);
-        return Promise.resolve();
-      },
-    }),
-    select: () => ({
-      from: () => ({
-        orderBy: () => ({
-          limit: (n: number) => selectRows.slice(0, n),
-        }),
+const dbLike = {
+  insert: (_table: unknown) => ({
+    values: (data: Record<string, unknown>) => {
+      inserted.push(data);
+      return Promise.resolve();
+    },
+  }),
+  select: () => ({
+    from: () => ({
+      orderBy: () => ({
+        limit: (n: number) => selectRows.slice(0, n),
       }),
     }),
-  },
-}));
+  }),
+};
+
+// ADR-116 addendum: audit-log.ts now imports `dbBackground` — both names
+// must resolve here or the import throws.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 import { logAdminAction, listAdminAuditLog } from "./audit-log";
 

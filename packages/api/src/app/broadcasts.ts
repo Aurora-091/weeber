@@ -7,7 +7,9 @@
  * unconfigured environment for a working one.
  */
 import { desc, eq } from "drizzle-orm";
-import { db } from "../database";
+// ADR-116 addendum: admin broadcast tool, never on a live call's turn path —
+// uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../database";
 import { broadcasts, orgMembers, waitlistSignups } from "../database/schema";
 import { resilientCall } from "../voice/integrations/resilient-fetch";
 

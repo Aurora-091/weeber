@@ -1,5 +1,7 @@
 import { lte, eq, and } from "drizzle-orm";
-import { db } from "../../database";
+// ADR-116 addendum: a timer-driven sweep, never on a live call's turn path —
+// uses the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../../database";
 import { scheduledCalls } from "../../database/schema";
 import { placeOutboundCall } from "../place-outbound-call";
 import { sessionStore } from "../session-store";

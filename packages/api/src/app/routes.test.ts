@@ -66,16 +66,20 @@ mock.module("../database", () => {
       },
     }),
   };
-  return {
-    db: {
-      ...dbLike,
-      // resolveOrCreateMembership wraps its two inserts in a real
-      // transaction in production — this mock just runs the callback
-      // against the same non-transactional dbLike, since a unit test has
-      // no real Postgres connection to roll back against anyway.
-      transaction: async (fn: (tx: typeof dbLike) => Promise<unknown>) => fn(dbLike),
-    },
+  const dbWithTransaction = {
+    ...dbLike,
+    // resolveOrCreateMembership wraps its two inserts in a real
+    // transaction in production — this mock just runs the callback
+    // against the same non-transactional dbLike, since a unit test has
+    // no real Postgres connection to roll back against anyway.
+    transaction: async (fn: (tx: typeof dbLike) => Promise<unknown>) => fn(dbLike),
   };
+  // ADR-116 addendum: org-queries.ts's dashboard functions (getOrg,
+  // getAgentConfigsForOrg, upsertAgentConfig, computeOrgAnalytics,
+  // provisionVerticalDefaults) statically import `dbBackground` — the mock
+  // must provide it or that import throws, even for routes this file never
+  // exercises through that path.
+  return { db: dbWithTransaction, dbBackground: dbWithTransaction };
 });
 
 process.env.SUPABASE_JWT_SECRET = "test-jwt-secret";

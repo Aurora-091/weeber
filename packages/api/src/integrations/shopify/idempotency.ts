@@ -1,5 +1,7 @@
 import { eq, and } from "drizzle-orm";
-import { db } from "../../database";
+// ADR-116 addendum: inbound Shopify webhook dedup check, never on a live
+// call's turn path — uses the background connection pool.
+import { dbBackground as db } from "../../database";
 import { shopifyWebhookEvents } from "../../database/schema";
 
 /**

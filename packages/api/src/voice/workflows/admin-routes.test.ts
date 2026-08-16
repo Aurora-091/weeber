@@ -29,13 +29,15 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
-mock.module("../../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
-    }),
-  },
-}));
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
+  }),
+};
+
+// ADR-116 addendum: this file's admin-routes.ts now imports `dbBackground`
+// — both names must resolve here or the import throws.
+mock.module("../../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 process.env.ADMIN_API_KEY = "test-admin-key";
 afterAll(() => {

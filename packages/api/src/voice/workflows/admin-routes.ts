@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { eq, and, desc } from "drizzle-orm";
-import { db } from "../../database";
+// ADR-116 addendum: admin dashboard, never on a live call's turn path — uses
+// the background connection pool so it can't compete with call-latency writes.
+import { dbBackground as db } from "../../database";
 import { workflowTemplates, orgWorkflowConfigs, workflowRuns } from "../../database/schema";
 import type { WorkflowGraph } from "./graph-types";
 import { validateLockedNodesEnforced } from "./scaffold";

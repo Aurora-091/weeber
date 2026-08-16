@@ -23,34 +23,36 @@ function thenable(rows: unknown[]) {
   return promise;
 }
 
-mock.module("../database", () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
-    }),
-    insert: (table: unknown) => ({
-      values: (data: Record<string, unknown>) => {
+const dbLike = {
+  select: () => ({
+    from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
+  }),
+  insert: (table: unknown) => ({
+    values: (data: Record<string, unknown>) => {
+      const name = getTableName(table) ?? "";
+      (insertsByTable[name] ??= []).push({ data });
+      return {
+        onConflictDoNothing: () => Promise.resolve(),
+        onConflictDoUpdate: () => ({ returning: () => Promise.resolve([{ id: 1, ...data }]) }),
+        returning: () => Promise.resolve([{ id: 1, ...data }]),
+      };
+    },
+  }),
+  update: (table: unknown) => ({
+    set: (data: Record<string, unknown>) => ({
+      where: () => {
         const name = getTableName(table) ?? "";
-        (insertsByTable[name] ??= []).push({ data });
-        return {
-          onConflictDoNothing: () => Promise.resolve(),
-          onConflictDoUpdate: () => ({ returning: () => Promise.resolve([{ id: 1, ...data }]) }),
-          returning: () => Promise.resolve([{ id: 1, ...data }]),
-        };
+        (updatesByTable[name] ??= []).push(data);
+        return { returning: () => Promise.resolve([{ id: 1, ...data }]) };
       },
     }),
-    update: (table: unknown) => ({
-      set: (data: Record<string, unknown>) => ({
-        where: () => {
-          const name = getTableName(table) ?? "";
-          (updatesByTable[name] ??= []).push(data);
-          return { returning: () => Promise.resolve([{ id: 1, ...data }]) };
-        },
-      }),
-    }),
-    delete: () => ({ where: () => Promise.resolve() }),
-  },
-}));
+  }),
+  delete: () => ({ where: () => Promise.resolve() }),
+};
+
+// ADR-116 addendum: admin-routes.ts and audit-log.ts now import `dbBackground`
+// — both names must resolve here or the import throws.
+mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
 process.env.ADMIN_API_KEY = "test-admin-key";
 // routes.test.ts relies on the no-key dev fallback letting requests through —

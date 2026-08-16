@@ -91,3 +91,55 @@ clean.
   `.references()`). Out of scope here — adding the FK constraints is a correctness question (can an
   orphaned `org_id` exist today, and does anything rely on that), not an indexing one, and deserves its
   own pass with its own evidence rather than being bundled into a performance ADR.
+
+## Addendum (2026-08-17) — a second connection pool for everything that isn't a live call
+
+Raised directly: "what if too many things are interfering with each other, which drops performance."
+Checked, and it's real. `database/index.ts` exported one `db` singleton — one 20-connection pool — used
+by all 52 files in this package that touch Postgres. That pool is shared between the two workloads this
+product can least afford to let compete: a live call's per-turn writes (`turnLatency`/`transcripts`
+inserts, per-turn config reads — the exact numbers ADR-107/audit-13 exist to protect) and everything
+timer-driven or dashboard-shaped (the scheduler sweep, the webhook delivery retry loop, the org-lifecycle
+sweep, admin-panel reads, merchant analytics aggregations, Shopify webhook ingestion). A slow multi-second
+analytics query or a mid-batch sweep holding connections can queue out a live call's turn-latency write
+behind it on the same pool — the worst failure mode a voice product has.
+
+**Decision:** add `dbBackground`, a second `postgres.js` client in `database/index.ts` against the same
+`DATABASE_URL` (`DATABASE_POOL_MAX_BACKGROUND`, default 8, well under half of `db`'s), and repoint every
+file whose code is provably never reachable from a live call's turn (`stream.ts`/`agent.ts`'s import
+graph) at it:
+
+- **Whole files** (import aliased to `dbBackground as db`, zero other changes): `admin-routes.ts` (both
+  the top-level one and `workflows/admin-routes.ts`), `workflows/scheduler.ts`,
+  `workflows/org-lifecycle-sweep.ts`, `app/support.ts`, `app/broadcasts.ts`, `app/waitlist.ts`,
+  `app/export.ts`, `app/audit-log.ts`, `integrations/shopify/routes.ts`,
+  `integrations/shopify/idempotency.ts`.
+- **Split within a file, by function, because one export is reachable from the call path and the rest
+  aren't:** `webhooks.ts` — `dispatchWebhook` (the fire-and-forget enqueue `stream.ts` calls mid-call)
+  stays on `db`; `processWebhookOutbox`/`markFailed` (the timer-driven retry sweep) move to
+  `dbBackground`. `org-queries.ts` — 18 of its 19 exported functions are dashboard/admin/onboarding-only
+  and move; `getEffectiveFlags` alone stays on `db` (aliased `dbHotPath` in that file) because both
+  `stream.ts` (per-turn) and the compliance number-series gate call it live.
+- **Untouched, verified by tracing the actual import graph rather than assuming:** everything
+  `stream.ts`/`agent.ts` import directly or transitively — `caller-memory.ts`, `leads/leads.ts`,
+  `tools/bookAppointment.ts`, `template-visibility.ts`, the compliance gates, `knowledge-base.ts`,
+  `place-outbound-call.ts` (a call-initiation path, not a sweep — deliberately left on the default pool
+  as the conservative choice rather than guessed into the background one).
+
+**Why not a read replica or a second Postgres instance instead:** no new infra exists yet for the new
+Supabase project this whole pass is preparing for, and a pure application-side connection-budget split
+gets most of the isolation for zero additional moving parts. Revisit if `dbBackground`'s own workload
+ever grows large enough to want its own physical resources.
+
+**Test-suite cost:** 15 test files mock `"../database"` via `mock.module` and needed their mock factory
+to also export `dbBackground` (Bun throws `SyntaxError: Export named 'dbBackground' not found` at import
+time otherwise, rather than silently returning `undefined` — a loud, immediate failure that made every
+affected file easy to find by just running the suite). Fixed by exporting the same fake `db`-like object
+under both names in each — none of the fakes care which pool name a call went through, only what table a
+query targets. 1402/1402 tests pass, typecheck/lint/knip:gate clean.
+
+**Known and unfixed:** no production evidence yet that this contention was ever actually observed (there
+is no traffic on the new project yet) — this is a structural safeguard against a failure mode that's
+obviously possible given the shared-singleton architecture, not a measured regression being fixed.
+`DATABASE_POOL_MAX_BACKGROUND`'s default (8) is a starting guess, same status as `DATABASE_POOL_MAX`'s
+own default — both should be revisited once the new project has real traffic to size them against.
