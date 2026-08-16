@@ -149,14 +149,20 @@ export async function provisionVerticalDefaults(orgId: string): Promise<Provisio
       .from(agentTemplates)
       .where(and(visibleTemplatesForVertical(org.vertical, orgId), eq(agentTemplates.active, true)));
     const validKeys = new Set(validTemplates.map((t) => t.key));
-    for (const key of defaults.agents) {
-      if (!validKeys.has(key)) continue;
+    const rowsToInsert = defaults.agents.filter((key) => validKeys.has(key));
+    // Db-optimization pass (2026-08-17, ADR-116): one batched multi-row insert
+    // instead of N sequential awaited inserts — onboarding runs this once per
+    // org, but there's no reason to serialize a handful of independent rows.
+    // onConflictDoNothing + returning still gives exactly the "which ones were
+    // newly enabled" set the loop version did (a conflicted row is simply
+    // absent from `returning`).
+    if (rowsToInsert.length > 0) {
       const inserted = await db
         .insert(orgAgentConfigs)
-        .values({ orgId, templateKey: key, enabled: true })
+        .values(rowsToInsert.map((key) => ({ orgId, templateKey: key, enabled: true })))
         .onConflictDoNothing({ target: [orgAgentConfigs.orgId, orgAgentConfigs.templateKey] })
-        .returning({ id: orgAgentConfigs.id });
-      if (inserted.length > 0) agentsEnabled.push(key);
+        .returning({ templateKey: orgAgentConfigs.templateKey });
+      agentsEnabled.push(...inserted.map((row) => row.templateKey));
     }
   }
 
@@ -166,14 +172,14 @@ export async function provisionVerticalDefaults(orgId: string): Promise<Provisio
       .from(workflowTemplates)
       .where(and(eq(workflowTemplates.vertical, org.vertical), eq(workflowTemplates.active, true)));
     const validWfIds = new Set(validWf.map((t) => t.id));
-    for (const wfId of defaults.workflows) {
-      if (!validWfIds.has(wfId)) continue;
+    const rowsToInsert = defaults.workflows.filter((wfId) => validWfIds.has(wfId));
+    if (rowsToInsert.length > 0) {
       const inserted = await db
         .insert(orgWorkflowConfigs)
-        .values({ orgId, templateKey: wfId, enabled: true })
+        .values(rowsToInsert.map((wfId) => ({ orgId, templateKey: wfId, enabled: true })))
         .onConflictDoNothing({ target: [orgWorkflowConfigs.orgId, orgWorkflowConfigs.templateKey] })
         .returning({ templateKey: orgWorkflowConfigs.templateKey });
-      if (inserted.length > 0) workflowsEnabled.push(wfId);
+      workflowsEnabled.push(...inserted.map((row) => row.templateKey));
     }
   }
 

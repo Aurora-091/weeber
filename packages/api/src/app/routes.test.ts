@@ -40,21 +40,28 @@ mock.module("../database", () => {
       }),
     }),
     insert: (table: unknown) => ({
-      values: (data: Record<string, unknown>) => {
+      // Accepts both a single row object and a batched array of rows
+      // (provisionVerticalDefaults inserts its whole default set in one
+      // multi-row insert — see org-queries.ts).
+      values: (data: Record<string, unknown> | Record<string, unknown>[]) => {
         const name = getTableName(table) ?? "";
-        (insertsByTable[name] ??= []).push(data);
-        // Make bootstrap inserts visible to the re-select that follows them.
-        (rowsByTable[name] ??= []).push(data);
+        const rows = Array.isArray(data) ? data : [data];
+        for (const row of rows) {
+          (insertsByTable[name] ??= []).push(row);
+          // Make bootstrap inserts visible to the re-select that follows them.
+          (rowsByTable[name] ??= []).push(row);
+        }
+        const withIds = rows.map((row) => ({ id: 1, ...row }));
         return {
           // Awaitable (existing callers just await it) AND chainable with
           // .returning() (provisionVerticalDefaults reads back what it wrote).
           onConflictDoNothing: () => {
             const p = Promise.resolve([] as unknown[]) as Promise<unknown[]> & Record<string, unknown>;
-            p.returning = () => Promise.resolve([{ id: 1, ...data }]);
+            p.returning = () => Promise.resolve(withIds);
             return p;
           },
-          onConflictDoUpdate: () => ({ returning: () => Promise.resolve([data]) }),
-          returning: () => Promise.resolve([{ id: 1, ...data }]),
+          onConflictDoUpdate: () => ({ returning: () => Promise.resolve(rows) }),
+          returning: () => Promise.resolve(withIds),
         };
       },
     }),

@@ -32,12 +32,16 @@ mock.module("../database", () => ({
       from: (table: unknown) => thenable(rowsByTable[getTableName(table) ?? ""] ?? []),
     }),
     insert: (table: unknown) => ({
-      values: (v: Record<string, unknown>) => {
+      // Accepts both a single row object and a batched array of rows (org-queries.ts's
+      // provisionVerticalDefaults inserts its whole default set in one multi-row insert).
+      values: (v: Record<string, unknown> | Record<string, unknown>[]) => {
         const tableName = getTableName(table) ?? "";
-        const key = String(v.templateKey);
-        const conflicts = preexistingKeys.has(key);
-        if (!conflicts) insertedRows.push({ table: tableName, values: v });
-        const result = conflicts ? [] : [v];
+        const rows = Array.isArray(v) ? v : [v];
+        const result = rows.filter((row) => {
+          const conflicts = preexistingKeys.has(String(row.templateKey));
+          if (!conflicts) insertedRows.push({ table: tableName, values: row });
+          return !conflicts;
+        });
         return {
           onConflictDoNothing: () => ({ returning: () => Promise.resolve(result) }),
           onConflictDoUpdate: () => ({ returning: () => Promise.resolve(result) }),

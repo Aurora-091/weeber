@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-16
+updated: 2026-08-17
 ---
 
 # Active context — what's happening right now
@@ -12,7 +12,32 @@ updated: 2026-08-16
 
 ## Current focus
 
-- **SOTA-fix-marathon Phase 0 — production truth is now measurable (2026-08-16).** Implemented
+- **Supabase account migration in progress — the project is moving to a brand-new, empty Supabase
+  account (2026-08-17)**; the old project (`wtqohdcghmxuujqyhlkz`) hit unresolved problems (this is the
+  reason migration `0051` couldn't be verified applied in the note below — that connection is being
+  abandoned, not fixed). **Nothing has been applied to the new project yet.** Before pointing
+  `DATABASE_URL` at it: see ADR-116 (six missing indexes + an N+1 batch-insert fix added to `schema.ts`
+  while the DB was empty, migration `0052`), then run the full `drizzle/` stack (`0000` through `0052`)
+  fresh — there is no data to preserve, so this is a normal first-time migrate, not a restore. Update
+  `.mcp.json`'s Supabase `project_ref` and every `DATABASE_URL`/Vercel/Railway env var once the new
+  project exists.
+
+- **ADR-116 — database-optimization pass before the new Supabase project's first migration
+  (2026-08-17).** Six missing indexes added (`tool_calls` had zero; `calls`/`scheduled_calls` had an
+  `org_id`-only index that couldn't serve their real org+time-range query shape; `webhook_outbox`'s
+  delivery sweep had no supporting index despite two sibling sweep tables having the identical
+  `(status, next_retry_at)` shape; `org_members`/`support_tickets` were queried by columns nothing
+  indexed), plus batching `provisionVerticalDefaults`'s two N+1 insert loops into single multi-row
+  inserts. Migration `0052_panoramic_squadron_supreme.sql`. Explicitly rejected in the same pass:
+  squashing the 52-migration history, adding Supabase RLS (this backend's Postgres connection carries no
+  row-level identity — org-scoping is enforced in the API layer, not the database layer — so RLS would
+  guard an access path that doesn't exist), and a `pgvector` migration for `knowledge_chunks` (no new
+  evidence the existing brute-force-scan-is-fine-at-this-scale call has stopped holding). 1402/1402 api
+  tests pass (two test-file DB mocks updated to accept the batched-insert call shape), typecheck/lint/
+  knip:gate clean. See `docs/decisions/adr-116-six-tables-queried-by-a-column-nothing-indexed.md`.
+
+- **SOTA-fix-marathon Phase 0 — production truth is now measurable (2026-08-16, committed/pushed as
+  `4b723ac`).** Implemented
   `docs/voice-quality/sota-runtime-fix-marathon-2026-08-16.md` items 0.1-0.4 and 0.6 (0.5, deployment
   region, deliberately left open — see that item). Migration `0051_sharp_starbolt.sql` adds 4 columns to
   `turn_latency`: `llmProviderUsed` (the transport/model that actually served the turn — ADR-109's
@@ -25,7 +50,10 @@ updated: 2026-08-16
   back through the actual-served value the same way `ttsProviderUsed` already did. `recordProviderFailover()`
   gained a third call site (LLM transport, previously invisible — only STT/TTS incremented it). `/health`
   now reports `deploy: { buildSha, bootTime, region }` from Railway's own env vars. 1402/1402 tests pass,
-  typecheck/lint/knip clean. Not committed/pushed yet.
+  typecheck/lint/knip clean. Committed as `4b723ac` and pushed to `origin/main`. Migration `0051` was
+  **not** successfully applied against the old Supabase project (Windows-path bug in `scripts/migrate.ts`
+  plus a dead pooler connection in that sandbox) — moot now that the project is moving to a new Supabase
+  account; it'll apply as part of the fresh `0000`-`0052` run described above.
 
 - **UI/UX Audit Phase 1 & 2 — Direct Fixes & Conversion Polish Shipped (2026-08-16).**
   Addressed high-impact interaction, visual friction, and conversion points from `Weeber UI_UX Visual Audit — Working Findings.md`:

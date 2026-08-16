@@ -365,6 +365,13 @@
       "when": 1786883995170,
       "tag": "0051_sharp_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786912725278,
+      "tag": "0052_panoramic_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

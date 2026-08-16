@@ -242,7 +242,14 @@ export const calls = pgTable("calls", {
   healthStatus: text("health_status").$type<"healthy" | "degraded" | "silent-failure">(),
   healthReasons: jsonb("health_reasons").$type<string[]>(),
 }, (table) => [
-  index("calls_org_id_idx").on(table.orgId),
+  // Db-optimization pass (2026-08-17, ADR-116): replaces the old orgId-only
+  // index. Every real call site (listOrgCalls — the merchant calls page —
+  // plus three separate dashboard range queries in org-queries.ts) filters
+  // eq(orgId) AND range/order on startedAt; a composite index serves both in
+  // one index scan instead of an orgId-filtered scan followed by an in-memory
+  // sort. Leftmost-prefix rule means this also fully serves every query that
+  // only filtered on orgId before, so the standalone index added nothing.
+  index("calls_org_id_started_at_idx").on(table.orgId, table.startedAt),
   index("calls_lead_id_idx").on(table.leadId),
   index("calls_health_status_idx").on(table.healthStatus),
 ]);
@@ -685,6 +692,11 @@ export const orgMembers = pgTable("org_members", {
   // random orgId before inserting, so a composite (user, org) key never actually conflicts
   // between them -- only a standalone unique constraint on the user catches that race.
   uniqueIndex("org_members_user_idx").on(table.supabaseUserId),
+  // Db-optimization pass (2026-08-17, ADR-116): admin-routes.ts's org-detail
+  // view and broadcasts.ts's send-to-org-audience path both filter
+  // eq(orgMembers.orgId, orgId) — unindexed until now, since the only prior
+  // index leads with supabaseUserId.
+  index("org_members_org_id_idx").on(table.orgId),
 ]);
 
 
@@ -728,7 +740,12 @@ export const scheduledCalls = pgTable("scheduled_calls", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("scheduled_calls_checkout_token_idx").on(table.checkoutToken),
-  index("scheduled_calls_org_id_idx").on(table.orgId),
+  // Db-optimization pass (2026-08-17, ADR-116): replaces the old orgId-only
+  // index — listOrgOrderCalls (the merchant Orders page) filters eq(orgId)
+  // and orders by runAt desc; same reasoning as calls_org_id_started_at_idx.
+  // status_run_at (below) is a different composite for the scheduler sweep
+  // and doesn't serve this query since its leading column is status, not orgId.
+  index("scheduled_calls_org_id_run_at_idx").on(table.orgId, table.runAt),
   index("scheduled_calls_status_run_at_idx").on(table.status, table.runAt),
   index("scheduled_calls_workflow_run_id_idx").on(table.workflowRunId),
 ]);
@@ -793,7 +810,12 @@ export const supportTickets = pgTable("support_tickets", {
   status: text("status").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => [
+  // Db-optimization pass (2026-08-17, ADR-116): the admin support queue
+  // (app/support.ts listTickets) does eq(status) + orderBy(desc(createdAt)) —
+  // this table had no indexes at all before now.
+  index("support_tickets_status_created_idx").on(table.status, table.createdAt),
+]);
 
 export const supportReplies = pgTable("support_replies", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -813,7 +835,14 @@ export const toolCalls = pgTable("tool_calls", {
   input: jsonb("input"),
   output: jsonb("output"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => [
+  // Db-optimization pass (2026-08-17, ADR-116): every real query against this
+  // table filters by callId (call detail page, GDPR delete, org-queries.ts's
+  // batched dashboard aggregation) and this table had zero indexes — every
+  // one of those was a full table scan. transcripts/turnLatency (same
+  // per-call shape) already had this; toolCalls was the odd one out.
+  index("tool_calls_call_id_idx").on(table.callId),
+]);
 
 export const transcripts = pgTable("transcripts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -1000,7 +1029,15 @@ export const webhookOutbox = pgTable("webhook_outbox", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
   deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: "date" }),
   alertedAt: timestamp("alerted_at", { withTimezone: true, mode: "date" }),
-});
+}, (table) => [
+  // Db-optimization pass (2026-08-17, ADR-116): the delivery sweep
+  // (voice/webhooks.ts) does inArray(status, [pending, failed]) AND
+  // lte(nextRetryAt, now) on every poll — the exact same shape as
+  // scheduled_calls_status_run_at_idx and workflow_runs_status_next_run_at_idx,
+  // both of which already have this composite. This table was the one sweep
+  // table missing it, meaning every poll was a full table scan.
+  index("webhook_outbox_status_next_retry_idx").on(table.status, table.nextRetryAt),
+]);
 
 /**
  * Native Leads / Records layer (2026-07-19,
