@@ -16,7 +16,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play, Pencil, Plug, TriangleAlert as AlertTriangle } from "lucide-react";
+import { Save, Loader as Loader2, GitBranch, Sparkles, Trash2, LayoutTemplate, FilePlus as FilePlus2, Play, Pencil, Plug, TriangleAlert as AlertTriangle, CircleAlert as AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { FlowPreviewPanel } from "../../components/workflow-preview/FlowPreviewPanel";
 import { appFetch } from "../../lib/user-session";
@@ -950,7 +950,14 @@ export function UserWorkflowsListPage() {
       {workflows.isError && (
         <EmptyState
           title="Couldn't load your workflows"
-          description="Something went wrong reaching the server — try refreshing the page."
+          description="Something went wrong reaching the server. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => workflows.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
         />
       )}
 
@@ -1049,7 +1056,14 @@ export function UserWorkflowDetailPage() {
     return (
       <EmptyState
         title="Couldn't load this workflow"
-        description="Something went wrong reaching the server — try refreshing the page."
+        description="Something went wrong reaching the server. Check your connection and try again."
+        icon={AlertCircle}
+        action={
+          <Button size="sm" variant="outline" onClick={() => workflows.refetch()}>
+            <RefreshCw className="size-3.5" aria-hidden />
+            Retry
+          </Button>
+        }
       />
     );
   }

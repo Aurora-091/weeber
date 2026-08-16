@@ -198,13 +198,13 @@ export function WaitlistForm({ source = "landing" }: { source?: string }) {
             </span>
           )}
           {touched.name && !nameValid && (
-            <p id="name-error" className="mt-1 text-[11.5px] text-red-500 font-medium">
+            <p id="name-error" role="alert" aria-live="polite" className="mt-1 text-[11.5px] text-red-500 font-medium">
               Please enter your name.
             </p>
           )}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <input
               type="email"
@@ -234,18 +234,18 @@ export function WaitlistForm({ source = "landing" }: { source?: string }) {
           <button
             type="submit"
             disabled={state === "loading" || !canSubmit}
-            className="h-12 px-7 text-[1rem] font-semibold bg-[var(--m-accent-bg)] text-[var(--m-accent-fg)] border-none rounded-lg hover:opacity-[0.85] transition-opacity disabled:opacity-50 btn-press whitespace-nowrap cursor-pointer"
+            className="h-12 px-7 w-full sm:w-auto text-[1rem] font-semibold bg-[var(--m-accent-bg)] text-[var(--m-accent-fg)] border-none rounded-lg hover:opacity-[0.85] transition-opacity disabled:opacity-50 btn-press whitespace-nowrap cursor-pointer"
           >
             {state === "loading" ? "Joining..." : "Get early access"}
           </button>
         </div>
         {touched.email && !emailValid && email.length >= 3 && (
-          <p id="email-error" className="text-[11.5px] text-red-500 font-medium -mt-1">
+          <p id="email-error" role="alert" aria-live="polite" className="text-[11.5px] text-red-500 font-medium -mt-1">
             Please enter a valid email address.
           </p>
         )}
 
-        {state === "error" && <p className="text-xs text-red-600">{errorMsg}</p>}
+        {state === "error" && <p role="alert" aria-live="polite" className="text-xs text-red-600">{errorMsg}</p>}
       </form>
 
       <p className="mt-4 text-[13px] text-center text-[var(--m-text-muted)]">
@@ -308,7 +308,7 @@ export function WaitlistForm({ source = "landing" }: { source?: string }) {
                   </button>
                 </div>
                 {phoneTouched && phone.length >= 3 && !phoneValid && (
-                  <p id="phone-error" className="mt-1 text-[11px] text-red-500">
+                  <p id="phone-error" role="alert" aria-live="polite" className="mt-1 text-[11px] text-red-500">
                     Include country code, e.g. +91 98765 43210
                   </p>
                 )}

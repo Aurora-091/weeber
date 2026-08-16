@@ -443,7 +443,7 @@ export function UserHomePage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <PageHeader
           title="Dashboard"
-          description={`Last ${days} days across your voice agents.`}
+          description={hasData ? `Last ${days} days across your voice agents.` : "Performance and call analytics across your voice agents."}
         />
         <div className="flex items-center gap-2">
           {testModeActive && (
@@ -460,7 +460,7 @@ export function UserHomePage() {
               )}
             </span>
           )}
-          <DateRangeSelector value={days} onChange={setDays} options={[7, 14, 30]} />
+          {hasData && <DateRangeSelector value={days} onChange={setDays} options={[7, 14, 30]} />}
         </div>
       </div>
 

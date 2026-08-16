@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { Loader as Loader2, User, Mic, Shield, PhoneCall, Info, Settings } from "lucide-react";
+import { Loader as Loader2, User, Mic, Shield, PhoneCall, Info, Settings, CircleAlert as AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
@@ -259,7 +259,19 @@ export function UserAgentsPage() {
 
   if (configs.isLoading) return <SkeletonCards count={6} lines={3} />;
   if (configs.isError) {
-    return <EmptyState title="Couldn't load your agents" description="Something went wrong reaching the server — try refreshing." />;
+    return (
+      <EmptyState
+        title="Couldn't load your agents"
+        description="Something went wrong reaching the server. Check your connection and try again."
+        icon={AlertCircle}
+        action={
+          <Button size="sm" variant="outline" onClick={() => configs.refetch()}>
+            <RefreshCw className="size-3.5" aria-hidden />
+            Retry
+          </Button>
+        }
+      />
+    );
   }
   if (rows.length === 0) {
     return (
@@ -1118,7 +1130,19 @@ export function UserAgentDetailPage() {
 
   if (configs.isLoading) return <SkeletonCards count={1} lines={6} />;
   if (configs.isError) {
-    return <EmptyState title="Couldn't load your agents" description="Something went wrong reaching the server — try refreshing." />;
+    return (
+      <EmptyState
+        title="Couldn't load your agents"
+        description="Something went wrong reaching the server. Check your connection and try again."
+        icon={AlertCircle}
+        action={
+          <Button size="sm" variant="outline" onClick={() => configs.refetch()}>
+            <RefreshCw className="size-3.5" aria-hidden />
+            Retry
+          </Button>
+        }
+      />
+    );
   }
   if (!activeRow) return <SkeletonCards count={1} lines={6} />;
 

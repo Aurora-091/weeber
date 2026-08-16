@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,15 @@ updated: 2026-08-15
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **UI/UX Audit Phase 1 & 2 — Direct Fixes & Conversion Polish Shipped (2026-08-16).**
+  Addressed high-impact interaction, visual friction, and conversion points from `Weeber UI_UX Visual Audit — Working Findings.md`:
+  1. **Recoverable Error States**: Replaced dead-end server error EmptyStates with `icon={AlertCircle}` and explicit `<Button onClick={() => refetch()}><RefreshCw /> Retry</Button>` actions in `pages/app/agents.tsx` (list + detail), `pages/app/workflows.tsx` (list + detail), and `pages/dashboard/agents.tsx`.
+  2. **Mobile Waitlist Form Responsiveness & A11y**: Updated `WaitlistForm.tsx` to use responsive layout `flex-col sm:flex-row gap-2` with `w-full sm:w-auto` CTA button to prevent 390px input truncation (`you@yourbrand.com`), and added `role="alert"` / `aria-live="polite"` to error messaging tags.
+  3. **Zero-Data Dashboard Header Polish**: Updated `pages/app/home.tsx` to conditionally hide the `DateRangeSelector` and show clean subtitle copy when 0 calls exist, eliminating competing controls during onboarding.
+  4. **Public Navigation & Sign-In Route**: Added visible "Sign in" access route to desktop and mobile headers in `MarketingNav.tsx` alongside Help and Waitlist CTA; updated mobile hamburger button to descriptive `aria-label="Open/Close navigation menu"`.
+  5. **Pricing Tier Bound Clarity**: Refined `PRICING_TIERS` in `marketing-config.ts` with concrete, indicative volume bounds ("Up to 250 calls/mo", "Up to 1,500 calls/mo", "Dedicated numbers") to replace vague "capped calls/minutes".
+  - Verification: 101/101 web unit tests pass, typecheck clean, daily audit passing (zero token drift or contrast regressions), production Vite build passing.
 
 - **ADR-115 — audit-17 F1 is FIXED (2026-08-15, shipped).** The tool list knew the call could not
   transfer and the prompt did not. ADR-105's tool-stripping half worked; the half its comment claimed

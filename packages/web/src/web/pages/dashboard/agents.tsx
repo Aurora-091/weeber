@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2 } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2, CircleAlert as AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
@@ -587,7 +587,17 @@ export function AgentsPage() {
       {orgId && configs.isLoading && <SkeletonCards count={3} lines={2} />}
 
       {orgId && configs.isError && (
-        <EmptyState title="Couldn't load agents" description="Something went wrong — try refreshing the page." />
+        <EmptyState
+          title="Couldn't load agents"
+          description="Something went wrong reaching the server. Check your connection and try again."
+          icon={AlertCircle}
+          action={
+            <Button size="sm" variant="outline" onClick={() => configs.refetch()}>
+              <RefreshCw className="size-3.5" aria-hidden />
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {orgId && !configs.isLoading && !configs.isError && rows.length === 0 && (

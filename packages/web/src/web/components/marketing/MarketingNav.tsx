@@ -64,6 +64,12 @@ export function MarketingNav() {
           >
             Help
           </Link>
+          <Link
+            href="/app/login"
+            className="px-4 py-2 text-sm font-medium text-[var(--m-text-secondary)] hover:text-[var(--m-text)] transition-colors"
+          >
+            Sign in
+          </Link>
           <a
             href={waitlistHref}
             className="px-4 py-2 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
@@ -76,7 +82,7 @@ export function MarketingNav() {
           type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
           className="md:hidden p-2 text-[var(--m-text)]"
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={mobileOpen}
           aria-controls="mobile-nav"
         >
@@ -93,16 +99,24 @@ export function MarketingNav() {
               </Link>
             ))}
           </nav>
-          <div className="flex gap-3">
-            <Link
-              href="/faq"
-              className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
-            >
-              Help
-            </Link>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex gap-2">
+              <Link
+                href="/faq"
+                className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
+              >
+                Help
+              </Link>
+              <Link
+                href="/app/login"
+                className="flex-1 text-center px-4 py-2.5 text-sm font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
+              >
+                Sign in
+              </Link>
+            </div>
             <a
               href={waitlistHref}
-              className="flex-1 text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
+              className="w-full text-center px-4 py-2.5 text-[14px] font-medium text-[var(--m-bg)] bg-[var(--m-text)] rounded-full hover:opacity-90 transition-opacity"
             >
               Join the waitlist
             </a>

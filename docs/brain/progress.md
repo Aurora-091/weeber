@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-09
+updated: 2026-08-16
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,14 @@ updated: 2026-08-09
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **UI/UX Audit Phase 1 & 2 — Error Recovery, Mobile Polish, Navigation & Pricing Clarity (2026-08-16)**
+  - Replaced dead-end error EmptyStates with `icon={AlertCircle}` and explicit retry controls (`configs.refetch()` / `workflows.refetch()`) across `pages/app/agents.tsx`, `pages/app/workflows.tsx`, and `pages/dashboard/agents.tsx`.
+  - Fixed mobile email input truncation in `WaitlistForm.tsx` via `flex-col sm:flex-row gap-2` + `w-full sm:w-auto` CTA button; added `role="alert"` / `aria-live="polite"` to error messaging tags.
+  - Refined `pages/app/home.tsx` zero-data state to conditionally omit `DateRangeSelector` until call data exists.
+  - Added visible "Sign in" route to public desktop and mobile headers in `MarketingNav.tsx` alongside Help and Waitlist CTA; updated mobile hamburger button to descriptive `aria-label="Open/Close navigation menu"`.
+  - Refined `PRICING_TIERS` in `marketing-config.ts` with indicative volume and feature bounds ("Up to 250 calls/mo", "Up to 1,500 calls/mo", "Dedicated numbers").
+  - Verified: 101/101 web unit tests pass, typecheck clean, daily audit passing (zero token drift or contrast regressions), production Vite build passing.
 
 - **G1 pilot-gate hardening — the agent layer no longer trusts the model with things it shouldn't
   (2026-08-01)** (`f8c2ba1`, `9990a54`; ADR-064/065/066; `../changelog/2026-08.md`). Four structural
