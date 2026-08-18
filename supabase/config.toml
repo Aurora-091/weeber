@@ -31,11 +31,25 @@ site_url = "https://app.weeber.ai"
 # any future OAuth flow. Bare origins exact-match the root; `/**` globs cover
 # every subpath on the three legitimate surfaces. No other domains belong
 # here (stale *.vercel.app entries are removed by `supabase config push`).
+#
+# 2026-08-18 Supabase account migration: this file is per-project config, so
+# it has to be pushed separately against BOTH new projects (production
+# qghtkadxbtptvbfbmsdz and staging zbcrwexrqfmjxhewirgp) — `supabase link`
+# only targets one project ref at a time. Neither has run `supabase config
+# push` yet (no CLI/access token available in the session that created
+# them), so both are still on Supabase's own defaults. Not a hard blocker —
+# the comment above already establishes no live flow needs this allowlist —
+# but do this before relying on the magic-link/reset-link fallback routes or
+# any future OAuth flow on either project.
 additional_redirect_urls = [
   "https://app.weeber.ai",
   "https://app.weeber.ai/**",
   "https://admin.weeber.ai",
   "https://admin.weeber.ai/**",
+  "https://staging-app.weeber.ai",
+  "https://staging-app.weeber.ai/**",
+  "https://staging-admin.weeber.ai",
+  "https://staging-admin.weeber.ai/**",
   "http://localhost:5173",
   "http://localhost:5173/**",
 ]
