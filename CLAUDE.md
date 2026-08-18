@@ -21,10 +21,13 @@ one-per-file in [`docs/decisions/`](./docs/decisions/README.md); what-shipped-wh
 
 `.mcp.json` wires up three MCP servers for whoever's driving Claude Code in this repo:
 
-- **`supabase`** (official, hosted HTTP MCP at `mcp.supabase.com/mcp`, scoped to the Weeber project via
-  `?project_ref=`) — no env vars or access token; authenticates via OAuth on first connect (run `/mcp`,
-  pick `supabase`, choose Authenticate). The project ref in the URL is public (it's in the served
-  frontend bundle anyway), not a secret.
+- **`supabase`** (official, hosted HTTP MCP at `mcp.supabase.com/mcp`, unscoped — no `?project_ref=`) —
+  no env vars or access token; authenticates via OAuth on first connect (run `/mcp`, pick `supabase`,
+  choose Authenticate). Was pinned to the old account's project ref until 2026-08-17's Supabase account
+  migration; left unscoped now so it operates at the org level (list/create projects) instead of one
+  fixed project. Once the new account's production project exists, consider re-scoping via `?project_ref=`
+  again for day-to-day convenience — the project ref is public (it'd be in the served frontend bundle
+  anyway), not a secret.
 - **`railway`** (official, hosted HTTP MCP at `mcp.railway.com` — the URL is the bare host, no `/mcp`
   path) — no env var; authenticates via OAuth on first connect (tokens are short-lived, revocable from
   Railway account settings).

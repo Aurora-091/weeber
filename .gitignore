@@ -89,3 +89,4 @@ a11y-report.json
 
 # Local audit credentials (Railway token, direct DATABASE_URL) — never commit
 .env.audit
+.vercel
