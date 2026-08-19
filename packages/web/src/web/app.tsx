@@ -69,7 +69,7 @@ const WorkflowRunsPage = lazy(() => import("./pages/dashboard/workflow-runs").th
 const WorkflowsListPage = lazy(() => import("./pages/dashboard/workflows-list").then((m) => ({ default: m.WorkflowsListPage })));
 const WorkflowEditorPage = lazy(() => import("./pages/dashboard/workflow-editor").then((m) => ({ default: m.WorkflowEditorPage })));
 
-const UserLoginPage = lazy(() => import("./pages/app/login").then((m) => ({ default: m.UserLoginPage })));
+const LoginPage = lazy(() => import("./pages/public/login").then((m) => ({ default: m.LoginPage })));
 const UserAuthCallbackPage = lazy(() => import("./pages/app/auth-callback").then((m) => ({ default: m.UserAuthCallbackPage })));
 const ResetPasswordPage = lazy(() => import("./pages/app/reset-password").then((m) => ({ default: m.ResetPasswordPage })));
 const UserHomePage = lazy(() => import("./pages/app/home").then((m) => ({ default: m.UserHomePage })));
@@ -294,9 +294,12 @@ function App() {
           {showPublic && <Route path="/compliance/global" component={ComplianceGlobalPage} />}
           {/* Public hosted intake form — no shell, no auth; orgId is the form token. */}
           {showPublic && <Route path="/f/:orgId" component={HostedFormPage} />}
+          {/* Login/signup — real cross-domain session handoff to app.weeber.ai's
+              /auth/callback (see pages/public/login.tsx and pages/app/auth-callback.tsx). */}
+          {showPublic && <Route path="/login" component={LoginPage} />}
+          {showPublic && <Route path="/signup" component={LoginPage} />}
 
           {/* User auth pages (no shell — must be BEFORE the catch-all) */}
-          {showUser && <Route path={appPath("/login")} component={UserLoginPage} />}
           {showUser && <Route path={appPath("/auth/callback")} component={UserAuthCallbackPage} />}
           {showUser && <Route path={appPath("/auth/reset-password")} component={ResetPasswordPage} />}
 

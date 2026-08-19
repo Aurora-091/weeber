@@ -65,7 +65,7 @@ export function MarketingNav() {
             Help
           </Link>
           <Link
-            href="/app/login"
+            href="/login"
             className="px-4 py-2 text-sm font-medium text-[var(--m-text-secondary)] hover:text-[var(--m-text)] transition-colors"
           >
             Sign in
@@ -108,7 +108,7 @@ export function MarketingNav() {
                 Help
               </Link>
               <Link
-                href="/app/login"
+                href="/login"
                 className="flex-1 text-center px-4 py-2.5 text-sm font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-full hover:text-[var(--m-text)] transition-colors"
               >
                 Sign in

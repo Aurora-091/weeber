@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Redirect } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { LogOut } from "lucide-react";
@@ -8,7 +7,7 @@ import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
 import { appFetch } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
-import { appPath } from "../../lib/route-base";
+import { wwwUrl } from "../../lib/domains";
 import { AppShell } from "../shell/app-shell";
 
 export type UserMe = {
@@ -111,6 +110,15 @@ export function UserShell({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, [queryClient]);
 
+  // Signed-out (definitely, not just still-resolving) — login lives on a
+  // different origin (weeber.ai) now, so this can't be a same-origin
+  // wouter <Redirect>; it needs a real cross-domain navigation.
+  useEffect(() => {
+    if (session === null) {
+      window.location.href = wwwUrl("/login");
+    }
+  }, [session]);
+
   const me = useQuery({
     queryKey: ["app-me"],
     enabled: Boolean(session),
@@ -152,14 +160,14 @@ export function UserShell({ children }: { children: React.ReactNode }) {
     return <Notice title="Weeber" body="Checking your session…" />;
   }
   if (!session) {
-    return <Redirect to={appPath("/login")} />;
+    return <Notice title="Weeber" body="Redirecting you to sign in…" />;
   }
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
       const signOut = async () => {
         await supabase?.auth.signOut();
-        window.location.href = appPath("/login");
+        window.location.href = wwwUrl("/login");
       };
       return (
         <Notice
@@ -196,7 +204,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={async () => {
               await supabase?.auth.signOut();
-              window.location.href = appPath("/login");
+              window.location.href = wwwUrl("/login");
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded, TriangleAlert as AlertTriangle } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
 import { appFetch } from "../../lib/user-session";
-import { appPath } from "../../lib/route-base";
+import { wwwUrl } from "../../lib/domains";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
 import { formatDateTime, formatTimeRemaining } from "../../lib/format";
@@ -177,7 +177,7 @@ export function UserSettingsPage() {
           : "Account closed. Signing you out…",
       );
       await supabase?.auth.signOut();
-      window.location.href = appPath("/login");
+      window.location.href = wwwUrl("/login");
     },
     onError: (err: Error) => toast.error(err.message),
   });

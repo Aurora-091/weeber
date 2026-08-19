@@ -24,13 +24,21 @@ file_size_limit = "20MiB"
 
 [auth]
 enabled = true
-site_url = "https://app.weeber.ai"
+# The public marketing surface (www.weeber.ai) is where /login and /signup
+# live now — see pages/public/login.tsx — so it's the canonical site_url,
+# not app.weeber.ai (which is where an authenticated session ends up after
+# the cross-domain handoff, not where auth itself starts).
+site_url = "https://www.weeber.ai"
 # All auth emails are OTP-code-only (ADR-043; templates/recovery.html made
-# password reset code-only too), so no live flow depends on this allowlist —
-# it covers the /auth/callback and /auth/reset-password fallback routes and
-# any future OAuth flow. Bare origins exact-match the root; `/**` globs cover
-# every subpath on the three legitimate surfaces. No other domains belong
-# here (stale *.vercel.app entries are removed by `supabase config push`).
+# password reset code-only too), and the weeber.ai -> app.weeber.ai session
+# handoff after a successful sign-in is done by this app's own frontend code
+# (URL-fragment token passing + setSession(), not a Supabase-issued
+# redirect), so no live flow actually depends on this allowlist — it only
+# covers the /auth/callback and /auth/reset-password magic-link fallback
+# routes and any future OAuth flow. Bare origins exact-match the root; `/**`
+# globs cover every subpath on the four legitimate surfaces. No other
+# domains belong here (stale *.vercel.app entries are removed by `supabase
+# config push`).
 #
 # 2026-08-18 Supabase account migration: this file is per-project config, so
 # it has to be pushed separately against BOTH new projects (production
@@ -42,10 +50,14 @@ site_url = "https://app.weeber.ai"
 # but do this before relying on the magic-link/reset-link fallback routes or
 # any future OAuth flow on either project.
 additional_redirect_urls = [
+  "https://www.weeber.ai",
+  "https://www.weeber.ai/**",
   "https://app.weeber.ai",
   "https://app.weeber.ai/**",
   "https://admin.weeber.ai",
   "https://admin.weeber.ai/**",
+  "https://staging.weeber.ai",
+  "https://staging.weeber.ai/**",
   "https://staging-app.weeber.ai",
   "https://staging-app.weeber.ai/**",
   "https://staging-admin.weeber.ai",

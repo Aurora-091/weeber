@@ -4,11 +4,20 @@ import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
 import { appPath } from "../../lib/route-base";
+import { wwwUrl } from "../../lib/domains";
 
 /**
- * Magic-link landing page. supabase-js (detectSessionInUrl, the default)
- * consumes the tokens from the URL itself — this page just waits for the
- * session to materialize and forwards into the app.
+ * Cross-domain session-handoff landing page. The login form lives on
+ * weeber.ai (a different origin, since supabase-js's session storage is
+ * per-origin `localStorage`) and hands a freshly-created session here via
+ * the URL fragment (`#access_token=...&refresh_token=...`) after signing
+ * the user in. Fragments never reach a server (no Referer, no server logs),
+ * matching how Supabase's own magic-link/OAuth redirects carry tokens.
+ *
+ * This explicitly parses the fragment and calls `setSession()` — the
+ * documented public API for adopting an externally-obtained token pair —
+ * rather than relying on `detectSessionInUrl`'s implicit-grant parsing,
+ * which targets Supabase's own redirect shape, not this handoff's.
  */
 export function UserAuthCallbackPage() {
   const { theme } = useTheme();
@@ -21,6 +30,26 @@ export function UserAuthCallbackPage() {
       return;
     }
     let done = false;
+
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+
+    if (accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error }) => {
+        if (error) {
+          setFailed(true);
+          return;
+        }
+        done = true;
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+        navigate(appPath());
+      });
+      return;
+    }
+
+    // No fragment tokens — fall back to the legacy magic-link path
+    // (detectSessionInUrl), still used by reset-password.tsx.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && !done) {
         done = true;
@@ -59,7 +88,9 @@ export function UserAuthCallbackPage() {
         {failed && (
           <button
             type="button"
-            onClick={() => navigate(appPath("/login"))}
+            onClick={() => {
+              window.location.href = wwwUrl("/login");
+            }}
             className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Back to sign-in

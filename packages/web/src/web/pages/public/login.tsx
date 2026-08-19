@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Loader as Loader2, Mail } from "lucide-react";
+import { Loader as Loader2, Mail, Sparkles, ShieldCheck, Zap } from "lucide-react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
-import { appPath } from "../../lib/route-base";
+import { appUrl, wwwUrl } from "../../lib/domains";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -19,10 +20,97 @@ type Mode = "signin" | "signup";
  *   ADR-043 — no link), verified inline on this same screen. */
 type SignupState = "idle" | "needs-confirmation";
 
-export function UserLoginPage() {
+/**
+ * Hands a freshly-materialized session from weeber.ai off to app.weeber.ai.
+ * supabase-js persists sessions to `localStorage`, which is strictly
+ * per-origin — this page and the app it signs users into are different
+ * origins (weeber.ai vs app.weeber.ai), so there is no session to "already
+ * be there" on the app side without this. The access/refresh token pair
+ * travels in the URL *fragment* (`#…`), never the query string or path, so
+ * it's never sent to any server (not logged, not in Referer headers) —
+ * the same place Supabase's own magic-link/OAuth redirects put it. The
+ * receiving page (`pages/app/auth-callback.tsx`) reads the fragment and
+ * calls `setSession()` — the documented, public API for exactly this
+ * cross-domain handoff — rather than relying on `detectSessionInUrl`'s
+ * implicit-grant parsing, which is meant for Supabase's own redirect shape.
+ */
+function handOffToApp(session: Session) {
+  const hash = new URLSearchParams({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  }).toString();
+  window.location.href = `${appUrl("/auth/callback")}#${hash}`;
+}
+
+const VALUE_PROPS = [
+  { icon: Zap, text: "Answers every call in under a second — no hold music, no missed leads." },
+  { icon: ShieldCheck, text: "Consent and calling-window rules enforced automatically, every call." },
+  { icon: Sparkles, text: "Built for Shopify and insurance flows, out of the box." },
+];
+
+/** Split-panel shell shared by every state this page renders. */
+function LoginShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
+  return (
+    <div className={cn("theme-weeber min-h-screen bg-background text-foreground font-sans", theme === "dark" && "dark")}>
+      <div className="grid min-h-screen lg:grid-cols-2">
+        {/* Brand panel — hidden on small screens, where the form alone carries the page. */}
+        <div className="relative hidden overflow-hidden bg-[linear-gradient(160deg,color-mix(in_oklch,var(--primary)_18%,var(--background)),var(--background)_65%)] lg:flex lg:flex-col lg:justify-between lg:p-12">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -left-24 -top-24 size-96 rounded-full bg-primary/10 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -bottom-32 -right-24 size-80 rounded-full bg-primary/[0.07] blur-3xl"
+          />
+          <a href={wwwUrl("/")} className="relative flex items-center gap-2.5">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-primary shadow-sm">
+              <span className="font-display text-base font-bold text-primary-foreground select-none">W</span>
+            </div>
+            <span className="font-display text-lg font-semibold tracking-tight">Weeber</span>
+          </a>
+
+          <div className="relative max-w-sm">
+            <h2 className="font-display text-3xl font-semibold leading-tight tracking-tight">
+              Voice agents that pick up when you can't.
+            </h2>
+            <ul className="mt-8 flex flex-col gap-5">
+              {VALUE_PROPS.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-start gap-3">
+                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Icon className="size-4" aria-hidden />
+                  </span>
+                  <span className="text-sm leading-relaxed text-muted-foreground">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="relative text-xs text-muted-foreground">© {new Date().getFullYear()} Weeber. All rights reserved.</p>
+        </div>
+
+        {/* Form panel */}
+        <div className="flex min-h-screen items-center justify-center px-6 py-12">
+          <div className="w-full max-w-sm">
+            {/* Mobile-only brand mark — the split panel above covers this on lg+. */}
+            <a href={wwwUrl("/")} className="mb-8 flex items-center justify-center gap-2.5 lg:hidden">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-primary shadow-sm">
+                <span className="font-display text-base font-bold text-primary-foreground select-none">W</span>
+              </div>
+              <span className="font-display text-lg font-semibold tracking-tight">Weeber</span>
+            </a>
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function LoginPage() {
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(() => (window.location.pathname === "/signup" ? "signup" : "signin"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -41,12 +129,13 @@ export function UserLoginPage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetDone, setResetDone] = useState(false);
 
-  // Already signed in? Straight to the app.
+  // Already signed in on THIS origin (e.g. reload mid-flow, or back button
+  // after a handoff)? Hand off to the app rather than sitting here idle.
   useEffect(() => {
     supabase?.auth.getSession().then(({ data }) => {
-      if (data.session) navigate(appPath());
+      if (data.session) handOffToApp(data.session);
     });
-  }, [navigate]);
+  }, []);
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -55,13 +144,13 @@ export function UserLoginPage() {
     setError(null);
 
     if (mode === "signin") {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       setPending(false);
       if (authError) {
         setError(authError.message);
         return;
       }
-      navigate(appPath());
+      if (data.session) handOffToApp(data.session);
       return;
     }
 
@@ -76,7 +165,7 @@ export function UserLoginPage() {
       return;
     }
     if (data.session) {
-      navigate(appPath());
+      handOffToApp(data.session);
       return;
     }
     setSignupState("needs-confirmation");
@@ -87,7 +176,7 @@ export function UserLoginPage() {
     if (!supabase || !otpCode.trim()) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.verifyOtp({
+    const { data, error: authError } = await supabase.auth.verifyOtp({
       email,
       token: otpCode.trim(),
       type: "signup",
@@ -97,7 +186,7 @@ export function UserLoginPage() {
       setError(authError.message);
       return;
     }
-    navigate(appPath());
+    if (data.session) handOffToApp(data.session);
   }
 
   async function resendConfirmation() {
@@ -135,7 +224,7 @@ export function UserLoginPage() {
     if (!supabase || otpCode.trim().length < 6) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.verifyOtp({
+    const { data, error: authError } = await supabase.auth.verifyOtp({
       email,
       token: otpCode.trim(),
       type: "email",
@@ -145,7 +234,7 @@ export function UserLoginPage() {
       setError(authError.message);
       return;
     }
-    navigate(appPath());
+    if (data.session) handOffToApp(data.session);
   }
 
   async function resendSigninCode() {
@@ -201,28 +290,27 @@ export function UserLoginPage() {
     }
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+    const { data, error: authError } = await supabase.auth.updateUser({ password: newPassword });
     setPending(false);
     if (authError) {
       setError(authError.message);
       return;
     }
     setResetDone(true);
-    setTimeout(() => navigate(appPath()), 1500);
+    if (data.user) {
+      supabase.auth.getSession().then(({ data: sessionData }) => {
+        if (sessionData.session) setTimeout(() => handOffToApp(sessionData.session!), 1200);
+      });
+    }
   }
-
-  const shellClass = cn(
-    "theme-weeber shell-spacious min-h-screen flex items-center justify-center px-6 bg-background text-foreground font-sans",
-    theme === "dark" && "dark",
-  );
 
   if (!supabaseConfigured) {
     return (
-      <div className={shellClass}>
+      <LoginShell>
         <p className="text-center text-sm text-muted-foreground">
-          User login isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+          Sign-in isn't configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
         </p>
-      </div>
+      </LoginShell>
     );
   }
 
@@ -230,8 +318,8 @@ export function UserLoginPage() {
   // comes back with no session.
   if (signupState === "needs-confirmation") {
     return (
-      <div className={shellClass}>
-        <div className="card-weeber w-full max-w-sm p-8 text-center shadow-weeber-elevated">
+      <LoginShell>
+        <div className="card-weeber w-full p-8 text-center shadow-weeber-elevated">
           <Mail className="mx-auto size-6 text-primary" aria-hidden />
           <h1 className="mt-3 text-xl font-medium">Confirm your account</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -282,15 +370,15 @@ export function UserLoginPage() {
             </p>
           )}
         </div>
-      </div>
+      </LoginShell>
     );
   }
 
   // Forgot-password flow — OTP-based, 3 steps inline: email → code → new password.
   if (forgotOpen) {
     return (
-      <div className={shellClass}>
-        <div className="card-weeber w-full max-w-sm p-8 shadow-weeber-elevated">
+      <LoginShell>
+        <div className="card-weeber w-full p-8 shadow-weeber-elevated">
           {resetDone ? (
             <div className="text-center">
               <h1 className="text-xl font-medium">Password updated</h1>
@@ -403,19 +491,20 @@ export function UserLoginPage() {
             </p>
           )}
         </div>
-      </div>
+      </LoginShell>
     );
   }
 
   return (
-    <div className={shellClass}>
-      <div className="card-weeber w-full max-w-sm p-8 scale-in shadow-weeber-elevated">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary shadow-sm">
-            <span className="font-display text-lg font-bold text-primary-foreground select-none">W</span>
-          </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Weeber</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Voice agents for your Shopify store.</p>
+    <LoginShell>
+      <div className="card-weeber w-full p-8 scale-in shadow-weeber-elevated">
+        <div className="mb-7 text-center">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            {mode === "signin" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {mode === "signin" ? "Sign in to your Weeber dashboard." : "Voice agents for your Shopify store."}
+          </p>
         </div>
 
         <Tabs defaultValue="password">
@@ -461,14 +550,18 @@ export function UserLoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              <Button type="submit" disabled={pending}>
+              <Button type="submit" disabled={pending} className="mt-1">
                 {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
                 {mode === "signin" ? "Sign in" : "Create account"}
               </Button>
               <button
                 type="button"
                 className="text-sm text-muted-foreground hover:text-foreground"
-                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                onClick={() => {
+                  const next = mode === "signin" ? "signup" : "signin";
+                  setMode(next);
+                  navigate(next === "signup" ? "/signup" : "/login");
+                }}
               >
                 {mode === "signin" ? "New to Weeber? Create an account" : "Already have an account? Sign in"}
               </button>
@@ -547,6 +640,6 @@ export function UserLoginPage() {
           </p>
         )}
       </div>
-    </div>
+    </LoginShell>
   );
 }
