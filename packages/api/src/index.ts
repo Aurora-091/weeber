@@ -39,6 +39,11 @@ const DEPLOY_REGION = process.env.RAILWAY_REPLICA_REGION ?? "unknown";
 const app = new Hono()
   .basePath('api')
   .onError(errorHandler())
+  // Hono's own default 404 is plain text ("404 Not Found") — every other
+  // response this API returns is JSON (see error-handler.ts), so an
+  // unmatched route was the one response shape a client couldn't just
+  // res.json() and read .error/.code from.
+  .notFound((c) => c.json({ error: "Not Found", code: "NOT_FOUND" }, 404))
   .use("*", requestLogger())
   .use(
     cors({

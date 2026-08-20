@@ -4,6 +4,7 @@ import { Loader as Loader2 } from "lucide-react";
 import { Skeleton } from "./components/ui/skeleton";
 import { ChunkErrorBoundary } from "./components/chunk-error-boundary";
 import { ErrorBoundary } from "./components/error-boundary";
+import { NotFoundPanel } from "./components/shell/not-found-panel";
 import { AgentFeedback } from "@runablehq/website-runtime";
 import { adminUrl, appUrl } from "./lib/domains";
 import { adminPath, appPath } from "./lib/route-base";
@@ -221,7 +222,9 @@ function UserAppRoutes() {
           <Route path={appPath("/onboarding")}>
             <Redirect to={`${appPath()}?setup=1`} />
           </Route>
-          <Route><Redirect to={appPath()} /></Route>
+          <Route>
+            <NotFoundPanel homeHref={appPath()} homeLabel="Go to dashboard" />
+          </Route>
         </Switch>
       </Suspense>
     </UserShell>
@@ -259,7 +262,9 @@ function AdminAppRoutes() {
             <Route path={adminPath("/workflow-runs")} component={WorkflowRunsPage} />
             <Route path={adminPath("/workflows")} component={WorkflowsListPage} />
             <Route path={adminPath("/workflows/:id")} component={WorkflowEditorPage} />
-            <Route><Redirect to={adminPath()} /></Route>
+            <Route>
+              <NotFoundPanel homeHref={adminPath()} homeLabel="Go to dashboard" />
+            </Route>
           </Switch>
         </Suspense>
       </DashboardShell>
