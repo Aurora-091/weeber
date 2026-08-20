@@ -12,6 +12,28 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **Admin/user surfaces gained real 404s; API gained a JSON one (2026-08-20, `c63f962`).** Only the
+  public marketing surface had a real 404 (`pages/not-found.tsx`) — an unmatched route under
+  `/dashboard/*` or `/app/*` silently redirected home instead, the exact soft-404 pattern that page's own
+  comment already called out. New `components/shell/not-found-panel.tsx` (an in-shell 404 built from
+  `EmptyState`) wired into both `AdminAppRoutes`' and `UserAppRoutes`' catch-all routes; the API's Hono
+  app gained `.notFound()` returning the same `{error, code}` JSON shape every other endpoint uses,
+  replacing Hono's plain-text default. Already solid, untouched: the public 404, the app-wide
+  `ErrorBoundary`/`ChunkErrorBoundary`, `vercel.json`'s SPA rewrite.
+
+- **Cross-domain session-handoff leak actually closed this time (2026-08-20, `6c0d978`).** A prior
+  session's diagnosis report claimed four auth-hardening fixes were applied — the working tree was clean
+  and none of the described code existed; the diagnosis was real, the fix wasn't. Re-verified and shipped
+  for real: `lib/user-session.ts`'s `signOutToLogin()` (always redirects to `/login?cleanup=1`, even if
+  the remote `signOut()` call fails) replacing three duplicated inline sign-out sites; `login.tsx`
+  consumes that marker by clearing its own origin-local session instead of auto-handing an existing one
+  back to the app (`weeber.ai`/`app.weeber.ai` are separate origins with separate `localStorage`
+  sessions); `auth-callback.tsx`'s tokenless-revisit path now fails closed unless the URL still carries a
+  real auth payload, instead of trusting whatever app-origin session happens to exist; API's
+  `verifySupabaseJwt` now falls back to Supabase JWKS when a configured `SUPABASE_JWT_SECRET` fails to
+  verify (covers a project mid-migration to asymmetric signing keys). Two new tests, `knip:gate` baseline
+  tightened by one, full verification pass clean.
+
 - **Pilot-onboarding execution plan filed (2026-08-20, `6592597`).** A "Weeber Pilot-Onboarding
   Execution Plan" sat untracked at the repo root — the direct execution plan following audit-18's
   findings (`audit/2026-08-16-audit-18-the-activation-boundary-is-unclear.md`, itself only filed and
