@@ -439,6 +439,99 @@ describe("literal greeting rendering — org identity fills {{merchant_name}}/{{
   });
 });
 
+describe("resolveAgentConfig — unconfigured orgs fall back to the template's defaultTools, not every tool (2026-08-20)", () => {
+  beforeEach(() => {
+    mockOrgConfig = null;
+    mockTemplate = null;
+  });
+
+  // "valid tools remain available"
+  it("an org with an explicit toolsEnabled override keeps exactly that list — the template default never overrides it", () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt", toolsEnabled: ["captureField", "hangUp"] };
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt", defaultTools: ["lookupInfo", "bookAppointment", "transferToHuman"] };
+
+    return resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    }).then((config) => {
+      expect(config.enabledTools).toEqual(["captureField", "hangUp"]);
+      expect(config.promptInputs?.toolsEnabled).toEqual(["captureField", "hangUp"]);
+    });
+  });
+
+  // "valid tools remain available"
+  it("an org with NO toolsEnabled override falls back to the template's defaultTools, not to every tool", () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" }; // toolsEnabled unset
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt", defaultTools: ["captureField", "setDisposition", "lookupInfo"] };
+
+    return resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    }).then((config) => {
+      expect(config.enabledTools).toEqual(["captureField", "setDisposition", "lookupInfo"]);
+      // ADR-115 invariant: the prompt's call-control text and the actual tool
+      // list must narrow from the SAME source, or the model gets told about a
+      // tool it was never given (the exact defect ADR-115 fixed).
+      expect(config.promptInputs?.toolsEnabled).toEqual(config.enabledTools);
+    });
+  });
+
+  // "unrelated tools are not exposed"
+  it("a lean template's unconfigured default excludes tools its own persona never uses", () => {
+    mockOrgConfig = null; // no config row at all — branch B (template found, no org override)
+    mockTemplate = {
+      defaultPersonaPrompt: "Template Prompt",
+      // literalGreetingTemplate is what gates branch B's return path — see
+      // resolveAgentConfig's "No org+template config row, but we do know
+      // which template this is" comment.
+      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}.",
+      defaultTools: ["captureField", "setDisposition", "setIntent"],
+    };
+
+    return resolveAgentConfig({
+      explicitPersona: "shopify-feedback",
+      orgId: "org-123",
+      templateKey: "shopify-feedback",
+    }).then((config) => {
+      expect(config.enabledTools).toEqual(["captureField", "setDisposition", "setIntent"]);
+      // Tools this template never declared — transferToHuman/crmSync/bookAppointment
+      // are insurance-shaped capabilities this Shopify feedback call has no use for.
+      for (const unrelated of ["transferToHuman", "crmSync", "bookAppointment", "confirmCodOrder"]) {
+        expect(config.enabledTools).not.toContain(unrelated);
+      }
+      expect(config.promptInputs?.toolsEnabled).toEqual(config.enabledTools);
+    });
+  });
+
+  // "unauthorized tools remain absent" + safety guard
+  it("a blank/malformed defaultTools on the template falls back to every tool (undefined), never to zero tools", () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" };
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt", defaultTools: [] };
+
+    return resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    }).then((config) => {
+      // An empty array must not be treated as "enable nothing" — that would
+      // silently strip captureField/setDisposition/etc. from a real call.
+      expect(config.enabledTools).toBeUndefined();
+      expect(config.promptInputs?.toolsEnabled).toBeUndefined();
+    });
+  });
+
+  it("no template resolved at all still falls back to every tool, unchanged (self-hosted / no-tenant path)", () => {
+    mockOrgConfig = null;
+    mockTemplate = null;
+
+    return resolveAgentConfig({ explicitPersona: "You are a custom raw prompt.", orgId: "org-123" }).then((config) => {
+      expect(config.enabledTools).toBeUndefined();
+    });
+  });
+});
+
 import { buildPreviewAgentConfig } from "./agent";
 
 describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", () => {

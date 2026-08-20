@@ -613,7 +613,10 @@ export type ResolvedAgentConfig = {
   voiceId?: string;
   llmProvider?: "gateway" | "groq";
   llmModel?: string;
-  /** Undefined = every tool enabled (unchanged behavior for agents with no frame configured). */
+  /** Undefined = every tool enabled. Only reaches `undefined` now when no template
+   * resolved at all (self-hosted/no-tenant call, or an unrecognized persona key) — an
+   * org with no explicit `toolsEnabled` override falls back to its template's
+   * `defaultTools` instead (2026-08-20), not to every tool. */
   enabledTools?: AvailableToolName[];
   /** STT provider override (agent-frame.ts's `sttProvider`) — undefined falls through to
    * number-config/session/global STT_PROVIDER default ("deepgram"). */
@@ -659,6 +662,32 @@ export type ResolvedAgentConfig = {
    * on a live call; `systemPrompt` remains the only thing the model sees. */
   promptSegments?: PromptSegment[];
 };
+
+/**
+ * Tool-exposure fix (2026-08-20): `agentTemplates.defaultTools` (seed.ts) is
+ * the already-audited "which tools this persona's prompt actually calls for"
+ * list — `seed.test.ts`'s `missingFromDefaultTools` test asserts every tool
+ * NAMED in a template's own prompt text is a member of it, so it can never be
+ * missing something the persona needs. It was written and validated but never
+ * read anywhere in the runtime tool-resolution path — `resolveAgentConfig`
+ * fell back to `undefined` ("every tool") whenever an org hadn't explicitly
+ * set `toolsEnabled`, which per `handoff.ts`'s own comment is most calls
+ * today. This reuses that existing, already-enforced data instead of
+ * inventing a new capability check: an org with no explicit override now
+ * gets its template's declared tool set instead of the full 13, at zero
+ * behavior risk — a tool the persona's prompt never mentions was never going
+ * to be called by that persona anyway. An org that HAS set `toolsEnabled`
+ * (including deliberately to `[]`) is completely unaffected — `??` only
+ * substitutes on `null`/`undefined`, never on an explicit empty array.
+ *
+ * Guards against a blank/malformed `defaultTools` (an admin could clear it
+ * via the template-CRUD API in admin-routes.ts) by treating anything that
+ * isn't a non-empty array the same as "not set" — this must never silently
+ * collapse a template's tool set down to nothing.
+ */
+function defaultToolsFallback(defaultTools: unknown): AvailableToolName[] | undefined {
+  return Array.isArray(defaultTools) && defaultTools.length > 0 ? (defaultTools as AvailableToolName[]) : undefined;
+}
 
 /**
  * The org+template entry point for a call — same priority chain as
@@ -732,7 +761,7 @@ export async function resolveAgentConfig(opts: {
         identity: { ...config, merchantName: org?.name ?? null },
         language: config.language ?? undefined,
         guardrails: (config.guardrails as GuardrailSettings | null) ?? undefined,
-        toolsEnabled: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
+        toolsEnabled: (config.toolsEnabled as AvailableToolName[] | null) ?? defaultToolsFallback(tmpl?.defaultTools),
         direction,
       };
       const composed = composeSystemPrompt(promptInputs);
@@ -745,7 +774,7 @@ export async function resolveAgentConfig(opts: {
         voiceId: config.voiceId ?? undefined,
         llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
-        enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? undefined,
+        enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? defaultToolsFallback(tmpl?.defaultTools),
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
         sttFallbackOrder: (config.sttFallbackOrder as string[] | null) ?? undefined,
         ttsFallbackOrder: (config.ttsFallbackOrder as string[] | null) ?? undefined,
@@ -788,6 +817,7 @@ export async function resolveAgentConfig(opts: {
       // for the same body — asserted in agent.test.ts, not assumed.
       const promptInputs: ComposeSystemPromptOptions = {
         jobDescription: await resolvePersonaBody(opts),
+        toolsEnabled: defaultToolsFallback(tmpl.defaultTools),
         direction,
       };
       const systemPrompt = composeSystemPrompt(promptInputs).text;
@@ -795,6 +825,7 @@ export async function resolveAgentConfig(opts: {
       return {
         systemPrompt,
         promptInputs,
+        enabledTools: defaultToolsFallback(tmpl.defaultTools),
         literalGreetingTemplate: tmpl.literalGreetingTemplate,
         disclosureText: disclosure.text,
         disclosureVersion: disclosure.version,
