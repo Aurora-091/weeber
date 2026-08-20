@@ -191,6 +191,17 @@ updated: 2026-08-20
 
 ## Known issues / debt (open)
 
+- **The activation boundary is unclear — draft/save/activate are one action, and dispatch reads a
+  different trigger than the editor shows (`audit/2026-08-16-audit-18-...md`, found 2026-08-16, filed
+  and indexed 2026-08-20, not yet actioned).** Three P0s: saving a workflow (standard or canvas save)
+  sends `enabled: true`, and recommended defaults are already provisioned as live at the Agents
+  onboarding step — before the "Review & activate" screen a merchant would reasonably expect to be the
+  actual activation moment; the custom-graph trigger editor lets a merchant pick an event, but Shopify's
+  inbound dispatch matches on the seeded **template**'s trigger, not the org's edited `customGraph`, so
+  an edited trigger can silently never fire; and `workflow_runs` holds no version/graph-snapshot
+  reference, so editing a workflow can change how an already-waiting or mid-call run proceeds. Proposes
+  a draft → ready-to-test → tested → live → paused state machine. No product code changed.
+
 - **61 known dead-code findings are baselined, not fixed** (`tools/dead-code/knip-baseline.json`,
   ADR-090): 4 unused files, 40 unused exports, 15 unused exported types, 2 duplicate exports. The
   ratchet stops the number growing; it does not clean up. Notable entries worth a decision rather than

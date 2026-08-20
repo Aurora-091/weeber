@@ -151,6 +151,38 @@ and are read chronologically, oldest first.
   templates, the Indic/Sarvam layer, the 1600-series gate) and a blocking sequence. 7 findings, two
   proposed ADRs (096, 097), no code changed.
 
+- **`2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`** — the database is no longer
+  empty: one insurance org placed 11 real outbound test calls (2026-08-13/14), the first calls in this
+  system's history where a human actually held a conversation with the agent. Telephony/STT/TTS/latency
+  work; **the tool layer does not.** On 8 of 11 calls the model either produced empty turns or **spoke
+  the tool call out loud as text** — 18 of 68 agent lines (26%) on calls 8/9/11 contain literal call
+  syntax like `<function name="setIntent">{...}`. Two callers were told they were being transferred to a
+  licensed advisor; `orgs.human_transfer_number` is NULL, so no transfer was possible on either call
+  (P0). `bookAppointment` fabricated a callback confirmation with no calendar connected and zero
+  `scheduled_calls` rows (P0). The 2026-08-13 fix for the text-leak (`eafc762`) is live in the seeded
+  personas but did not stop it — `output-guard.ts` passes both of call 11's leak shapes through uncaught
+  (P0). Also: 15 fallback lines blame the caller for a model failure, latency improved to 1591ms v2v p50
+  with a measured 672ms Groq-vs-gateway gap, and insurance has zero workflow templates so `/workflows`
+  is empty for the only tenant in the launch vertical. 7 findings, no code changed. Four addenda over
+  the following day narrowed the tool-syntax leak's root cause (see `docs/changelog/2026-08.md`); F1 was
+  fixed as ADR-115.
+
+- **`2026-08-16-audit-18-the-activation-boundary-is-unclear.md`** — not a call-level or code-correctness
+  audit like 09-17; a product/UX review of the merchant journey from account creation to a live
+  automation. Verdict: Weeber has solid runtime foundations (idempotent webhooks, compliance gates,
+  compare-and-swap scheduling, a durable webhook outbox) but doesn't behave like the five-minute setup
+  it implies — it behaves like an unfinished workflow platform whose controls overstate what the runtime
+  honours. Two P0s stand out: the custom-graph trigger editor and the Shopify dispatcher disagree on
+  which trigger fires a workflow (`findActiveWorkflowTemplate` matches on the **template**'s trigger,
+  not the org's edited `customGraph`), and draft/save/activate are collapsed into one action — saving a
+  workflow (standard or canvas) sends `enabled: true`, and defaults are already provisioned as live at
+  the Agents onboarding step, before the "Review & activate" screen a merchant would reasonably expect
+  to be the actual activation moment. A third P0: `workflow_runs` carries no version/graph-snapshot
+  reference, so editing a workflow can change how an already-waiting or mid-call run proceeds. 10
+  findings (AW-01…AW-10), a proposed draft→ready→tested→live→paused state machine, and a phased
+  remediation plan. Source review only — no seeded live store, carrier account, or production
+  credentials; no product code was modified.
+
 See also `docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md` for a source-level audit of
 the Agents UI framework paired with COGS/unit-economics analysis — kept under `docs/` rather than here
 since it's half product/GTM content, not a pure code audit.
