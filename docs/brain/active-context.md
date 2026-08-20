@@ -12,6 +12,16 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **CI was red for four reasons; three fixed, one needs a human (2026-08-20, `403c0ab`, `e2aecc8`,
+  `ece0bdd`).** GitHub Actions has refused to start *any* job since 2026-08-19 12:44Z — "recent account
+  payments have failed or your spending limit needs to be increased". Nothing in the repo can fix that;
+  `main` and both open PRs stay red until it is cleared in Settings → Billing & plans. The three code
+  causes are fixed and verified locally: the silence-timeout race test disarmed by `a6d2b87`, the
+  signed-out `/app` redirect that `6c0d978` made async (killing `app-login @ {390,768,1440}` mid-settle
+  and mis-sending `?cleanup=1` on plain unauthenticated visits), and 18 stale visual baselines traced to
+  `f5431e1`/`ac83ea9` and regenerated after review. Full battery green locally. Still open and untouched:
+  the `Supabase Preview` check ("Remote migration versions not found in local migrations directory").
+
 - **"Sign in again" was wrong advice for a network failure (2026-08-20, `4547a65`).** User reported
   "Couldn't load your workspace / Diagnostic: Failed to fetch". Traced live: the API was healthy
   (Railway `SUCCESS` deploy, `/api/health` returned `200` when hit by IP) — the user's mobile hotspot's
