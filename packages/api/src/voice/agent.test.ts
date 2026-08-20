@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { buildKnownFactsBlock, buildWorkflowContextBlock, resolveAgentConfig, toTurnTokenUsage } from "./agent";
+import {
+  buildKnownFactsBlock,
+  buildWorkflowContextBlock,
+  buildCallerMemoryBlock,
+  buildTurnPromptParts,
+  resolveAgentConfig,
+  toTurnTokenUsage,
+} from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
 import { renderTemplate } from "./workflows/variables";
 
@@ -529,6 +536,82 @@ describe("resolveAgentConfig — unconfigured orgs fall back to the template's d
     return resolveAgentConfig({ explicitPersona: "You are a custom raw prompt.", orgId: "org-123" }).then((config) => {
       expect(config.enabledTools).toBeUndefined();
     });
+  });
+});
+
+describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)", () => {
+  const persona = "You are a test agent persona.";
+
+  it("stablePrefix is exactly the resolved persona, unchanged from turn to turn", () => {
+    const turn1 = buildTurnPromptParts({ persona, capturedState: {} });
+    const turn2 = buildTurnPromptParts({ persona, capturedState: { email: "a@b.com" } });
+    const turn3 = buildTurnPromptParts({ persona, capturedState: { email: "a@b.com", order_id: "ORD-1" } });
+
+    expect(turn1.stablePrefix).toBe(persona);
+    expect(turn2.stablePrefix).toBe(persona);
+    expect(turn3.stablePrefix).toBe(persona);
+  });
+
+  it("dynamicSuffix changes when capturedState changes, while stablePrefix stays identical", () => {
+    const before = buildTurnPromptParts({ persona, capturedState: {} });
+    const after = buildTurnPromptParts({ persona, capturedState: { email: "caller@example.com" } });
+
+    expect(after.stablePrefix).toBe(before.stablePrefix);
+    expect(after.dynamicSuffix).not.toBe(before.dynamicSuffix);
+    expect(after.dynamicSuffix).toContain("email: caller@example.com");
+    expect(before.dynamicSuffix).not.toContain("email");
+  });
+
+  it("dynamicSuffix contains workflow context, caller memory, and captured facts when all three are present", () => {
+    const { dynamicSuffix } = buildTurnPromptParts({
+      persona,
+      workflowMetadata: { customer_name: "Jamie" },
+      callerMemory: { preferred_language: "hindi" },
+      capturedState: { order_id: "ORD-42" },
+    });
+
+    expect(dynamicSuffix).toContain("Jamie");
+    expect(dynamicSuffix).toContain("preferred_language: hindi");
+    expect(dynamicSuffix).toContain("order_id: ORD-42");
+  });
+
+  it("falls back to a non-empty, call-stable default persona when no persona is given", () => {
+    // Not asserting the literal DEFAULT_PERSONA text here — it's an internal,
+    // unexported constant — just that the fallback is real and consistent
+    // across turns, the same guarantee stablePrefix gives when a persona IS
+    // supplied.
+    const turn1 = buildTurnPromptParts({ capturedState: {} });
+    const turn2 = buildTurnPromptParts({ capturedState: { email: "a@b.com" } });
+    expect(turn1.stablePrefix.length).toBeGreaterThan(0);
+    expect(turn1.stablePrefix).toBe(turn2.stablePrefix);
+  });
+
+  it("produces byte-identical output to the pre-refactor inline composition, in the same order", () => {
+    const input = {
+      persona,
+      workflowMetadata: { customer_name: "Jamie", order_total: 42 },
+      callerMemory: { preferred_language: "hindi" },
+      capturedState: { email: "a@b.com", order_id: "ORD-1" },
+    };
+
+    const { stablePrefix, dynamicSuffix } = buildTurnPromptParts(input);
+
+    // This is exactly the expression runVoiceAgentTurn used before this
+    // refactor: (persona ?? DEFAULT_PERSONA) + buildWorkflowContextBlock(...)
+    // + buildCallerMemoryBlock(...) + buildKnownFactsBlock(...). No wording
+    // change, no reordering — same concatenation, just split at the seam.
+    const legacyComposition =
+      input.persona +
+      buildWorkflowContextBlock(input.workflowMetadata) +
+      buildCallerMemoryBlock(input.callerMemory) +
+      buildKnownFactsBlock(input.capturedState);
+
+    expect(stablePrefix + dynamicSuffix).toBe(legacyComposition);
+  });
+
+  it("dynamicSuffix is empty when workflow context, caller memory, and captured state are all absent", () => {
+    const { dynamicSuffix } = buildTurnPromptParts({ persona });
+    expect(dynamicSuffix).toBe("");
   });
 });
 

@@ -1336,6 +1336,54 @@ export function buildCallerMemoryBlock(callerMemory?: Record<string, string>): s
   `;
 }
 
+/**
+ * The stable/dynamic boundary in a turn's system prompt, made explicit
+ * (2026-08-20). No behavior change and no wording change from before this
+ * existed — `runVoiceAgentTurn` used to inline
+ * `(persona ?? DEFAULT_PERSONA) + buildWorkflowContextBlock(...) +
+ * buildCallerMemoryBlock(...) + buildKnownFactsBlock(...)` directly; this is
+ * that exact same expression, just split at the seam that was already there,
+ * so the boundary is a named, testable fact instead of an implicit one.
+ *
+ * `stablePrefix` — the composed persona (`resolveAgentConfig`'s
+ * `systemPrompt`, or `DEFAULT_PERSONA` as its own fallback) — is resolved
+ * once at "start" (see stream.ts) and reused unchanged for every turn of the
+ * call: identity, guardrails, tools, call-control, and (when applicable)
+ * ADR-105's transfer-blocked block are all fixed for the call's lifetime.
+ *
+ * `dynamicSuffix` is rebuilt fresh on every call to this function — workflow
+ * context and caller memory are typically fixed per call too, but
+ * `capturedState` grows turn by turn as `captureField` runs, so this whole
+ * suffix is recomputed every turn rather than assumed unchanged.
+ *
+ * This is the seam `onUsage`'s doc comment already points to as the reason
+ * Groq/OpenAI-class automatic prompt caching should already be landing
+ * (stable text first, the per-turn-growing block last) — this just names
+ * it. Deliberately NOT wired into any provider-specific caching API here;
+ * that's a separate, later change.
+ */
+export interface TurnPromptParts {
+  /** Fixed for the whole call — see the doc comment above. */
+  stablePrefix: string;
+  /** Recomputed every turn — see the doc comment above. */
+  dynamicSuffix: string;
+}
+
+export function buildTurnPromptParts(input: {
+  persona?: string;
+  workflowMetadata?: Record<string, string | number>;
+  callerMemory?: Record<string, string>;
+  capturedState?: Record<string, string>;
+}): TurnPromptParts {
+  return {
+    stablePrefix: input.persona ?? DEFAULT_PERSONA,
+    dynamicSuffix:
+      buildWorkflowContextBlock(input.workflowMetadata) +
+      buildCallerMemoryBlock(input.callerMemory) +
+      buildKnownFactsBlock(input.capturedState),
+  };
+}
+
 // If the model produces no text at all for a turn (e.g. gets stuck only
 // calling tools, or the provider returns empty output), we still need to say
 // *something* — dead air on a live call reads as a dropped connection.
@@ -1507,12 +1555,13 @@ export async function runVoiceAgentTurn({
   // agent editor cannot reach the model from any of them. The blocks appended
   // below are generated in code and contain no tags, but they're composed first
   // so the scrub sees the exact string that would otherwise be sent.
-  const systemPrompt = scrubSystemPrompt(
-    (persona ?? DEFAULT_PERSONA) +
-      buildWorkflowContextBlock(workflowMetadata) +
-      buildCallerMemoryBlock(callerMemory) +
-      buildKnownFactsBlock(capturedState),
-  );
+  //
+  // Stable/dynamic boundary made explicit (2026-08-20) — see
+  // `buildTurnPromptParts`'s doc comment. Same expression as before, split at
+  // the seam that was already there; concatenation order and scrub point are
+  // unchanged, so this produces byte-identical output to the prior inline form.
+  const { stablePrefix, dynamicSuffix } = buildTurnPromptParts({ persona, workflowMetadata, callerMemory, capturedState });
+  const systemPrompt = scrubSystemPrompt(stablePrefix + dynamicSuffix);
 
   try {
     /**
