@@ -1427,6 +1427,26 @@ export function toTurnTokenUsage(model: string, usage: unknown): TurnTokenUsage 
 }
 
 /**
+ * Observability-only (2026-08-20): cache-hit percentage, derived rather than
+ * stored — `turn_latency` persists the two raw numbers this is computed
+ * from (`llmInputTokens`/`llmCachedInputTokens`), never a redundant copy of
+ * this result, so there is nothing here that can drift out of sync with the
+ * numbers it was computed from.
+ *
+ * `undefined` — not `0` — whenever a real percentage cannot be known:
+ * `inputTokens` missing or zero (nothing to divide by), or
+ * `cachedInputTokens` missing (the provider didn't report cache usage at
+ * all, which is a different fact from "reported zero cache hits").
+ * `cachedInputTokens: 0` (a real, reported cache miss) correctly yields `0`,
+ * not `undefined` — the provider did answer the question, the answer was
+ * just "none of it was cached."
+ */
+export function calculateCacheHitPercent(inputTokens?: number, cachedInputTokens?: number): number | undefined {
+  if (!inputTokens || cachedInputTokens === undefined) return undefined;
+  return Math.round((cachedInputTokens / inputTokens) * 100);
+}
+
+/**
  * Runs one agent turn for a live call, streaming text deltas as they arrive so
  * the caller can hear the response as fast as possible (fed sentence-by-sentence
  * into TTS by the caller of this function). Guarantees non-empty output and a

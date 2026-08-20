@@ -431,6 +431,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       endpointingDelayMs?: number;
       /** Phase 0.3: this turn's TTS socket-open duration. */
       ttsSocketOpenMs?: number;
+      /** Observability-only (2026-08-20): the token usage this turn's
+       * onUsage callback reported — undefined for the same reasons
+       * llmProviderUsed is (greeting turn's usage isn't wired here, or the
+       * turn aborted before the provider ever reported usage). */
+      inputTokens?: number;
+      cachedInputTokens?: number;
+      outputTokens?: number;
     },
   ) {
     if (!dbCallId) return;
@@ -446,6 +453,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         endpointSignal: metrics.endpointSignal,
         endpointingDelayMs: metrics.endpointingDelayMs,
         ttsSocketOpenMs: metrics.ttsSocketOpenMs,
+        llmInputTokens: metrics.inputTokens,
+        llmCachedInputTokens: metrics.cachedInputTokens,
+        llmOutputTokens: metrics.outputTokens,
       })
       .catch((err) => console.error("[voice] failed to persist per-turn latency", err));
   }
@@ -1452,6 +1462,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       /** Phase 0.1: same ref pattern as turnLlmTtftRef, but for the
        * transport/model label that actually served this turn. */
       turnLlmModelRef?: { value?: string };
+      /** Observability-only (2026-08-20): same ref pattern as
+       * turnLlmTtftRef/turnLlmModelRef — written from inside the caller's
+       * onUsage callback, read here only after generate() has resolved. */
+      turnUsageRef?: { value?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } };
       /** Phase 0.2: which STT signal ended this turn (speech_final vs the
        * synthetic UtteranceEnd fallback) — undefined for the greeting. */
       endpointSignal?: "speech_final" | "utterance_end";
@@ -1835,6 +1849,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         endpointSignal: options?.endpointSignal,
         endpointingDelayMs: options?.endpointingDelayMs,
         ttsSocketOpenMs: turnTtsSocketOpenMs,
+        inputTokens: options?.turnUsageRef?.value?.inputTokens,
+        cachedInputTokens: options?.turnUsageRef?.value?.cachedInputTokens,
+        outputTokens: options?.turnUsageRef?.value?.outputTokens,
       });
     })();
 
@@ -1927,6 +1944,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   ) {
     const turnLlmTtftRef: { value?: number } = {};
     const turnLlmModelRef: { value?: string } = {};
+    const turnUsageRef: { value?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } } = {};
     // §3a: at most one filler line per turn — a turn with several sequential
     // slow tool calls should still only interject once, not once per call.
     let fillerPlayedThisTurn = false;
@@ -1964,6 +1982,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               `[voice] turn token usage: ${usage.inputTokens ?? "?"} in / ${usage.outputTokens ?? "?"} out` +
                 `${usage.cachedInputTokens ? ` (${usage.cachedInputTokens} from cache${cacheHitPct})` : ""} (${usage.model})`,
             );
+            // Observability-only (2026-08-20): same ref pattern as
+            // turnLlmTtftRef/turnLlmModelRef above — read by the fire-and-
+            // forget persistTurnLatency call below, after generate() resolves.
+            turnUsageRef.value = {
+              inputTokens: usage.inputTokens,
+              cachedInputTokens: usage.cachedInputTokens,
+              outputTokens: usage.outputTokens,
+            };
           },
           llmProvider: llmProviderOverride,
           llmModel: llmModelOverride,
@@ -2023,7 +2049,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             );
           },
         }),
-      { turnStartedAt, turnLlmTtftRef, turnLlmModelRef, endpointSignal, endpointingDelayMs },
+      { turnStartedAt, turnLlmTtftRef, turnLlmModelRef, turnUsageRef, endpointSignal, endpointingDelayMs },
     );
   }
 
@@ -2059,6 +2085,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
     const turnLlmTtftRef: { value?: number } = {};
     const turnLlmModelRef: { value?: string } = {};
+    const turnUsageRef: { value?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } } = {};
     await speak(
       ws,
       (signal) =>
@@ -2112,11 +2139,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               `[voice] greeting token usage: ${usage.inputTokens ?? "?"} in / ${usage.outputTokens ?? "?"} out` +
                 `${usage.cachedInputTokens ? ` (${usage.cachedInputTokens} from cache)` : ""} (${usage.model})`,
             );
+            // Observability-only (2026-08-20): see the identical wiring in
+            // runTurn's onUsage above.
+            turnUsageRef.value = {
+              inputTokens: usage.inputTokens,
+              cachedInputTokens: usage.cachedInputTokens,
+              outputTokens: usage.outputTokens,
+            };
           },
         }),
       // No turnStartedAt for the greeting — it's agent-initiated, not a
       // response to caller speech, so there's no voiceToVoiceMs to measure.
-      { turnLlmTtftRef, turnLlmModelRef },
+      { turnLlmTtftRef, turnLlmModelRef, turnUsageRef },
     );
     stampDisclosureFired();
   }

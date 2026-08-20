@@ -4,6 +4,7 @@ import {
   buildWorkflowContextBlock,
   buildCallerMemoryBlock,
   buildTurnPromptParts,
+  calculateCacheHitPercent,
   resolveAgentConfig,
   toTurnTokenUsage,
 } from "./agent";
@@ -47,6 +48,28 @@ describe("toTurnTokenUsage", () => {
       outputTokens: undefined,
       cachedInputTokens: undefined,
     });
+  });
+});
+
+describe("calculateCacheHitPercent (observability-only, 2026-08-20)", () => {
+  it("computes a cache-hit percentage when both token counts are present (cache hit)", () => {
+    expect(calculateCacheHitPercent(4200, 3100)).toBe(74); // 3100/4200 = 73.8..% -> rounds to 74
+    expect(calculateCacheHitPercent(1000, 1000)).toBe(100);
+  });
+
+  it("returns undefined — not 0 — when the provider never reported cache usage at all (no cache data)", () => {
+    expect(calculateCacheHitPercent(2000, undefined)).toBeUndefined();
+    expect(calculateCacheHitPercent(undefined, undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when inputTokens is zero or missing, even if cachedInputTokens is present (zero input tokens)", () => {
+    expect(calculateCacheHitPercent(0, 0)).toBeUndefined();
+    expect(calculateCacheHitPercent(0, 500)).toBeUndefined();
+    expect(calculateCacheHitPercent(undefined, 500)).toBeUndefined();
+  });
+
+  it("returns a real 0, not undefined, for a genuine reported cache miss (cachedInputTokens: 0 is an answer, not an absence)", () => {
+    expect(calculateCacheHitPercent(2000, 0)).toBe(0);
   });
 });
 

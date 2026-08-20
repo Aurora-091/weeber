@@ -344,6 +344,20 @@ export const turnLatency = pgTable("turn_latency", {
   // change (2026-08-09) is really what pushed Cartesia's first-byte number
   // up, instead of continuing to infer it from a two-call sample.
   ttsSocketOpenMs: integer("tts_socket_open_ms"),
+  // Observability-only (2026-08-20): the token usage runVoiceAgentTurn's
+  // onUsage callback already receives from the AI SDK on every turn (see
+  // agent.ts's TurnTokenUsage) but never persisted anywhere — only
+  // console.logged. Null on rows captured before this column existed, same
+  // as every other latency column added after the fact, and null on any
+  // turn whose provider/response never reported usage (a barge-in that
+  // aborted before the model returned, or a provider that omits it).
+  // Cache-hit percentage is deliberately NOT its own column — it's fully
+  // derivable from llmCachedInputTokens/llmInputTokens (see agent.ts's
+  // calculateCacheHitPercent), and a stored copy could only ever drift from
+  // the two numbers it was computed from.
+  llmInputTokens: integer("llm_input_tokens"),
+  llmCachedInputTokens: integer("llm_cached_input_tokens"),
+  llmOutputTokens: integer("llm_output_tokens"),
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   index("turn_latency_call_id_idx").on(table.callId),

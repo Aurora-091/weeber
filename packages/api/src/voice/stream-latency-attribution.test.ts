@@ -33,7 +33,15 @@ type TurnLatencyRow = {
   llmTtftMs?: number;
   ttsFirstByteMs?: number;
   voiceToVoiceMs?: number;
+  llmInputTokens?: number;
+  llmCachedInputTokens?: number;
+  llmOutputTokens?: number;
 };
+
+/** Set by a test before driving a turn, read by the mocked runVoiceAgentTurn
+ * below and fed to onUsage — undefined means "the turn's provider never
+ * reported usage", the same as a real aborted/no-usage turn. */
+let mockTurnUsage: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } | undefined;
 
 let turnLatencyRows: TurnLatencyRow[] = [];
 
@@ -131,12 +139,15 @@ mock.module("./agent", () => ({
   runVoiceAgentTurn: async ({
     onTextDelta,
     onLatency,
+    onUsage,
   }: {
     onTextDelta?: (d: string) => void;
-    onLatency?: (ms: number) => void;
+    onLatency?: (ms: number, model: string) => void;
+    onUsage?: (usage: { model: string; inputTokens?: number; cachedInputTokens?: number; outputTokens?: number }) => void;
   }) => {
     await new Promise((resolve) => setTimeout(resolve, LLM_STALL_MS));
-    onLatency?.(LLM_STALL_MS);
+    onLatency?.(LLM_STALL_MS, "test-model");
+    if (mockTurnUsage) onUsage?.({ model: "test-model", ...mockTurnUsage });
     onTextDelta?.("Sure, I can help with that.");
     return "Sure, I can help with that.";
   },
@@ -176,6 +187,7 @@ const settle = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
 beforeEach(() => {
   turnLatencyRows = [];
   lastOnTranscript = null;
+  mockTurnUsage = undefined;
 });
 
 /** Drive one caller turn end-to-end and return its persisted latency row. */
@@ -229,5 +241,46 @@ describe("turn latency is attributed to the stage that actually spent it (ADR-10
     // roughly twice the turn — which is how a 1878ms p50 turn was reported as
     // 1381ms LLM plus 1748ms TTS.
     expect(llm + tts).toBeLessThanOrEqual(v2v + 20);
+  });
+});
+
+describe("turn token usage is persisted with each turn (observability-only, 2026-08-20)", () => {
+  it("persists inputTokens/cachedInputTokens/outputTokens onto the turn_latency row when the provider reports usage", async () => {
+    mockTurnUsage = { inputTokens: 4200, cachedInputTokens: 3100, outputTokens: 65 };
+    const row = await captureCallerTurn();
+
+    expect(row.llmInputTokens).toBe(4200);
+    expect(row.llmCachedInputTokens).toBe(3100);
+    expect(row.llmOutputTokens).toBe(65);
+  });
+
+  it("persists undefined token columns — not zeros — when the turn's provider never reports usage", async () => {
+    mockTurnUsage = undefined;
+    const row = await captureCallerTurn();
+
+    expect(row.llmInputTokens).toBeUndefined();
+    expect(row.llmCachedInputTokens).toBeUndefined();
+    expect(row.llmOutputTokens).toBeUndefined();
+    // The realtime path never blocked or failed for the missing usage — the
+    // row still exists with its other metrics intact.
+    expect(row.llmTtftMs).toBeDefined();
+  });
+
+  it("never blocks the realtime voice path on the telemetry write — the agent's spoken reply still lands with usage data pending", async () => {
+    mockTurnUsage = { inputTokens: 1000, cachedInputTokens: 0, outputTokens: 20 };
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    // Deliberately NOT awaiting the full LLM_STALL_MS window before this
+    // check — persistTurnLatency's insert is fire-and-forget (see stream.ts's
+    // "not blocked on ttsDone" comment), so the caller-facing send() calls
+    // this test can observe happen independent of whether the DB write has
+    // landed yet.
+    await settle(5);
+    handlers.onClose();
+    expect(ws.sent.length).toBeGreaterThan(0);
   });
 });

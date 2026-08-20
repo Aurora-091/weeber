@@ -372,6 +372,13 @@
       "when": 1786912725278,
       "tag": "0052_panoramic_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787234224320,
+      "tag": "0053_wise_the_renegades",
+      "breakpoints": true
     }
   ]
 }
