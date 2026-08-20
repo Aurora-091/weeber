@@ -71,6 +71,15 @@ describe("calculateCacheHitPercent (observability-only, 2026-08-20)", () => {
   it("returns a real 0, not undefined, for a genuine reported cache miss (cachedInputTokens: 0 is an answer, not an absence)", () => {
     expect(calculateCacheHitPercent(2000, 0)).toBe(0);
   });
+
+  // Not clamped, on purpose: a provider reporting more cached tokens than
+  // total input tokens is a malformed/anomalous report, and silently
+  // clamping it to 100 would hide that anomaly from whoever reads this data
+  // instead of surfacing it. This pins that as deliberate behavior, not an
+  // untested accident.
+  it("does not clamp a malformed report where cachedInputTokens exceeds inputTokens", () => {
+    expect(calculateCacheHitPercent(1000, 1500)).toBe(150);
+  });
 });
 
 describe("buildKnownFactsBlock", () => {
