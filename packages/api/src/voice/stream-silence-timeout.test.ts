@@ -99,9 +99,21 @@ mock.module("./stt", () => ({
   resolveSttProvider: (override?: string | null) => override ?? "deepgram",
 }));
 
+/**
+ * Test seam for the race (2026-08-20): fires with the text handed to TTS,
+ * from inside the `await speak(...)` that `speakCannedLine` is suspended on.
+ * That is the only place a test can stand in for "the caller answered while
+ * the goodbye line was being prepared" — see the race test below for why the
+ * previous same-tick-injection technique could not reproduce it.
+ */
+let onTtsSendText: ((text: string) => void) | null = null;
+
 mock.module("./tts", () => ({
   connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
+    sendText: (text: string) => {
+      onTtsSendText?.(text);
+      onAudioChunk(Buffer.from("audio").toString("base64"));
+    },
     endTurn: () => onDone?.(),
     close: () => {},
   }),
@@ -206,10 +218,12 @@ beforeEach(() => {
   dbUpdates = [];
   dbInserts = [];
   lastOnTranscript = null;
+  onTtsSendText = null;
 });
 
 afterEach(() => {
   jest.useRealTimers();
+  onTtsSendText = null;
 });
 
 describe("caller silence timeout", () => {
@@ -226,14 +240,31 @@ describe("caller silence timeout", () => {
     await flush();
     expect(agentLines().some((t) => t.includes("Are you still there?"))).toBe(true);
 
-    // Stage 2: still nothing for 7s -> the goodbye, then the hangup. The caller
-    // answers in the SAME macrotask as the timer fires — both are synchronous
-    // before any microtask flush — so callerSpeechEpoch is bumped before
-    // handleSilenceTimeout's initial epoch guard runs, which is the exact
-    // scenario the guard was built to catch.
+    // Stage 2: still nothing for 7s -> the goodbye, then the hangup.
+    //
+    // The caller has to answer *while handleSilenceTimeout is suspended inside
+    // `await speakCannedLine`* — that suspension is the whole defect, because
+    // the STT handler's clearSilenceTimer() cannot cancel a timer that has
+    // already fired. Injecting after `advanceTimersByTime` returns cannot
+    // reproduce it: bun's fake timers drain the microtask queue while
+    // advancing, so by the time control comes back the goodbye has already
+    // been spoken and the hangup has already landed. (It used to work by
+    // accident — speakCannedLine awaited a getEffectiveFlags() DB round-trip,
+    // which parked the handler long enough for a same-tick injection to win
+    // the race. a6d2b87 cached those flags at call start and the accidental
+    // window closed with it.)
+    //
+    // So inject from inside the TTS layer instead: onTtsSendText fires while
+    // speakCannedLine is still awaiting, which is exactly the production
+    // ordering of call 16 — caller speech consumed after the timeout's initial
+    // epoch guard passed, and before its post-await re-check runs. That
+    // re-check is the assertion below.
+    onTtsSendText = (spoken) => {
+      if (!spoken.includes("I haven't heard back")) return;
+      onTtsSendText = null; // fire once
+      lastOnTranscript?.({ text: "yes I am still here", isFinal: true, speechFinal: true });
+    };
     jest.advanceTimersByTime(WARNING_PLAYBACK_MS + SILENCE_HANGUP_MS);
-    // Inject speech in the same tick, before any microtask flush.
-    lastOnTranscript?.({ text: "yes I am still here", isFinal: true, speechFinal: true });
     await flush(200);
 
     expect(finalizedStatuses()).not.toContain("completed");
