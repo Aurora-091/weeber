@@ -858,6 +858,46 @@ export const toolCalls = pgTable("tool_calls", {
   index("tool_calls_call_id_idx").on(table.callId),
 ]);
 
+/**
+ * Tool execution latency telemetry (observability-only, 2026-08-20) — same
+ * relationship to `toolCalls` as `turnLatency` has to `transcripts`: a
+ * separate, timing-focused table for the same events `toolCalls` already
+ * records content for, rather than widening that row or touching how tool
+ * calls are logged. Populated from the AI SDK's own `onToolExecutionEnd`
+ * hook (agent.ts's runVoiceAgentTurn/runVoiceAgentGreeting) — an SDK-native
+ * signal that fires after a tool's wrapped `execute()` settles, with no
+ * changes to buildVoiceTools' tool-wrapping chain (withToolTimeout/
+ * withOutboundTextGuard/withFillerTimer) required to get it.
+ */
+export const toolCallLatency = pgTable("tool_call_latency", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
+  toolName: text("tool_name").notNull(),
+  // The AI SDK's own toolCallId (always populated by the current SDK version,
+  // per its BaseToolCall type) — nullable here anyway, best-effort like every
+  // other observability column in this file, not assumed permanent. Unique so
+  // a duplicate telemetry event for the same invocation can be inserted with
+  // onConflictDoNothing instead of creating a second row for one real call.
+  // Postgres treats multiple NULLs as non-conflicting, so this does not
+  // require every row to have one.
+  toolCallId: text("tool_call_id"),
+  startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  durationMs: integer("duration_ms"),
+  // False for both a thrown error AND a graceful timeout (timedOut: true
+  // below) — a timeout is not a clean success from an observability
+  // standpoint even though the caller-facing tool result is a normal,
+  // non-throwing message. Null only for a row that predates this column.
+  success: boolean("success"),
+  // Detected from withToolTimeout's own `{ timedOut: true, ... }` result
+  // marker (agent.ts), not a separate signal — see isTimedOutToolResult.
+  timedOut: boolean("timed_out"),
+  capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("tool_call_latency_call_id_idx").on(table.callId),
+  uniqueIndex("tool_call_latency_tool_call_id_idx").on(table.toolCallId),
+]);
+
 export const transcripts = pgTable("transcripts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   callId: integer("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),

@@ -8,7 +8,13 @@ import type { TtsConnection, TtsProvider } from "./tts";
 import { voiceIdForProvider } from "./tts-voice-identity";
 import { toolCallReason } from "./call-control";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
-import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, composeSystemPrompt } from "./agent";
+import {
+  runVoiceAgentTurn,
+  runVoiceAgentGreeting,
+  resolveAgentConfig,
+  composeSystemPrompt,
+  type ToolExecutionTelemetry,
+} from "./agent";
 import { getActiveModelLabel } from "./llm";
 import {
   resolveCartRecoveryContext,
@@ -57,7 +63,7 @@ import { getTelephonyTransport, type TelephonyProvider } from "./telephony-trans
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency, turnLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, turnLatency, toolCallLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
 import { classifyCallHealth } from "./call-health";
 import {
   applyTransferBlockedPrompt,
@@ -458,6 +464,34 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         llmOutputTokens: metrics.outputTokens,
       })
       .catch((err) => console.error("[voice] failed to persist per-turn latency", err));
+  }
+
+  /**
+   * Tool execution latency telemetry (observability-only, 2026-08-20) — one
+   * row per tool invocation, fired eagerly as each one settles (unlike
+   * turn_latency above, which batches per turn, a turn can call several
+   * tools). Never awaited by any caller — always invoked as
+   * `void persistToolCallLatency(event)`, same fire-and-forget contract as
+   * every other telemetry write in this file. `onConflictDoNothing` on the
+   * unique `toolCallId` index means a duplicate event for the same real
+   * invocation (if the SDK ever produced one) inserts nothing a second time,
+   * rather than a second row for one real call — skipped when toolCallId is
+   * absent, since there is nothing to conflict against.
+   */
+  async function persistToolCallLatency(event: ToolExecutionTelemetry) {
+    if (!dbCallId) return;
+    const insert = db.insert(toolCallLatency).values({
+      callId: dbCallId,
+      toolName: event.toolName,
+      toolCallId: event.toolCallId,
+      startedAt: new Date(event.startedAt),
+      completedAt: new Date(event.completedAt),
+      durationMs: event.durationMs,
+      success: event.success,
+      timedOut: event.timedOut,
+    });
+    const query = event.toolCallId ? insert.onConflictDoNothing({ target: toolCallLatency.toolCallId }) : insert;
+    await query.catch((err) => console.error("[voice] failed to persist tool call latency", err));
   }
 
   /** Cross-call memory (ADR-023) — the human's number for this call, and their rolling facts, if any. */
@@ -1957,6 +1991,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           signal,
           onTextDelta: (delta) => sendTtsTextWithTone(delta),
           onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
+          onToolTelemetry: (event) => void persistToolCallLatency(event),
           onLatency: (ms, model) => {
             console.log(`[voice] turn time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
@@ -2093,6 +2128,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           persona,
           signal,
           onTextDelta: (delta) => sendTtsTextWithTone(delta),
+          onToolTelemetry: (event) => void persistToolCallLatency(event),
           capturedState,
           callerMemory: callerMemoryFacts,
           llmProvider: llmProviderOverride,

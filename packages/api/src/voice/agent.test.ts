@@ -5,6 +5,7 @@ import {
   buildCallerMemoryBlock,
   buildTurnPromptParts,
   calculateCacheHitPercent,
+  isTimedOutToolResult,
   resolveAgentConfig,
   toTurnTokenUsage,
 } from "./agent";
@@ -79,6 +80,29 @@ describe("calculateCacheHitPercent (observability-only, 2026-08-20)", () => {
   // untested accident.
   it("does not clamp a malformed report where cachedInputTokens exceeds inputTokens", () => {
     expect(calculateCacheHitPercent(1000, 1500)).toBe(150);
+  });
+});
+
+describe("isTimedOutToolResult (tool execution telemetry, 2026-08-20)", () => {
+  it("recognizes withToolTimeout's own graceful-timeout marker", () => {
+    expect(isTimedOutToolResult({ timedOut: true, message: "still working on it" })).toBe(true);
+  });
+
+  it("returns false for a normal successful tool result", () => {
+    expect(isTimedOutToolResult({ recorded: true, disposition: "interested" })).toBe(false);
+    expect(isTimedOutToolResult({ crm: "hubspot", synced: true })).toBe(false);
+  });
+
+  it("returns false for a result that merely mentions timing without the marker", () => {
+    expect(isTimedOutToolResult({ timedOut: false })).toBe(false);
+    expect(isTimedOutToolResult({ timeout: true })).toBe(false); // wrong key
+  });
+
+  it("never throws on a non-object output (undefined, null, string, number)", () => {
+    expect(isTimedOutToolResult(undefined)).toBe(false);
+    expect(isTimedOutToolResult(null)).toBe(false);
+    expect(isTimedOutToolResult("some string result")).toBe(false);
+    expect(isTimedOutToolResult(42)).toBe(false);
   });
 });
 

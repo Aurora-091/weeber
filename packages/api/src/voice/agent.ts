@@ -1447,6 +1447,41 @@ export function calculateCacheHitPercent(inputTokens?: number, cachedInputTokens
 }
 
 /**
+ * One tool invocation's execution telemetry (observability-only, 2026-08-20).
+ * `startedAt`/`completedAt` are derived from the AI SDK's own
+ * `toolExecutionMs` (`completedAt = Date.now()` at the `onToolExecutionEnd`
+ * callback, `startedAt = completedAt - toolExecutionMs`) rather than a
+ * separately tracked start timestamp — the SDK already measures the wrapped
+ * execute() precisely, so there is nothing to gain from also timing it here
+ * and a real risk of a second, slightly different number for the same call.
+ */
+export interface ToolExecutionTelemetry {
+  toolName: string;
+  /** The AI SDK's own toolCallId — present on every real tool call the
+   * current SDK version produces, kept optional here to match "if available"
+   * rather than assume that never changes. */
+  toolCallId?: string;
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  /** False for a thrown error AND for a graceful timeout (see `timedOut`) —
+   * a timeout is not a clean success even though the tool's actual result
+   * is a normal, non-throwing message the model reads and relays. */
+  success: boolean;
+  timedOut: boolean;
+}
+
+/**
+ * Detects `withToolTimeout`'s own graceful-timeout result shape
+ * (`{ timedOut: true, message: ... }`, see withToolTimeout above) — the only
+ * signal available for telling a real timeout apart from an ordinary
+ * successful result, since a timed-out tool call never throws.
+ */
+export function isTimedOutToolResult(output: unknown): boolean {
+  return typeof output === "object" && output !== null && (output as { timedOut?: unknown }).timedOut === true;
+}
+
+/**
  * Runs one agent turn for a live call, streaming text deltas as they arrive so
  * the caller can hear the response as fast as possible (fed sentence-by-sentence
  * into TTS by the caller of this function). Guarantees non-empty output and a
@@ -1458,6 +1493,7 @@ export async function runVoiceAgentTurn({
   persona,
   onTextDelta,
   onToolCall,
+  onToolTelemetry,
   signal,
   onLatency,
   onUsage,
@@ -1480,6 +1516,11 @@ export async function runVoiceAgentTurn({
   persona?: string;
   onTextDelta: (delta: string) => void;
   onToolCall?: (name: string, input: unknown, output: unknown) => void;
+  /** Observability-only (2026-08-20): fires once per tool invocation after its
+   * (fully wrapped — timeout/guard/filler included) execute() settles, sourced
+   * from the AI SDK's own `onToolExecutionEnd` hook rather than any new
+   * wrapping of buildVoiceTools' tools. See ToolExecutionTelemetry. */
+  onToolTelemetry?: (event: ToolExecutionTelemetry) => void;
   signal?: AbortSignal;
   /** Reports time-to-first-token, useful for comparing LLM providers (see llm/). */
   onLatency?: (ms: number, model: string) => void;
@@ -1626,6 +1667,34 @@ export async function runVoiceAgentTurn({
             onToolCall?.(call.toolName, call.input, toolResult?.output);
           }
         },
+        // Observability-only (2026-08-20): SDK-native hook, fires once per
+        // tool invocation right after its execute() settles (success, thrown
+        // error, or — since withToolTimeout never throws — the graceful
+        // timeout marker read back below). Deliberately NOT derived from the
+        // onStepFinish loop above, which this leaves untouched: onToolCall's
+        // existing firing behavior (including for thrown/errored tool calls)
+        // must not change, and onToolExecutionEnd already carries everything
+        // needed (toolCallId, precise toolExecutionMs) without re-deriving it.
+        onToolExecutionEnd: onToolTelemetry
+          ? (event) => {
+              const completedAt = Date.now();
+              const success = event.toolOutput.type === "tool-result";
+              const timedOut = success && isTimedOutToolResult(event.toolOutput.output);
+              try {
+                onToolTelemetry({
+                  toolName: event.toolCall.toolName,
+                  toolCallId: event.toolCall.toolCallId,
+                  startedAt: completedAt - event.toolExecutionMs,
+                  completedAt,
+                  durationMs: event.toolExecutionMs,
+                  success: success && !timedOut,
+                  timedOut,
+                });
+              } catch (err) {
+                console.error("[voice-agent] onToolTelemetry callback threw", err);
+              }
+            }
+          : undefined,
       });
     let result: ReturnType<typeof makeStream> | undefined;
     let activeLink = primaryLink;
@@ -1771,6 +1840,7 @@ export function runVoiceAgentGreeting({
   capturedState,
   onLatency,
   onUsage,
+  onToolTelemetry,
   callerMemory,
   llmProvider,
   llmModel,
@@ -1792,6 +1862,9 @@ export function runVoiceAgentGreeting({
   onLatency?: (ms: number, model: string) => void;
   /** See runVoiceAgentTurn's onUsage. */
   onUsage?: (usage: TurnTokenUsage) => void;
+  /** See runVoiceAgentTurn's onToolTelemetry — the greeting can carry a tool
+   * set too (codOrder/crmSync below), so it gets the same telemetry. */
+  onToolTelemetry?: (event: ToolExecutionTelemetry) => void;
   /** Rolling facts from previous calls with this same number (ADR-023). */
   callerMemory?: Record<string, string>;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
@@ -1832,6 +1905,7 @@ export function runVoiceAgentGreeting({
     capturedState,
     onLatency,
     onUsage,
+    onToolTelemetry,
     callerMemory,
     llmProvider,
     llmModel,
