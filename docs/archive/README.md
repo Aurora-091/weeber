@@ -21,3 +21,17 @@ actual code, not these.
   same day) marks items 1, 2, 4, 5, 7 as superseded — most of what it tracked has since shipped or been
   re-planned elsewhere (see `AGENT-CONSOLE-UI-PLAN.md`, `UI-DESIGN-BRIEF.md`). Archived during the
   `docs/` reorg, 2026-07-17.
+- **`ui-implementation-plan.md`** — the phased execution plan companion to the 2026-08-03 UI/UX audit
+  (now `audit/2026-08-03-audit-ui-ux-full-surface.md`). Phase 0's guardrails shipped and are enforced in
+  CI (`tools/ui-guard/{contrast-gate.ts,design-guard.ts,design-budget.json,tokens.json}`,
+  `packages/web/e2e-visual/{visual,a11y,font-provenance}.spec.ts`), so the plan's file paths and open
+  questions no longer describe the repo. Kept as the reasoning record. Archived 2026-08-20.
+- **`ui-phase0-notes.md`** — scratchpad for that plan's Phase 0, which says in its own second line to
+  "delete or fold into docs/ when Phase 0 closes". Phase 0 closed. Archived 2026-08-20.
+- **`UI-FIX-TASK.md`** — a task tracker for three structural UI complaints (nav chunk flash, detached
+  page feel, z-index/overflow drift). Its verification harness (`/__preview`, `pages/__preview.tsx`) is
+  now a permanent DEV-only route, and the work it tracked is done. Archived 2026-08-20.
+- **`ci-triage-notes.md`** — the write-up of the first-ever CI run (2026-07, PR #2). Its own banner
+  already marked it historical; the live definition is `.github/workflows/ci.yml`. Moved out of the repo
+  root, 2026-08-20.
+

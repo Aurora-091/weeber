@@ -188,10 +188,10 @@ Design constraints that keep it deterministic (read before adding more E2E):
 
 ## Continuous Integration
 
-Every push and pull request against `main` runs eleven parallel jobs via GitHub Actions — see
+Every push and pull request against `main` runs twelve parallel jobs via GitHub Actions — see
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml): `typecheck`, `test`, `build`, `lint`,
-`migration-drift`, `e2e` (the Playwright landing-page suite), `dead-code`, `design-guard`, `visual`,
-`a11y`, and `fonts`. Every job runs `bun install --frozen-lockfile` **as its first step** — the
+`migration-drift`, `e2e` (the Playwright landing-page suite), `dead-code`, `persona-size`,
+`design-guard`, `visual`, `a11y`, and `fonts`. Every job runs `bun install --frozen-lockfile` **as its first step** — the
 deps-first rule above is enforced in CI, so the false-green-on-missing-deps failure mode can't reach
 `main`.
 
@@ -215,6 +215,6 @@ static/mocked/secret-free by design (the E2E targets only the client-side landin
 CI check therefore means something is actually broken, not a missing secret — treat it as blocking.
 
 The one required status check in branch protection is `ci-success`, the aggregator that `needs` all
-eleven jobs and allow-lists `result == "success"` rather than asserting failure, so it cannot go green
+twelve jobs and allow-lists `result == "success"` rather than asserting failure, so it cannot go green
 on jobs that never ran (ADR-075). Adding/renaming a job never means reconfiguring branch protection — but a new job **does** need to be
 added to `ci-success`'s `needs` list or its failures won't block merges (the `e2e` job is wired in).

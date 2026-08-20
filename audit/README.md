@@ -183,6 +183,14 @@ and are read chronologically, oldest first.
   remediation plan. Source review only — no seeded live store, carrier account, or production
   credentials; no product code was modified.
 
+- **`2026-08-03-audit-ui-ux-full-surface.md`** — a measured UI/UX audit of all three surfaces
+  (public/marketing, merchant `/app`, admin `/dashboard`) at 390 and 1440, light/dark/reduced-motion,
+  both private surfaces authenticated rather than mocked. WCAG 2.x + APCA contrast measured, tokens and
+  components read for drift, with a competitor teardown of Vapi/Retell/Bland/Bolna. 49 findings and a
+  scored rubric; no code was changed by the audit itself. Lived at the repo root as `ui-audit.md` until
+  2026-08-20, when it was filed here with the other dated audits — its findings are referenced by name
+  from `tools/ui-guard/` and `packages/web/e2e-visual/a11y.spec.ts`.
+
 See also `docs/product-strategy/agents-ux-audit-and-cogs-2026-07-17.md` for a source-level audit of
 the Agents UI framework paired with COGS/unit-economics analysis — kept under `docs/` rather than here
 since it's half product/GTM content, not a pure code audit.

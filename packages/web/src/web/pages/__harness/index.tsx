@@ -1,6 +1,6 @@
 /**
  * URL-addressable, backend-free render harness for the visual-regression and
- * a11y suites (Phase 0.6 of ui-implementation-plan.md).
+ * a11y suites (Phase 0.6 of docs/archive/ui-implementation-plan.md).
  *
  * Every private page is reachable at `/__harness/<key>` with no auth, no
  * Supabase session, no admin key and no API. That is the whole point: CI stays

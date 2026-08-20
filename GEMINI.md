@@ -98,9 +98,9 @@ A stale brain is worse than no brain. As Documentation Architect, you guarantee 
 
 ### 1. The Core Brain Loop (Mandatory Every Session)
 When completing meaningful work:
-1. **[`docs/brain/active-context.md`](file:///c:/Rex/openvent-main/openvent-main/docs/brain/active-context.md):** Update current focus, last state, and next steps.
-2. **[`docs/brain/progress.md`](file:///c:/Rex/openvent-main/openvent-main/docs/brain/progress.md):** Move completed features/fixes from in-progress to completed, and log known issues.
-3. **[`docs/brain/00-index.md`](file:///c:/Rex/openvent-main/openvent-main/docs/brain/00-index.md):** Update the routing table if new domains or documentation files are introduced.
+1. **[`docs/brain/active-context.md`](./docs/brain/active-context.md):** Update current focus, last state, and next steps.
+2. **[`docs/brain/progress.md`](./docs/brain/progress.md):** Move completed features/fixes from in-progress to completed, and log known issues.
+3. **[`docs/brain/00-index.md`](./docs/brain/00-index.md):** Update the routing table if new domains or documentation files are introduced.
 
 ---
 
@@ -110,11 +110,11 @@ All architecture files in `architecture/` must be maintained with high-fidelity 
 
 | File | Purpose & Contents | Diagram Format |
 |---|---|---|
-| [`architecture/README.md`](file:///c:/Rex/openvent-main/openvent-main/architecture/README.md) | High-level system overview, repo layout, orchestration layer boundaries, operational constraints. | ASCII / Markdown tables |
-| [`architecture/voice-orchestration.md`](file:///c:/Rex/openvent-main/openvent-main/architecture/voice-orchestration.md) | End-to-end call pipeline (Telephony ↔ WebSocket ↔ STT ↔ Agent ↔ LLM ↔ TTS ↔ Tools ↔ Barge-in). | `sequenceDiagram` |
-| [`architecture/api-flow.md`](file:///c:/Rex/openvent-main/openvent-main/architecture/api-flow.md) | Inbound webhooks, scheduled call sweeps, compliance checks, and retry cadences. | `sequenceDiagram` & `flowchart TD` |
-| [`architecture/user-flow.md`](file:///c:/Rex/openvent-main/openvent-main/architecture/user-flow.md) | Operator dashboard flow (`/dashboard`) vs Customer flow (`/app`), onboarding wizard sequence. | `flowchart TB` & `sequenceDiagram` |
-| [`architecture/data-model.md`](file:///c:/Rex/openvent-main/openvent-main/architecture/data-model.md) | Drizzle schema entity relationships, table schemas, FK constraints, and indexes. | `erDiagram` |
+| [`architecture/README.md`](./architecture/README.md) | High-level system overview, repo layout, orchestration layer boundaries, operational constraints. | ASCII / Markdown tables |
+| [`architecture/voice-orchestration.md`](./architecture/voice-orchestration.md) | End-to-end call pipeline (Telephony ↔ WebSocket ↔ STT ↔ Agent ↔ LLM ↔ TTS ↔ Tools ↔ Barge-in). | `sequenceDiagram` |
+| [`architecture/api-flow.md`](./architecture/api-flow.md) | Inbound webhooks, scheduled call sweeps, compliance checks, and retry cadences. | `sequenceDiagram` & `flowchart TD` |
+| [`architecture/user-flow.md`](./architecture/user-flow.md) | Operator dashboard flow (`/dashboard`) vs Customer flow (`/app`), onboarding wizard sequence. | `flowchart TB` & `sequenceDiagram` |
+| [`architecture/data-model.md`](./architecture/data-model.md) | Drizzle schema entity relationships, table schemas, FK constraints, and indexes. | `erDiagram` |
 
 ---
 

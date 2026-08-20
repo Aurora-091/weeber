@@ -29,17 +29,21 @@
   working integration. Wire in a real fetcher before relying on this for legal compliance beyond the app's
   own DNC list.
 
-## Tunneling / going public
+## Public reachability
 
-For anything beyond local testing, your app needs a public URL Twilio can reach.
+Telephony webhooks and the media-stream WebSocket only work if the carrier can reach the backend, so
+`PUBLIC_APP_URL` must be a real public https URL (the `wss://` stream URL is derived from it).
 
-- **Quick tunnel (default, zero-account).** `scripts/tunnel-supervisor.sh` runs `cloudflared`'s free quick
-  tunnel, restarts it on crash, and auto-updates `PUBLIC_APP_URL` + the Twilio Voice webhook whenever the
-  tunnel's (rotating) URL changes. This is what runs out of the box — good for development and this
-  project's current pre-launch phase.
-- **Named Cloudflare Tunnel (optional, for a stable public domain).** Gives you a fixed hostname instead of
-  a rotating one. Requires either your DNS zone to actually live on Cloudflare, or Cloudflare's Partial
-  (CNAME) Setup — which is no longer self-serve on the free tier as of this writing (see
-  [`docs/decisions/`](../decisions/README.md) ADR-013/ADR-014 for what was tried and why it was reverted). Worth
-  setting up once you have a real reason for a stable domain (real user traffic, a production launch), not
-  before.
+- **Deployed.** The API runs on Railway (`railway.json`, single instance) and the frontend on Vercel
+  (`vercel.json`). `PUBLIC_APP_URL` points at the API's public hostname; each org's number webhooks are
+  re-pointed at it by `POST /api/voice/orgs/:orgId/twilio/sync-webhooks`. `CORS_ALLOWED_ORIGINS` must
+  list the real frontend origins — see `middleware/cors-config.ts`, which refuses to fall back to a
+  permissive default in production.
+- **Local development.** `PUBLIC_APP_URL=http://localhost:4200` is fine for everything except a live
+  phone call: REST endpoints, the dashboards, test-chat and synthetic scenarios all work, but a real
+  inbound/outbound call needs a public URL and a matching change in the carrier console. There is no
+  tunnel script in this repo — `scripts/` is local-only and gitignored. Bring your own tunnel
+  (`cloudflared tunnel --url http://localhost:4200`, ngrok, or equivalent), set `PUBLIC_APP_URL` to the
+  hostname it prints, and update the number's "A call comes in" webhook.
+- **Named Cloudflare Tunnel** was evaluated and reverted for the pre-launch phase — see
+  [`docs/decisions/`](../decisions/README.md) ADR-013/ADR-014 for what was tried and why.

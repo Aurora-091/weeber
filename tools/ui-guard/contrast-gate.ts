@@ -328,7 +328,7 @@ if (JSON_OUT) {
   if (STRICT) {
     if (failures.length > 0) {
       console.log(
-        `  ${failures.length} FAILING (--strict: knownFailures ignored) — see ui-audit.md §A`,
+        `  ${failures.length} FAILING (--strict: knownFailures ignored) — see audit/2026-08-03-audit-ui-ux-full-surface.md §A`,
       );
       console.log(
         `  and the §D measured ramp for replacement values. Note that removing hue makes`,

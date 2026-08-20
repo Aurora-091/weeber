@@ -27,6 +27,11 @@ Deepgram/Sarvam + ElevenLabs/Cartesia). See `CLAUDE.md` for the fuller "what thi
 | [`WEEBER-PLAN.md`](./WEEBER-PLAN.md) | The phase roadmap (Foundation → Differentiation → Scale/Moat → Cost/In-house) — what's built vs. what's next. |
 | [`UI-DESIGN-BRIEF.md`](./UI-DESIGN-BRIEF.md) | The confirmed design system/direction for `/dashboard` and `/app`. |
 | [`AGENT-CONSOLE-UI-PLAN.md`](./AGENT-CONSOLE-UI-PLAN.md) | Agent config + live-preview UI plan and build status. |
+| [`AGENTS.md`](./AGENTS.md) / [`CLAUDE.md`](./CLAUDE.md) / [`GEMINI.md`](./GEMINI.md) | Working agreements for AI coding agents — the pre-push command chain, repo conventions, and the doc-governance rules. `CLAUDE.md` is the densest of the three. |
+| [`.env.example`](./.env.example) | Every environment variable the code reads, with its default. The env-var reference. |
+
+Every markdown file at the repo root is listed above. Point-in-time artifacts belong in `audit/`,
+superseded docs in [`docs/archive/`](./docs/archive/README.md) — not here.
 
 ## One path that must never move
 

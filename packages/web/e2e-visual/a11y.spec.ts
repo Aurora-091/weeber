@@ -9,7 +9,7 @@ import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
  * Accessibility audit (Phase 0.7) — REPORT-ONLY, on purpose.
  *
  * WHY IT DOES NOT FAIL THE BUILD YET
- * ui-audit.md §A found real violations across every private surface. A gate that
+ * audit/2026-08-03-audit-ui-ux-full-surface.md §A found real violations across every private surface. A gate that
  * fails on day one has to be disabled on day one, and a disabled gate protects
  * nothing — the same reason the design ratchet is a ratchet and not a lint rule.
  * So this suite records a baseline count per route and always passes. Phase G

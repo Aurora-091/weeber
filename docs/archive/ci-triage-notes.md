@@ -4,9 +4,9 @@
 > (2026-07), kept because its four root causes are still the failure modes worth knowing. Since then
 > the package was renamed (`openvent-compliance` → `@weeber/compliance`, ADR-078), `ci-success` was
 > changed to allow-list `result == "success"` instead of asserting failure (ADR-075), and a
-> `dead-code` reachability ratchet was added (ADR-090) — CI is now eleven jobs plus the aggregate.
-> The live definition is [`.github/workflows/ci.yml`](./.github/workflows/ci.yml); the pre-PR command
-> chain is in [`AGENTS.md`](./AGENTS.md).
+> `dead-code` reachability ratchet was added (ADR-090) — CI is now twelve jobs plus the aggregate.
+> The live definition is [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); the pre-PR command
+> chain is in [`AGENTS.md`](../../AGENTS.md).
 
 Poll command:
 `TOKEN=$(git remote get-url origin | sed -E 's|.*x-access-token:([^@]+)@.*|\1|')`

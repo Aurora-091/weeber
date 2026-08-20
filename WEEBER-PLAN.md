@@ -184,7 +184,8 @@ because the pipeline itself works.
 - [x]/[ ] **B3 — Post-call analytics + revenue attribution + compliance layer.** *(Mixed — see below.)*
   - [x] Revenue attribution: `scheduled_calls.recoveredOrderId`/`recoveredAmount`, order value
     attributed to the executed cart-recovery call within a 7-day window (tested).
-  - [x] Analytics pages exist: `pages/app/analytics.tsx`, `pages/dashboard/{analytics,
+  - [x] Analytics pages exist: `pages/app/home.tsx` (merchant KPIs; the standalone
+    `pages/app/analytics.tsx` was folded into it 2026-07-14), `pages/dashboard/{analytics,
     revenue-analytics,marketing-analytics}.tsx`.
   - [x] Consent/TCPA/DNC/calling-window compliance gate is real and enforced on every outbound call
     (`packages/weeber-compliance`, `voice/compliance/adapters.ts`).
@@ -291,7 +292,7 @@ differentiator.**
   `note` ("not yet supported") on purpose, because auto-dial must first pass the compliance dial-gates.
   Close the loop: **lead lands via ingest/form → agent router picks the right agent → outbound call
   fires**, routed through the existing DNC / TCPA-TRAI quiet-hours / calling-window dial-gates (reuse
-  `voice/scheduler.ts` + `voice/place-outbound-call.ts`, do **not** build a parallel dialer). This is
+  `voice/workflows/scheduler.ts` + `voice/place-outbound-call.ts`, do **not** build a parallel dialer). This is
   the single highest-leverage open item — it turns the shipped leads layer into an end-to-end
   autonomous outbound loop.
   - **Open product decision (CLAUDE.md gate #4 — ask before building the router UI):** the
@@ -517,7 +518,8 @@ immediately so they can be picked up together in one pass instead of as scattere
   Backend was already real and tested (`scheduled_calls.recoveredAmount`/`recoveredOrderId`, B3
   above) — turned out `computeKpis` (`voice/org-queries.ts`) had *already computed* `kpis.recovery`
   (revenue, orders, rate) and `kpis.codConfirmation` (confirm rate) as part of `/api/app/analytics`;
-  the frontend just never rendered it. Fixed 2026-07-13: `pages/app/analytics.tsx` now shows "Revenue
+  the frontend just never rendered it. Fixed 2026-07-13 in `pages/app/analytics.tsx` (folded into
+  `pages/app/home.tsx` on 2026-07-14, where it lives now), which shows "Revenue
   recovered" (currency-formatted via `org.currency`, defaults to INR), "Carts recovered", "Cart
   recovery rate", and "COD confirm rate" stat cards — only rendered when that vertical has activity,
   matching the page's existing pattern. Zero backend changes, zero schema changes — the data was

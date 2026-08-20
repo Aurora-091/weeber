@@ -82,8 +82,8 @@ cd packages/api && bun run db:push       # apply schema.ts to the live DB (addit
 ```
 
 Live call audio only works under the real Bun runtime (Twilio Media Stream WS), never under Vite's dev
-server. CI runs **eleven** jobs on every push to `main` — typecheck, test, build, lint,
-migration-drift, e2e, dead-code, design-guard, visual, a11y, fonts — behind a twelfth `ci-success`
+server. CI runs **twelve** jobs on every push to `main` — typecheck, test, build, lint,
+migration-drift, e2e, dead-code, persona-size, design-guard, visual, a11y, fonts — behind a thirteenth `ci-success`
 aggregate that **allow-lists `result == "success"`** so it cannot go green on jobs that never ran
 (ADR-075). Adding a job means adding it to `ci-success`'s `needs`, or it is decorative.
 
@@ -97,7 +97,7 @@ do it silently to unblock a push. `knip` runs as `knip-bun`, not `knip`; the nod
 **Why the dead-code job exists (read this before adding a new module):** eight of ADRs 073–088 are the
 same defect — code written, documented, unit-tested, and never connected to a caller. A unit test
 imports the symbol directly, so the export looks used while production never calls it; that is why the
-other ten jobs could not see any of them. When you finish a feature, the last step is proving something
+other eleven jobs could not see any of them. When you finish a feature, the last step is proving something
 in production calls it, not that a test does.
 
 **How testing works here — read [`docs/reference/testing.md`](docs/reference/testing.md) before writing or

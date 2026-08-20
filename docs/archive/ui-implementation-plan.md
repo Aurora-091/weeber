@@ -1,6 +1,6 @@
 # Weeber UI — Implementation & Test Plan
 
-Companion to [`ui-audit.md`](./ui-audit.md). The audit says *what's wrong*; this says *in what order, who verifies it, and what "done" looks like*.
+Companion to [`ui-audit.md`](../../audit/2026-08-03-audit-ui-ux-full-surface.md). The audit says *what's wrong*; this says *in what order, who verifies it, and what "done" looks like*.
 
 **Locked inputs (your answers, 2026-08-03):**
 

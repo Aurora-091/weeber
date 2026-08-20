@@ -69,11 +69,11 @@ bun run test:visual
 
 Review and update the active brain state:
 
-1. **[`docs/brain/active-context.md`](file:///docs/brain/active-context.md):**
+1. **[`docs/brain/active-context.md`](../../../docs/brain/active-context.md):**
    - Record current focus, last completed task, and next immediate milestone.
-2. **[`docs/brain/progress.md`](file:///docs/brain/progress.md):**
+2. **[`docs/brain/progress.md`](../../../docs/brain/progress.md):**
    - Shift finished items from *In Progress* to *Shipped / Completed*.
-3. **[`architecture/*.md`](file:///architecture/):**
+3. **[`architecture/*.md`](../../../architecture/):**
    - Ensure Mermaid sequence diagrams and ER diagrams match schema changes and new API routes.
 4. **Knowledge Graph Links:**
    - Ensure all inter-document links use relative markdown paths that Obsidian and GitHub can navigate.

@@ -5,7 +5,7 @@
 > BranchEdge,NodeConfigPanel,NodePalette,types,node-styles,seed-graph}.tsx`,
 > `pages/app/workflows.tsx` (merchant, read-only graph + per-node override side panel),
 > `pages/dashboard/workflow-editor.tsx` + `workflows-list.tsx` (admin, full drag-drop editor),
-> backend routes in `app/routes.ts` (`/workflow-configs`) and `workflows/workflow-templates.ts`,
+> backend routes in `app/routes.ts` (`/workflow-configs`) and `voice/workflows/admin-routes.ts`,
 > schema tables `workflow_templates`/`org_workflow_configs` (migration `0011_grey_scarlet_spider.sql`).
 > Audit #04 (`audit/2026-07-13-audit-04-uiux.md`) gave it its first UI/UX review since shipping and
 > found + fixed 2 P1 bugs (stale "Saved" state after the first save, fetch errors rendered as

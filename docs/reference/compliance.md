@@ -1,7 +1,7 @@
 # Compliance
 
 Enforced automatically — not something an integrator has to remember to wire in. The compliance layer
-lives in its own standalone, framework-agnostic package — [`packages/weeber-compliance`](../packages/weeber-compliance)
+lives in its own standalone, framework-agnostic package — [`packages/weeber-compliance`](../../packages/weeber-compliance)
 (`@weeber/compliance`) — with zero dependency on Twilio, Bun/Hono, or any specific database. It's designed to
 be adoptable independently of Weeber's own pipeline (in a Pipecat, LiveKit, or fully custom voice stack);
 Weeber's own app uses it via a thin Drizzle adapter (`voice/compliance/adapters.ts`) as its own reference

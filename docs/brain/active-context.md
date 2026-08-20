@@ -12,6 +12,19 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **Docs audited against the code; four rewritten, five moved out of the root (2026-08-20).**
+  `docs/reference/api-reference.md` documented 19 endpoints of ~180 and has been rebuilt from the real
+  route tree; `dashboard.md` listed 7 of 23 admin pages; `security.md` pointed at a tunnel script that
+  does not exist in this repo; `.env.example` — the env-var reference `AGENTS.md` sends you to — was
+  missing 37 vars the code reads and still advertised two dead `*_VOICE_ID` overrides. CI's job count
+  (twelve + `ci-success`, `persona-size` was the uncounted one) was wrong in four files. `ui-audit.md`
+  moved to `audit/2026-08-03-audit-ui-ux-full-surface.md` (its three code-side citations updated with
+  it); `ui-implementation-plan.md`, `ui-phase0-notes.md`, `UI-FIX-TASK.md` and `ci-triage-notes.md`
+  moved to `docs/archive/`; `Untitled.md` deleted; `README.md` now indexes every root file. Immutable
+  history (`docs/changelog/`, `docs/decisions/`, `docs/archive/`, `audit/`, `docs/audits/`,
+  `docs/product-strategy/`) was not rewritten, and `docs/agent-prompts/` was not touched. Full detail in
+  `docs/changelog/2026-08.md`.
+
 - **CI was red for four reasons; three fixed, one needs a human (2026-08-20, `403c0ab`, `e2aecc8`,
   `ece0bdd`).** GitHub Actions has refused to start *any* job since 2026-08-19 12:44Z — "recent account
   payments have failed or your spending limit needs to be increased". Nothing in the repo can fix that;

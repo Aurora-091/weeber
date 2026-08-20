@@ -6,8 +6,8 @@ bun install
 # copy env vars and fill in your keys (see Environment variables below)
 cp .env.example .env
 
-# push the database schema
-cd packages/web && bun run db:push
+# push the database schema (turbo -> packages/api's drizzle-kit)
+bun run db:push
 
 # dev server (REST endpoints work; live call audio needs the prod server — see note below)
 bun run dev
@@ -29,7 +29,7 @@ PUBLIC_APP_URL=              # Public https URL Twilio can reach (wss derived au
 AI_GATEWAY_BASE_URL=
 AI_GATEWAY_API_KEY=
 AI_GATEWAY_EMBEDDING_MODEL=  # optional — defaults to openai/text-embedding-3-small (A3b Knowledge Base)
-DATABASE_URL=                # Turso/libSQL connection string
+DATABASE_URL=                # Postgres connection string (Supabase/Railway) — drizzle-orm/postgres-js
 ```
 
 **TTS provider (pick one, default is Cartesia):**
@@ -76,7 +76,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 ```
 WEBHOOK_URL=                          # default n8n/Zapier/Make webhook target
 NUMBER_CONFIG=                        # JSON per-number config, see docs/reference/configuration.md
-WORKFLOWS=                            # JSON workflow configs, see docs/workflows.md
+WORKFLOWS=                            # JSON workflow configs, see docs/reference/configuration.md
 AGENT_PERSONAS=                       # JSON per-number persona overrides
 HUBSPOT_API_KEY=                      # for the crmSync tool
 RECORDING_DISCLOSURE_ENABLED=true     # spoken consent/AI disclosure at call start (default ON)

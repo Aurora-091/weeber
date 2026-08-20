@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
  *    /__harness routes exist. playwright.config.ts documents itself as the
  *    secret-free public-marketing suite and that property is worth keeping
  *    intact.
- * 2. Different testDir. ui-implementation-plan.md put visual.spec.ts in
+ * 2. Different testDir. docs/archive/ui-implementation-plan.md put visual.spec.ts in
  *    `e2e/`, but that is playwright.config.ts's testDir — `bun run test:e2e`
  *    would then run the visual specs against a build WITHOUT the harness flag,
  *    every /__harness route would render the SPA fallback, and the suite would

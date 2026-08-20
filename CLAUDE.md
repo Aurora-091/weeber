@@ -41,7 +41,7 @@ one-per-file in [`docs/decisions/`](./docs/decisions/README.md); what-shipped-wh
   UI/dashboard work; not fine for testing an actual phone call.
 - Before any PR: `packages/api` typecheck + test, `packages/web` typecheck + build, repo-root
   `bun run lint`, and the three repo-root gates `bun run knip:gate` / `bun run design:guard` /
-  `bun run contrast:gate` must all be clean (CI enforces all of them across eleven jobs plus a
+  `bun run contrast:gate` must all be clean (CI enforces all of them across twelve jobs plus a
   `ci-success` aggregate). Branch protection on `main` is not yet enabled.
 - `knip:gate` and `design:guard` are **ratchets**: they compare against a committed baseline and fail
   only when a count increases, so a red one means you added the finding. Do not widen

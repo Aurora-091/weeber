@@ -39,6 +39,21 @@ Tools live in `packages/api/src/voice/tools/`:
   or `HUBSPOT_API_KEY` respectively)
 - `captureField` — records a durable fact (email, order ID, name, etc.) as structured state — see
   [State engine](./state-engine.md)
+- `setIntent` — records *why* the caller called, as soon as it's clear (distinct from the outcome)
+- `hangUp` — ends the call, only alongside a spoken closing line
+- `transferToHuman` — warm-transfers the call to a real person, only after telling the caller
+- `sendSms` — texts the caller mid-call (checkout link, confirmation, callback number)
+- `sendDtmf` — presses keys on the other side's phone menu when calling into an automated tree
+- `flagGuardrailEvent` — records that the agent held a guardrail boundary this turn, alongside the
+  spoken reply; writes to the `guardrail_events` audit table
+- `confirmCodOrder` — records a yes/no on a cash-on-delivery order; a `false` tags and cancels the
+  order via webbersh (see [contract.md](./contract.md))
+- `offerCartRecoveryDiscount` — offers the merchant's pre-approved discount code for an abandoned
+  checkout; the amount and the checkout it applies to are fixed by the merchant, the agent only
+  decides when to offer it
+
+Which tools an agent may call is not global — it's part of the agent frame (`voice/agent-frame.ts`),
+set per org+template on the dashboard's Agents page.
 
 ## Integrations
 
