@@ -677,8 +677,17 @@ export async function resolveAgentConfig(opts: {
   orgId?: string;
   templateKey?: string;
   direction?: "inbound" | "outbound";
+  /** Latency fix (2026-08-20): the "start" handler in stream.ts already fires
+   * its own `orgs` query (name + humanTransferNumber, for the greeting) for
+   * this same org, in the same Promise.all batch this call is part of. When
+   * the caller can prove it's the same org id, it passes that in-flight query
+   * here instead of this function firing an identical second one — pass the
+   * already-started promise object, not an awaited value, so both branches
+   * still resolve concurrently rather than one waiting on the other. Omitted
+   * (every other caller) falls back to this function's own query, unchanged. */
+  orgRowPromise?: Promise<Array<{ name: string | null }>>;
 }): Promise<ResolvedAgentConfig> {
-  const { explicitPersona, orgId, templateKey, direction } = opts;
+  const { explicitPersona, orgId, templateKey, direction, orgRowPromise } = opts;
 
   let resolvedTemplateKey = templateKey;
   if (!resolvedTemplateKey && explicitPersona) {
@@ -711,7 +720,7 @@ export async function resolveAgentConfig(opts: {
       // DEFAULT_PERSONA rather than serving another account's prompt body.
       const [tmpl, [org]] = await Promise.all([
         loadVisibleTemplate(resolvedTemplateKey, orgId),
-        db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1),
+        orgRowPromise ?? db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1),
       ]);
       if (!jobDescription) {
         jobDescription = tmpl?.defaultPersonaPrompt ?? DEFAULT_PERSONA;

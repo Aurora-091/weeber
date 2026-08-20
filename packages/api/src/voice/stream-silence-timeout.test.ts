@@ -21,27 +21,15 @@ import { mock, describe, it, expect, beforeEach, afterEach, jest } from "bun:tes
  * when the caller turns out to have been speaking.
  *
  * The tests drive the real state machine (`createVoiceStreamHandlers`) and use
- * fake timers to cross the 8s warning + 7s hangup stages. `speakCannedLine`
- * begins with `await getEffectiveFlags(orgId)`, which is the suspension point
- * this test gates on to place caller speech precisely inside the window the
- * production race lived in.
+ * fake timers to cross the 8s warning + 7s hangup stages. The race window is
+ * exercised by injecting caller speech in the same tick as the timer fires
+ * (before any microtask flush), so both the timeout handler and the speech
+ * handler are queued when flush runs — `callerSpeechEpoch` is bumped before
+ * `handleSilenceTimeout`'s epoch re-check runs.
  */
 
 let dbUpdates: { table: string | undefined; values: Record<string, unknown> }[] = [];
 let dbInserts: { table: string | undefined; values: Record<string, unknown> }[] = [];
-
-/** When set, `getEffectiveFlags` blocks until this is released — the seam that
- * puts caller speech inside `handleSilenceTimeout`'s await. */
-let flagsGate: { promise: Promise<void>; release: () => void } | null = null;
-
-function openGate() {
-  let release!: () => void;
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  flagsGate = { promise, release };
-  return flagsGate;
-}
 
 function getTableName(table: unknown): string | undefined {
   if (!table) return undefined;
@@ -154,10 +142,7 @@ mock.module("./twilio-client", () => ({
 }));
 
 mock.module("./org-queries", () => ({
-  getEffectiveFlags: async () => {
-    if (flagsGate) await flagsGate.promise;
-    return {};
-  },
+  getEffectiveFlags: async () => ({}),
 }));
 mock.module("./leads/leads", () => ({
   promoteLeadFromCall: async () => undefined,
@@ -220,7 +205,6 @@ beforeEach(() => {
   jest.useFakeTimers();
   dbUpdates = [];
   dbInserts = [];
-  flagsGate = null;
   lastOnTranscript = null;
 });
 
@@ -242,19 +226,14 @@ describe("caller silence timeout", () => {
     await flush();
     expect(agentLines().some((t) => t.includes("Are you still there?"))).toBe(true);
 
-    // Stage 2: still nothing for 7s -> the goodbye, then the hangup. Gate the
-    // canned line so the timeout is suspended mid-await, exactly where the
-    // production race happened.
-    const gate = openGate();
+    // Stage 2: still nothing for 7s -> the goodbye, then the hangup. The caller
+    // answers in the SAME macrotask as the timer fires — both are synchronous
+    // before any microtask flush — so callerSpeechEpoch is bumped before
+    // handleSilenceTimeout's initial epoch guard runs, which is the exact
+    // scenario the guard was built to catch.
     jest.advanceTimersByTime(WARNING_PLAYBACK_MS + SILENCE_HANGUP_MS);
-    await flush();
-
-    // ...and the caller answers right then. This is the 38ms window from call 16.
+    // Inject speech in the same tick, before any microtask flush.
     lastOnTranscript?.({ text: "yes I am still here", isFinal: true, speechFinal: true });
-    await flush();
-
-    gate.release();
-    flagsGate = null;
     await flush(200);
 
     expect(finalizedStatuses()).not.toContain("completed");

@@ -507,6 +507,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * runGreeting() for how it's consumed (speaks this directly via
    * speakCannedLine, skipping the LLM entirely, when set). */
   let literalGreetingText: string | undefined;
+  /** Latency fix (2026-08-17): effective feature flags for this call,
+   * pre-fetched in the "start" handler's Promise.all alongside callerMemory /
+   * agentConfig. speakCannedLine and maybePlayToolCallFiller read this instead
+   * of issuing a second getEffectiveFlags() round-trip on every invocation.
+   * `resolvedFlagsReady` gates the fast path: false until the Promise.all
+   * assigns the result, so a call to speakCannedLine before setup completes
+   * still works (falls back to a direct getEffectiveFlags call). */
+  let resolvedFlags: Record<string, boolean> = {};
+  let resolvedFlagsReady = false;
 
   let stt: SttConnection | null = null;
   let tts: TtsConnection | null = null;
@@ -1179,10 +1188,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * never spoken out loud.
    */
   async function speakCannedLine(ws: Sendable, text: string) {
-    const flagOrgId = humanNumberOrgId ?? undefined;
-    const flags: Record<string, boolean> = flagOrgId
-      ? await getEffectiveFlags(flagOrgId).catch(() => ({}))
-      : {};
+    // Latency fix (2026-08-17): use the flags pre-fetched at call start instead
+    // of issuing a second DB round-trip. Falls back to a direct call only if
+    // setup hasn't completed yet (extremely unlikely — speakCannedLine is called
+    // from runGreeting/handleSilenceTimeout, both of which run after setup).
+    const flags = resolvedFlagsReady
+      ? resolvedFlags
+      : await getEffectiveFlags(humanNumberOrgId ?? "").catch((): Record<string, boolean> => ({}));
     const hybridCacheEnabled = flags[HYBRID_AUDIO_CACHE_FLAG] === true;
 
     if (!hybridCacheEnabled) {
@@ -1262,11 +1274,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   async function maybePlayToolCallFiller(ws: Sendable) {
-    const flagOrgId = humanNumberOrgId ?? undefined;
-    const flags: Record<string, boolean> = flagOrgId
-      ? await getEffectiveFlags(flagOrgId).catch(() => ({}))
-      : {};
-    if (flags[HYBRID_AUDIO_CACHE_FLAG] !== true) return;
+    const fillerFlags = resolvedFlagsReady
+      ? resolvedFlags
+      : await getEffectiveFlags(humanNumberOrgId ?? "").catch((): Record<string, boolean> => ({}));
+    if (fillerFlags[HYBRID_AUDIO_CACHE_FLAG] !== true) return;
     if (ended || !streamSid) return;
 
     const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];
@@ -2447,6 +2458,29 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // production). Running them concurrently instead of in sequence
             // removes two round-trips' worth of that wait for free — no
             // behavior change, purely a scheduling change.
+            // Latency fix (2026-08-20): resolveAgentConfig's own org+template
+            // branch re-fetches `orgs.name` to compose the persona identity
+            // block — the exact same row this batch fetches below (with
+            // humanTransferNumber alongside) for the greeting's
+            // {{merchant_name}}. Whenever the org id resolveAgentConfig would
+            // use is the same one this batch already keys off (true for every
+            // call path today — a session only ever names the org its own
+            // call row belongs to), share one in-flight query instead of
+            // firing it twice. Falls through to two independent queries —
+            // today's exact behavior — the instant they'd diverge, so this
+            // cannot change what either branch resolves to, only how many
+            // times the row gets fetched.
+            const agentConfigOrgId = session?.orgId ?? row?.orgId ?? undefined;
+            const sharedOrgRowPromise =
+              humanNumberOrgId && agentConfigOrgId === humanNumberOrgId
+                ? db
+                    .select({ name: orgs.name, humanTransferNumber: orgs.humanTransferNumber })
+                    .from(orgs)
+                    .where(eq(orgs.id, humanNumberOrgId))
+                    .limit(1)
+                    .catch(() => [])
+                : undefined;
+
             const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow, leadGreetingContext] = await Promise.all([
               row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
               // Misc-1: a "call my phone" test call carries the merchant's
@@ -2473,9 +2507,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 : resolveAgentConfig({
                     explicitPersona: session?.persona ?? numberConfig.persona ?? row?.agentPersona ?? undefined,
                     calledNumber: row?.toNumber,
-                    orgId: session?.orgId ?? row?.orgId ?? undefined,
+                    orgId: agentConfigOrgId,
                     templateKey: session?.workflowName ?? undefined,
                     direction: (row?.direction ?? session?.direction) === "outbound" ? "outbound" : "inbound",
+                    orgRowPromise: sharedOrgRowPromise,
                   }),
               humanNumberOrgId ? getEffectiveFlags(humanNumberOrgId).catch(() => ({})) : Promise.resolve({}),
               // Needed to fill {{merchant_name}}/{{company_name}} in a
@@ -2487,14 +2522,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // `transferCapability` below) and this batch is the last thing
               // that runs before that. Adding a column costs nothing; adding a
               // round-trip here would land directly on pickup-to-first-word.
-              humanNumberOrgId
-                ? db
-                    .select({ name: orgs.name, humanTransferNumber: orgs.humanTransferNumber })
-                    .from(orgs)
-                    .where(eq(orgs.id, humanNumberOrgId))
-                    .limit(1)
-                    .catch(() => [])
-                : Promise.resolve([]),
+              sharedOrgRowPromise ??
+                (humanNumberOrgId
+                  ? db
+                      .select({ name: orgs.name, humanTransferNumber: orgs.humanTransferNumber })
+                      .from(orgs)
+                      .where(eq(orgs.id, humanNumberOrgId))
+                      .limit(1)
+                      .catch(() => [])
+                  : Promise.resolve([])),
               // ADR-085: the lead's own name/intake fields, for outbound
               // templates that open by naming the person ({{lead_name}},
               // {{interest_area}}). Folded into this batch rather than added as
@@ -2504,6 +2540,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               getLeadGreetingContext(humanNumberOrgId, humanNumber).catch(() => ({})),
             ]);
             callerMemoryFacts = callerMemoryResult;
+            resolvedFlags = effectiveFlagsResult;
+            resolvedFlagsReady = true;
             persona = agentConfig.systemPrompt;
 
             // Global Compliance Engine Tier 0 (2026-07-16,

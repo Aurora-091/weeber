@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { buildKnownFactsBlock, buildWorkflowContextBlock, resolveAgentConfig, toTurnTokenUsage } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
+import { renderTemplate } from "./workflows/variables";
 
 describe("toTurnTokenUsage", () => {
   it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (Groq/OpenAI automatic caching)", () => {
@@ -315,6 +316,126 @@ describe("resolveAgentConfig — literalGreetingTemplate (latency fix, 2026-07-1
     });
 
     expect(config.literalGreetingTemplate).toBeUndefined();
+  });
+});
+
+describe("resolveAgentConfig — shared org-row promise (startup-latency fix, 2026-08-20)", () => {
+  // stream.ts's "start" handler fires one `orgs` query and hands the
+  // in-flight promise to resolveAgentConfig, instead of resolveAgentConfig
+  // firing an identical second one for the same org. These tests exercise
+  // that parameter directly, independent of the module's own db.select
+  // mock (which is why they supply org-row data via orgRowPromise rather
+  // than mockOrgConfig/mockTemplate — the two are deliberately different
+  // sources feeding the same identity block).
+  beforeEach(() => {
+    mockOrgConfig = null;
+    mockTemplate = null;
+  });
+
+  it("resolves org identity from orgRowPromise when supplied, instead of a second internal query", async () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" };
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt" };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+      orgRowPromise: Promise.resolve([{ name: "Acme Corp", humanTransferNumber: null }]),
+    });
+
+    expect(config.promptInputs?.identity).toMatchObject({ merchantName: "Acme Corp" });
+    expect(config.systemPrompt).toContain("You are calling on behalf of Acme Corp");
+  });
+
+  it("resolves the same org identity with no orgRowPromise given, unchanged from before this parameter existed", async () => {
+    // No orgRowPromise here — every existing caller (routes.ts, test-call-stream.ts,
+    // and every other test in this file) omits it, so this is the regression
+    // guard proving that path is untouched. mockOrgConfig/mockTemplate's shared
+    // db.select mock (top of this file) doesn't model orgs.name distinctly from
+    // agentTemplates, so this only asserts resolveAgentConfig still resolves
+    // without the parameter — not a specific merchant name.
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" };
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt" };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+    });
+
+    expect(config.systemPrompt).toContain("Org Custom Prompt");
+    expect(config.promptInputs?.identity).toBeDefined();
+  });
+
+  it("treats an orgRowPromise that resolves to no rows the same as an org with no name", async () => {
+    mockOrgConfig = { personaPrompt: "Org Custom Prompt" };
+    mockTemplate = { defaultPersonaPrompt: "Template Prompt" };
+
+    const config = await resolveAgentConfig({
+      explicitPersona: "shopify-cart-recovery",
+      orgId: "org-123",
+      templateKey: "shopify-cart-recovery",
+      orgRowPromise: Promise.resolve([]),
+    });
+
+    expect(config.promptInputs?.identity).toMatchObject({ merchantName: null });
+    expect(config.systemPrompt).not.toContain("You are calling on behalf of");
+  });
+});
+
+describe("literal greeting rendering — org identity fills {{merchant_name}}/{{company_name}} (the \"start\" handler's fast path, stream.ts)", () => {
+  // Mirrors the exact context-building stream.ts does around the literal-
+  // greeting fast path (agent_name/merchant_name/company_name merge, then
+  // the same unresolved-tag scan that decides whether to speak the canned
+  // line or fall back to the LLM greeting) as a pure-function test, since
+  // that logic lives inline in the WS handler and isn't itself exported.
+  function renderGreeting(template: string, agentName: string | undefined, merchantName: string | null | undefined) {
+    const context: Record<string, string> = { agent_name: agentName?.trim() || "our team" };
+    if (merchantName?.trim()) {
+      context.merchant_name = merchantName.trim();
+      context.company_name = merchantName.trim();
+    }
+    const rendered = renderTemplate(template, context);
+    const unresolvedTags = [...new Set(Array.from(rendered.matchAll(/\{\{(\w+)\}\}/g), (m) => m[1]!))];
+    return { rendered, unresolvedTags };
+  }
+
+  it("fully resolves the canned greeting when the agent name and org name are both known", () => {
+    const { rendered, unresolvedTags } = renderGreeting(
+      "Hello, this is {{agent_name}} calling from {{merchant_name}}.",
+      "Priya",
+      "Acme Corp",
+    );
+    expect(rendered).toBe("Hello, this is Priya calling from Acme Corp.");
+    expect(unresolvedTags).toEqual([]);
+  });
+
+  // Regression test for the 2026-08-12 production bug: org_agent_configs.name
+  // and orgs.name are merchant-typed free text, and a trailing space ("alice ")
+  // rendered as a doubled space mid-sentence — an audible stumble through TTS.
+  it("trims a trailing space on the merchant/agent name so it never doubles a space mid-sentence", () => {
+    const { rendered } = renderGreeting(
+      "This is {{agent_name}} calling from {{company_name}}.",
+      "alice ",
+      "Acme Corp ",
+    );
+    expect(rendered).toBe("This is alice calling from Acme Corp.");
+    expect(rendered).not.toContain("  ");
+  });
+
+  it("falls back to 'our team' when no agent name is configured, and leaves company_name unresolved when the org has no name", () => {
+    const { rendered, unresolvedTags } = renderGreeting(
+      "This is {{agent_name}} calling from {{company_name}}.",
+      undefined,
+      null,
+    );
+    expect(rendered).toBe("This is our team calling from {{company_name}}.");
+    expect(unresolvedTags).toEqual(["company_name"]);
+  });
+
+  it("flags an unresolved tag so the caller (stream.ts) knows to fall back to the LLM greeting instead of speaking a literal {{tag}}", () => {
+    const { unresolvedTags } = renderGreeting("Hi, this is {{agent_name}} from {{unknown_field}}.", "Priya", "Acme Corp");
+    expect(unresolvedTags).toEqual(["unknown_field"]);
   });
 });
 
