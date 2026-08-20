@@ -78,7 +78,7 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Reminds policyholders of an upcoming renewal or premium due date and routes anything beyond a simple confirm/decline to a licensed agent.",
       fileName: "04-insurance-policy-renewal-agent.md",
-      literalGreetingTemplate: "Hello, this is {{agent_name}} calling on behalf of {{company_name}} — a quick reminder about your policy renewal. Do you have a moment?",
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling on behalf of {{merchant_name}} — a quick reminder about your policy renewal. Do you have a moment?",
       // flagGuardrailEvent added 2026-07-16 during the India+US regulatory iteration — the script
       // now explicitly calls it on the new "replacement" refusal (see
       // docs/agent-prompts/00-insurance-regulatory-reference.md); would otherwise repeat the
@@ -92,7 +92,18 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Follows up on a new inbound lead, qualifies interest, and books a callback with a licensed advisor.",
       fileName: "05-insurance-lead-followup-agent.md",
-      literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{company_name}} — you'd recently shown interest in {{interest_area}}. Do you have a couple of minutes?",
+      // {{interest_area}} was removed here (2026-08-17): it came from the leads
+      // row via getLeadGreetingContext, which returns {} when the lead is absent
+      // or has no intake fields. 11/11 production calls had no lead row at call
+      // time, so {{interest_area}} always left an unresolved tag and the fast
+      // path never fired once. Replaced with a generic opener using only
+      // {{agent_name}} and {{merchant_name}}, both guaranteed-resolvable (see
+      // stream.ts's greetingContext: agent_name defaults to "our team", and
+      // merchant_name is set from orgs.name when present — {{company_name}}
+      // is the same value under an older alias; standardized on
+      // {{merchant_name}} here so there's one canonical guaranteed tag, not
+      // two (2026-08-20)).
+      literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{merchant_name}} — I wanted to quickly follow up with you. Do you have a couple of minutes?",
       // flagGuardrailEvent added 2026-07-16 — same reasoning as insurance-policy-renewal above.
       defaultTools: ["captureField", "bookAppointment", "setDisposition", "setIntent", "flagGuardrailEvent", "crmSync"],
       active: true,
@@ -103,7 +114,9 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Confirms continued interest from an already-warm lead and live-transfers to a licensed advisor, or books a specific callback if no advisor is available.",
       fileName: "06-insurance-appointment-setter-agent.md",
-      literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently shown interest in {{interest_area}}, and I'd love to connect you with one of our licensed advisors. Is now a good time?",
+      // {{lead_name}} and {{interest_area}} removed (2026-08-17): same
+      // leads-row dependency as insurance-lead-followup above.
+      literalGreetingTemplate: "Hi, this is {{agent_name}} with {{merchant_name}} — I wanted to connect you with one of our licensed advisors. Is now a good time?",
       defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
@@ -113,7 +126,8 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Welcomes a new policyholder after a policy is issued, confirms documents arrived, and routes any coverage/claims/change/cancel request to a licensed advisor.",
       fileName: "07-insurance-post-sale-welcome-agent.md",
-      literalGreetingTemplate: "Hello, is this {{policyholder_name}}? This is {{agent_name}} calling on behalf of {{company_name}} — a quick welcome call now that your new policy is in place. Do you have a moment?",
+      // {{policyholder_name}} removed (2026-08-17): same leads-row dependency.
+      literalGreetingTemplate: "Hello, this is {{agent_name}} calling on behalf of {{merchant_name}} — a quick welcome call now that your new policy is in place. Do you have a moment?",
       defaultTools: ["captureField", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
@@ -123,7 +137,8 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Collects a 1-5 satisfaction rating and one open comment after a servicing interaction or claim, routing any complaint to a licensed human without engaging on its merits.",
       fileName: "08-insurance-feedback-nps-agent.md",
-      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{company_name}}. I'm following up on {{interaction_type}} — do you have a minute to share how it went?",
+      // {{interaction_type}} removed (2026-08-17): same leads-row dependency.
+      literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. I'm following up on a recent interaction — do you have a minute to share how it went?",
       defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
@@ -133,7 +148,9 @@ export const AGENT_TEMPLATES = [
       vertical: "insurance",
       description: "Qualifies a warm final-expense lead (need, service preference, cost context, rough budget, benefit timing, tobacco, banking readiness, coarse health-readiness flag), texts the agency's contact card, then live-transfers to a licensed advisor or books a callback. Stops cold at the regulated line — never quotes, recommends a carrier, underwrites, or collects SSN/bank/health details; those seven script sections are handed to the licensed advisor as a pre-filled closer brief instead.",
       fileName: "09-insurance-final-expense-qualifier-agent.md",
-      literalGreetingTemplate: "Hi, is this {{lead_name}}? This is {{agent_name}} with {{company_name}} — you'd recently reached out about {{interest_area}}, and I wanted to follow up. Do you have a couple of minutes?",
+      // {{lead_name}} and {{interest_area}} removed (2026-08-17): same
+      // leads-row dependency as the other insurance templates.
+      literalGreetingTemplate: "Hi, this is {{agent_name}} with {{merchant_name}} — you'd recently reached out about final expense coverage, and I wanted to follow up. Do you have a couple of minutes?",
       // sendSms added so the "I'll text you our contact card" step in Section 4 is a real
       // capability rather than a promise the agent cannot keep.
       defaultTools: ["captureField", "sendSms", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],

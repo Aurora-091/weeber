@@ -22,29 +22,33 @@
  */
 export const INSURANCE_GREETINGS: Record<string, Record<string, string>> = {
   "insurance-policy-renewal": {
-    hi: "नमस्ते, मैं {{company_name}} की ओर से {{agent_name}} बात कर रहा हूँ — आपकी policy renewal के बारे में एक छोटी सी reminder call है। क्या आपके पास एक मिनट है?",
+    hi: "नमस्ते, मैं {{merchant_name}} की ओर से {{agent_name}} बात कर रहा हूँ — आपकी policy renewal के बारे में एक छोटी सी reminder call है। क्या आपके पास एक मिनट है?",
     hinglish:
-      "Namaste, main {{company_name}} ki taraf se {{agent_name}} baat kar raha hoon — aapki policy renewal ke baare mein ek chhoti si reminder call hai. Kya aapke paas ek minute hai?",
+      "Namaste, main {{merchant_name}} ki taraf se {{agent_name}} baat kar raha hoon — aapki policy renewal ke baare mein ek chhoti si reminder call hai. Kya aapke paas ek minute hai?",
   },
+  // {{interest_area}} removed (2026-08-17) — mirrors the English seed change in seed.ts.
   "insurance-lead-followup": {
-    hi: "नमस्ते, मैं {{company_name}} से {{agent_name}} बात कर रहा हूँ — आपने हाल ही में {{interest_area}} में interest दिखाया था। क्या आपके पास दो मिनट हैं?",
+    hi: "नमस्ते, मैं {{merchant_name}} से {{agent_name}} बात कर रहा हूँ — मैं आपसे जल्दी follow-up करना चाहता था। क्या आपके पास दो मिनट हैं?",
     hinglish:
-      "Hi, main {{company_name}} se {{agent_name}} baat kar raha hoon — aapne recently {{interest_area}} mein interest dikhaya tha. Kya aapke paas do minute hain?",
+      "Hi, main {{merchant_name}} se {{agent_name}} baat kar raha hoon — main aapse jaldi follow-up karna chahta tha. Kya aapke paas do minute hain?",
   },
+  // {{lead_name}} and {{interest_area}} removed (2026-08-17) — mirrors seed.ts.
   "insurance-appointment-setter": {
-    hi: "नमस्ते, क्या मेरी बात {{lead_name}} से हो रही है? मैं {{company_name}} से {{agent_name}} बात कर रहा हूँ — आपने हाल ही में {{interest_area}} में interest दिखाया था, और मैं आपको हमारे एक licensed advisor से connect करना चाहूँगा। क्या अभी सही समय है?",
+    hi: "नमस्ते, मैं {{merchant_name}} से {{agent_name}} बात कर रहा हूँ — मैं आपको हमारे एक licensed advisor से connect करना चाहूँगा। क्या अभी सही समय है?",
     hinglish:
-      "Hi, kya meri baat {{lead_name}} se ho rahi hai? Main {{company_name}} se {{agent_name}} baat kar raha hoon — aapne recently {{interest_area}} mein interest dikhaya tha, aur main aapko hamare ek licensed advisor se connect karna chahunga. Kya abhi sahi time hai?",
+      "Hi, main {{merchant_name}} se {{agent_name}} baat kar raha hoon — main aapko hamare ek licensed advisor se connect karna chahunga. Kya abhi sahi time hai?",
   },
+  // {{policyholder_name}} removed (2026-08-17) — mirrors seed.ts.
   "insurance-post-sale-welcome": {
-    hi: "नमस्ते, क्या मेरी बात {{policyholder_name}} से हो रही है? मैं {{company_name}} की ओर से {{agent_name}} बात कर रहा हूँ — आपकी नई policy शुरू होने पर एक छोटी सी welcome call है। क्या आपके पास एक मिनट है?",
+    hi: "नमस्ते, मैं {{merchant_name}} की ओर से {{agent_name}} बात कर रहा हूँ — आपकी नई policy शुरू होने पर एक छोटी सी welcome call है। क्या आपके पास एक मिनट है?",
     hinglish:
-      "Namaste, kya meri baat {{policyholder_name}} se ho rahi hai? Main {{company_name}} ki taraf se {{agent_name}} baat kar raha hoon — aapki nayi policy shuru hone par ek chhoti si welcome call hai. Kya aapke paas ek minute hai?",
+      "Namaste, main {{merchant_name}} ki taraf se {{agent_name}} baat kar raha hoon — aapki nayi policy shuru hone par ek chhoti si welcome call hai. Kya aapke paas ek minute hai?",
   },
+  // {{interaction_type}} removed (2026-08-17) — mirrors seed.ts.
   "insurance-feedback-nps": {
-    hi: "नमस्ते, मैं {{company_name}} से {{agent_name}} बात कर रहा हूँ। मैं {{interaction_type}} के बारे में follow-up कर रहा हूँ — क्या आपके पास एक मिनट है यह बताने के लिए कि अनुभव कैसा रहा?",
+    hi: "नमस्ते, मैं {{merchant_name}} से {{agent_name}} बात कर रहा हूँ। मैं एक recent interaction के बारे में follow-up कर रहा हूँ — क्या आपके पास एक मिनट है यह बताने के लिए कि अनुभव कैसा रहा?",
     hinglish:
-      "Hi, main {{company_name}} se {{agent_name}} baat kar raha hoon. Main {{interaction_type}} ke baare mein follow-up kar raha hoon — kya aapke paas ek minute hai yeh batane ke liye ki experience kaisa raha?",
+      "Hi, main {{merchant_name}} se {{agent_name}} baat kar raha hoon. Main ek recent interaction ke baare mein follow-up kar raha hoon — kya aapke paas ek minute hai yeh batane ke liye ki experience kaisa raha?",
   },
 };
 

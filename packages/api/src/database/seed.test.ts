@@ -51,6 +51,7 @@ mock.module("./index", () => {
 import { seedAgentTemplates, AGENT_TEMPLATES } from "./seed";
 import { AVAILABLE_TOOL_NAMES } from "../voice/agent-frame";
 import { join } from "node:path";
+import { renderTemplate } from "../voice/workflows/variables";
 
 /**
  * Regression guard (2026-07-16 audit follow-up) for the confirmCodOrder/
@@ -180,5 +181,94 @@ describe("seedAgentTemplates", () => {
       }
     }
     expect(missingFromDefaultTools).toEqual([]);
+  });
+});
+
+/**
+ * Fast-path resolution tests (2026-08-17, tags standardized 2026-08-20).
+ *
+ * Every seeded template's literalGreetingTemplate must resolve to a tag-free
+ * string using ONLY the two guaranteed-resolvable values stream.ts always
+ * provides: {{agent_name}} (defaults to "our team" when unconfigured) and
+ * {{merchant_name}} (from orgs.name, when the org has one). If a template
+ * still contained a lead-dependent tag (interest_area, lead_name,
+ * policyholder_name, interaction_type) this test fails — which is exactly
+ * what happened on 11/11 production calls before the 2026-08-17 fix.
+ * {{company_name}} was an equivalent alias stream.ts also set (same value as
+ * merchant_name) but is no longer used in any seeded template — one
+ * canonical guaranteed tag, not two.
+ *
+ * The second test proves the fallback is safe: a template with an optional
+ * extra tag that has NO value in context should leave that tag unresolved,
+ * so stream.ts's guard correctly rejects it and falls back to the LLM path
+ * (no crash, no empty string, the caller hears something either way).
+ */
+describe("literalGreetingTemplate — fast-path resolution", () => {
+  // The minimum context stream.ts always provides. agent_name falls back to
+  // "our team" when orgAgentConfigs.name is null; merchant_name is set from
+  // orgs.name when the org has one (see stream.ts's greetingContext build).
+  const GUARANTEED_CONTEXT = {
+    agent_name: "Alex",
+    merchant_name: "Acme Insurance",
+  };
+
+  it("every seeded template resolves to a tag-free string with only guaranteed context", () => {
+    const UNRESOLVED_TAG = /\{\{\w+\}\}/;
+    const failures: string[] = [];
+
+    for (const t of AGENT_TEMPLATES) {
+      if (!t.literalGreetingTemplate) continue;
+      const rendered = renderTemplate(t.literalGreetingTemplate, GUARANTEED_CONTEXT);
+      if (UNRESOLVED_TAG.test(rendered)) {
+        const remaining = [...rendered.matchAll(/\{\{(\w+)\}\}/g)].map((m) => `{{${m[1]}}}`);
+        failures.push(
+          `Template "${t.key}" still has unresolved tags after guaranteed context: ${remaining.join(", ")}. ` +
+            `These tags require a lead row that may not exist at call time — replace them with ` +
+            `{{agent_name}} or {{merchant_name}}.`,
+        );
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  // Regression guard for the 2026-08-20 tag standardization: {{company_name}}
+  // still resolves today (stream.ts sets it alongside merchant_name), so a
+  // template using it would silently pass the test above — this catches a
+  // template drifting back onto the non-canonical alias.
+  it("no seeded template uses the {{company_name}} alias — {{merchant_name}} is the one canonical tag", () => {
+    const templatesUsingAlias = AGENT_TEMPLATES.filter((t) => t.literalGreetingTemplate?.includes("{{company_name}}")).map(
+      (t) => t.key,
+    );
+    expect(templatesUsingAlias).toEqual([]);
+  });
+
+  it("a template with an extra optional tag falls back safely when the tag has no value", () => {
+    // Simulates a hypothetical template that still uses a lead-dependent tag.
+    // renderTemplate leaves unresolved tags as-is (no crash, no empty string) —
+    // stream.ts's unresolved-tag guard then detects it and falls back to the LLM.
+    const templateWithOptionalTag =
+      "Hi, is this {{lead_name}}? This is {{agent_name}} with {{merchant_name}}.";
+    const rendered = renderTemplate(templateWithOptionalTag, GUARANTEED_CONTEXT);
+
+    // The two guaranteed tags resolve; the optional one is left as-is.
+    expect(rendered).toBe("Hi, is this {{lead_name}}? This is Alex with Acme Insurance.");
+
+    // Confirm stream.ts's detection logic would reject this (the same regex it uses).
+    const unresolvedTags = [...rendered.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]!);
+    expect(unresolvedTags).toEqual(["lead_name"]);
+    // → stream.ts sees unresolvedGreetingTags.length > 0 and falls back to LLM. No crash.
+  });
+
+  it("the agent_name tag resolves even when the org has not configured a name", () => {
+    // stream.ts: agent_name: agentConfig.agentName?.trim() || "our team"
+    // No agentName configured → falls back to "our team".
+    const template = "Hi, this is {{agent_name}} from {{merchant_name}}.";
+    const rendered = renderTemplate(template, {
+      agent_name: "our team",
+      merchant_name: "Acme Co",
+    });
+    expect(rendered).toBe("Hi, this is our team from Acme Co.");
+    expect(/\{\{\w+\}\}/.test(rendered)).toBe(false);
   });
 });

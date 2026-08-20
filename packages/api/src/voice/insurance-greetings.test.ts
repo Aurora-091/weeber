@@ -62,8 +62,44 @@ describe("resolveLocalizedGreeting", () => {
     }
   });
 
-  it("keeps merge tags intact in the localized greetings (so renderTemplate + the unresolved-tag guard still work)", () => {
-    expect(INSURANCE_GREETINGS["insurance-policy-renewal"]!.hi).toContain("{{company_name}}");
-    expect(INSURANCE_GREETINGS["insurance-post-sale-welcome"]!.hinglish).toContain("{{policyholder_name}}");
+  it("localized greetings use only guaranteed-resolvable tags (agent_name, merchant_name) — no lead-row deps (2026-08-17, tag standardized 2026-08-20)", () => {
+    // All localized variants must resolve with only the context stream.ts always
+    // provides. Lead-dependent tags (policyholder_name, lead_name, interest_area,
+    // interaction_type) were removed because getLeadGreetingContext returns {} when
+    // the lead is absent, which was causing 11/11 production calls to fall back to
+    // the LLM greeting instead of using the fast path.
+    const UNRESOLVED_TAG = /\{\{\w+\}\}/;
+    const GUARANTEED_CONTEXT = { agent_name: "Alex", merchant_name: "Acme Co" };
+
+    for (const [templateKey, langs] of Object.entries(INSURANCE_GREETINGS)) {
+      for (const [lang, template] of Object.entries(langs)) {
+        const rendered = template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
+          const v = GUARANTEED_CONTEXT[key as keyof typeof GUARANTEED_CONTEXT];
+          return v !== undefined ? v : match;
+        });
+        expect(
+          UNRESOLVED_TAG.test(rendered),
+          `${templateKey}/${lang} still has unresolved tags after guaranteed context: "${rendered}"`,
+        ).toBe(false);
+      }
+    }
+
+    // Spot-check: the guaranteed tags are actually present in the strings.
+    expect(INSURANCE_GREETINGS["insurance-policy-renewal"]!.hi).toContain("{{merchant_name}}");
+    expect(INSURANCE_GREETINGS["insurance-policy-renewal"]!.hi).toContain("{{agent_name}}");
+  });
+
+  // Regression guard mirroring seed.test.ts's: {{company_name}} still
+  // resolves today (stream.ts sets it alongside merchant_name), so it would
+  // silently pass the test above — this catches a localized string drifting
+  // back onto the non-canonical alias.
+  it("no localized greeting uses the {{company_name}} alias — {{merchant_name}} is the one canonical tag", () => {
+    const usingAlias: string[] = [];
+    for (const [templateKey, langs] of Object.entries(INSURANCE_GREETINGS)) {
+      for (const [lang, template] of Object.entries(langs)) {
+        if (template.includes("{{company_name}}")) usingAlias.push(`${templateKey}/${lang}`);
+      }
+    }
+    expect(usingAlias).toEqual([]);
   });
 });
