@@ -12,6 +12,19 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **"Sign in again" was wrong advice for a network failure (2026-08-20, `4547a65`).** User reported
+  "Couldn't load your workspace / Diagnostic: Failed to fetch". Traced live: the API was healthy
+  (Railway `SUCCESS` deploy, `/api/health` returned `200` when hit by IP) — the user's mobile hotspot's
+  DNS resolver was refusing to resolve the API's `*.up.railway.app` host specifically (worked fine via
+  public DNS or a different network). Not a server issue or an account/session issue. `UserShell`'s `me`
+  query previously showed identical "sign in again" copy for every failure, including this one — wrong
+  advice for a browser that can't reach the server at all. Now branches on `me.error instanceof
+  TypeError` (native fetch failure vs. our own thrown `Error` for a real HTTP response): a network
+  failure gets "Can't reach Weeber" copy + a "Try again" (refetch) button; a real error keeps "sign in
+  again". Stopped retrying real HTTP errors, retries network failures up to twice. Converted both
+  buttons to `ui/button` while there, paying down `design:guard`'s `rawButton` ratchet by one (111 → 110)
+  instead of regressing it.
+
 - **Admin/user surfaces gained real 404s; API gained a JSON one (2026-08-20, `c63f962`).** Only the
   public marketing surface had a real 404 (`pages/not-found.tsx`) — an unmatched route under
   `/dashboard/*` or `/app/*` silently redirected home instead, the exact soft-404 pattern that page's own
