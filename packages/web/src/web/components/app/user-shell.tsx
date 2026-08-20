@@ -172,7 +172,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
       return (
         <Notice
           title="Couldn't load your workspace"
-          body="Your session may have expired, or the server is unreachable. Sign in again — if this keeps happening, contact support."
+          body={`Diagnostic: ${me.error?.message || "Unknown error"}. Your session may have expired, or the server is unreachable. Sign in again — if this keeps happening, contact support.`}
           action={
             <button
               type="button"
