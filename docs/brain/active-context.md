@@ -12,6 +12,51 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **Pilot-onboarding execution plan filed (2026-08-20, `6592597`).** A "Weeber Pilot-Onboarding
+  Execution Plan" sat untracked at the repo root — the direct execution plan following audit-18's
+  findings (`audit/2026-08-16-audit-18-the-activation-boundary-is-unclear.md`, itself only filed and
+  indexed 2026-08-20 in `1b5390a` — that filing commit never got logged here or in the changelog either,
+  noting it now). Spot-verified against the actual repo before filing (baseline commit, migration
+  numbers, the insurance-has-agents-but-no-workflow-templates gap, the ingest route's unwired
+  `triggerWorkflow` note) — all checked out exactly as written. Filed under
+  `docs/product-strategy/weeber-pilot-onboarding-execution-plan-2026-08-20.md`, alongside its sibling
+  planning docs. Sequences Draft-vs-Live separation, immutable run versioning, a shared
+  event-to-release dispatcher, and the two first pilot outcomes (Shopify cart recovery, Insurance lead
+  follow-up) into an ordered critical path with binary readiness gates. Nothing built yet — this is the
+  plan, not the implementation.
+
+- **Every seeded greeting now resolves on one canonical tag (2026-08-20, `a7b63b6`).** The insurance
+  `literalGreetingTemplate`s (04–09) used `{{interest_area}}`/`{{lead_name}}`/`{{policyholder_name}}`/
+  `{{interaction_type}}` — all sourced from `getLeadGreetingContext`, which returns `{}` whenever the
+  lead is absent or has no intake fields. 11/11 production calls had no lead row at call time, so these
+  tags always left the greeting unresolved and the LLM-free fast path never fired once for any insurance
+  call. Rewrote all 6 insurance templates (`seed.ts`) and their 10 localized hi/hinglish variants
+  (`insurance-greetings.ts`) to use only `{{agent_name}}` and `{{merchant_name}}` — the two tags
+  `stream.ts` always guarantees. Also standardized every template (insurance and the 3 already-correct
+  Shopify ones) off `{{company_name}}` — an identical-value alias `stream.ts` also set — onto
+  `{{merchant_name}}` as the one canonical tag. Two new regression-guard tests (in `seed.test.ts` and
+  `insurance-greetings.test.ts`) assert no template drifts back onto the alias, since it still silently
+  resolves today. No conversation-loop, tool, LLM/provider, or TTS code touched.
+
+- **Duplicate `orgs` query removed from the "start" handler's critical path (2026-08-20, `a6d2b87`).**
+  `resolveAgentConfig`'s own org+template branch fired its own `orgs.name` query inside its sequential
+  Q1→Q2→Q3 chain — the exact same row the outer `Promise.all` batch already fetches (with
+  `humanTransferNumber` alongside) for the greeting's `{{merchant_name}}`. Added an optional
+  `orgRowPromise` param: `stream.ts` now creates one `orgs` query and hands the in-flight promise to
+  both consumers, but only when it can prove the org id `resolveAgentConfig` would use is the same one
+  the outer batch already keys off — falls through to two independent queries (today's exact behavior)
+  the instant they'd diverge, so this cannot change what either branch resolves to, only how many times
+  the row gets fetched. 9 queries → 8 per typical call; the real win is less load on the shared DB
+  connection pool under concurrent volume (per ADR-116 addendum), not a measured per-call latency
+  number — no live-call access from here to measure one. 7 new tests in `agent.test.ts` (agent config
+  resolution, org identity, literal-greeting rendering). Bundled in the same commit: a second,
+  pre-existing latency fix (`resolvedFlags`/`resolvedFlagsReady` caching so `speakCannedLine`/
+  `maybePlayToolCallFiller` stop re-fetching feature flags on every mid-call invocation) that this
+  session inherited mid-flight, fixed two latent type errors it introduced, and removed a fully-dead
+  `openGate`/`flagsGate` test seam it left behind.
+  **Known issue, not fixed:** `stream-silence-timeout.test.ts`'s "does not hang up on a caller who
+  answers while the goodbye line is being prepared" still fails — see `progress.md`'s Known Issues.
+
 - **Confirmation/OTP/reset mail was silently using Supabase's default mailer, not Resend (2026-08-20,
   this session — in progress).** User-reported "confirmation and waitlist mail not arriving from
   hello@weeber.ai" turned out to be two unrelated systems. Waitlist mail (Resend, `email.ts`/

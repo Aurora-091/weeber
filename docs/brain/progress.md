@@ -12,6 +12,19 @@ updated: 2026-08-20
 
 ## Done (works end-to-end, real-verified)
 
+- **Voice "start" handler: duplicate `orgs` query removed + every seeded greeting made resolvable
+  (2026-08-20, `a6d2b87`/`a7b63b6`).** Two pieces. (1) `resolveAgentConfig` no longer fires its own
+  `orgs.name` query when the outer `Promise.all` batch already has one in flight for the same org —
+  `orgRowPromise` param, shares one query instead of two, falls back to independent queries the instant
+  the org ids could differ so behavior is unchanged in every case. (2) All 6 insurance
+  `literalGreetingTemplate`s and their 10 localized hi/hinglish variants no longer use lead-row-dependent
+  tags (`{{interest_area}}`/`{{lead_name}}`/`{{policyholder_name}}`/`{{interaction_type}}`) that left the
+  greeting unresolved on 11/11 production calls (no lead row at call time) — down to
+  `{{agent_name}}`/`{{merchant_name}}` only, the two tags `stream.ts` always guarantees, with a
+  regression-guard test against the `{{company_name}}` alias drifting back in. 7 + 2 new tests. Verified:
+  typecheck clean, lint clean, 1413/1414 api tests (the 1 failure is the known issue below, unrelated).
+  See `active-context.md` for full detail.
+
 - **Supabase account migration + ADR-117 vault-function fix + login/signup relocated (2026-08-17 to
   2026-08-19).** New account, two fresh projects — production `qghtkadxbtptvbfbmsdz`, staging
   `zbcrwexrqfmjxhewirgp` — fully migrated (`drizzle/` `0000`–`0052` + `supabase/migrations/*.sql`); old
@@ -190,6 +203,20 @@ updated: 2026-08-20
 - Actually set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the project + env var).
 
 ## Known issues / debt (open)
+
+- **The caller-silence race-condition test fails (2026-08-20, `stream-silence-timeout.test.ts`,
+  found while landing `a6d2b87`, not fixed).** "does not hang up on a caller who answers while the
+  goodbye line is being prepared" — the regression test for a real production bug (call 16: hanging up
+  on a caller who answered right as the goodbye line started) — currently fails: the call gets finalized
+  as `completed` even though the caller answers in time. Root cause: the `resolvedFlags` caching change
+  in the same commit means `speakCannedLine` no longer awaits `getEffectiveFlags()` once flags are
+  cached, which removed the seam the test used to gate that call and inject caller speech mid-flight.
+  The test was mid-rewrite to a new technique (inject speech in the same tick the timer fires, before any
+  microtask flush) when this was found — that technique doesn't yet reproduce the race correctly and the
+  epoch guard isn't catching it. Needs someone to trace `handleSilenceTimeout`'s actual epoch-guard
+  timing in `stream.ts` and get the test's synchronization right — not guessed at, since getting it wrong
+  either masks a real regression or produces a false-positive test. **This is the sole failure in the api
+  suite** (1413/1414) — everything else is green.
 
 - **The activation boundary is unclear — draft/save/activate are one action, and dispatch reads a
   different trigger than the editor shows (`audit/2026-08-16-audit-18-...md`, found 2026-08-16, filed
