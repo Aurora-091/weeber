@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { blockApi, blockOffOrigin, fontProvenance, presetTheme, settle, settleHarness } from "./_settle";
+import { blockApi, blockOffOrigin, fontProvenance, presetTheme, settleHarness } from "./_settle";
+import { PUBLIC_ROUTES, gotoPublic } from "./_public-routes";
 import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
 
 /**
@@ -36,11 +37,6 @@ import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
  */
 const ALLOWED: Array<{ family: string; maxGlyphs: number; why: string }> = [];
 
-const PUBLIC_ROUTES = [
-  { name: "landing", path: "/" },
-  { name: "pricing", path: "/pricing" },
-  { name: "app-login", path: "/app/login" },
-];
 
 type Escape = { route: string; family: string; glyphs: number; sampleText: string; cssFamily: string };
 const escapes: Escape[] = [];
@@ -93,8 +89,7 @@ test.describe("font provenance", () => {
       await blockApi(page);
       await blockOffOrigin(page);
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(route.path);
-      await settle(page);
+      await gotoPublic(page, route);
       check(`public-${route.name}`, await fontProvenance(page));
     });
   }

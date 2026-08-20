@@ -5,7 +5,8 @@ import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
-import { appFetch, signOutToLogin } from "../../lib/user-session";
+import { wwwUrl } from "../../lib/domains";
+import { appFetch, isSigningOut, signOutToLogin } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { AppShell } from "../shell/app-shell";
 import { Button } from "../ui/button";
@@ -115,7 +116,17 @@ export function UserShell({ children }: { children: React.ReactNode }) {
   // wouter <Redirect>; it needs a real cross-domain navigation.
   useEffect(() => {
     if (session === null) {
-      void signOutToLogin();
+      // Deliberately NOT signOutToLogin(). This branch also covers a plain
+      // unauthenticated visit (someone opens a bookmarked /app/calls), where
+      // there is no app-origin session to end: awaiting auth.signOut() first
+      // only delays the redirect (which left the page navigating mid-render
+      // and broke the visual harness), and `?cleanup=1` would tell /login to
+      // wipe the PUBLIC-origin session it is meant to hand back to the app.
+      // signOutToLogin stays for the explicit, user-initiated sign-out sites,
+      // and owns the redirect while one is in flight (it sets ?cleanup=1, which
+      // this navigation must not overwrite).
+      if (isSigningOut()) return;
+      window.location.href = wwwUrl("/login");
     }
   }, [session]);
 

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { blockApi, blockOffOrigin, presetTheme, settle, settleHarness } from "./_settle";
+import { blockApi, blockOffOrigin, presetTheme, settleHarness } from "./_settle";
+import { PUBLIC_ROUTES, gotoPublic } from "./_public-routes";
 import { writeRouteResult, type RouteResult } from "./_a11y-report";
 import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
 
@@ -39,11 +40,6 @@ import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
  */
 const MIN_RULES_APPLIED = 12;
 
-const PUBLIC_ROUTES = [
-  { name: "landing", path: "/" },
-  { name: "pricing", path: "/pricing" },
-  { name: "app-login", path: "/app/login" },
-];
 
 function analyzer(page: import("@playwright/test").Page) {
   return new AxeBuilder({ page }).withTags([
@@ -101,8 +97,7 @@ test.describe("a11y — public surfaces (report-only)", () => {
       await blockApi(page);
       await blockOffOrigin(page);
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(route.path);
-      await settle(page);
+      await gotoPublic(page, route);
 
       const res = await analyzer(page).analyze();
       const rulesApplied = record(`public-${route.name}`, res);

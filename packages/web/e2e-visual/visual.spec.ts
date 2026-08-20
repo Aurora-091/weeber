@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { blockApi, blockOffOrigin, presetTheme, settle, settleHarness } from "./_settle";
+import { blockApi, blockOffOrigin, presetTheme, settleHarness } from "./_settle";
+import { PUBLIC_ROUTES, gotoPublic } from "./_public-routes";
 
 /**
  * Visual-regression baselines (Phase 0.5).
@@ -33,11 +34,6 @@ import { blockApi, blockOffOrigin, presetTheme, settle, settleHarness } from "./
 // this import resolves inside the Playwright node process.
 import { HARNESS_KEYS } from "../src/web/pages/__harness/keys";
 
-const PUBLIC_ROUTES = [
-  { name: "landing", path: "/" },
-  { name: "pricing", path: "/pricing" },
-  { name: "app-login", path: "/app/login" },
-];
 
 const PUBLIC_VIEWPORTS = [
   { w: 390, h: 844 },
@@ -81,8 +77,7 @@ test.describe("public surfaces", () => {
         await blockApi(page);
         await blockOffOrigin(page);
         await page.setViewportSize({ width: vp.w, height: vp.h });
-        await page.goto(route.path);
-        await settle(page);
+        await gotoPublic(page, route);
 
         // Fold only, not fullPage. These pages are long, their height moves with
         // copy edits that are out of scope, and marketing is not touched until a

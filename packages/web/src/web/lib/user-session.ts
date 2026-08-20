@@ -49,7 +49,22 @@ export async function appFetch(path: string, init: RequestInit = {}): Promise<Re
  * copy). Without this, a stale/still-live public-origin session could get
  * replayed right back into the app the moment the user lands on /login.
  */
+let signOutInFlight = false;
+
+/**
+ * True from the moment an explicit, user-initiated sign-out starts until the
+ * page it triggers has navigated away. UserShell's signed-out effect reads it
+ * so the two do not both assign window.location: signOut() flips the Supabase
+ * auth state (session -> null) BEFORE signOutToLogin resumes and navigates, so
+ * without this the effect would fire first and race its own `?cleanup=1`
+ * redirect away.
+ */
+export function isSigningOut(): boolean {
+  return signOutInFlight;
+}
+
 export async function signOutToLogin(): Promise<void> {
+  signOutInFlight = true;
   try {
     await supabase?.auth.signOut();
   } catch {
