@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { appFetch, signOutToLogin } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
 import { AppShell } from "../shell/app-shell";
+import { Button } from "../ui/button";
 
 export type UserMe = {
   user: { id: string; email: string | null } | null;
@@ -121,7 +122,13 @@ export function UserShell({ children }: { children: React.ReactNode }) {
   const me = useQuery({
     queryKey: ["app-me"],
     enabled: Boolean(session),
-    retry: 1,
+    // A network-level failure (DNS/connectivity — fetch throws a native
+    // TypeError before any Response exists) is worth a couple of retries,
+    // since it's often transient. A real HTTP error response (401, 500 —
+    // our own `throw new Error(...)` below, never a TypeError) is not: it
+    // won't fix itself by retrying, and retrying just delays the correct
+    // "sign in again" message behind a pointless wait.
+    retry: (failureCount, error) => error instanceof TypeError && failureCount < 2,
     retryDelay: 1000,
     queryFn: async () => {
       const res = await appFetch("/api/app/me");
@@ -164,18 +171,29 @@ export function UserShell({ children }: { children: React.ReactNode }) {
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
+      // A native TypeError means fetch() never got a response at all — the
+      // browser couldn't reach the server (DNS, offline, a blocked/filtered
+      // network). That's not an account problem, and "sign in again" is the
+      // wrong advice for it: signing out doesn't fix a network that can't
+      // reach us, and the next sign-in attempt would fail the exact same
+      // way. Anything else here is a real response from our server (a
+      // non-2xx status, thrown as a plain Error above), where "sign in
+      // again" is the right call.
+      const unreachable = me.error instanceof TypeError;
       return (
         <Notice
-          title="Couldn't load your workspace"
-          body={`Diagnostic: ${me.error?.message || "Unknown error"}. Your session may have expired, or the server is unreachable. Sign in again — if this keeps happening, contact support.`}
+          title={unreachable ? "Can't reach Weeber" : "Couldn't load your workspace"}
+          body={
+            unreachable
+              ? "We couldn't connect to our servers. This is usually a network issue on your end — check your connection, or try switching networks (e.g. Wi-Fi to mobile data) — not a problem with your account."
+              : `Diagnostic: ${me.error?.message || "Unknown error"}. Your session may have expired. Sign in again — if this keeps happening, contact support.`
+          }
           action={
-            <button
-              type="button"
-              onClick={signOutToLogin}
-              className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
-            >
-              Back to sign-in
-            </button>
+            unreachable ? (
+              <Button onClick={() => me.refetch()}>Try again</Button>
+            ) : (
+              <Button onClick={signOutToLogin}>Back to sign-in</Button>
+            )
           }
         />
       );

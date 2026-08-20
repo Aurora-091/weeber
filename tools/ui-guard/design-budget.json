@@ -19,12 +19,12 @@
     "Marketing files are counted even though marketing is out of scope for the current",
     "plan. Fixing them is deferred; REGRESSING them is still blocked."
   ],
-  "recordedAt": "2026-08-03",
+  "recordedAt": "2026-08-20",
   "recordedOn": "branch main, HEAD b5a1fb6",
   "scanRoot": "packages/web/src/web",
   "budget": {
     "rawButton": {
-      "limit": 111,
+      "limit": 110,
       "target": 10,
       "why": "Raw <button> bypasses ui/button: loses focus-visible ring, disabled semantics, size scale and the Phase A no-greyed-primary invariant. Audit §C.",
       "phase": "C7"
