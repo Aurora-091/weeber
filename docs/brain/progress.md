@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-16
+updated: 2026-08-20
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,21 @@ updated: 2026-08-16
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **Supabase account migration + ADR-117 vault-function fix + login/signup relocated (2026-08-17 to
+  2026-08-19).** New account, two fresh projects — production `qghtkadxbtptvbfbmsdz`, staging
+  `zbcrwexrqfmjxhewirgp` — fully migrated (`drizzle/` `0000`–`0052` + `supabase/migrations/*.sql`); old
+  project `wtqohdcghmxuujqyhlkz` abandoned; `.mcp.json` unscoped rather than repointed (`96c7208`). Same
+  pass surfaced and fixed ADR-117: all four credential-vault functions were directly executable by
+  `PUBLIC` on both live projects (a `REVOKE ... FROM anon, authenticated` never touches the implicit
+  `PUBLIC` grant underneath), letting an anonymous caller pull any org's decrypted telephony credentials
+  via PostgREST — not introduced by the migration, pre-existing on the old production project too, fixed
+  same day on both projects. Login/signup moved from `app.weeber.ai` to the public surface
+  (`weeber.ai/login`, `/signup`, `ac83ea9`) with a real cross-domain session handoff via URL-fragment
+  tokens + `setSession()`. See `active-context.md` and ADR-117 for full detail. **Open thread:**
+  `supabase/config.toml`'s widened redirect allowlist still needs a manual push to both live projects
+  (no CLI/access-token in this sandbox), and whether staging's `DATABASE_URL` now points at the new
+  staging project rather than sharing production's is unverified — see the staging finding below.
 
 - **UI/UX Audit Phase 1 & 2 — Error Recovery, Mobile Polish, Navigation & Pricing Clarity (2026-08-16)**
   - Replaced dead-end error EmptyStates with `icon={AlertCircle}` and explicit retry controls (`configs.refetch()` / `workflows.refetch()`) across `pages/app/agents.tsx`, `pages/app/workflows.tsx`, and `pages/dashboard/agents.tsx`.
@@ -123,6 +138,18 @@ updated: 2026-08-16
 
 ## In progress
 
+- **Confirmation/OTP/reset mail still sends from Supabase's default mailer, not `hello@weeber.ai`
+  (found + partially fixed 2026-08-20).** Diagnosed as two separate systems: Resend (waitlist mail) is
+  fine — domain verified, key set, prior sends logged. Supabase Auth's own signup/OTP/magic-link/
+  password-reset mail (ADR-041) was never on Resend at all, confirmed via `mail_from:
+  noreply@mail.app.supabase.io` in Supabase auth logs. `supabase/templates/{confirmation,magic-link,
+  recovery}.html` restyled this session to match the Resend waitlist template's warm-paper branding.
+  **Still needs, both manual dashboard steps:** paste the three templates into Supabase Dashboard →
+  Authentication → Emails (local CLI can't push — `supabase/.temp/project-ref` is the stale, abandoned
+  `wtqohdcghmxuujqyhlkz`), and enable Custom SMTP there pointed at Resend so the sender actually becomes
+  `hello@weeber.ai`. Also worth a look once SMTP is on: Supabase Auth's separate rate-limit dial
+  (Authentication → Rate Limits) — it applies even with custom SMTP configured.
+
 - **First outbound pilot (insurance / final-expense qualifier).** Code side is shipped and green
   (ADR-081…089). What is left is not code: no real prospect CSV export header row, so `HEADER_ALIASES`
   in `voice/leads/csv-import.ts` is an educated guess; no prospect org in the deployed DB, so the
@@ -205,8 +232,8 @@ updated: 2026-08-16
 - **"Staging" is not an environment — it is a second front door to production.** Settled 2026-08-01 by
   diffing the Railway variable dumps for both environments (`.railway/vars-staging.json` vs
   `vars-production.json`, pulled 2026-07-30). 33 of 40 variables are byte-identical, including
-  `DATABASE_URL` (same Supabase project `wtqohdcghmxuujqyhlkz`, same pooler host, same db, same role),
-  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `DATABASE_URL` (same Supabase project — was `wtqohdcghmxuujqyhlkz`, same pooler host, same db, same
+  role), `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `SUPABASE_SERVICE_ROLE_KEY`,
   `ADMIN_API_KEY`, `WEEBER_INTERNAL_SECRET`, `WEEBER_CALLBACK_SECRET`, and every `PUBLIC_*_URL`. The only
   meaningful difference is `LLM_PROVIDER` (staging `groq`, prod `gateway`, and only prod sets
   `AI_GATEWAY_FALLBACK_MODELS`); the rest is Railway's own hostname/ID injection. Consequences worth
@@ -217,6 +244,15 @@ updated: 2026-08-16
   beyond "the process boots." This must be fixed before a pilot merchant's data is in that database.
   (Also noise: `SUPABASE_KB_BUCKET` is set on staging only and is referenced nowhere in `packages/` —
   dead variable, safe to delete.)
+  **STALE POINTER (flagged 2026-08-20, not re-verified):** `wtqohdcghmxuujqyhlkz` is the pre-migration
+  project — abandoned since the 2026-08-17 Supabase account migration (see `active-context.md`).
+  Production now runs on `qghtkadxbtptvbfbmsdz`; a *separate* staging project `zbcrwexrqfmjxhewirgp` now
+  exists and was brought to schema parity with production as part of ADR-117 (2026-08-18), which reads
+  as a deliberate move toward the isolation this finding calls for. Whether Railway's staging
+  `DATABASE_URL` was actually repointed at that new staging project, or still shares production's
+  (env var values are redacted from here, so this couldn't be confirmed directly), is the one thing
+  that decides if this whole finding is fixed or still true. Check that before relying on either
+  conclusion.
 - **Five Bets P5 EOT model deferred (by design, ADR-063):** the turn-detection seam is shipped but the
   refiner stays `null` — no Smart Turn / OpenAI Realtime / LiveKit vendor is wired until (a) P2
   call-health data shows real cut-offs and (b) staging is isolated from prod. Not debt to "fix"; a

@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-17
+updated: 2026-08-20
 ---
 
 # Active context — what's happening right now
@@ -12,15 +12,65 @@ updated: 2026-08-17
 
 ## Current focus
 
-- **Supabase account migration in progress — the project is moving to a brand-new, empty Supabase
-  account (2026-08-17)**; the old project (`wtqohdcghmxuujqyhlkz`) hit unresolved problems (this is the
-  reason migration `0051` couldn't be verified applied in the note below — that connection is being
-  abandoned, not fixed). **Nothing has been applied to the new project yet.** Before pointing
-  `DATABASE_URL` at it: see ADR-116 (six missing indexes + an N+1 batch-insert fix added to `schema.ts`
-  while the DB was empty, migration `0052`), then run the full `drizzle/` stack (`0000` through `0052`)
-  fresh — there is no data to preserve, so this is a normal first-time migrate, not a restore. Update
-  `.mcp.json`'s Supabase `project_ref` and every `DATABASE_URL`/Vercel/Railway env var once the new
-  project exists.
+- **Confirmation/OTP/reset mail was silently using Supabase's default mailer, not Resend (2026-08-20,
+  this session — in progress).** User-reported "confirmation and waitlist mail not arriving from
+  hello@weeber.ai" turned out to be two unrelated systems. Waitlist mail (Resend, `email.ts`/
+  `waitlist.ts`) is fine — `weeber.ai` is verified on Resend, `RESEND_API_KEY` is set on Railway
+  production, and prior sends logged successfully. Signup/OTP/magic-link/password-reset mail, per
+  ADR-041, was **always** Supabase Auth's own mailer, never Resend — confirmed live via Supabase auth
+  logs (`mail_from: noreply@mail.app.supabase.io`). `supabase/templates/{confirmation,magic-link,
+  recovery}.html` already existed (OTP-only per ADR-043/053) but used the dark-monochrome dashboard
+  theme; restyled to match the Resend waitlist template's warm-paper branding (logo, `#FAFAF8`/
+  `#C4622D`, same footer) so all Weeber transactional mail reads as one system. **Not yet live** — needs
+  (1) the three templates pasted manually into Supabase Dashboard → Authentication → Emails (the local
+  `supabase/.temp/project-ref` is stale, still `wtqohdcghmxuujqyhlkz`, so `supabase config push` would
+  target the wrong, abandoned project) and (2) Custom SMTP enabled there pointing at Resend — without
+  that, the sender stays `noreply@mail.app.supabase.io` no matter how the template renders.
+
+- **Vercel deploy was BLOCKED, not broken (2026-08-20, `e91e017`).** `ac83ea9`'s deploy failed on both
+  the `openvent` and `weeber-app` Vercel projects with "GitHub could not associate the committer with a
+  GitHub user" — the commit author's email didn't match a GitHub account Vercel's git integration
+  recognized. Fixed on the GitHub side; `e91e017` is an empty commit that exists only to give Vercel's
+  webhook a fresh push to deploy from, since a BLOCKED deployment can't be redeployed in place.
+
+- **Login/signup moved to the public surface (2026-08-19, `ac83ea9`).** Was `app.weeber.ai/login` only
+  (`VITE_APP_SURFACE=user`), which meant signing in required already being on the app subdomain. Now
+  lives at `weeber.ai/login` and `/signup` with a redesigned split-panel layout; the resulting session
+  hands off to `app.weeber.ai/auth/callback` via URL-fragment tokens + `setSession()` (the documented
+  path for adopting an externally-obtained session, since `supabase-js`'s `localStorage` session store
+  is strictly per-origin). Every same-origin login redirect (user-shell's auth gate, sign-out handlers,
+  `MarketingNav`) updated to match. `supabase/config.toml`'s `site_url` and redirect allowlist now cover
+  `www.weeber.ai` and `staging.weeber.ai` — **still needs a manual push to both live Supabase projects**,
+  no CLI/access-token available in this sandbox to do it directly.
+
+- **ADR-117 (2026-08-18) — a REVOKE that named two roles and missed PUBLIC.** While bringing the new
+  staging project to schema parity with the new production project, a live
+  `information_schema.routine_privileges` check found all four credential-vault functions
+  (`store_org_credential`, `read_org_credential`, `delete_org_credential`, `delete_org_credentials`)
+  still directly executable by `PUBLIC` on **both** projects — `REVOKE ... FROM anon, authenticated`
+  never touches the implicit `PUBLIC` grant every function gets at `CREATE FUNCTION` time, and
+  `anon`/`authenticated` only ever inherited through it. Since these are `SECURITY DEFINER` and
+  PostgREST exposes every `public`-schema function at `/rest/v1/rpc/<name>`, this meant any anonymous
+  caller holding the project's publishable key could `POST /rest/v1/rpc/read_org_credential` with an
+  arbitrary `org_id` and pull another org's decrypted Twilio/Plivo/Exotel secret — the exact exposure
+  the 2026-07-15 vault migration existed to close, undone by one missing role. **Not introduced by the
+  account migration** — the old production project had the same gap; the migration replay just forced
+  the check that found it. Fixed same day on both live projects (`execute_sql`) and captured as an
+  additive migration, `20260818173000_revoke_public_execute_vault_functions.sql`. Unverified: whether it
+  was ever exploited (PostgREST access logs weren't audited).
+
+- **Supabase account migration — DONE, both projects live (completed 2026-08-17/18; corrects the "in
+  progress" framing this entry used to carry).** The full `drizzle/` stack (`0000`–`0052`) plus
+  `supabase/migrations/*.sql` are applied to two new projects on the new account: production
+  **`qghtkadxbtptvbfbmsdz`** and staging **`zbcrwexrqfmjxhewirgp`**. The old project
+  (`wtqohdcghmxuujqyhlkz`) is abandoned — do not treat it as current; that's also why migration `0051`
+  was never verified applied there (moot, not fixed). `.mcp.json`'s Supabase entry is now **unscoped**
+  (no `project_ref=`, operates at the org level) rather than repointed at the new prod ref, per `96c7208`
+  (2026-08-18) — CLAUDE.md's MCP note explains why and flags re-scoping to the new prod ref as a later
+  convenience change, not yet done. **Not independently re-verified this session:** whether Railway's
+  staging `DATABASE_URL` was actually repointed at the new staging project or still shares production's
+  — `progress.md`'s "staging is a second front door to production" finding named the *old* shared
+  project by ref and needs a fresh check against the two new projects before being trusted either way.
 
 - **ADR-116 addendum — split the DB connection pool in two (2026-08-17).** Raised directly by the user
   ("too many things interfering with each other, which drops performance") — checked, and it was real:
