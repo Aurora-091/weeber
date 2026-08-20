@@ -5,9 +5,8 @@ import { LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
-import { appFetch } from "../../lib/user-session";
+import { appFetch, signOutToLogin } from "../../lib/user-session";
 import { getVertical, type VerticalDefinition } from "../../lib/verticals";
-import { wwwUrl } from "../../lib/domains";
 import { AppShell } from "../shell/app-shell";
 
 export type UserMe = {
@@ -115,7 +114,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
   // wouter <Redirect>; it needs a real cross-domain navigation.
   useEffect(() => {
     if (session === null) {
-      window.location.href = wwwUrl("/login");
+      void signOutToLogin();
     }
   }, [session]);
 
@@ -165,10 +164,6 @@ export function UserShell({ children }: { children: React.ReactNode }) {
 
   if (me.isLoading || !me.data) {
     if (me.isError) {
-      const signOut = async () => {
-        await supabase?.auth.signOut();
-        window.location.href = wwwUrl("/login");
-      };
       return (
         <Notice
           title="Couldn't load your workspace"
@@ -176,7 +171,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
           action={
             <button
               type="button"
-              onClick={signOut}
+              onClick={signOutToLogin}
               className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
             >
               Back to sign-in
@@ -202,10 +197,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
         footer={
           <button
             type="button"
-            onClick={async () => {
-              await supabase?.auth.signOut();
-              window.location.href = wwwUrl("/login");
-            }}
+            onClick={signOutToLogin}
             className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >
             <LogOut className="size-3.5" aria-hidden />

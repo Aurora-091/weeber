@@ -7,7 +7,13 @@
  *
  * Verification is local — no per-request call to Supabase Auth:
  *   1. `SUPABASE_JWT_SECRET` set → HS256 verify (Supabase's legacy shared
- *      secret regime, what a project created pre-2025 uses by default).
+ *      secret regime, what a project created pre-2025 uses by default). If
+ *      that verify fails and `SUPABASE_URL` is also configured, falls back
+ *      to JWKS (below) rather than rejecting outright — a project that has
+ *      since migrated to asymmetric signing keys can leave a stale
+ *      `SUPABASE_JWT_SECRET` configured for a while, and every session from
+ *      that project would otherwise 401 as `invalid_token` even though it's
+ *      genuinely valid.
  *   2. Otherwise → JWKS against `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
  *      fetched once and cached in-memory for `JWKS_CACHE_TTL_MS` (audit#03 P1
  *      fix — `hono/jwt`'s `verifyWithJwks` does NOT cache when called with
@@ -52,21 +58,30 @@ async function getJwksKeys(supabaseUrl: string): Promise<HonoJsonWebKey[]> {
   return data.keys;
 }
 
-async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>> {
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (secret) {
-    return (await verify(token, secret, "HS256")) as Record<string, unknown>;
-  }
-  const url = process.env.SUPABASE_URL;
-  if (!url) {
-    throw new Error("Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is configured — cannot verify user sessions");
-  }
-  const keys = await getJwksKeys(url);
+async function verifyWithSupabaseJwks(token: string, supabaseUrl: string): Promise<Record<string, unknown>> {
+  const keys = await getJwksKeys(supabaseUrl);
   return (await verifyWithJwks(token, {
     keys,
     // Supabase's asymmetric signing-key regime issues RS256 or ES256 keys.
     allowedAlgorithms: ["RS256", "ES256"],
   })) as Record<string, unknown>;
+}
+
+async function verifySupabaseJwt(token: string): Promise<Record<string, unknown>> {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  const url = process.env.SUPABASE_URL;
+  if (secret) {
+    try {
+      return (await verify(token, secret, "HS256")) as Record<string, unknown>;
+    } catch (err) {
+      if (!url) throw err;
+      return await verifyWithSupabaseJwks(token, url);
+    }
+  }
+  if (!url) {
+    throw new Error("Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is configured — cannot verify user sessions");
+  }
+  return await verifyWithSupabaseJwks(token, url);
 }
 
 export const requireUserSession = createMiddleware<UserEnv>(async (c, next) => {

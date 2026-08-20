@@ -31,9 +31,9 @@ export function UserAuthCallbackPage() {
     }
     let done = false;
 
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
 
     if (accessToken && refreshToken) {
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error }) => {
@@ -48,16 +48,29 @@ export function UserAuthCallbackPage() {
       return;
     }
 
-    // No fragment tokens — fall back to the legacy magic-link path
-    // (detectSessionInUrl), still used by reset-password.tsx.
+    // No fragment token pair. Still worth waiting on supabase-js's
+    // detectSessionInUrl + the legacy magic-link path (still used by
+    // reset-password.tsx) IF the URL actually carries a recognizable auth
+    // payload of its own — an OAuth/PKCE error, or a type/token_hash pair.
+    // Anything else (a bare revisit, e.g. Back button onto this history
+    // entry after signing out) must fail closed rather than trust whatever
+    // session happens to exist: that session could be stale or already
+    // revoked, and adopting it would silently undo a completed sign-out.
+    const queryParams = new URLSearchParams(window.location.search);
+    const hasAuthPayload =
+      hashParams.has("error") ||
+      hashParams.has("provider_token") ||
+      hashParams.has("type") ||
+      queryParams.has("token_hash") ||
+      queryParams.has("error");
+
+    if (!hasAuthPayload) {
+      supabase.auth.signOut().finally(() => setFailed(true));
+      return;
+    }
+
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && !done) {
-        done = true;
-        navigate(appPath());
-      }
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session && !done) {
         done = true;
         navigate(appPath());
       }

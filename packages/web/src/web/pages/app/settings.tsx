@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Settings, User, Building2, Bell, Webhook, ShieldAlert, FileCheck, PhoneForwarded, TriangleAlert as AlertTriangle } from "lucide-react";
 import { useUser } from "../../components/app/user-shell";
-import { appFetch } from "../../lib/user-session";
-import { wwwUrl } from "../../lib/domains";
+import { appFetch, signOutToLogin } from "../../lib/user-session";
 import { supabase } from "../../lib/supabase";
 import { VERTICAL_OPTIONS } from "../../lib/verticals";
 import { formatDateTime, formatTimeRemaining } from "../../lib/format";
@@ -176,8 +175,7 @@ export function UserSettingsPage() {
           ? `Account closed — ${data.releasedNumbers} number(s) released. Signing you out…`
           : "Account closed. Signing you out…",
       );
-      await supabase?.auth.signOut();
-      window.location.href = wwwUrl("/login");
+      await signOutToLogin();
     },
     onError: (err: Error) => toast.error(err.message),
   });

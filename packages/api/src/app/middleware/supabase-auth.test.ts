@@ -1,4 +1,4 @@
-import { mock, describe, it, expect, beforeEach } from "bun:test";
+import { mock, describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
 
@@ -92,5 +92,62 @@ describe("requireUserSession", () => {
     const res = await app.request("/gated", { headers: { Authorization: `Bearer ${token}` } });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("no_org");
+  });
+});
+
+// SUPABASE_JWT_SECRET stays configured throughout this file (test-jwt-secret,
+// set at module load above) — these cover the fallback for when it's stale
+// (project migrated to asymmetric signing keys) rather than absent.
+describe("requireUserSession — JWKS fallback when the shared secret can't verify", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    mockMemberships = [];
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    delete process.env.SUPABASE_URL;
+  });
+
+  async function generateEs256Keys(kid: string) {
+    const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+      "sign",
+      "verify",
+    ]);
+    const privateJwk = { ...(await crypto.subtle.exportKey("jwk", keyPair.privateKey)), alg: "ES256", kid };
+    const publicJwk = { ...(await crypto.subtle.exportKey("jwk", keyPair.publicKey)), alg: "ES256", kid };
+    return { privateJwk, publicJwk };
+  }
+
+  it("falls back to JWKS and succeeds when the token is signed with a current asymmetric key", async () => {
+    const { privateJwk, publicJwk } = await generateEs256Keys("test-kid");
+    const token = await sign({ sub: "user-3", exp: Math.floor(Date.now() / 1000) + 600 }, privateJwk);
+
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    global.fetch = (async (url: string) => {
+      if (url === "https://example.supabase.co/auth/v1/.well-known/jwks.json") {
+        return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    mockMemberships = [{ orgId: "org-3", role: "owner" }];
+    const res = await app.request("/session", { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId: "user-3", orgId: "org-3", role: "owner" });
+  });
+
+  it("still rejects with invalid_token when neither the secret nor JWKS can verify the token", async () => {
+    const { publicJwk } = await generateEs256Keys("test-kid");
+    const { privateJwk: wrongPrivateJwk } = await generateEs256Keys("other-kid");
+    const token = await sign({ sub: "user-4", exp: Math.floor(Date.now() / 1000) + 600 }, wrongPrivateJwk);
+
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    global.fetch = (async () => new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 })) as unknown as typeof fetch;
+
+    const res = await app.request("/session", { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_token");
   });
 });

@@ -111,6 +111,10 @@ function LoginShell({ children }: { children: React.ReactNode }) {
 export function LoginPage() {
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<Mode>(() => (window.location.pathname === "/signup" ? "signup" : "signin"));
+  // Captured once at mount, before the effect below strips the marker from
+  // the URL — reading window.location.search fresh in a later effect would
+  // otherwise see it already gone.
+  const [cameFromSignOut] = useState(() => new URLSearchParams(window.location.search).get("cleanup") === "1");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -129,13 +133,34 @@ export function LoginPage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetDone, setResetDone] = useState(false);
 
-  // Already signed in on THIS origin (e.g. reload mid-flow, or back button
-  // after a handoff)? Hand off to the app rather than sitting here idle.
+  // One-shot: strip the marker from the URL immediately so a reload doesn't
+  // repeat this. signOutToLogin (lib/user-session.ts) always appends
+  // ?cleanup=1 when an app-side sign-out redirects here.
   useEffect(() => {
+    if (!cameFromSignOut) return;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("cleanup");
+    const rest = params.toString();
+    history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+  }, [cameFromSignOut]);
+
+  // Already signed in on THIS origin? Either hand the session off to the
+  // app (reload mid-flow, back button after a handoff), or — right after an
+  // app-side sign-out — clear it instead. Without this branch a still-live
+  // weeber.ai session would get handed straight back to app.weeber.ai the
+  // moment the sign-out redirect lands, undoing the sign-out the user just
+  // asked for (weeber.ai and app.weeber.ai are separate origins with
+  // separate localStorage-backed sessions, so app.weeber.ai's own signOut()
+  // call never touches this copy).
+  useEffect(() => {
+    if (cameFromSignOut) {
+      void supabase?.auth.signOut();
+      return;
+    }
     supabase?.auth.getSession().then(({ data }) => {
       if (data.session) handOffToApp(data.session);
     });
-  }, []);
+  }, [cameFromSignOut]);
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
