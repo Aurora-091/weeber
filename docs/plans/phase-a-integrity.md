@@ -1,6 +1,6 @@
 # Phase A — Integrity: stop fabricating facts, stop losing leads
 
-**Status:** Not started
+**Status:** Approved 2026-08-21 — ready to start, begin at A1
 **Blocks:** Phase B (and therefore everything after it)
 **Preconditions:** none — this is the first phase
 **Evidence:** `docs/audits/2026-08-21-first-two-production-calls.md`, findings 1, 2, 3, 8, 9
