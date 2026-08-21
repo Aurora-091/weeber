@@ -16,7 +16,7 @@
  * `""` and not `undefined`/`NULL`.
  */
 import { db } from "../database";
-import { callerMemory } from "../database/schema";
+import { callerMemory, type CapturedField } from "../database/schema";
 import { and, eq } from "drizzle-orm";
 import { withRetry } from "../database/with-retry";
 
@@ -24,7 +24,7 @@ function normalizeOrgId(orgId: string | undefined | null): string {
   return orgId ?? "";
 }
 
-export async function getCallerMemory(orgId: string | undefined, phoneNumber: string): Promise<Record<string, string>> {
+export async function getCallerMemory(orgId: string | undefined, phoneNumber: string): Promise<Record<string, CapturedField>> {
   if (!phoneNumber) return {};
   const scopedOrgId = normalizeOrgId(orgId);
   const [row] = await db
@@ -44,7 +44,7 @@ export async function getCallerMemory(orgId: string | undefined, phoneNumber: st
 export async function upsertCallerMemory(
   orgId: string | undefined,
   phoneNumber: string,
-  capturedThisCall: Record<string, string>,
+  capturedThisCall: Record<string, CapturedField>,
   callId: number,
 ): Promise<void> {
   if (!phoneNumber || Object.keys(capturedThisCall).length === 0) return;

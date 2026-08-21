@@ -5,6 +5,7 @@ import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge, RefreshCw 
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
+import { capturedValue } from "../../lib/captured-state";
 
 /**
  * Downloads the compliance audit trail for this call as a plain-text file —
@@ -204,10 +205,10 @@ export function CallDetailPage() {
             </p>
             {facts.length === 0 && <p className="text-sm text-muted-foreground italic">Nothing captured yet.</p>}
             <dl className="space-y-2">
-              {facts.map(([field, value]) => (
+              {facts.map(([field, entry]) => (
                 <div key={field}>
                   <dt className="text-[10px] font-mono uppercase tracking-wider text-success">{field}</dt>
-                  <dd className="text-sm font-medium">{String(value)}</dd>
+                  <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
                 </div>
               ))}
             </dl>

@@ -11,7 +11,7 @@
  */
 import { and, desc, eq, or, ilike } from "drizzle-orm";
 import { db } from "../../database";
-import { leads, calls, orgs } from "../../database/schema";
+import { leads, calls, orgs, type CapturedField } from "../../database/schema";
 import { withRetry } from "../../database/with-retry";
 import { validateFields, type LeadFieldDef } from "./intake-schema";
 import { resolveIntakeSchema } from "./schema-store";
@@ -119,7 +119,7 @@ export async function upsertLead(input: UpsertLeadInput): Promise<{ id: number; 
 export async function promoteLeadFromCall(args: {
   orgId: string | undefined;
   phone: string;
-  capturedState: Record<string, string>;
+  capturedState: Record<string, CapturedField>;
   callId: number;
   vertical: string | null | undefined;
   schema?: LeadFieldDef[];
@@ -144,7 +144,11 @@ export async function promoteLeadFromCall(args: {
   // Derive a display name from common capture keys if the schema didn't define
   // one explicitly. Non-fatal if absent.
   const name =
-    accepted.full_name || accepted.caller_name || capturedState.full_name || capturedState.caller_name || null;
+    accepted.full_name ||
+    accepted.caller_name ||
+    capturedState.full_name?.value ||
+    capturedState.caller_name?.value ||
+    null;
 
   try {
     const { id } = await upsertLead({ orgId, phone, name, fields: accepted, source: "call" });

@@ -905,7 +905,10 @@ async function computeKpis(orgId: string, since: Date, until: Date, orgCalls: Or
   // Feedback — average of the 1-5 delivery_rating capturedState values.
   const ratings: number[] = [];
   for (const call of orgCalls) {
-    const raw = (call.capturedState as Record<string, unknown> | null)?.["delivery_rating"];
+    // ADR-120: read `.value` off the captured entry, tolerating a pre-migration
+    // bare string so historical rows still average in.
+    const entry = (call.capturedState as Record<string, unknown> | null)?.["delivery_rating"];
+    const raw = entry && typeof entry === "object" && "value" in entry ? (entry as { value: unknown }).value : entry;
     const rating = typeof raw === "number" ? raw : Number.parseFloat(String(raw ?? ""));
     if (Number.isFinite(rating) && rating >= 1 && rating <= 5) ratings.push(rating);
   }

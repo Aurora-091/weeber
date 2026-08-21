@@ -11,6 +11,21 @@ import {
 } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
 import { renderTemplate } from "./workflows/variables";
+import type { CapturedField } from "../database/schema";
+
+/**
+ * ADR-120: captured facts are `{ value, heard, transcriptId, turn }` entries,
+ * not bare strings. These prompt-rendering tests only care about the rendered
+ * value, so build a well-formed entry whose `heard` is the value itself — the
+ * shape a capture takes when the caller said exactly the thing recorded.
+ */
+function fact(value: string): CapturedField {
+  return { value, heard: value, transcriptId: null, turn: 0 };
+}
+
+function facts(entries: Record<string, string>): Record<string, CapturedField> {
+  return Object.fromEntries(Object.entries(entries).map(([field, value]) => [field, fact(value)]));
+}
 
 describe("toTurnTokenUsage", () => {
   it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (Groq/OpenAI automatic caching)", () => {
@@ -113,27 +128,29 @@ describe("buildKnownFactsBlock", () => {
   });
 
   it("renders a single captured fact as a labeled block", () => {
-    const block = buildKnownFactsBlock({ email: "a@b.com" });
+    const block = buildKnownFactsBlock(facts({ email: "a@b.com" }));
     expect(block).toContain("Known facts about this call");
     expect(block).toContain("do not ask for these again");
     expect(block).toContain("- email: a@b.com");
   });
 
   it("renders multiple captured facts, one per line", () => {
-    const block = buildKnownFactsBlock({
-      email: "a@b.com",
-      order_id: "ORD-123",
-      caller_name: "Jamie",
-    });
+    const block = buildKnownFactsBlock(
+      facts({
+        email: "a@b.com",
+        order_id: "ORD-123",
+        caller_name: "Jamie",
+      }),
+    );
     expect(block).toContain("- email: a@b.com");
     expect(block).toContain("- order_id: ORD-123");
     expect(block).toContain("- caller_name: Jamie");
   });
 
   it("does not mutate its input", () => {
-    const state = { email: "a@b.com" };
+    const state = facts({ email: "a@b.com" });
     buildKnownFactsBlock(state);
-    expect(state).toEqual({ email: "a@b.com" });
+    expect(state).toEqual(facts({ email: "a@b.com" }));
   });
 });
 
@@ -600,8 +617,8 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
 
   it("stablePrefix is exactly the resolved persona, unchanged from turn to turn", () => {
     const turn1 = buildTurnPromptParts({ persona, capturedState: {} });
-    const turn2 = buildTurnPromptParts({ persona, capturedState: { email: "a@b.com" } });
-    const turn3 = buildTurnPromptParts({ persona, capturedState: { email: "a@b.com", order_id: "ORD-1" } });
+    const turn2 = buildTurnPromptParts({ persona, capturedState: facts({ email: "a@b.com" }) });
+    const turn3 = buildTurnPromptParts({ persona, capturedState: facts({ email: "a@b.com", order_id: "ORD-1" }) });
 
     expect(turn1.stablePrefix).toBe(persona);
     expect(turn2.stablePrefix).toBe(persona);
@@ -610,7 +627,7 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
 
   it("dynamicSuffix changes when capturedState changes, while stablePrefix stays identical", () => {
     const before = buildTurnPromptParts({ persona, capturedState: {} });
-    const after = buildTurnPromptParts({ persona, capturedState: { email: "caller@example.com" } });
+    const after = buildTurnPromptParts({ persona, capturedState: facts({ email: "caller@example.com" }) });
 
     expect(after.stablePrefix).toBe(before.stablePrefix);
     expect(after.dynamicSuffix).not.toBe(before.dynamicSuffix);
@@ -622,8 +639,8 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
     const { dynamicSuffix } = buildTurnPromptParts({
       persona,
       workflowMetadata: { customer_name: "Jamie" },
-      callerMemory: { preferred_language: "hindi" },
-      capturedState: { order_id: "ORD-42" },
+      callerMemory: facts({ preferred_language: "hindi" }),
+      capturedState: facts({ order_id: "ORD-42" }),
     });
 
     expect(dynamicSuffix).toContain("Jamie");
@@ -637,7 +654,7 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
     // across turns, the same guarantee stablePrefix gives when a persona IS
     // supplied.
     const turn1 = buildTurnPromptParts({ capturedState: {} });
-    const turn2 = buildTurnPromptParts({ capturedState: { email: "a@b.com" } });
+    const turn2 = buildTurnPromptParts({ capturedState: facts({ email: "a@b.com" }) });
     expect(turn1.stablePrefix.length).toBeGreaterThan(0);
     expect(turn1.stablePrefix).toBe(turn2.stablePrefix);
   });
@@ -646,8 +663,8 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
     const input = {
       persona,
       workflowMetadata: { customer_name: "Jamie", order_total: 42 },
-      callerMemory: { preferred_language: "hindi" },
-      capturedState: { email: "a@b.com", order_id: "ORD-1" },
+      callerMemory: facts({ preferred_language: "hindi" }),
+      capturedState: facts({ email: "a@b.com", order_id: "ORD-1" }),
     };
 
     const { stablePrefix, dynamicSuffix } = buildTurnPromptParts(input);

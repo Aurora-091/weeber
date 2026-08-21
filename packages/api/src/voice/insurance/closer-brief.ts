@@ -202,7 +202,13 @@ export function buildCloserBrief(capturedState: Record<string, unknown> | null |
   const missing: string[] = [];
 
   for (const { key, label } of PREQUAL_FIELDS) {
-    const raw = state[key];
+    // ADR-120: a captured field is `{ value, heard, transcriptId, turn }`.
+    // Read `.value` off the entry, tolerating the pre-ADR-120 bare string so a
+    // brief built from an un-migrated row still reports honestly instead of
+    // marking every prequal field as missing.
+    const entry = state[key];
+    const raw =
+      entry && typeof entry === "object" && "value" in entry ? (entry as { value: unknown }).value : entry;
     const value = typeof raw === "string" ? raw.trim() : raw == null ? "" : String(raw).trim();
     if (value) {
       captured.push({ key, label, value });

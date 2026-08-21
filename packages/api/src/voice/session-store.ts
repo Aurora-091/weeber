@@ -14,6 +14,7 @@
  * calls this module.
  */
 import type { ResolvedAgentConfig } from "./agent";
+import type { CapturedField } from "../database/schema";
 
 export type CallSession = {
   callSid: string;
@@ -55,7 +56,7 @@ export type CallSession = {
    * and at call end. Mirrors, and is the in-memory source of truth for,
    * the DB column — see ADR-012.
    */
-  capturedState?: Record<string, string>;
+  capturedState?: Record<string, CapturedField>;
   /**
    * Misc-1: the Agent Preview's "call my phone" test call passes the
    * merchant's *unsaved, in-progress* form edits (persona, voice, tools —

@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { PageHeader } from "../../components/shell/page-header";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { TOOL_LABELS } from "../../lib/agent-config";
+import { capturedValue } from "../../lib/captured-state";
 
 type CallRow = {
   id: number;
@@ -271,10 +272,10 @@ export function UserCallDetailPage() {
               <div className="card-weeber p-4" style={{borderColor:"color-mix(in oklch, var(--weeber-success) 25%, var(--border))"}}>
                 {facts.length === 0 && <p className="text-sm italic text-muted-foreground">Nothing captured yet.</p>}
                 <dl className="space-y-2">
-                  {facts.map(([field, value]) => (
+                  {facts.map(([field, entry]) => (
                     <div key={field}>
                       <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">{field}</dt>
-                      <dd className="text-sm font-medium">{String(value)}</dd>
+                      <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
                     </div>
                   ))}
                 </dl>

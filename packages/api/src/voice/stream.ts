@@ -63,7 +63,8 @@ import { getTelephonyTransport, type TelephonyProvider } from "./telephony-trans
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";
 import { withRetry } from "../database/with-retry";
-import { calls, transcripts, toolCalls, callLatency, turnLatency, toolCallLatency, orgs, optOutEvents, guardrailEvents } from "../database/schema";
+import { calls, transcripts, toolCalls, callLatency, turnLatency, toolCallLatency, orgs, optOutEvents, guardrailEvents, type CapturedField } from "../database/schema";
+import { tokenizeSpeech, heardInCallerSpeech } from "./capture-provenance";
 import { classifyCallHealth } from "./call-health";
 import {
   applyTransferBlockedPrompt,
@@ -339,7 +340,32 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * whenever the model calls captureField, and persisted continuously so it
    * survives a crash mid-call and is visible on the dashboard immediately.
    */
-  let capturedState: Record<string, string> = {};
+  let capturedState: Record<string, CapturedField> = {};
+  /**
+   * ADR-120 — the provenance corpus. Every caller-role transcript line, in
+   * order, tokenized once as it arrives (see logTranscript). `captureField`'s
+   * `heard` argument is matched against this before the field is allowed to
+   * persist.
+   *
+   * Kept in memory and appended to rather than queried per capture: the check
+   * sits on the tool-call path of a live phone call, and a SELECT over
+   * `transcripts` per captured field would put a database round-trip inside the
+   * turn the caller is waiting on. The corpus is bounded by call duration, and a
+   * call is already bounded by maxDurationTimer.
+   */
+  let callerSpeechTokens: string[] = [];
+  /**
+   * The most recent caller-role transcript row id, and the count of caller
+   * turns so far — stamped onto each captured field so a reader can jump from
+   * the fact back to the moment it was said (`CapturedField.transcriptId` /
+   * `.turn`).
+   *
+   * Best-effort by design: the id is only known once the transcript insert
+   * resolves on `transcriptWriteChain`, and a capture arriving before that
+   * settles records `null` rather than blocking the merge. A missing pointer
+   * degrades the audit trail; a delayed merge would delay the call.
+   */
+  let lastCallerTranscriptId: number | null = null;
   let ended = false;
   let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -543,7 +569,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * rather than a snapshot.
    */
   const callerSpokenNumbers = new Set<string>();
-  let callerMemoryFacts: Record<string, string> = {};
+  let callerMemoryFacts: Record<string, CapturedField> = {};
   /** Latency fix (2026-07-16): the fully-rendered, ready-to-speak literal
    * greeting text for this call (every {{merge_tag}} resolved), or
    * undefined if no literalGreetingTemplate applies / some tag couldn't be
@@ -663,12 +689,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // `dbCallId` yet is still a call whose caller may have said a number, and
     // the guard's whole value is that it never has to guess provenance.
     if (role === "caller") for (const n of extractPhoneCandidates(text)) callerSpokenNumbers.add(n);
+    // ADR-120: harvested here, alongside ADR-106's number provenance and for
+    // the same reason — a line spoken before `dbCallId` exists is still a line
+    // the caller said, and a capture citing it must be allowed to verify. The
+    // corpus is the guard's whole evidence base, so it must never depend on
+    // whether the call row had been inserted yet.
+    if (role === "caller") callerSpeechTokens = callerSpeechTokens.concat(tokenizeSpeech(text));
     if (!dbCallId) return;
     transcriptCount++;
     if (role === "caller") callerTranscriptCount++;
     const callIdForInsert = dbCallId;
     transcriptWriteChain = transcriptWriteChain
-      .then(() => db.insert(transcripts).values({ callId: callIdForInsert, role, text }))
+      .then(async () => {
+        const [inserted] = await db
+          .insert(transcripts)
+          .values({ callId: callIdForInsert, role, text })
+          // ADR-120: the id is what makes a captured field's `transcriptId`
+          // point at something. Only read for caller lines — an agent line is
+          // never the provenance of a caller-stated fact.
+          .returning({ id: transcripts.id });
+        if (role === "caller" && inserted) lastCallerTranscriptId = inserted.id;
+        return inserted;
+      })
       .catch(() => undefined as unknown);
     void dispatchWebhook(webhookUrl, "call.transcript", { callSid, callId: dbCallId, role, text });
   }
@@ -679,8 +721,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * view during a live call, or the very next agent turn all see the fact
    * right away rather than only once the call finalizes.
    */
-  async function mergeCapturedField(field: string, value: string) {
-    capturedState = { ...capturedState, [field]: value };
+  async function mergeCapturedField(field: string, value: string, heard: string) {
+    capturedState = {
+      ...capturedState,
+      [field]: { value, heard, transcriptId: lastCallerTranscriptId, turn: callerTranscriptCount },
+    };
     if (!dbCallId) return;
     await withRetry(
       () => db.update(calls).set({ capturedState }).where(eq(calls.id, dbCallId!)),
@@ -691,7 +736,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   async function logToolCall(ws: Sendable, name: string, input: unknown, output: unknown) {
     let loggedInput = input;
     if (name === "captureField" && input && typeof input === "object" && "field" in input && "value" in input) {
+      // `heard` is required by the tool's schema (ADR-120), but this branch
+      // reads whatever the model actually emitted rather than trusting the
+      // schema: a provider that drops an argument, or a malformed tool call the
+      // SDK still surfaces, must land on the refusal path and not on a merge
+      // with `heard: undefined`. An absent quote is treated exactly like a
+      // quote that matches nothing, because it is the same claim: no utterance.
       const { field, value } = input as { field: string; value: string };
+      const rawHeard = (input as unknown as { heard?: unknown }).heard;
+      const heard = typeof rawHeard === "string" ? rawHeard : "";
       // Hard reject (2026-08-09). `findProhibitedCapture` had existed with 16
       // keys, full tests, and ZERO callers — nothing screened the write, so a
       // model that decided to record an SSN was obeyed, and the guard's only
@@ -720,8 +773,44 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             })
             .catch((err) => console.error("[voice] failed to log capture-guard event", err));
         }
+      } else if (!heardInCallerSpeech(heard, callerSpeechTokens)) {
+        // ADR-120. Ordered strictly after the prohibited-key screen above: a
+        // refused SSN must never reach this branch, because the guardrail row
+        // below carries the unmatched `heard` string, and `heard` for a
+        // prohibited key would be the digits themselves. Key-first keeps the
+        // "evidence survives, value does not" rule intact for both guards.
+        //
+        // This is the write that call 2 made and nothing stopped: the agent
+        // asked about tobacco use three times, got "just do some kind of
+        // drinks", said "for the sake of our records, I'll mark the tobacco use
+        // as a no", and wrote `no`. The speech was honest, so ADR-106's
+        // consistency guard passed; the key was legitimate, so the screen above
+        // passed; the value was invented, and `Record<string, string>` had
+        // nowhere to record that. Now the merge simply does not happen.
+        //
+        // Deliberately NOT redacted into `tool_calls.input`: unlike a
+        // prohibited key, the problem here is not that the value is sensitive —
+        // it is that it is unsourced. Keeping the attempt verbatim in
+        // `tool_calls` is what makes a fabrication auditable after the fact.
+        console.warn(`[voice] refused unheard captureField "${field}" — heard quote not in caller speech`);
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "fabricated-capture",
+              source: "capture-guard",
+              // The key and the unmatched quote — never the fabricated value.
+              // The quote is the evidence: it is what the model claimed the
+              // caller said, and comparing it to the transcript is how a human
+              // decides whether the matcher was wrong or the model was.
+              detail: `refused captureField "${field}" — heard quote absent from caller speech: ${JSON.stringify(heard)}`,
+            })
+            .catch((err) => console.error("[voice] failed to log capture-guard event", err));
+        }
       } else {
-        void mergeCapturedField(field, value);
+        void mergeCapturedField(field, value, heard);
       }
     }
 
@@ -1004,7 +1093,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           void resumeWorkflowAfterCall(
             priorWorkflowRunId,
             capturedDisposition,
-            capturedState?.discount_code,
+            capturedState?.discount_code?.value,
           ).catch((err) => console.error("[voice] graph workflow resume failed", err));
         } else {
           void runWorkflowForOutcome({
@@ -2665,7 +2754,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // and a stale intake field never overrides a confirmed one.
               const greetingContext: Record<string, string> = {
                 ...leadGreetingContext,
-                ...capturedState,
+                // ADR-120: `capturedState` entries are `{ value, heard, ... }`
+                // objects now, so flatten to the value before rendering. Spread
+                // directly, this template would interpolate "[object Object]"
+                // into the caller's greeting.
+                ...Object.fromEntries(Object.entries(capturedState).map(([field, entry]) => [field, entry.value])),
                 // Trimmed (2026-08-12): these strings are merchant-typed free text
                 // (`org_agent_configs.name`, `orgs.name`) and prod already contains
                 // `"alice "` with a trailing space. Untrimmed, that renders as

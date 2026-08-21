@@ -142,6 +142,40 @@ export const orgs = pgTable("orgs", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 });
 
+/**
+ * ADR-120 — a captured field must name the utterance it came from.
+ *
+ * The stored shape of one entry in `calls.capturedState` (and in
+ * `callerMemory.facts`, which is a merge of them across calls). It used to be a
+ * bare string, and that is exactly why the first two production calls were
+ * indistinguishable: on call 2 the agent asked about tobacco use three times,
+ * got no answer, announced *"for the sake of our records, I'll mark the tobacco
+ * use as a no"*, and wrote `no` — into the same column, in the same shape, as
+ * call 1's honestly-stated answer. `Record<string, string>` had nowhere to put
+ * provenance, so there was never anything for a reader (dashboard, export,
+ * `crmSync` payload, caller memory) to check.
+ *
+ * - `value` — what the field is, as before. Every reader that used to read the
+ *   string reads this and is otherwise unchanged in behaviour.
+ * - `heard` — the caller's own words the value came from, quoted by the model.
+ *   Verified against this call's caller-role transcript text before the entry is
+ *   allowed to persist (see stream.ts's mergeCapturedField). A field whose
+ *   `heard` matches nothing the caller said is refused, not stored.
+ * - `transcriptId` — the most recent caller-role transcript row at merge time,
+ *   so a reader can jump from the fact to the moment it was said. Null when the
+ *   entry did not come from a live utterance at all: fields seeded from `leads`
+ *   before dialling, and memory carried in from an earlier call.
+ * - `turn` — the caller-turn index at merge time. Cheap ordering that survives
+ *   even when `transcriptId` is null, and the raw material for A3's
+ *   "captured on the turn it was stated, not batched at hangup" measurement.
+ */
+export type CapturedField = {
+  value: string;
+  heard: string;
+  transcriptId: number | null;
+  turn: number;
+};
+
 export const calls = pgTable("calls", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   // Which telephony provider actually carried this call. `twilioCallSid`
@@ -182,7 +216,7 @@ export const calls = pgTable("calls", {
   // Separate from sttReconnectCount above, which counts same-provider
   // reconnects (a transient network blip), not a provider swap.
   providerFailoverCount: integer("provider_failover_count").default(0),
-  capturedState: jsonb("captured_state").$type<Record<string, string>>().default({}),
+  capturedState: jsonb("captured_state").$type<Record<string, CapturedField>>().default({}),
   // Global Compliance Engine Tier 0 (2026-07-16, docs/global-compliance-engine-plan.md #2/#3):
   // the exact recording/AI disclosure text + version resolved and embedded into this call's
   // agent prompt. Nullable — a call finalized before this column existed, or one whose
@@ -367,7 +401,7 @@ export const turnLatency = pgTable("turn_latency", {
 export const callerMemory = pgTable("caller_memory", {
   orgId: text("org_id").notNull().default(""),
   phoneNumber: text("phone_number").notNull(),
-  facts: jsonb("facts").$type<Record<string, string>>().notNull().default({}),
+  facts: jsonb("facts").$type<Record<string, CapturedField>>().notNull().default({}),
   lastCallId: integer("last_call_id").references(() => calls.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
@@ -474,6 +508,11 @@ export const guardrailEvents = pgTable("guardrail_events", {
       "prompt-injection",
       "abuse",
       "regulated-capture",
+      // ADR-120: code refused a `captureField` write whose `heard` quote was
+      // absent from this call's caller speech — i.e. the model recorded a fact
+      // nobody stated. Distinct from "regulated-capture" (the key was
+      // forbidden) because the remedy is different: this one means ask again.
+      "fabricated-capture",
       "fabricated-outbound-text",
       "unknown",
     ],

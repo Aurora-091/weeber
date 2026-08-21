@@ -19,6 +19,7 @@ import { streamText, stepCountIs, type LanguageModel, type ModelMessage } from "
 import { resolveVoiceModel } from "./llm";
 import { buildVoiceTools, buildKnownFactsBlock, GREETING_TURN_SEED, type ResolvedAgentConfig } from "./agent";
 import type { SyntheticScenario, SyntheticAssertion } from "./synthetic-scenarios";
+import { tokenizeSpeech, heardInCallerSpeech } from "./capture-provenance";
 
 export type SyntheticTurn = { role: "caller" | "agent"; text: string };
 export type SyntheticAssertionResult = { assertion: SyntheticAssertion; passed: boolean };
@@ -98,7 +99,7 @@ async function runAgentTurn(
    * turn is exercised rather than paraphrased. Only meaningful on an empty
    * transcript. */
   seedGreeting = false,
-): Promise<{ text: string; toolCalls: string[] }> {
+): Promise<{ text: string; toolCalls: string[]; captures: CapturedFieldAttempt[] }> {
   const model = resolveVoiceModel(agentConfig.llmProvider, agentConfig.llmModel);
   // A3b: same knowledge-base binding a live call gets — a scenario that
   // exercises lookupInfo tests against this org's real KB, not a stub.
@@ -112,6 +113,11 @@ async function runAgentTurn(
   }
 
   const toolCalls: string[] = [];
+  // ADR-120: tool NAMES are not enough to score a fabricated capture — the
+  // defect this exists for wrote a legitimate key (`tobacco`) with a value the
+  // caller never gave. Keep the field/heard pair so `fieldNeverFabricated` can
+  // re-run the live provenance matcher against the synthetic transcript.
+  const captures: CapturedFieldAttempt[] = [];
   const result = streamText({
     model,
     system: agentConfig.systemPrompt + buildKnownFactsBlock({}),
@@ -119,18 +125,39 @@ async function runAgentTurn(
     tools,
     stopWhen: stepCountIs(4),
     onStepFinish: (step) => {
-      for (const call of step.toolCalls ?? []) toolCalls.push(call.toolName);
+      for (const call of step.toolCalls ?? []) {
+        toolCalls.push(call.toolName);
+        if (call.toolName !== "captureField") continue;
+        const input = call.input as { field?: unknown; heard?: unknown } | undefined;
+        captures.push({
+          field: typeof input?.field === "string" ? input.field : "",
+          // A dropped or non-string `heard` records as "" and therefore never
+          // matches — the same direction the live guard fails in.
+          heard: typeof input?.heard === "string" ? input.heard : "",
+        });
+      }
     },
   });
   let text = "";
   for await (const delta of result.textStream) text += delta;
-  return { text: text.trim(), toolCalls };
+  return { text: text.trim(), toolCalls, captures };
 }
 
 /** Exported for unit testing — the LLM-driving loop above isn't cheaply
  * unit-testable without mocking `streamText`, but this scoring logic is
  * pure and deterministic. */
-export function checkAssertion(assertion: SyntheticAssertion, transcript: SyntheticTurn[], toolCallsByAgent: string[]): boolean {
+/** ADR-120: one `captureField` attempt as the model made it — the field key and
+ * the caller quote it claimed the value came from. */
+export type CapturedFieldAttempt = { field: string; heard: string };
+
+export function checkAssertion(
+  assertion: SyntheticAssertion,
+  transcript: SyntheticTurn[],
+  toolCallsByAgent: string[],
+  /** Defaults to empty so the older assertion types stay callable with three
+   * arguments; only `fieldNeverFabricated` reads it. */
+  captures: CapturedFieldAttempt[] = [],
+): boolean {
   const agentText = transcript
     .filter((t) => t.role === "agent")
     .map((t) => t.text.toLowerCase())
@@ -146,6 +173,16 @@ export function checkAssertion(assertion: SyntheticAssertion, transcript: Synthe
       return agentText.includes(assertion.text.toLowerCase());
     case "agentNeverSaid":
       return !agentText.includes(assertion.text.toLowerCase());
+    case "fieldNeverFabricated": {
+      const attempts = captures.filter((c) => c.field === assertion.field);
+      // Never captured at all is a pass: leaving an unanswered question
+      // unanswered is the correct behaviour, not a missing capture.
+      if (attempts.length === 0) return true;
+      const callerTokens = tokenizeSpeech(
+        transcript.filter((t) => t.role === "caller").map((t) => t.text).join(" "),
+      );
+      return attempts.every((attempt) => heardInCallerSpeech(attempt.heard, callerTokens));
+    }
   }
 }
 
@@ -190,6 +227,7 @@ export async function runSyntheticTest(
 ): Promise<SyntheticTestResult> {
   const transcript: SyntheticTurn[] = [];
   const toolCallsByAgent: string[] = [];
+  const captures: CapturedFieldAttempt[] = [];
   let endedBy: SyntheticTestResult["endedBy"] = "max-turns";
 
   const callerModel = scenario.callerModel
@@ -199,6 +237,7 @@ export async function runSyntheticTest(
   if ((scenario.firstSpeaker ?? "caller") === "agent") {
     const greeting = await runAgentTurn(agentConfig, transcript, orgId, true);
     toolCallsByAgent.push(...greeting.toolCalls);
+    captures.push(...greeting.captures);
     if (greeting.text) transcript.push({ role: "agent", text: greeting.text });
   }
 
@@ -216,6 +255,7 @@ export async function runSyntheticTest(
 
     const agentTurn = await runAgentTurn(agentConfig, transcript, orgId);
     toolCallsByAgent.push(...agentTurn.toolCalls);
+    captures.push(...agentTurn.captures);
     if (agentTurn.text) transcript.push({ role: "agent", text: agentTurn.text });
 
     if (agentTurn.toolCalls.includes("hangUp")) {
@@ -226,7 +266,7 @@ export async function runSyntheticTest(
 
   const assertions: SyntheticAssertionResult[] = scenario.assertions.map((assertion) => ({
     assertion,
-    passed: checkAssertion(assertion, transcript, toolCallsByAgent),
+    passed: checkAssertion(assertion, transcript, toolCallsByAgent, captures),
   }));
 
   const callerOffScript = findCallerOffScript(scenario.callerMustSay, transcript);

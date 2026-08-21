@@ -134,7 +134,10 @@ describe("redactCaptureValue", () => {
 describe("captureField tool result", () => {
   it("tells the model the capture was refused instead of confirming it", async () => {
     const result = (await captureField.execute!(
-      { field: "ssn", value: "123-45-6789" },
+      // ADR-120 makes `heard` a required argument: the verbatim caller line the
+      // value came from. The key screen still fires first, so a prohibited key
+      // is refused whether or not the caller really said it.
+      { field: "ssn", value: "123-45-6789", heard: "my social is 123-45-6789" },
       executeOptions("t1"),
     )) as { captured: boolean; refused?: string };
     expect(result.captured).toBe(false);
@@ -147,7 +150,7 @@ describe("captureField tool result", () => {
 
   it("still captures a permitted fact", async () => {
     const result = (await captureField.execute!(
-      { field: "coverage_purpose", value: "burial costs" },
+      { field: "coverage_purpose", value: "burial costs", heard: "it's for burial costs" },
       executeOptions("t2"),
     )) as { captured: boolean; value?: string };
     expect(result.captured).toBe(true);

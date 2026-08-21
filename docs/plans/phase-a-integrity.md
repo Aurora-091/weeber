@@ -41,6 +41,15 @@ sold, whereas one that is slow can.
 
 ### A1. Give `captureField` provenance, and refuse writes that don't have it
 
+**Status: shipped 2026-08-21.** `heard` is a required argument, the write is verified against this
+call's caller-role transcript before it persists, and a non-match is refused with one
+`fabricated-capture` guardrail event. Provenance only — A2 (unanswered as an explicit state) is
+deliberately still open, so a refused capture currently leaves the field absent rather than marked
+asked-and-unanswered. Deviations from the plan text below, both recorded in the commit body: the
+`0055` migration backfills legacy rows with an empty `heard` (declared-not-heard) rather than
+reconstructing quotes, and the synthetic assertion re-runs the live matcher over the scripted
+transcript instead of scoring tool names.
+
 Implements ADR-120. This is the largest task in the phase; do it first because A2 and A3 build on the
 shape it introduces.
 

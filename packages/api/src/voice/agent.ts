@@ -5,7 +5,7 @@ import { createBookAppointmentTool } from "./tools/bookAppointment";
 import { setDisposition } from "./tools/setDisposition";
 import { setIntent } from "./tools/setIntent";
 import { createCrmSyncTool, type CrmSyncContext } from "./tools/crmSync";
-import { captureField } from "./tools/captureField";
+import { captureField, createCaptureFieldTool, type HeardVerifier } from "./tools/captureField";
 import { sendSms } from "./tools/sendSms";
 import { sendDtmf } from "./tools/sendDtmf";
 import { hangUp } from "./tools/hangUp";
@@ -26,7 +26,7 @@ import {
 import { resolveLlmTransportChain } from "./llm/transport-chain";
 import { streamWithTransportFailover } from "./llm/transport-stream";
 import { db } from "../database";
-import { orgAgentConfigs, agentTemplates, orgs } from "../database/schema";
+import { orgAgentConfigs, agentTemplates, orgs, type CapturedField } from "../database/schema";
 import { visibleTemplatesForOrg, loadVisibleTemplate } from "./template-visibility";
 import { and, eq } from "drizzle-orm";
 import { RECOMMENDED_LANGUAGES, type AvailableToolName, type GuardrailSettings, type AgentFrame } from "./agent-frame";
@@ -1204,11 +1204,22 @@ export function buildVoiceTools(
     toolName: string,
     outcome: { status: "resolved"; value: unknown } | { status: "rejected"; error: unknown },
   ) => void,
+  /**
+   * ADR-120 — the call's provenance check for `captureField`'s `heard`
+   * argument. Supplied only by `stream.ts`, which is the only caller that has
+   * caller speech to check against; absent for the text test-chat, the preview
+   * drawer and the synthetic harness, which keep the prior behaviour (see
+   * `HeardVerifier`).
+   */
+  isHeardInCall?: HeardVerifier,
 ) {
   const baseTools = {
     ...voiceTools,
     lookupInfo: createLookupInfoTool(orgId),
     bookAppointment: createBookAppointmentTool(orgId),
+    // Rebuilt per call only when a verifier exists, so the shared instance (and
+    // the identity agent.test.ts asserts on it) survives for every other caller.
+    ...(isHeardInCall ? { captureField: createCaptureFieldTool(isHeardInCall) } : {}),
   };
   // Two concrete object shapes rather than an inline conditional spread or an
   // optional property. Both of those give `offerCartRecoveryDiscount` a value
@@ -1269,10 +1280,13 @@ export function buildVoiceTools(
  * re-derive it from scrollback. Empty state renders nothing (no block at all)
  * so it never pollutes the prompt on calls with nothing captured yet.
  */
-export function buildKnownFactsBlock(capturedState?: Record<string, string>): string {
+export function buildKnownFactsBlock(capturedState?: Record<string, CapturedField>): string {
   const entries = Object.entries(capturedState ?? {});
   if (entries.length === 0) return "";
-  const lines = entries.map(([field, value]) => `- ${field}: ${value}`).join("\n");
+  // ADR-120: a captured field is an object now, so render its `value`. The
+  // `heard` quote stays out of the prompt on purpose — it is provenance for
+  // auditors, not context the model needs to keep talking.
+  const lines = entries.map(([field, entry]) => `- ${field}: ${entry.value}`).join("\n");
   return dedent`
 
 
@@ -1324,10 +1338,10 @@ export function buildWorkflowContextBlock(metadata?: Record<string, string | num
  * a confirmed fact for *this* call — the model should still confirm anything
  * safety- or accuracy-critical rather than assume it still holds.
  */
-export function buildCallerMemoryBlock(callerMemory?: Record<string, string>): string {
+export function buildCallerMemoryBlock(callerMemory?: Record<string, CapturedField>): string {
   const entries = Object.entries(callerMemory ?? {});
   if (entries.length === 0) return "";
-  const lines = entries.map(([field, value]) => `- ${field}: ${value}`).join("\n");
+  const lines = entries.map(([field, entry]) => `- ${field}: ${entry.value}`).join("\n");
   return dedent`
 
 
@@ -1372,8 +1386,8 @@ export interface TurnPromptParts {
 export function buildTurnPromptParts(input: {
   persona?: string;
   workflowMetadata?: Record<string, string | number>;
-  callerMemory?: Record<string, string>;
-  capturedState?: Record<string, string>;
+  callerMemory?: Record<string, CapturedField>;
+  capturedState?: Record<string, CapturedField>;
 }): TurnPromptParts {
   return {
     stablePrefix: input.persona ?? DEFAULT_PERSONA,
@@ -1511,6 +1525,7 @@ export async function runVoiceAgentTurn({
   outboundText,
   workflowMetadata,
   onLateToolResult,
+  isHeardInCall,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -1552,9 +1567,9 @@ export async function runVoiceAgentTurn({
   enabledTools?: AvailableToolName[];
   /** Structured facts captured so far this call — appended to the system
    * prompt as ground truth (see buildKnownFactsBlock). */
-  capturedState?: Record<string, string>;
+  capturedState?: Record<string, CapturedField>;
   /** Rolling facts from previous calls with this same number (ADR-023) — see buildCallerMemoryBlock. */
-  callerMemory?: Record<string, string>;
+  callerMemory?: Record<string, CapturedField>;
   /** A3b: which org's knowledge base `lookupInfo` searches — see buildVoiceTools. */
   orgId?: string;
   /** §3a: reports a tool call still running past TOOL_CALL_FILLER_THRESHOLD_MS
@@ -1595,6 +1610,10 @@ export async function runVoiceAgentTurn({
    * Rendered by buildWorkflowContextBlock. Undefined on inbound calls and any
    * call not placed by a workflow — the block is then absent entirely. */
   workflowMetadata?: Record<string, string | number>;
+  /** ADR-120: verifies `captureField`'s `heard` quote against this call's
+   * caller-role transcript, so a field the caller never stated is refused to
+   * the model instead of written. Live-call-only — see buildVoiceTools. */
+  isHeardInCall?: HeardVerifier;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -1658,7 +1677,17 @@ export async function runVoiceAgentTurn({
           chain.length > 0 ? undefined : buildGatewayProviderOptions(llmProvider, llmFallbackModels),
         system: systemPrompt,
         messages: history,
-        tools: buildVoiceTools(orgId, enabledTools, onSlowToolCall, cartRecovery, codOrder, crmSync, outboundText, onLateToolResult),
+        tools: buildVoiceTools(
+          orgId,
+          enabledTools,
+          onSlowToolCall,
+          cartRecovery,
+          codOrder,
+          crmSync,
+          outboundText,
+          onLateToolResult,
+          isHeardInCall,
+        ),
         stopWhen: stepCountIs(6),
         abortSignal: combinedSignal,
         onStepFinish: (step) => {
@@ -1856,7 +1885,7 @@ export function runVoiceAgentGreeting({
   onTextDelta: (delta: string) => void;
   signal?: AbortSignal;
   /** Pre-seeded facts (e.g. from a CRM/workflow before an outbound call connects). */
-  capturedState?: Record<string, string>;
+  capturedState?: Record<string, CapturedField>;
   /** Reports time-to-first-token — the greeting is usually the first turn of the call, so this is
    * typically what feeds the call-level LLM TTFT metric (see stream.ts's callLatency capture). */
   onLatency?: (ms: number, model: string) => void;
@@ -1866,7 +1895,7 @@ export function runVoiceAgentGreeting({
    * set too (codOrder/crmSync below), so it gets the same telemetry. */
   onToolTelemetry?: (event: ToolExecutionTelemetry) => void;
   /** Rolling facts from previous calls with this same number (ADR-023). */
-  callerMemory?: Record<string, string>;
+  callerMemory?: Record<string, CapturedField>;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
   llmProvider?: "gateway" | "groq";
   /** Per-agent explicit model id override (agent-frame.ts's llmModel). */

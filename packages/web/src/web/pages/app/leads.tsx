@@ -72,7 +72,9 @@ type LeadCall = {
   intent: string | null;
   startedAt: string;
   endedAt: string | null;
-  capturedState: Record<string, string> | null;
+  // ADR-120: entries are `{ value, heard, transcriptId, turn }` objects now;
+  // read them through `capturedValue` rather than as bare strings.
+  capturedState: Record<string, unknown> | null;
 };
 
 type Advisor = { id: number; name: string; npn: string | null; licensedStates: string[] };
