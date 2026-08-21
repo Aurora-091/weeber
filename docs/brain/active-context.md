@@ -12,6 +12,20 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **Doc-retirement rule written down as ADR-118; four finished trackers archived (2026-08-21).**
+  The audit below made real archive-vs-delete-vs-rewrite choices and recorded none as a decision.
+  ADR-118 is that record: retire a doc by its **class**, not its age or filename — evergreen
+  `docs/reference/` is rewritten in place, a dated artifact is filed with its own class (why
+  `ui-audit.md` went to `audit/`, not `docs/archive/`), a finished tracker is `git mv`'d to
+  `docs/archive/` **with a reason row**, and a doc with no attributable reason is deleted rather than
+  given invented provenance. Code citations move in the same commit; append-only folders are moved,
+  never edited. Applied to `insurance-language-variants-task.md` (its one flagged gap — no `hinglish`
+  disclosure key — is now closed in `weeber-compliance/src/consent.ts`; four live code comments
+  repointed), `leads-layer-build-task.md`, `leads-phase2-3-build-task.md`, `PHASE23-PROGRESS.md`.
+  `workflow-canvas/v3-user-builder-plan.md` says "not started" but **stays** — v4 supersedes only its
+  frontend section and cites the rest as live, the worked example of why banners aren't evidence.
+  Still unaudited for accuracy: `architecture/*`, several `docs/reference/*`, the package READMEs,
+  `docs/brain/*`. Nothing enforces the rule in CI, and the audit scripts live in `/tmp`, not the repo.
 - **Docs audited against the code; four rewritten, five moved out of the root (2026-08-20).**
   `docs/reference/api-reference.md` documented 19 endpoints of ~180 and has been rebuilt from the real
   route tree; `dashboard.md` listed 7 of 23 admin pages; `security.md` pointed at a tunnel script that

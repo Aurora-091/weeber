@@ -3,7 +3,7 @@
  *
  * Why this file exists: the greeting is the only line spoken *canned* (stream.ts's
  * speakCannedLine, an LLM-free latency shortcut). Every other spoken line is produced by
- * the LLM. For the hybrid compliance model (see docs/insurance-language-variants-task.md):
+ * the LLM. For the hybrid compliance model (see docs/archive/insurance-language-variants-task.md):
  *   - GREETING → canned + audited per language (here).
  *   - REFUSALS + CLOSINGS → LLM-delivered, audited by living verbatim in each agent's prompt
  *     .md per language.

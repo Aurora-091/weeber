@@ -3,7 +3,7 @@ import { INSURANCE_GREETINGS, resolveLocalizedGreeting } from "./insurance-greet
 
 /**
  * Config-driven per-language insurance greetings (2026-07-19,
- * docs/insurance-language-variants-task.md). The greeting is the only line
+ * docs/archive/insurance-language-variants-task.md). The greeting is the only line
  * spoken *canned* (LLM-free), so the non-English variants must come from the
  * audited map here — never the English DB line rendered through a non-English
  * voice. A language with no audited entry must resolve to undefined so the LLM

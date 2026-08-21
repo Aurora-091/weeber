@@ -3,7 +3,7 @@ import { toSarvamLanguageCode } from "./sarvam";
 
 /**
  * Language-code mapping for Sarvam TTS (2026-07-19,
- * docs/insurance-language-variants-task.md). "hinglish" is a switchable
+ * docs/archive/insurance-language-variants-task.md). "hinglish" is a switchable
  * per-language variant with no dedicated Sarvam code — it must render on the
  * Hindi voice (hi-IN), which speaks the Hindi-English code-mix naturally.
  */

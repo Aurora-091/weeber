@@ -3,7 +3,7 @@ import { RECOMMENDED_LANGUAGES, SARVAM_PREFERRED_LANGUAGES, prefersSarvam } from
 
 /**
  * Hinglish as a first-class switchable language variant (2026-07-19,
- * docs/insurance-language-variants-task.md). It must be offerable in the UI
+ * docs/archive/insurance-language-variants-task.md). It must be offerable in the UI
  * (RECOMMENDED_LANGUAGES → datalist) and route to Sarvam when no provider is
  * explicitly set (its Hindi voice renders the code-mix best).
  */

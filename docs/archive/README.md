@@ -35,3 +35,20 @@ actual code, not these.
   already marked it historical; the live definition is `.github/workflows/ci.yml`. Moved out of the repo
   root, 2026-08-20.
 
+- **`insurance-language-variants-task.md`** — the build task for config-driven single-language insurance
+  agents (`en`/`hi`/`hinglish`). All ten steps are checked off and verified 2026-07-19 (test 565 pass,
+  typecheck 3/3, lint 0). Its one flagged open gap — no `hinglish` key in the compliance disclosure map —
+  has since been closed: `DISCLOSURE_TEXT_BY_LANGUAGE` in `packages/weeber-compliance/src/consent.ts` now
+  carries a `hinglish` entry. The live definitions are `voice/insurance-greetings.ts`, `voice/agent-frame.ts`
+  and `voice/tts/sarvam.ts`; the four code comments citing this doc were repointed here in the same commit.
+  Archived 2026-08-21 (ADR-118).
+- **`leads-layer-build-task.md`** — Phase 1 build tracker for the native leads layer, banner `✅ COMPLETE`.
+  Superseded by the shipped code (`packages/api/src/voice/leads/`, `POST /api/leads/ingest`) and recorded in
+  ADR-061 + changelog 2026-07-19. The design rationale it points at stays live at
+  `docs/product-strategy/native-leads-layer-plan-2026-07-19.md`. Archived 2026-08-21 (ADR-118).
+- **`leads-phase2-3-build-task.md`** — Phase 2 + 3 tracker for the same layer, banner
+  `✅ COMPLETE (2026-07-19)`, with the Orders-migration item deferred as planned. Same supersede path:
+  ADR-061 + changelog 2026-07-19. Archived 2026-08-21 (ADR-118).
+- **`PHASE23-PROGRESS.md`** — a live scratchpad for the Phase 2+3 build, self-described as such, banner
+  `✅ COMPLETE (2026-07-19)`. The running-progress role it served now belongs to `docs/brain/progress.md`.
+  Archived 2026-08-21 (ADR-118).
