@@ -147,7 +147,7 @@ requires. This means a Plivo integration is plausibly a much smaller lift than t
 sit the existing agent code behind that." This should be confirmed with one real prototype call the same
 way Exotel's path needs one — not assumed correct without testing — but it's the more promising integration
 shape on paper, and directly relevant to the transport-abstraction work already planned (see
-`voice-quality-and-india-status-2026-07-12.md`): if Plivo's WebSocket shape is close enough, it may be the
+`../archive/voice-quality-and-india-status-2026-07-12.md`, archived): if Plivo's WebSocket shape is close enough, it may be the
 *easier* second implementation of that abstraction, with Exotel/SIP as the third (or vice versa).
 
 **Compliance/regulatory position:** Plivo is a legitimate DLT-registered path — they've partnered
@@ -197,7 +197,8 @@ pattern to any provider, not add Plivo as a one-off:**
 
 - `orgs` gains a `telephonyProvider` field (`twilio` | `plivo` | `exotel`, extensible) alongside
   provider-specific credential fields (mirroring today's Twilio-specific ones).
-- The transport-abstraction layer already planned (see `voice-quality-and-india-status-2026-07-12.md`)
+- The transport-abstraction layer already planned (see
+  `../archive/voice-quality-and-india-status-2026-07-12.md`, archived)
   resolves the right adapter per-org at call time, the same way `getTwilioClientForOrg` resolves the right
   Twilio client today — falling back to Weeber's own default (Plivo, pending its prototype) only when the
   org hasn't configured its own.

@@ -161,7 +161,8 @@ because the pipeline itself works.
   - [x] **B2.1 (revised, valid)** — One shared multilingual system-prompt instruction: respond
     naturally in the call's language and handle Hinglish/code-mixed input. Implemented via
     `buildLanguageInstructionBlock` (added 2026-07-12, see
-    `docs/voice-quality/voice-quality-and-india-status-2026-07-12.md`), which instructs the LLM to
+    ADR-060; original write-up now at
+    `docs/archive/voice-quality-and-india-status-2026-07-12.md`), which instructs the LLM to
     *stay* in whichever language it opened with. Per ADR-060 this "stay in one spoken language" is
     the deliberate design, not a stopgap — it's the correct behavior, since mid-call voice switching
     is rejected. The multilingual-*understanding* half (handle mixed input) is the valid part of the

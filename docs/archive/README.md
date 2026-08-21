@@ -52,3 +52,11 @@ actual code, not these.
 - **`PHASE23-PROGRESS.md`** — a live scratchpad for the Phase 2+3 build, self-described as such, banner
   `✅ COMPLETE (2026-07-19)`. The running-progress role it served now belongs to `docs/brain/progress.md`.
   Archived 2026-08-21 (ADR-118).
+- **`voice-quality-and-india-status-2026-07-12.md`** — a voice-quality/India status, gaps and priorities
+  snapshot, whose own banner says it was superseded on 2026-07-19 by ADR-060 (the Indic smart-default
+  provider decision). The live references are ADR-060, `docs/voice-quality/language-support.md` and
+  `docs/voice-quality/india-telephony.md`; its latency claims are further superseded by
+  `docs/voice-quality/llm-provider-latency-case-study-2026-07-17.md` and
+  `docs/audits/2026-08-21-first-two-production-calls.md`. No code cited it; the three doc citations
+  (`WEEBER-PLAN.md`, `docs/voice-quality/india-telephony.md` ×2, `docs/README.md`) were repointed here in
+  the same commit. Archived 2026-08-21 (ADR-118).

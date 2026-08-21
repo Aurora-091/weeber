@@ -19,6 +19,8 @@ Deepgram/Sarvam + ElevenLabs/Cartesia). See `CLAUDE.md` for the fuller "what thi
 |---|---|
 | [`architecture/`](./architecture/) | Codebase map + call-flow diagrams. Read this first, not `docs/`. |
 | [`docs/`](./docs/) | Everything else — operational reference (`docs/reference/`), compliance plans, voice-quality/latency research, product-strategy/GTM research, insurance-vertical planning, Workflow Canvas history, per-agent prompts (`docs/agent-prompts/`), and an `archive/` of superseded docs. See [`docs/README.md`](./docs/README.md) for the full index. |
+| [`docs/plans/`](./docs/plans/) | The linear execution plan to pilot — phases **A → E**, each gating the next. Start at [`docs/plans/README.md`](./docs/plans/README.md). A phase may not start until the previous one's exit gate is met. |
+| [`docs/audits/`](./docs/audits/) | Dated, point-in-time audits of what production actually did (as opposed to `audit/`, which audits the code). The evidence base the plans cite. |
 | [`audit/`](./audit/) | Dated, point-in-time code audits — snapshots of what the codebase actually does, not plans. See [`audit/README.md`](./audit/README.md). |
 | [`packages/`](./packages/) | The actual code: `api` (backend), `web` (frontend), `weeber-compliance` (standalone compliance engine). |
 | [`docs/decisions/`](./docs/decisions/) | The architecture decision log (ADRs) — why things are the way they are, including reversed ones. Start at [`docs/decisions/README.md`](./docs/decisions/README.md); root [`DECISIONS.md`](./DECISIONS.md) is a stub pointing here since the 2026-07-18 split. The single most useful place for "why does this work like this." |

@@ -18,8 +18,11 @@ compliance, and business rules.
 - **DB:** **Supabase** Postgres (pooled, port 6543) — auth + `pgvector` KB, ADR-034.
 - **Compliance:** `packages/weeber-compliance` — standalone, dependency-free, the real moat.
 
-Pre-launch. 11 calls all-time, **all internal test calls** placed by the team — zero customer
-traffic, no paying customers. Treat traction docs accordingly.
+Pre-launch. **2 calls all-time** in the production database, both internal test calls placed by the
+team on 2026-08-20 — zero customer traffic, no paying customers. Treat traction docs accordingly.
+(This line previously claimed 11; that number was never sourced. Counted directly from `calls` on
+2026-08-21 — see `docs/audits/2026-08-21-first-two-production-calls.md`, and ADR-118 for why unsourced
+claims like it get dated or deleted.)
 
 ## Read order — do this before making decisions
 
