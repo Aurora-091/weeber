@@ -27,6 +27,7 @@ import {
   computeV2vDecomposition,
   summarizeGuardrailEvents,
   summarizeCaptureTiming,
+  summarizeCacheStability,
   summarizeByOrg,
   type Stats,
   type CallLatencyRow,
@@ -95,7 +96,7 @@ async function main() {
       .filter((r): r is T & { callStartedAt: Date } => r.callStartedAt !== undefined);
 
   const callLatWithDate = withCallStartedAt(callLatencyRows) as (CallLatencyRow & { callId: number })[];
-  const turnLatWithDate = withCallStartedAt(turnLatencyRows) as (TurnLatencyRow & { callId: number })[];
+  const turnLatWithDate = withCallStartedAt(turnLatencyRows) as (TurnLatencyRow & { callId: number; turnIndex: number })[];
 
   const { included: callLatIncluded, excluded: callLatExcluded } = partitionByAdr107Cutover(callLatWithDate, cutover);
   const { included: turnLatIncluded, excluded: turnLatExcluded } = partitionByAdr107Cutover(turnLatWithDate, cutover);
@@ -130,6 +131,32 @@ async function main() {
     console.log("  not enough data (need p50 voiceToVoiceMs, llmTtftMs, and ttsFirstByteMs all present)");
   } else {
     console.log(`  LLM ${decomposition.llmSharePct}%  TTS ${decomposition.ttsSharePct}%  other ${decomposition.otherSharePct}%`);
+  }
+
+  // Phase C2 (docs/plans/phase-c-latency.md, exit-gate condition 4): the
+  // report previously computed nothing from llmInputTokens/llmCachedInputTokens
+  // beyond the raw pooled stats above — calculateCacheHitPercent existed
+  // (agent.ts) and nothing read it. A mid-call drop to 0% after a non-zero
+  // turn is the specific shape the 2026-08-21 audit's Finding 7 found and
+  // composeTurnSystemPrompt exists to prevent — treat any nonempty result
+  // here as a defect, not provider variance.
+  const cacheStability = summarizeCacheStability(
+    turnLatIncluded.map((r) => ({
+      callId: r.callId,
+      turnIndex: r.turnIndex,
+      llmInputTokens: r.llmInputTokens,
+      llmCachedInputTokens: r.llmCachedInputTokens,
+    })),
+  );
+  console.log("\n--- Prompt cache-hit % (per turn, post-cutover only) ---");
+  printStats("cacheHitPercent", cacheStability.hitPercentStats);
+  if (cacheStability.callsWithMidCallDrop.length === 0) {
+    console.log("  no mid-call drop to 0% after a non-zero turn in range — cache stability looks healthy");
+  } else {
+    console.log(
+      `  MID-CALL CACHE DROP on ${cacheStability.callsWithMidCallDrop.length} call(s): ` +
+        `${cacheStability.callsWithMidCallDrop.join(", ")} — investigate before trusting cache-hit numbers on these`,
+    );
   }
 
   console.log("\n--- Phase A guardrail counters (guardrail_events) ---");

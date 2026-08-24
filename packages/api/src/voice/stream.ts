@@ -350,6 +350,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * shouldn't be able to cut the agent off on its own. Reset to 0 whenever a
    * barge-in fires or the streak breaks (empty text / agent stops speaking). */
   let bargeInStreak = 0;
+  /** Phase C2 (docs/plans/phase-c-latency.md) — the previous turn's
+   * `hashStablePrefix` result, so a change can be detected turn to turn
+   * within this call. `null` (not compared) until the first turn reports one. */
+  let lastStablePrefixHash: string | null = null;
   /**
    * Phase V (2026-07-31): the pluggable end-of-turn detector, built once per
    * call from SEMANTIC_TURN_DETECTION_FLAG. Default is the plain heuristic
@@ -2363,6 +2367,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // have been labelled* is cheap and catches the one case we can.
             const expectedPrimaryLabel = getActiveModelLabel(llmProviderOverride, llmModelOverride);
             if (model !== expectedPrimaryLabel) recordProviderFailover();
+          },
+          // Phase C2 (docs/plans/phase-c-latency.md): the exit-gate condition
+          // is that this hash never changes within a call — composeTurnSystemPrompt
+          // (agent.ts) should now guarantee that structurally, so a mismatch
+          // here means something new broke the invariant, not that the known
+          // bug came back.
+          onStablePrefixHash: (hash) => {
+            if (lastStablePrefixHash !== null && hash !== lastStablePrefixHash) {
+              console.warn(
+                `[voice] stablePrefix hash changed mid-call (${lastStablePrefixHash} -> ${hash})` +
+                  `${callSid ? ` (${callSid})` : ""} — the system prompt's stable prefix should be` +
+                  ` byte-identical for every turn of a call; this will defeat automatic prompt caching.`,
+              );
+            }
+            lastStablePrefixHash = hash;
           },
           onUsage: (usage) => {
             const cacheHitPct =

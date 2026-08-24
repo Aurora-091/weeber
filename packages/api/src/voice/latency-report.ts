@@ -176,6 +176,76 @@ export function summarizeCaptureTiming(perCall: CaptureTimingInput[]): { midCall
   return { midCall, finalTurn };
 }
 
+/** Deliberate duplicate of agent.ts's `calculateCacheHitPercent` — same
+ * reasoning as `nearestRankPercentile` above: this module has to stay
+ * DB/AI-SDK-import-free so its functions are fixture-testable, and agent.ts
+ * pulls in the whole model/tool graph at module scope. `undefined` (not `0`)
+ * whenever a real percentage can't be known — see that function's doc
+ * comment for why `cachedInputTokens: 0` is a different fact from "the
+ * provider never reported cache usage at all". */
+function cacheHitPercent(inputTokens: number | null | undefined, cachedInputTokens: number | null | undefined): number | undefined {
+  if (!inputTokens || cachedInputTokens === null || cachedInputTokens === undefined) return undefined;
+  return Math.round((cachedInputTokens / inputTokens) * 100);
+}
+
+export type TurnCacheRow = {
+  callId: number;
+  turnIndex: number;
+  llmInputTokens: number | null;
+  llmCachedInputTokens: number | null;
+};
+
+export type CacheStabilityResult = {
+  /** p50/p95/min/max/n of per-turn cache-hit percentage, over every turn
+   * with a known value. */
+  hitPercentStats: Stats;
+  /** ids of calls where a turn's hit% was 0 immediately after an EARLIER
+   * turn in that same call had hit% > 0 — the shape
+   * docs/audits/2026-08-21-first-two-production-calls.md's Finding 7 found
+   * (turns 6, 8, 11 dropped to 0% after the cache had already warmed on
+   * turns 3-4) and Phase C2's `composeTurnSystemPrompt` (agent.ts) exists to
+   * prevent. Per the plan's exit-gate condition 4, this should always be
+   * empty post-fix — a non-empty result here is a live regression, not
+   * "provider variance". */
+  callsWithMidCallDrop: number[];
+};
+
+/**
+ * Groups per-turn token-usage rows by call, orders each call's turns, and
+ * flags any call whose cache-hit percentage goes from non-zero back to zero
+ * mid-call. A turn with no usage data (barge-in before the model returned, a
+ * provider that omits cache reporting) is skipped rather than treated as a
+ * drop — see `cacheHitPercent`'s `undefined` case.
+ */
+export function summarizeCacheStability(turnRows: TurnCacheRow[]): CacheStabilityResult {
+  const byCall = new Map<number, TurnCacheRow[]>();
+  for (const row of turnRows) {
+    const bucket = byCall.get(row.callId) ?? [];
+    bucket.push(row);
+    byCall.set(row.callId, bucket);
+  }
+
+  const allHitPercents: number[] = [];
+  const callsWithMidCallDrop: number[] = [];
+
+  for (const [callId, rows] of byCall) {
+    const ordered = [...rows].sort((a, b) => a.turnIndex - b.turnIndex);
+    let sawNonZero = false;
+    for (const row of ordered) {
+      const pct = cacheHitPercent(row.llmInputTokens, row.llmCachedInputTokens);
+      if (pct === undefined) continue;
+      allHitPercents.push(pct);
+      if (pct === 0 && sawNonZero) {
+        callsWithMidCallDrop.push(callId);
+        break;
+      }
+      if (pct > 0) sawNonZero = true;
+    }
+  }
+
+  return { hitPercentStats: computeStats(allHitPercents), callsWithMidCallDrop };
+}
+
 export type OrgBreakdownRow = {
   orgId: string;
   callCount: number;

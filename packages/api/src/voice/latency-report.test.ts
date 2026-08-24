@@ -6,8 +6,10 @@ import {
   computeV2vDecomposition,
   summarizeGuardrailEvents,
   summarizeCaptureTiming,
+  summarizeCacheStability,
   summarizeByOrg,
   type TurnLatencyRow,
+  type TurnCacheRow,
 } from "./latency-report";
 import type { CapturedField } from "../database/schema";
 
@@ -162,6 +164,67 @@ describe("summarizeCaptureTiming", () => {
 
   it("returns zeros for no calls", () => {
     expect(summarizeCaptureTiming([])).toEqual({ midCall: 0, finalTurn: 0 });
+  });
+});
+
+function cacheRow(overrides: Partial<TurnCacheRow>): TurnCacheRow {
+  return { callId: 1, turnIndex: 0, llmInputTokens: null, llmCachedInputTokens: null, ...overrides };
+}
+
+describe("summarizeCacheStability — Phase C2 (2026-08-24)", () => {
+  it("computes the pooled cache-hit percentage distribution across turns with usage data", () => {
+    const rows = [
+      cacheRow({ turnIndex: 0, llmInputTokens: 1000, llmCachedInputTokens: 0 }), // 0%
+      cacheRow({ turnIndex: 1, llmInputTokens: 1000, llmCachedInputTokens: 900 }), // 90%
+    ];
+    const result = summarizeCacheStability(rows);
+    expect(result.hitPercentStats.n).toBe(2);
+    expect(result.hitPercentStats.min).toBe(0);
+    expect(result.hitPercentStats.max).toBe(90);
+    expect(result.callsWithMidCallDrop).toEqual([]);
+  });
+
+  it("flags a call whose hit% goes non-zero then back to zero — the 2026-08-21 audit's Finding 7 shape", () => {
+    const rows = [
+      cacheRow({ callId: 2, turnIndex: 0, llmInputTokens: 5514, llmCachedInputTokens: 0 }),
+      cacheRow({ callId: 2, turnIndex: 3, llmInputTokens: 11172, llmCachedInputTokens: 7523 }), // 67%
+      cacheRow({ callId: 2, turnIndex: 6, llmInputTokens: 5742, llmCachedInputTokens: 0 }), // drop back to 0%
+    ];
+    const result = summarizeCacheStability(rows);
+    expect(result.callsWithMidCallDrop).toEqual([2]);
+  });
+
+  it("does not flag a call that simply never warms (0% every turn) — that's a miss rate, not a drop", () => {
+    const rows = [
+      cacheRow({ callId: 3, turnIndex: 0, llmInputTokens: 1000, llmCachedInputTokens: 0 }),
+      cacheRow({ callId: 3, turnIndex: 1, llmInputTokens: 1000, llmCachedInputTokens: 0 }),
+    ];
+    expect(summarizeCacheStability(rows).callsWithMidCallDrop).toEqual([]);
+  });
+
+  it("does not flag a call in turnIndex order regardless of the order rows are passed in", () => {
+    const rows = [
+      cacheRow({ callId: 4, turnIndex: 2, llmInputTokens: 1000, llmCachedInputTokens: 0 }), // out of order on purpose
+      cacheRow({ callId: 4, turnIndex: 0, llmInputTokens: 1000, llmCachedInputTokens: 900 }),
+      cacheRow({ callId: 4, turnIndex: 1, llmInputTokens: 1000, llmCachedInputTokens: 850 }),
+    ];
+    // Sorted by turnIndex this is 90% -> 85% -> 0%, a real drop.
+    expect(summarizeCacheStability(rows).callsWithMidCallDrop).toEqual([4]);
+  });
+
+  it("skips turns with no usage data (undefined hit%) rather than treating them as a drop", () => {
+    const rows = [
+      cacheRow({ callId: 5, turnIndex: 0, llmInputTokens: 1000, llmCachedInputTokens: 900 }),
+      cacheRow({ callId: 5, turnIndex: 1, llmInputTokens: null, llmCachedInputTokens: null }), // barge-in before usage reported
+      cacheRow({ callId: 5, turnIndex: 2, llmInputTokens: 1000, llmCachedInputTokens: 850 }),
+    ];
+    expect(summarizeCacheStability(rows).callsWithMidCallDrop).toEqual([]);
+  });
+
+  it("returns empty results for no rows", () => {
+    const result = summarizeCacheStability([]);
+    expect(result.hitPercentStats).toEqual({ p50: null, p95: null, min: null, max: null, n: 0 });
+    expect(result.callsWithMidCallDrop).toEqual([]);
   });
 });
 

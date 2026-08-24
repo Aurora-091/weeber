@@ -1,6 +1,6 @@
 # Phase C — Latency, in the order production says
 
-**Status:** Blocked on Phase B
+**Status:** In progress — C1 shipped 2026-08-24, C2 shipped 2026-08-24; C3/C4 remaining
 **Blocks:** Phase D, Phase E
 **Preconditions:** Phase B's exit gate met — in particular `bun run latency:report` reproducing the
 audit's headline numbers. Without that command this phase has no acceptance test and must not start.
@@ -36,6 +36,16 @@ bottom of this file, with the rows that refute them.
 ## The work
 
 ### C1. Stop opening a TTS socket on every turn — the largest verified win
+
+**Status: shipped 2026-08-24.** `TtsSession`/`ConnectTtsSession` (`tts/types.ts`); `stream.ts` holds one
+session per call (`getOrOpenTtsSession`/`closeTtsSession`), reused turn to turn, pre-warmed at pickup in
+parallel with STT connect, torn down on barge-in/call-end. Cartesia and ElevenLabs multiplex per-turn
+`context_id`s over one socket (ElevenLabs moved `/stream-input` -> `/multi-stream-input`); Sarvam sends
+`config` once then a text/flush cycle per turn. Not pooled across calls. `onSocketOpen` only fires on a
+genuine new connect, so `turnTtsSocketOpenMs` stays absent (not 0) on a reused turn, matching the exit
+gate's condition 3. `stream-tts-lazy-connect.test.ts`/`stream-tts-voice-identity.test.ts` rewritten for
+the session model. 1542/1542 api tests passing at ship time. **Not yet measured against production** —
+the ~250ms/turn expected win below is unverified by `bun run latency:report` over real calls.
 
 **~250 ms per turn, on nearly every turn.** `tts_socket_open_ms` is 197–274 ms on all but one turn of
 both calls, and it is a component of `tts_first_byte_ms` (median ≈ 412 ms). A quarter of every
@@ -78,6 +88,27 @@ after the first.
 ---
 
 ### C2. Stabilize the prompt prefix so the cache stops missing
+
+**Status: shipped 2026-08-24.** Found by construction, matching this section's own step 1: the culprit
+was suspect 4, `scrubSystemPrompt` behaving differently once certain content appears — not the captured-
+state/workflow-metadata/caller-memory leak the other suspects predicted. `scrubSystemPrompt`/
+`stripUnresolvedMergeTags` (`merge-tags.ts`) only early-returns the input byte-identical when the string
+has zero unresolved `{{tag}}`s; the moment it finds even one, it runs three whitespace-collapse regexes
+across the WHOLE string it was given, not just near the tag. The old call site scrubbed
+`stablePrefix + dynamicSuffix` as one concatenated string, so on any turn where `dynamicSuffix` (which
+renders live captured-field/caller-memory/workflow-metadata VALUES — not guaranteed tag-free, since a
+value is whatever a prior tool call wrote) happened to contain a stray `{{word}}`-shaped value, the
+PREFIX's own double-spaces/bullets/punctuation got silently rewritten too, even though `stablePrefix`
+itself never changed. New `composeTurnSystemPrompt` (agent.ts) scrubs `stablePrefix`/`dynamicSuffix`
+SEPARATELY so this is now structurally impossible. Also shipped: `hashStablePrefix` + a per-call
+`onStablePrefixHash` callback (stream.ts logs a warning if the hash ever changes mid-call — the live
+version of this section's step 1 instrumentation), the step-2 test (`agent.test.ts`, prefix hash constant
+across a simulated multi-turn call including a turn with a stray merge-tag-shaped captured value), and
+step 3 (`summarizeCacheStability` in `voice/latency-report.ts`, wired into `bun run latency:report`'s
+output, flagging any call whose per-turn cache-hit% drops back to 0 after a non-zero turn). 1550/1550 api
+tests passing at ship time. **Not yet measured against production** — no post-fix production calls exist
+yet to run `latency:report` against and confirm the mid-call-drop shape is actually gone live, not just
+in the simulated test.
 
 **Where:**
 

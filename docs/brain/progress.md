@@ -12,6 +12,18 @@ updated: 2026-08-24
 
 ## Done (works end-to-end, real-verified)
 
+- **Phase C2 — prompt-cache mid-call drop found and fixed (2026-08-24).** Root cause:
+  `scrubSystemPrompt` collapses whitespace across its ENTIRE input whenever the input contains even one
+  unresolved `{{tag}}` anywhere — the old call site scrubbed `stablePrefix + dynamicSuffix` as one
+  string, so a stray `{{word}}`-shaped captured-field value in the per-turn-growing suffix could silently
+  rewrite the stable persona's own bytes, breaking automatic prompt-cache prefix matching turn to turn.
+  Matches the 2026-08-21 audit's Finding 7 exactly. Fix: `composeTurnSystemPrompt` (agent.ts) scrubs
+  prefix/suffix separately. Also shipped: `hashStablePrefix` + live per-call drift warning (stream.ts),
+  the plan's prescribed regression test, and `summarizeCacheStability` surfaced in
+  `bun run latency:report`, flagging any call whose cache-hit% drops back to 0 after a non-zero turn.
+  1550/1550 api tests pass, typecheck clean. See `active-context.md` for full detail. **Not yet measured
+  against production** — needs a post-fix call and a `latency:report` run to confirm live.
+
 - **UI Modernization & Design System Ratchet (2026-08-24).**
   - Shipped standard shadcn `Card` primitive (`packages/web/src/web/components/ui/card.tsx`) with 4 variants and unit tests.
   - Eliminated all native `<select>` elements (`rawSelect`: 32 -> 0) and converted all to shadcn `Select`.

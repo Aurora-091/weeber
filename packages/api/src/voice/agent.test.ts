@@ -5,6 +5,8 @@ import {
   buildCallerMemoryBlock,
   buildTurnPromptParts,
   calculateCacheHitPercent,
+  composeTurnSystemPrompt,
+  hashStablePrefix,
   isTimedOutToolResult,
   resolveAgentConfig,
   toTurnTokenUsage,
@@ -723,6 +725,78 @@ describe("buildTurnPromptParts — stable/dynamic prompt boundary (2026-08-20)",
   it("dynamicSuffix is empty when workflow context, caller memory, and captured state are all absent", () => {
     const { dynamicSuffix } = buildTurnPromptParts({ persona });
     expect(dynamicSuffix).toBe("");
+  });
+});
+
+describe("composeTurnSystemPrompt / hashStablePrefix — Phase C2 prompt-cache stability (2026-08-24)", () => {
+  // Deliberately full of the whitespace stripUnresolvedMergeTags' cleanup
+  // regexes touch — a double space, a line that's just a bullet, a space
+  // before punctuation — so the regression this guards against (those
+  // regexes firing across the WHOLE concatenated string, not just near a
+  // stripped tag) would actually change these bytes if it came back.
+  const persona = "You are a  test agent persona.\n-\nDo this ,  carefully.";
+
+  it("stablePrefix's composed bytes are identical whether or not the suffix has a stray unresolved tag", () => {
+    const noTagInSuffix = composeTurnSystemPrompt(persona, "\n\nKnown facts:\n- email: a@b.com");
+    // A captured field's VALUE is whatever a prior tool call wrote — this
+    // models a suffix that happens to contain something `{{word}}`-shaped
+    // (the exact case buildKnownFactsBlock/buildCallerMemoryBlock/
+    // buildWorkflowContextBlock cannot rule out, since they render live
+    // call state verbatim). Before Phase C2 this alone would have rewritten
+    // the prefix's whitespace too, because the old code scrubbed
+    // `stablePrefix + dynamicSuffix` as one string.
+    const strayTagInSuffix = composeTurnSystemPrompt(persona, "\n\nKnown facts:\n- note: see {{template_id}} for details");
+
+    // Neither run may have touched the prefix's own whitespace — both must
+    // still start with the raw, uncollapsed persona text.
+    expect(noTagInSuffix.startsWith(persona)).toBe(true);
+    expect(strayTagInSuffix.startsWith(persona)).toBe(true);
+    // The prefix-length prefix of both composed strings must be byte-for-byte
+    // identical, regardless of what the suffix beyond it contains.
+    expect(strayTagInSuffix.slice(0, persona.length)).toBe(noTagInSuffix.slice(0, persona.length));
+  });
+
+  it("hashStablePrefix is constant across a simulated multi-turn call with growing captured facts, workflow metadata, and caller memory — including a turn with a stray merge-tag-shaped value", () => {
+    // The persona itself has no unresolved tags, so scrubbing it alone is a
+    // no-op (stripUnresolvedMergeTags' early return) — this is the value
+    // every turn below must hash to, however much the suffix around it grows.
+    const baselineHash = hashStablePrefix(composeTurnSystemPrompt(persona, ""));
+
+    const turn0 = buildTurnPromptParts({ persona, capturedState: {} });
+    const turn1 = buildTurnPromptParts({
+      persona,
+      workflowMetadata: { customer_name: "Jamie" },
+      capturedState: facts({ email: "a@b.com" }),
+    });
+    const turn2 = buildTurnPromptParts({
+      persona,
+      workflowMetadata: { customer_name: "Jamie" },
+      callerMemory: facts({ preferred_language: "hindi" }),
+      capturedState: facts({ email: "a@b.com", note: "mentioned {{template_id}} by mistake" }),
+    });
+    const turn3 = buildTurnPromptParts({
+      persona,
+      workflowMetadata: { customer_name: "Jamie" },
+      callerMemory: facts({ preferred_language: "hindi" }),
+      capturedState: facts({ email: "a@b.com", order_id: "ORD-1" }),
+    });
+
+    // Exercises the real call site's shape: compose the FULL turn prompt
+    // (prefix + that turn's actual, growing suffix), then hash only the
+    // prefix-length prefix of the result — exactly what runVoiceAgentTurn's
+    // onStablePrefixHash reports. This is the composition that was broken:
+    // scrubbing prefix+suffix together let turn2's stray `{{template_id}}`
+    // in the suffix rewrite the prefix's whitespace too.
+    const hashes = [turn0, turn1, turn2, turn3].map((t) => {
+      const composed = composeTurnSystemPrompt(t.stablePrefix, t.dynamicSuffix);
+      return hashStablePrefix(composed.slice(0, persona.length));
+    });
+
+    // Every turn's stablePrefix hashes the same as the persona scrubbed alone
+    // — including turn2, whose dynamicSuffix contains a stray
+    // `{{template_id}}`-shaped value that used to be able to change it.
+    for (const h of hashes) expect(h).toBe(baselineHash);
+    expect(new Set(hashes).size).toBe(1);
   });
 });
 

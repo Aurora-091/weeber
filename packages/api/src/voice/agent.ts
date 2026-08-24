@@ -1,4 +1,5 @@
 import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { createHash } from "node:crypto";
 import dedent from "dedent";
 import { createLookupInfoTool } from "./tools/lookupInfo";
 import { createBookAppointmentTool } from "./tools/bookAppointment";
@@ -1480,6 +1481,54 @@ export function buildTurnPromptParts(input: {
   };
 }
 
+/**
+ * Phase C2 (2026-08-24, docs/plans/phase-c-latency.md) — composes the final
+ * system prompt sent to the model, scrubbing `stablePrefix` and
+ * `dynamicSuffix` SEPARATELY rather than as one concatenated string.
+ *
+ * The bug this exists to prevent: `scrubSystemPrompt`/`stripUnresolvedMergeTags`
+ * (merge-tags.ts) only early-returns the input unchanged when the string has
+ * ZERO unresolved `{{tag}}`s. The moment it finds even one, it runs three
+ * whitespace-collapse regexes (`/[ \t]{2,}/g`, the empty-bullet-line drop,
+ * space-before-punctuation) across the WHOLE string it was given — not just
+ * near the tag. `dynamicSuffix` grows every turn from `captureField` output,
+ * caller memory, and workflow metadata, none of which this codebase can
+ * fully guarantee is tag-free (a captured value is whatever the model wrote).
+ * Scrubbing `stablePrefix + dynamicSuffix` as one string meant that on any
+ * turn where the SUFFIX happened to contain a stray `{{word}}`-shaped value,
+ * the PREFIX's own double-spaces/bullets/punctuation got silently rewritten
+ * too — even though `stablePrefix` itself never changed. The result is a
+ * `stablePrefix` whose literal bytes differ turn to turn depending on
+ * unrelated suffix content, which defeats byte-prefix-matching automatic
+ * prompt caching (Groq/OpenAI-class providers) even though the *logical*
+ * prefix never moved. This is exactly the mechanism behind the 2026-08-21
+ * production audit's Finding 7 (cache hit% dropping to 0 on turns 6, 8, 11
+ * after the cache had already warmed on turns 3-4).
+ *
+ * Scrubbing each half independently makes `stablePrefix`'s scrubbed bytes a
+ * pure function of `stablePrefix` alone — see this file's
+ * "stablePrefix hash is stable across a turn with a stray merge tag in the
+ * suffix" test.
+ */
+export function composeTurnSystemPrompt(stablePrefix: string, dynamicSuffix: string, label?: string): string {
+  return (
+    scrubSystemPrompt(stablePrefix, label ? `${label} — prefix` : undefined) +
+    scrubSystemPrompt(dynamicSuffix, label ? `${label} — suffix` : undefined)
+  );
+}
+
+/**
+ * Short, log-friendly fingerprint of the scrubbed stable prefix — not a
+ * security hash, just a cheap way to notice "this changed" in a console log
+ * or a test assertion without printing several KB of persona text every
+ * turn. See `composeTurnSystemPrompt`'s doc comment for what this exists to
+ * catch: the exit-gate condition in docs/plans/phase-c-latency.md is that
+ * this stays identical for every turn of a call.
+ */
+export function hashStablePrefix(scrubbedStablePrefix: string): string {
+  return createHash("sha256").update(scrubbedStablePrefix).digest("hex").slice(0, 12);
+}
+
 // If the model produces no text at all for a turn (e.g. gets stuck only
 // calling tools, or the provider returns empty output), we still need to say
 // *something* — dead air on a live call reads as a dropped connection.
@@ -1609,6 +1658,7 @@ export async function runVoiceAgentTurn({
   onLateToolResult,
   isHeardInCall,
   dispositionScheduling,
+  onStablePrefixHash,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -1700,6 +1750,12 @@ export async function runVoiceAgentTurn({
   /** A4: lets a `callback-requested` disposition create a `scheduled_calls`
    * row for real. Live-call-only — see buildVoiceTools. */
   dispositionScheduling?: DispositionSchedulingContext;
+  /** Phase C2: fires every turn with `hashStablePrefix` of this turn's
+   * scrubbed `stablePrefix` — the caller (stream.ts) compares it turn to
+   * turn and logs a warning if it ever changes within a call, which should
+   * be impossible now that `composeTurnSystemPrompt` scrubs the prefix
+   * independently of the suffix. See composeTurnSystemPrompt's doc comment. */
+  onStablePrefixHash?: (hash: string) => void;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -1718,16 +1774,28 @@ export async function runVoiceAgentTurn({
   // every path into the model funnels through here: live calls, the text
   // test-chat, the synthetic harness and the preview drawer. A `{{tag}}` that
   // survived a prompt file, a template seed, or a user-typed persona in the
-  // agent editor cannot reach the model from any of them. The blocks appended
-  // below are generated in code and contain no tags, but they're composed first
-  // so the scrub sees the exact string that would otherwise be sent.
+  // agent editor cannot reach the model from any of them.
   //
   // Stable/dynamic boundary made explicit (2026-08-20) — see
-  // `buildTurnPromptParts`'s doc comment. Same expression as before, split at
-  // the seam that was already there; concatenation order and scrub point are
-  // unchanged, so this produces byte-identical output to the prior inline form.
+  // `buildTurnPromptParts`'s doc comment. Phase C2 (2026-08-24): scrubbed via
+  // `composeTurnSystemPrompt`, which scrubs `stablePrefix`/`dynamicSuffix`
+  // SEPARATELY rather than as one concatenated string — see that function's
+  // doc comment for the caching bug this fixes. The dynamic blocks are
+  // generated in code, but the VALUES they render (a captured field, caller
+  // memory, workflow metadata) are not guaranteed tag-free — they're whatever
+  // a prior tool call wrote — so `dynamicSuffix` occasionally containing a
+  // stray `{{word}}`-shaped value must never be able to rewrite bytes inside
+  // `stablePrefix`, which is exactly what scrubbing the concatenation as one
+  // string used to allow.
   const { stablePrefix, dynamicSuffix } = buildTurnPromptParts({ persona, workflowMetadata, callerMemory, capturedState });
-  const systemPrompt = scrubSystemPrompt(stablePrefix + dynamicSuffix);
+  const systemPrompt = composeTurnSystemPrompt(stablePrefix, dynamicSuffix);
+  // Re-scrubbing stablePrefix alone to hash it is redundant with the scrub
+  // composeTurnSystemPrompt just did internally — cheap in the common (no
+  // unresolved tag) case, where stripUnresolvedMergeTags is a single regex
+  // scan that early-returns, and correctness (one function, composeTurnSystemPrompt,
+  // is the only place that decides how the prefix is scrubbed) matters more
+  // here than saving that scan.
+  onStablePrefixHash?.(hashStablePrefix(scrubSystemPrompt(stablePrefix)));
 
   try {
     /**

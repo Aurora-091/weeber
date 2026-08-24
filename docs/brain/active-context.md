@@ -12,6 +12,26 @@ updated: 2026-08-24
 
 ## Current focus
 
+- **Phase C2 shipped — found and fixed why the prompt-cache was dropping to 0% mid-call
+  (2026-08-24, `docs/plans/phase-c-latency.md`).** Root cause, found by hashing/inspection exactly as the
+  plan's own methodology prescribed: `scrubSystemPrompt`/`stripUnresolvedMergeTags` (`merge-tags.ts`)
+  only leaves its input byte-identical when the string has zero unresolved `{{tag}}`s — the instant it
+  finds even one, it runs three whitespace-collapse regexes across the WHOLE string it was given, not
+  just near the tag. `runVoiceAgentTurn` used to scrub `stablePrefix + dynamicSuffix` as one concatenated
+  string, so on any turn where `dynamicSuffix` (which renders live captured-field/caller-memory/workflow-
+  metadata **values** — never guaranteed tag-free, since a value is whatever a prior tool call wrote)
+  happened to contain a stray `{{word}}`-shaped value, the stable persona's own whitespace got silently
+  rewritten too, even though the persona itself never changed — exactly matching the 2026-08-21 audit's
+  Finding 7 (cache hit% dropping to 0 on turns 6, 8, 11 after warming on turns 3-4). Fix: new
+  `composeTurnSystemPrompt` (agent.ts) scrubs `stablePrefix`/`dynamicSuffix` **separately**, making this
+  structurally impossible rather than merely untriggered. Also shipped: `hashStablePrefix` +
+  `onStablePrefixHash` (stream.ts logs a warning if the hash ever changes mid-call — live version of the
+  plan's step-1 instrumentation ask), the plan's step-2 regression test (`agent.test.ts`), and step 3 —
+  `summarizeCacheStability` in `voice/latency-report.ts`, now printed by `bun run latency:report` and
+  flagging any call whose per-turn cache-hit% drops back to 0 after a non-zero turn. 1550/1550 api tests
+  pass (8 new), typecheck clean. **Not yet measured against production** — no post-fix production calls
+  exist yet to confirm the mid-call-drop shape is actually gone live, not just in the simulated test.
+
 - **Pre-C2 review: fillers/backchannels are fully built and entirely inert in production; `tool_call_latency`
   still writes 0 rows (2026-08-24, `docs/audits/2026-08-24-latency-vad-bargein-fillers-observability-review.md`).**
   Code-grounded answer to a founder questionnaire on latency, VAD/endpointing, barge-in, fillers,
