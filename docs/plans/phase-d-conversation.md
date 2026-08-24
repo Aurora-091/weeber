@@ -6,7 +6,9 @@
 commit. D changes turn structure and will move those numbers; there must be a recorded baseline to move
 them from.
 **Evidence:** `docs/audits/2026-08-21-first-two-production-calls.md`, findings 4, 8 and the sentiment
-item under "smaller items"
+item under "smaller items"; `docs/audits/2026-08-25-pipeline-edge-cases-research.md` items 1-4 (added
+2026-08-25 — external research on silence-timeout demographics, dictation-sequence endpointing, tool-call
+interruption protection, and disclosure interruptibility, each cross-referenced against this codebase)
 **Governing ADRs:** ADR-106 (constrains what the agent says), ADR-120 (captured-field provenance),
 ADR-063 (semantic turn detection — closed in Phase C, stays closed)
 
@@ -68,7 +70,15 @@ Fix the race, do not lengthen the timer and call it fixed.
    (Phase B) prints; use it.
 3. **Reconsider 8000 ms with the data.** Call 2 fired it four times in one call, which suggests the
    threshold is short for a caller who is thinking about an insurance question. Raise it on evidence and
-   write the evidence down next to the constant.
+   write the evidence down next to the constant. **Make it configurable per persona, not just a bigger
+   global constant** (2026-08-25 addition, `docs/audits/2026-08-25-pipeline-edge-cases-research.md` item
+   1): this is a named, researched problem class — default voice-AI silence timeouts (1.5-2s in generic
+   assistants) are documented to lock out older callers, whose real speech is slower and more frequently
+   paused (UC Berkeley AgeVoicE; dementia-friendly-EVA research, *Frontiers in Dementia* 2024), and the
+   documented fix in that literature is a **persona/demographic-adaptive** value, not one global number —
+   directly relevant here since `insurance-final-expense-qualifier` is explicitly elderly-skewing by
+   design, not incidentally. A single raised constant would still under-serve every other persona that
+   doesn't need it raised.
 4. **An idle line must be interruptible.** If the caller speaks while it is playing, it stops. That is
    a barge-in requirement, and it must hold for the greeting too.
 
@@ -139,22 +149,52 @@ the `scheduled_calls` row where applicable.
 
 ---
 
-### D4. Outcome-neutral filler lines
+### D4. Outcome-neutral filler lines, and natural discourse markers beyond tool-call coverage
 
-**Where:** `packages/api/src/voice/stream.ts:1292` (`TOOL_CALL_FILLER_LINES`), used at `:1327`.
+**Where:** `packages/api/src/voice/stream.ts` — `TOOL_CALL_FILLER_LINES`, `maybePlayToolCallFiller`,
+`BACKCHANNEL_LINES` (`backchannel.ts`), `tts-cache.ts`'s `HYBRID_AUDIO_CACHE_FLAG`.
 
-**How:** replace both lines with phrasing that does not promise a result — the current pair commits the
-agent to having found something before the tool has returned, and Phase A makes "the tool returned
-nothing useful" a first-class, frequently-true outcome. Keep them short: this line is spoken to cover
-tool latency, so a long one costs the thing it exists to hide. Two or three variants, none of which
-implies success.
+**How:** replace both `TOOL_CALL_FILLER_LINES` lines with phrasing that does not promise a result — the
+current pair commits the agent to having found something before the tool has returned, and Phase A makes
+"the tool returned nothing useful" a first-class, frequently-true outcome. Keep them short: this line is
+spoken to cover tool latency, so a long one costs the thing it exists to hide. Two or three variants,
+none of which implies success.
+
+**2026-08-25 addition — broaden this beyond tool-call coverage, and check whether it needs building at
+all before building it:**
+
+1. **The filler/backchannel system is already fully built and has never once executed in production**
+   (`docs/audits/2026-08-24-latency-vad-bargein-fillers-observability-review.md`): both
+   `maybePlayToolCallFiller` and `maybePlayBackchannel` are gated on `feature_flags["hybrid-audio-cache"]`,
+   and `feature_flags` is empty in production, so every flag resolves to its code default (off). The
+   first, cheapest step here is **enabling the flag**, not writing more code — everything below is about
+   what plays once it's on.
+2. **Add natural discourse markers, not just tool-call fillers** — "let me check that," "noting that
+   down," "okay," "right," "mm-hm" — covering the moment right after a `captureField` call fires (a
+   caller who just answered a question benefits from an acknowledgment as much as a caller waiting on a
+   slow tool does), not only `TOOL_CALL_FILLER_THRESHOLD_MS`-gated tool waits. Keep them tool-specific
+   where it's cheap to be (a calendar lookup gets "let me check the calendar," not the generic line) —
+   this was flagged as unbuilt in the 2026-08-24 review and is still unbuilt.
+3. **Localize them.** Both `TOOL_CALL_FILLER_LINES` and `BACKCHANNEL_LINES` are English-only today,
+   cached per `(provider, voiceId, language, text)` — a Hindi/Hinglish call gets English-text filler audio
+   spoken in the Hindi voice, untranslated. Add per-language variants before this ships to any org running
+   a non-English persona.
+4. **Consider whether the TTS provider now does some of this natively.** Cartesia shipped Sonic-3.6
+   (2026-08-17, beta at time of writing) with, per its own release notes, "natural pauses and filler
+   words" as a model capability plus native Hinglish code-switching — see
+   `docs/audits/2026-08-25-provider-model-currency-research.md`. If that holds up under test, some of the
+   hand-built filler-audio-cache machinery here may be redundant with what the model already does when
+   asked naturally in the persona prompt — worth a direct comparison before investing further in the
+   cached-clip approach.
 
 Also check the persona copy in `docs/agent-prompts/` for the same presupposition. That directory is
 **append-only and immovable** (`packages/api/src/database/seed.ts` resolves it at runtime from
 `import.meta.dir`; a rename silently breaks seeding) — add a new file, never edit or move an existing
 one.
 
-**Test:** `bun run persona:gate` plus an assertion that no filler line asserts a successful lookup.
+**Test:** `bun run persona:gate` plus an assertion that no filler line asserts a successful lookup, plus
+a per-language coverage assertion (every configured persona language has a filler/backchannel set) once
+item 3 lands.
 
 ---
 
@@ -167,6 +207,120 @@ logging to blocking-and-rephrasing. If it is noisy, keep logging and narrow the 
 decision and the row counts into the commit message either way** — this is the item most likely to be
 silently dropped, because logging feels like it already handled it. It did not: a caller heard an
 invented price range.
+
+---
+
+### D6. Endpointing has no concept of an incomplete dictated sequence
+
+**Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md` item 2. Not from
+production audit findings (no dictation-cutoff has been observed in the 10 calls read so far) — from
+external research on a well-documented, named failure mode, filed here because it's the same mechanism
+(`turn-detection/heuristic.ts`) D1 already touches, and because this codebase's own templates actively
+collect exactly the field types this breaks on (`email`, `order_id`, `callback_time`,
+`beneficiary_relationship` — anything a caller might spell or read digit-by-digit).
+
+**Where:** `packages/api/src/voice/turn-detection/heuristic.ts` — `endsMidThought`,
+`TRAILING_FILLER_PATTERN`.
+
+**How:** `endsMidThought` currently matches only trailing filler words
+(`and|so|but|or|because|um+|uh+|like|well|then`). A caller who pauses mid-dictation — reading a card
+number to check a digit, spelling a name, recalling an order ID — does not trail off on a filler word and
+is not caught. The pattern documented as working in production voice AI (Speechmatics, Cekura) layers a
+lightweight semantic check on top of the acoustic pause: does the text so far look like a plausible
+complete thought, or does it look like the caller is mid-sequence (a trailing digit, a single spelled
+letter, an incomplete word fragment)? This does not require a model call — a second regex/heuristic layer
+for "ends on a lone digit, a lone letter, or a partial word" is enough to start, consistent with this
+file's existing "cheap, rule-based regex-context check, not a model call" approach. Extend
+`TurnEndDetector`'s existing pluggable shape (`turn-detection/composite.ts`,
+`turn-detection/budgeted.ts`) rather than special-casing this inside `HeuristicTurnDetector` — the same
+seam Phase V already built for a future model-based refiner fits a second heuristic layer too.
+
+**Test:** `turn-detection/turn-detection.test.ts` — a caller utterance ending in a lone digit/letter, or
+mid-word, is judged incomplete; the existing filler-word cases stay unaffected. A synthetic scenario:
+caller says "my email is j," pauses, then continues "o-h-n at gmail dot com" — the agent must not respond
+between the two halves.
+
+---
+
+### D7. No tool call, and no critical spoken line, is protected from a barge-in
+
+**Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md` items 3-4. Two related
+gaps, same root cause (every `speak()` call and every tool `execute()` treats interruption identically,
+with no per-message or per-tool policy), confirmed independently by both reading this codebase directly
+and by outside literature naming "stale responses after barge-in" and "mid-tool-call interruption" as
+recurring, named failure classes.
+
+**Where:**
+
+- `packages/api/src/voice/agent.ts` — `withToolTimeout` (`:1022-1061`), and every `tool({ execute })` in
+  `voice/tools/*.ts` — none reads the AI SDK's `execute(args, { abortSignal })` second parameter today.
+- `packages/api/src/voice/stream.ts` — `agentIsSpeaking = true` (`:1841`, unconditional at the top of
+  every `speak()` call, including the recording-consent disclosure spoken first on every call) and
+  `barge-in.ts`'s `decideBargeIn`.
+
+**How:**
+
+1. **Non-interruptible tool calls.** A barge-in mid-`bookAppointment`/`crmSync`/`sendSms` execution
+   today orphans the call — nothing cancels it, nothing waits for it, and its eventual result (per
+   `withToolTimeout`'s own `onLateResult` path) can land after the model has already moved on to
+   something else. Give tools with an irreversible side effect a `nonInterruptible` flag (mirroring
+   LiveKit's documented `disallow_interruptions()` pattern) that `decideBargeIn` — or the barge-in handler
+   in `stream.ts` — checks before aborting `turnAbortController` while one of these tools is in flight.
+   `captureField`/`markFieldUnanswered`/`setIntent` (pure state writes, cheap to re-run) do not need this;
+   `bookAppointment`/`crmSync`/`sendSms`/`transferToHuman` do.
+2. **A non-interruptible disclosure.** The recording-consent line (`withDisclosure`) is the single most
+   compliance-load-bearing utterance in the call and currently has the same interruptibility as small
+   talk. Either make it explicitly non-interruptible (same mechanism as item 1, applied to a spoken
+   segment rather than a tool) or, if barge-in during it must still be allowed for accessibility reasons,
+   make `stampDisclosureFired()` re-queue the disclosure rather than silently treating a partial delivery
+   as complete.
+
+**Test:** a barge-in fired mid-execution of a flagged non-interruptible tool must not abort it, and its
+result must still reach `logToolCall`/the DB once it resolves. A barge-in during the disclosure must
+either not cut it, or must result in the disclosure being re-delivered before the call proceeds — never
+silently marked fired on a partial read.
+
+---
+
+### D8. Confirm critical spoken identifiers the way NATO/telephony best practice does, not by trusting STT once
+
+**Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md`, filed here because it
+extends the same `captureField`/ADR-120 provenance machinery D2's ledger already governs, and because the
+research behind it is specific and load-bearing enough to name as its own item rather than folding into
+D2. **General-purpose, not insurance-only** — a name, a vehicle registration number, a PAN card, an SSN,
+an order ID: any field where a single mis-heard character changes the value's meaning, across any
+vertical this platform serves.
+
+**Why this matters, not just in theory:** in a head-to-head production-audio study, missed named-entity/
+alphanumeric-string rates reached **25.5% for Deepgram** — the STT provider this codebase actually
+uses — against 16.7% for a competitor in the same study. Deepgram's own documented reasons: letters that
+sound alike (P/B, T/D), and letter+digit runs that resolve to real words ("E Z" → "easy"). This is not a
+hypothetical for this codebase specifically; it is the measured failure rate of the provider already
+running in production.
+
+**Where:** `packages/api/src/voice/tools/captureField.ts`, `capture-provenance.ts`, and the persona
+instruction layer (`agent.ts`'s `buildCallControlBlock` — same place A3's "call captureField immediately"
+line and D1's disclosure line already live, i.e. the stable prefix, not a per-turn instruction).
+
+**How:** telephony/NATO best practice, per the research: confirm **once, after the full sequence**, not
+mid-word; read multi-digit numbers back one digit at a time, never as a whole number; ask the caller to
+confirm rather than assuming a repeat-back was accurate.
+
+1. Classify captured fields by risk, not just by prohibition status (`prohibited-capture.ts` already
+   does prohibition; this is a second, lower-stakes axis). A `critical` class — names, phone/order/
+   policy/vehicle/PAN/SSN-shaped fields — gets a mandatory spell-back step; ordinary fields
+   (`coverage_purpose`, `income_type`) do not.
+2. Persona instruction, in the stable prefix: for a `critical` field, after the caller states it, the
+   agent reads it back character-by-character or digit-by-digit ("Alex — A, L, E, X, is that right?") and
+   waits for an explicit yes/no before calling `captureField`. A "no" re-asks; a "yes" proceeds to the
+   normal `heard`-quote-verified capture path D2/ADR-120 already governs — this is a **prompt-level**
+   addition ahead of the existing tool, not a new provenance mechanism.
+3. Do not build this as a blocking synchronous confirmation for every field — that would slow down every
+   ordinary answer for the sake of the few that need it. Scope it to the risk class from step 1 only.
+
+**Test:** `agent.test.ts` — a `critical`-classified field in the prompt's persona instructions triggers
+spell-back phrasing; a synthetic scenario where the caller corrects a misheard letter during spell-back
+ends with the corrected value captured, not the original mis-hearing.
 
 ---
 
@@ -203,6 +357,14 @@ Conditions:
    this phase, the flag rows exist, the code default is stated, and the before/after numbers are in the
    commit. **Production `feature_flags` is empty, so every flag resolves to its code default** — an
    untouched default is a decision, and it gets written down.
+8. **A caller dictating a phone number, email, or spelled name is never cut off mid-sequence** across the
+   synthetic suite (D6) — the named test in D6's own section passes.
+9. **A barge-in during a flagged non-interruptible tool call does not abort it**, and the tool's eventual
+   result still reaches the DB (D7); **the recording-consent disclosure is never left partially delivered
+   and marked fired** (D7).
+10. **Every `critical`-classified field (D8) is spelled/read back and explicitly confirmed** before being
+    written via `captureField`, across the synthetic suite — a corrected misheard letter results in the
+    corrected value being captured, never the original.
 
 ---
 

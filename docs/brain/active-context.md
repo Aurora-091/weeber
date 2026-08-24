@@ -12,6 +12,32 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Phase D backlog expanded (D6/D7/D8) with the edge-case research; provider/model currency filed
+  separately (2026-08-25, `docs/plans/phase-d-conversation.md`,
+  `docs/audits/2026-08-25-provider-model-currency-research.md`).** The 2026-08-25 edge-case research's
+  four real gaps are now in Phase D proper, not just a standalone reference: D6 (new) — dictation-sequence
+  endpointing (a caller pausing mid-phone-number/email/spelled-name isn't recognized as incomplete, only
+  trailing filler words are). D7 (new) — no tool call or the recording-consent disclosure has any
+  "non-interruptible" concept, so a barge-in can orphan `bookAppointment`/`crmSync`/`sendSms` mid-flight
+  or leave the disclosure partially delivered. D8 (new) — critical-field spell-back confirmation
+  (names, PAN/SSN/vehicle-number-shaped fields, general-purpose not insurance-only), justified by a
+  sourced number worth remembering: a head-to-head study found **25.5% missed named-entity/alphanumeric
+  rates for Deepgram specifically**, the STT provider this codebase actually runs. D1's silence-timeout
+  item gained a citation for why it should become **per-persona configurable**, not just a bigger global
+  constant. D4 (filler lines) gained three additions: enable the already-built-but-inert
+  `hybrid-audio-cache` flag before writing more filler code; broaden beyond tool-call coverage to natural
+  discourse markers ("noting that down," "let me check") right after `captureField` calls; localize both
+  filler sets (English-only today). Exit gate extended with 3 new numbered conditions (8-10).
+  **Deliberately kept separate:** provider/model version currency (Deepgram shipped **Flux** — a
+  conversation-native model with turn-detection/interruption/code-switching built in natively, not a
+  version bump on `nova-3`; Cartesia shipped **Sonic-3.6** 8 days before this research with native filler
+  words + better Hinglish; Sarvam shipped **Saaras v4**; a tool-use-tuned Groq Llama variant exists for
+  ADR-109's dark path) — filed as its own doc, not folded into Phase D, since it's opportunistic infra
+  currency with no named production defect behind it, not audit-driven work. Three prerequisite
+  measurements named (does Flux already solve D6 natively before building a heuristic; Sonic-3.6-vs-cached
+  -clips comparison before extending D4 further; benchmark the Groq tool-use variant before ADR-109 is
+  ever turned on). Nothing implemented in either doc — both are backlog/reference.
+
 - **Pipeline edge-case research filed against outside literature, cross-referenced to actual code
   (2026-08-25, `docs/audits/2026-08-25-pipeline-edge-cases-research.md`).** No code changed. Four real
   gaps found with a direct line to this product's own vertical: (1) `SILENCE_WARNING_MS`/`SILENCE_HANGUP_MS`
