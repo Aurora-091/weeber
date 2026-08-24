@@ -6,7 +6,7 @@
  * the numbers a user sees are by construction the same ones the admin
  * panel shows.
  */
-import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
 // ADR-116 addendum (2026-08-17): every function in this file is admin panel /
 // merchant dashboard / onboarding — never on a live call's turn path — EXCEPT
 // getEffectiveFlags, which stream.ts also calls per-turn. So `db` here is
@@ -496,7 +496,14 @@ export async function getOrgCall(orgId: string, callId: number) {
 export async function getOrgCallTranscript(orgId: string, callId: number) {
   const call = await getOrgCall(orgId, callId);
   if (!call) return null;
-  return db.select().from(transcripts).where(eq(transcripts.callId, callId));
+  // B4 (phase-b-measurement.md): see transcripts.sequence's schema doc
+  // comment — id/insertion order can misorder a caller's barge-in against
+  // the turn it interrupted.
+  return db
+    .select()
+    .from(transcripts)
+    .where(eq(transcripts.callId, callId))
+    .orderBy(asc(transcripts.sequence), asc(transcripts.id));
 }
 
 export async function getOrgCallToolCalls(orgId: string, callId: number) {

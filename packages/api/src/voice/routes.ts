@@ -25,7 +25,7 @@ import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
 import { calls, callLatency, orgs, twilioStatusEvents } from "../database/schema";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
 import { makeFixedWindowLimiter } from "./fixed-window-limiter";
 import { issueTestCallToken } from "./test-call-tokens";
@@ -445,7 +445,13 @@ export const voice = new Hono()
   .get("/calls/:id/transcript", requireAdminKey, async (c) => {
     const id = Number(c.req.param("id"));
     const { transcripts } = await import("../database/schema");
-    const rows = await db.select().from(transcripts).where(eq(transcripts.callId, id));
+    // B4 (phase-b-measurement.md): see transcripts.sequence's schema doc
+    // comment.
+    const rows = await db
+      .select()
+      .from(transcripts)
+      .where(eq(transcripts.callId, id))
+      .orderBy(asc(transcripts.sequence), asc(transcripts.id));
     return c.json({ transcript: rows }, 200);
   })
 

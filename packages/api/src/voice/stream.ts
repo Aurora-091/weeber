@@ -685,6 +685,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let callerTranscriptCount = 0;
 
   /**
+   * B4 (phase-b-measurement.md): reserved synchronously at the moment a
+   * transcript row's content is actually about to be spoken/heard — see
+   * `transcripts.sequence`'s schema doc comment for why `id`/write order
+   * alone can misorder a barge-in against the turn it interrupted.
+   */
+  let transcriptSequenceCounter = 0;
+  function reserveTranscriptSequence(): number {
+    transcriptSequenceCounter += 1;
+    return transcriptSequenceCounter;
+  }
+
+  /**
    * Serialises transcript INSERTs without blocking whoever logged them.
    *
    * Latency fix (2026-08-12): `logTranscript` used to be awaited on the turn hot
@@ -705,7 +717,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   let transcriptWriteChain: Promise<unknown> = Promise.resolve();
 
-  function logTranscript(role: "caller" | "agent", text: string) {
+  /**
+   * B4: `sequence` defaults to a fresh reservation taken right here, at call
+   * time — correct for the caller call sites, which already log essentially
+   * in real time from the STT callback. The agent call site in `speak()`
+   * passes an explicit, pre-reserved sequence instead, taken at the top of
+   * that function rather than after `generate()` resolves — see
+   * `transcripts.sequence`'s schema doc comment for why the gap between
+   * "the agent started speaking" and "this function got around to logging
+   * it" is exactly where a caller's barge-in can log its own line first.
+   */
+  function logTranscript(role: "caller" | "agent", text: string, sequence: number = reserveTranscriptSequence()) {
     // ADR-106: harvested before the early return below, because a call with no
     // `dbCallId` yet is still a call whose caller may have said a number, and
     // the guard's whole value is that it never has to guess provenance.
@@ -724,7 +746,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       .then(async () => {
         const [inserted] = await db
           .insert(transcripts)
-          .values({ callId: callIdForInsert, role, text })
+          .values({ callId: callIdForInsert, role, text, sequence })
           // ADR-120: the id is what makes a captured field's `transcriptId`
           // point at something. Only read for caller lines — an agent line is
           // never the provenance of a caller-stated fact.
@@ -1726,6 +1748,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // Expressive delivery (2026-07-17) — fresh tone-tag state for this turn.
     toneTagFilter = newToneTagFilter();
 
+    // B4: reserved here, at the true start of this turn's speech, not down
+    // at the transcript-logging call below (which only runs after
+    // `generate()` resolves — see transcripts.sequence's schema doc comment
+    // for why that gap is exactly where a caller's barge-in could otherwise
+    // log its interrupting line first).
+    const agentTranscriptSequence = reserveTranscriptSequence();
+
     const ttsRequestedAt = Date.now();
     /**
      * ADR-107: the instant the first character of this turn's reply was
@@ -2137,7 +2166,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
     if (fullText) {
       history.push({ role: "assistant", content: fullText });
-      logTranscript("agent", fullText);
+      logTranscript("agent", fullText, agentTranscriptSequence);
     }
 
     // hangUp/transferToHuman requested this turn — let the closing/handoff

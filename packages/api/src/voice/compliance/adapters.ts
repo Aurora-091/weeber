@@ -164,7 +164,9 @@ export const callAuditAdapter: CallAuditStorageAdapter = {
       .select()
       .from(transcripts)
       .where(eq(transcripts.callId, id))
-      .orderBy(asc(transcripts.createdAt));
+      // B4 (phase-b-measurement.md): see transcripts.sequence's schema doc
+      // comment — createdAt reflects write order, not utterance order.
+      .orderBy(asc(transcripts.sequence), asc(transcripts.id));
     return rows.map((r) => ({ role: r.role, text: r.text, at: r.createdAt }));
   },
   async findCallsByPhoneNumber(phoneNumber) {

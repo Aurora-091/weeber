@@ -189,7 +189,16 @@ export async function buildTranscriptsWorkbook(orgId: string): Promise<ExcelJS.B
   const callIds = orgCalls.map((c) => c.id);
   const rows =
     callIds.length > 0
-      ? await db.select().from(transcripts).where(inArray(transcripts.callId, callIds)).orderBy(transcripts.callId, transcripts.createdAt)
+      ? await db
+          .select()
+          .from(transcripts)
+          .where(inArray(transcripts.callId, callIds))
+          // B4 (phase-b-measurement.md): `sequence` reflects when the row's
+          // content actually started being spoken/heard, not when the write
+          // landed — see transcripts.sequence's schema doc comment. `id` is
+          // the fallback for rows from before this column existed (all null
+          // there, so it decides nothing among rows that do have one).
+          .orderBy(transcripts.callId, transcripts.sequence, transcripts.id)
       : [];
   const callMeta = new Map(orgCalls.map((c) => [c.id, c]));
 

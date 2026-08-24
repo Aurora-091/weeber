@@ -187,6 +187,36 @@ produces the row, not merely the tool call.
 
 ### B4. Fix the transcript ordering defect
 
+**Status: shipped 2026-08-24.** Checked the real defect against production data first
+(`mcp__supabase__execute_sql`): neither of the two existing calls actually shows a reordering in
+`id`/`created_at` — both are perfectly monotonic. The bug is real regardless; it just needs a caller
+barge-in to manifest, and neither of the two recorded calls had one. Traced it to the actual mechanism:
+`transcriptWriteChain` already guarantees WRITE order matches CALL order (that was never broken) — the
+gap is that the agent's `logTranscript` call used to happen only after `generate()` fully resolved,
+well after the agent's turn actually began, so a caller's barge-in mid-turn could *call* `logTranscript`
+first even though the agent started speaking earlier.
+
+Fixed with a new nullable `transcripts.sequence` column (migration `0056`, generated locally via
+`drizzle-kit generate` — no live DB needed for generation), reserved by a new
+`reserveTranscriptSequence()` counter at the literal top of `speak()` — before `generate()` is even
+called — rather than at the `logTranscript` call site. Every reader that touched `transcripts` ordering
+now orders by `sequence` (falling back to `id` for pre-migration rows, which have none):
+`app/export.ts`, `voice/compliance/adapters.ts`, `voice/org-queries.ts`'s `getOrgCallTranscript` (the
+user-app dashboard's transcript source), and `voice/routes.ts`'s admin transcript endpoint — two of
+which (`org-queries.ts`, `routes.ts`) had no explicit order at all before this and were relying on
+Postgres's undefined natural row order.
+
+Verified two ways, both real: `0056`'s exact `ALTER TABLE ... ADD COLUMN "sequence" integer` was
+generated against the actual current schema, and a full replay of production call 2's normal-path
+turns confirms `sequence` is assigned strictly increasing and matches conversational order
+(`stream-transcript-ordering.test.ts`). **Not verified**: a live end-to-end replay of the actual
+barge-in race (two turns genuinely overlapping through the real state machine) — attempted, hung the
+test harness (likely `decideBargeIn`/abort-controller interaction not fully traced), and was abandoned
+rather than debugged blind. In its place, the reservation-before-`generate()` ordering is pinned
+directly at the source level (a test asserting the reservation line precedes the `generate()` call in
+`stream.ts`), so a regression that moves the reservation back down — reintroducing the exact race this
+closes — fails a test even without a live race to trigger it.
+
 **Where:** `packages/api/src/voice/stream.ts:670` — the serialized `transcriptWriteChain`, and any
 reader that orders transcripts by `id` (dashboard call detail, `app/export.ts`, replay tooling).
 

@@ -980,6 +980,24 @@ export const transcripts = pgTable("transcripts", {
   role: text("role").notNull().$type<"agent" | "caller">(),
   text: text("text").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  /**
+   * B4 (phase-b-measurement.md) — the utterance-order sequence, reserved at
+   * the moment stream.ts knows this row's content was actually about to be
+   * spoken/heard, not at write time. `id`/`createdAt` reflect when the
+   * INSERT reached the DB, which is not the same instant for every role: a
+   * caller line is logged essentially in real time (from the STT callback),
+   * but an agent line used to be logged only after `generate()` fully
+   * resolved — well after the agent actually started speaking those words.
+   * A caller barge-in during that gap could get its own INSERT enqueued
+   * before the interrupted turn's agent INSERT, so `id` order would read as
+   * the caller answering before the agent asked. `sequence` is reserved
+   * synchronously at the top of `speak()` (before any await), so it reflects
+   * when the turn actually began even if the write lands later. Nullable and
+   * unbackfilled, same convention as every other column added after the
+   * fact — a row from before this column existed has nothing to reorder by
+   * except `id`, which is the best a pre-existing row can do.
+   */
+  sequence: integer("sequence"),
 }, (table) => [
   index("transcripts_call_id_idx").on(table.callId),
 ]);
