@@ -3,8 +3,8 @@ import twilioPkg from "twilio";
 const { VoiceResponse } = twilioPkg.twiml;
 import { connectStt, resolveSttProvider } from "./stt";
 import type { SttConnection } from "./stt";
-import { connectTts, resolveTtsProvider } from "./tts";
-import type { TtsConnection, TtsProvider } from "./tts";
+import { connectTts, connectTtsSession, resolveTtsProvider } from "./tts";
+import type { TtsConnection, TtsProvider, TtsSession } from "./tts";
 import { voiceIdForProvider } from "./tts-voice-identity";
 import { toolCallReason } from "./call-control";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
@@ -224,6 +224,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   let ttsVoiceIdProvider: TtsProvider | undefined;
   let activeTtsProvider: TtsProvider | undefined;
+  /**
+   * Phase C1 (2026-08-24, docs/plans/phase-c-latency.md) — the TTS socket for
+   * this call, held here so it survives across turns instead of reconnecting
+   * on every one (a measured ~200-270ms per turn after the first, on nearly
+   * every turn). Never pooled across calls — this is call-local state, torn
+   * down in finalizeCall and on every barge-in. See getOrOpenTtsSession /
+   * closeTtsSession below for the reuse/reconnect policy.
+   */
+  let ttsSession: { provider: TtsProvider; session: TtsSession } | undefined;
   /**
    * Phase 0.1 (SOTA-fix-marathon, 2026-08-16) — same "what actually ran, not
    * what was configured" pattern as activeTtsProvider above, for the LLM.
@@ -1104,6 +1113,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     ended = true;
     stt?.close();
     tts?.close();
+    // Phase C1: `tts` is only the *active turn's* wrapper — between turns
+    // (or if the call ends without one ever having started) it's null while
+    // the held session can still be open. finalizeCall must close it either
+    // way, not just when a turn happened to be live.
+    closeTtsSession();
     turnAbortController?.abort();
     if (maxDurationTimer) clearTimeout(maxDurationTimer);
     clearSilenceTimer();
@@ -1488,6 +1502,46 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   function currentTtsVoice(): { provider: TtsProvider; voiceId: string | undefined } {
     const provider = activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride);
     return { provider, voiceId: voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, provider) };
+  }
+
+  /**
+   * Phase C1 — returns the held TTS session for `provider` if it's already
+   * open, or opens a fresh one (closing whatever was held first, if
+   * anything — a stale/dead socket, or one for a different provider after a
+   * failover). `onSocketOpen` fires only when a socket genuinely opens here,
+   * never on a reuse — that's what keeps a turn's `turnTtsSocketOpenMs`
+   * absent rather than 0 when nothing actually reconnected (the exit-gate
+   * condition phase-c-latency.md names explicitly).
+   */
+  function getOrOpenTtsSession(provider: TtsProvider, onSocketOpen: (ms: number) => void): TtsSession {
+    if (ttsSession && ttsSession.provider === provider && ttsSession.session.isOpen()) {
+      return ttsSession.session;
+    }
+    ttsSession?.session.close();
+    ttsSession = undefined;
+    const { session } = connectTtsSession(
+      provider,
+      voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, provider),
+      languageOverride,
+      onSocketOpen,
+    );
+    ttsSession = { provider, session };
+    return session;
+  }
+
+  /**
+   * Tears down whatever TTS session is held. Used at call-end and on every
+   * caller barge-in — every provider here treats an interrupt as "close and
+   * let the next turn reconnect" rather than "cancel just this one turn"
+   * (Sarvam's own docs say so explicitly; Cartesia/ElevenLabs have no
+   * documented way to cancel a single in-flight context anyway). Cleared
+   * synchronously here rather than waiting on the socket's own async close
+   * event, so a turn that starts immediately after a barge-in can never
+   * race a session that is closing but not yet marked dead.
+   */
+  function closeTtsSession() {
+    ttsSession?.session.close();
+    ttsSession = undefined;
   }
 
   /** Speaks a fixed line with no LLM call involved — used for the silence
@@ -1911,7 +1965,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         // be a temporal-dead-zone throw at exactly the moment we're trying to
         // recover from a failure.
         let wrapper: TtsConnection | undefined;
-        const real = connectTts(
+        // Phase C1: reuses the call's held socket for this provider when one
+        // is open, instead of connecting fresh every turn (see
+        // getOrOpenTtsSession above). onSocketOpen only fires on a genuine
+        // new connect — untouched on a reused turn, so turnTtsSocketOpenMs
+        // stays absent exactly as before this change.
+        const session = getOrOpenTtsSession(attemptProvider, (ms) => {
+          // Phase 0.3: only the first socket of the turn counts as "this
+          // turn's connect cost" — a mid-turn failover's own connect time
+          // is a different (and separately interesting, but not this
+          // metric's) cost.
+          if (turnTtsSocketOpenMs === undefined) turnTtsSocketOpenMs = ms;
+        });
+        const real = session.startTurn(
           (base64Audio) => {
             if (ttsFirstByteMs === undefined) {
               // ADR-107: same anchor correction as the per-turn metric below.
@@ -1981,17 +2047,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // failover in the same turn.
             realTts = attemptTts(next, [...sentTextBuffer]);
           },
-          attemptProvider,
-          voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider),
-          languageOverride,
           (word) => spokenWords.push(word),
-          (ms) => {
-            // Phase 0.3: only the first socket of the turn counts as "this
-            // turn's connect cost" — a mid-turn failover's own connect time
-            // is a different (and separately interesting, but not this
-            // metric's) cost.
-            if (turnTtsSocketOpenMs === undefined) turnTtsSocketOpenMs = ms;
-          },
         );
         for (const text of replayText) real.sendText(text);
         wrapper = {
@@ -2555,6 +2611,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (streamSid) ws.send(transport.buildClear(streamSid));
             turnAbortController?.abort();
             tts?.close();
+            // Phase C1: same reasoning as finalizeCall — a barge-in between
+            // turns (tts already null) must still close the held session,
+            // and every provider here treats an interrupt as "close and
+            // reconnect on the next turn" regardless.
+            closeTtsSession();
             tts = null;
             agentIsSpeaking = false;
             // Caller cut in — a fresh utterance begins; restart the timer so a
@@ -3205,6 +3266,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             }
           }
 
+          // Phase C1: open the TTS socket now, in parallel with STT connect
+          // below, so the greeting's first audio byte doesn't wait on a
+          // handshake that could have started before generate() even runs.
+          // Fire-and-forget — a failure here just means the greeting's
+          // sendText opens a session the normal way; nothing depends on this
+          // succeeding.
+          try {
+            getOrOpenTtsSession(activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride), (ms) => {
+              console.log(`[voice] TTS socket pre-warmed in ${ms}ms`);
+            });
+          } catch (err) {
+            console.error("[voice] TTS pre-warm failed — will connect normally on first sendText", err);
+          }
           connectSttForCall(ws);
           history = [];
           await runGreeting(ws);

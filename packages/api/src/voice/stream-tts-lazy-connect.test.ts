@@ -19,23 +19,32 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
  * stream-tts-voice-identity.test.ts) — permanently moved the caller onto a
  * different provider's default voice.
  *
- * Two guarantees are asserted here:
- *   1. No socket is opened until the turn actually has text to synthesize.
- *   2. A socket that dies without ever being handed text is not treated as a
- *      provider failure: same provider, same voice, chain intact.
+ * Phase C1 (2026-08-24, docs/plans/phase-c-latency.md): stream.ts now holds
+ * one TTS *session* per call instead of reconnecting every turn — see
+ * getOrOpenTtsSession/closeTtsSession in stream.ts. The mock below models a
+ * session, not a one-shot connection: `sessionOpens` records one entry per
+ * actual new socket (connectTtsSession call), separate from how many turns
+ * ran on it. Three guarantees are asserted here:
+ *   1. Exactly one socket opens for the whole call under healthy conditions
+ *      (the pre-warm at call start) — turns after it reuse the same session.
+ *   2. A session that dies without ever being handed a turn's text is not
+ *      treated as a provider failure: the next turn reconnects transparently
+ *      on the same provider, same voice, chain intact.
+ *   3. A turn that produces no text at all still releases the ttsDone waiter
+ *      instead of stalling.
  */
 
-type TtsCall = {
+type SessionRecord = {
   provider: string | undefined;
   voiceId: string | undefined;
+  dead: boolean;
 };
-let ttsCalls: TtsCall[] = [];
-/** Providers that report failure synchronously, inside connectTts itself —
- * i.e. before any text could possibly have been sent. Models an immediate
- * connect rejection / idle close, not a mid-synthesis fault. */
+let sessionOpens: SessionRecord[] = [];
+/** Providers whose session reports failure before any turn is ever started on
+ * it — models an immediate connect rejection / idle close between turns. */
 let failOnConnectProviders = new Set<string>();
-/** Providers that fail only once text has arrived: a genuine synthesis fault,
- * which must still fail over. */
+/** Providers that fail only once a turn has sent text: a genuine synthesis
+ * fault, which must still fail over. */
 let failAfterTextProviders = new Set<string>();
 
 let lastOnTranscript:
@@ -97,33 +106,62 @@ mock.module("./stt", () => ({
 }));
 
 mock.module("./tts", () => ({
-  connectTts: (
-    onAudioChunk: (base64Audio: string) => void,
-    onDone?: () => void,
-    onError?: (err: unknown) => void,
+  // Session-based reuse (Phase C1) — one call per actual new socket, not per
+  // turn. `startTurn` is what a per-turn `attemptTts` invokes.
+  connectTtsSession: (
     providerOverride?: string | null,
     voiceId?: string,
+    _language?: string,
+    onConnected?: (ms: number) => void,
   ) => {
-    const provider = providerOverride ?? undefined;
-    ttsCalls.push({ provider: provider ?? undefined, voiceId });
+    const provider = providerOverride ?? "cartesia";
+    const record: SessionRecord = { provider, voiceId, dead: false };
+    sessionOpens.push(record);
+    onConnected?.(0);
+    const failsOnFirstUse = failOnConnectProviders.has(String(provider));
     const failsAfterText = failAfterTextProviders.has(String(provider));
-    if (failOnConnectProviders.has(String(provider))) {
-      // Synchronously, before connectTts has even returned — the hostile
-      // ordering the TDZ guard in stream.ts exists for.
-      onError?.(new Error(`simulated ${provider} idle close (code 1000)`));
-    }
     return {
-      sendText: () => {
-        if (failsAfterText) {
-          queueMicrotask(() => onError?.(new Error(`simulated ${provider} synthesis failure`)));
-          return;
-        }
-        onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
+      provider,
+      session: {
+        startTurn(onAudioChunk: (b: string) => void, onDone?: () => void, onError?: (e: unknown) => void) {
+          if (failsOnFirstUse) {
+            // Synchronously, before startTurn has even returned — the
+            // hostile ordering the TDZ guard in stream.ts exists for (a real
+            // provider is free to report an idle-timeout close the instant
+            // it's asked to do anything, before any text was ever sent).
+            onError?.(new Error(`simulated ${provider} idle close (code 1000)`));
+          }
+          return {
+            sendText: () => {
+              if (failsAfterText) {
+                queueMicrotask(() => onError?.(new Error(`simulated ${provider} synthesis failure`)));
+                return;
+              }
+              onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
+            },
+            endTurn: () => onDone?.(),
+            close: () => {
+              record.dead = true;
+            },
+          };
+        },
+        // Looks open right up until a turn actually tries it and discovers
+        // the idle-timeout — matches isOpen() being a live readyState check
+        // in the real providers, not something that predicts a future close.
+        isOpen: () => !record.dead,
+        close: () => {
+          record.dead = true;
+        },
       },
-      endTurn: () => onDone?.(),
-      close: () => {},
     };
   },
+  // One-shot shape — still used by warmFillerCache (flag-gated off in this
+  // test) and stream.ts statically imports it, so it must exist regardless.
+  connectTts: () => ({
+    sendText: () => {},
+    endTurn: () => {},
+    close: () => {},
+  }),
   resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
 }));
 
@@ -189,46 +227,45 @@ function fakeWs() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 beforeEach(() => {
-  ttsCalls = [];
+  sessionOpens = [];
   failOnConnectProviders = new Set();
   failAfterTextProviders = new Set();
   lastOnTranscript = null;
   releaseTurn = null;
 });
 
-describe("the TTS socket opens on first text, not at the top of the turn (ADR-083)", () => {
-  it("opens no socket while a turn is still waiting on its tool round-trip", async () => {
+describe("TTS session reuse across turns (Phase C1) and the idle-close carve-out (ADR-083)", () => {
+  it("opens exactly one socket for the whole call — later turns reuse it, including one that waits on a tool round-trip", async () => {
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    const afterGreeting = ttsCalls.length;
-    expect(afterGreeting).toBeGreaterThanOrEqual(1);
+    // The greeting is served by the pre-warmed session opened at call start.
+    expect(sessionOpens.length).toBe(1);
+    expect(sessionOpens[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
 
     // Arm the "waiting on a tool" turn, then let the caller speak.
     releaseTurn = () => {};
     lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
 
-    // The turn is mid-flight with no text produced yet. Previously a socket was
-    // already open here, ticking toward the provider's idle timeout.
-    expect(ttsCalls.length).toBe(afterGreeting);
+    // Still mid-tool-call, no text produced yet — no new socket, same as
+    // before this change (the reuse doesn't make this guarantee weaker: a
+    // socket that opened too early still risks an idle-timeout kill).
+    expect(sessionOpens.length).toBe(1);
 
-    // Tool returns, text starts streaming — now the socket is opened.
+    // Tool returns, text streams — served by the SAME session, not a new one.
     releaseTurn?.();
     await settle();
-    expect(ttsCalls.length).toBe(afterGreeting + 1);
-    expect(ttsCalls[afterGreeting]).toMatchObject({
-      provider: "cartesia",
-      voiceId: "cartesia-voice-uuid",
-    });
+    expect(sessionOpens.length).toBe(1);
 
     handlers.onClose();
   });
 
-  it("treats a socket that died before any text as an idle close, not a provider failure", async () => {
-    // Cartesia rejects the first connection outright, before any text.
+  it("treats a session that died before this turn's text as an idle close, not a provider failure — reconnects on the same provider", async () => {
+    // The pre-warmed session for cartesia is dead on arrival (models an idle
+    // timeout that fired between the greeting and this turn).
     failOnConnectProviders.add("cartesia");
 
     const handlers = createVoiceStreamHandlers("twilio");
@@ -236,15 +273,16 @@ describe("the TTS socket opens on first text, not at the top of the turn (ADR-08
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    // Every attempt stays on the configured provider with the configured voice.
-    // The old code would have shifted "elevenlabs" off the chain and stuck the
-    // rest of the call on its default voice.
-    expect(ttsCalls.length).toBeGreaterThanOrEqual(1);
-    for (const call of ttsCalls) {
-      expect(call.provider).toBe("cartesia");
-      expect(call.voiceId).toBe("cartesia-voice-uuid");
+    // Every session opened (the dead pre-warm, and every reconnect after it)
+    // stays on the configured provider and voice — the old code would have
+    // shifted "elevenlabs" off the chain and stuck the rest of the call on
+    // its default voice.
+    expect(sessionOpens.length).toBeGreaterThanOrEqual(1);
+    for (const s of sessionOpens) {
+      expect(s.provider).toBe("cartesia");
+      expect(s.voiceId).toBe("cartesia-voice-uuid");
     }
-    expect(ttsCalls.some((c) => c.provider === "elevenlabs")).toBe(false);
+    expect(sessionOpens.some((s) => s.provider === "elevenlabs")).toBe(false);
 
     handlers.onClose();
   });
@@ -258,10 +296,10 @@ describe("the TTS socket opens on first text, not at the top of the turn (ADR-08
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    expect(ttsCalls.length).toBeGreaterThanOrEqual(2);
-    expect(ttsCalls[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
-    expect(ttsCalls[1]?.provider).toBe("elevenlabs");
-    expect(ttsCalls[1]?.voiceId).toBeUndefined();
+    expect(sessionOpens.length).toBeGreaterThanOrEqual(2);
+    expect(sessionOpens[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
+    expect(sessionOpens[1]?.provider).toBe("elevenlabs");
+    expect(sessionOpens[1]?.voiceId).toBeUndefined();
 
     handlers.onClose();
   });
@@ -271,7 +309,7 @@ describe("the TTS socket opens on first text, not at the top of the turn (ADR-08
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle();
-    const afterGreeting = ttsCalls.length;
+    const afterGreeting = sessionOpens.length;
 
     // A turn that resolves with no deltas at all: endTurn() runs against a
     // connection that was never created. It must release the ttsDone waiter
@@ -281,7 +319,7 @@ describe("the TTS socket opens on first text, not at the top of the turn (ADR-08
     await settle();
 
     expect(Date.now() - started).toBeLessThan(2000);
-    expect(ttsCalls.length).toBeGreaterThanOrEqual(afterGreeting);
+    expect(sessionOpens.length).toBeGreaterThanOrEqual(afterGreeting);
 
     handlers.onClose();
   });

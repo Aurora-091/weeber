@@ -1,7 +1,7 @@
-import type { ConnectTts, TtsProvider } from "./types";
-import { connectElevenLabsTts } from "./elevenlabs";
-import { connectCartesiaTts } from "./cartesia";
-import { connectSarvamTts } from "./sarvam";
+import type { ConnectTts, ConnectTtsSession, TtsProvider } from "./types";
+import { connectElevenLabsTts, connectElevenLabsSession } from "./elevenlabs";
+import { connectCartesiaTts, connectCartesiaSession } from "./cartesia";
+import { connectSarvamTts, connectSarvamSession } from "./sarvam";
 import { prefersSarvam } from "../agent-frame";
 
 /**
@@ -13,6 +13,14 @@ const providers: Record<TtsProvider, ConnectTts> = {
   elevenlabs: connectElevenLabsTts,
   cartesia: connectCartesiaTts,
   sarvam: connectSarvamTts,
+};
+
+/** Session-factory registry, one persistent-connection opener per provider
+ * (Phase C1) — see connectTtsSession below. */
+const sessionProviders: Record<TtsProvider, ConnectTtsSession> = {
+  elevenlabs: connectElevenLabsSession,
+  cartesia: connectCartesiaSession,
+  sarvam: connectSarvamSession,
 };
 
 /**
@@ -63,4 +71,20 @@ export function connectTts(
   );
 }
 
-export type { ConnectTts, TtsConnection, TtsProvider } from "./types";
+/**
+ * Opens a persistent, multi-turn TTS connection for one (provider, voice,
+ * language) combination (Phase C1). Same resolution rules as connectTts —
+ * this is the session-level counterpart stream.ts holds for the life of a
+ * call instead of reconnecting every turn.
+ */
+export function connectTtsSession(
+  providerOverride?: string | null,
+  voiceIdOverride?: string,
+  languageOverride?: string,
+  onConnected?: (ms: number) => void,
+) {
+  const provider = resolveTtsProvider(providerOverride, languageOverride);
+  return { provider, session: sessionProviders[provider](voiceIdOverride, languageOverride, onConnected) };
+}
+
+export type { ConnectTts, TtsConnection, TtsProvider, TtsSession } from "./types";

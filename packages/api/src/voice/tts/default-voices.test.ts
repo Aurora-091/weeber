@@ -131,7 +131,7 @@ describe("TTS adapters with no voice configured (the ADR-102 defect)", () => {
 
     const ws = MockWebSocket.instances[0];
     expect(ws.url).not.toContain("undefined");
-    expect(ws.url).toContain(`/text-to-speech/${FALLBACK_VOICE_BY_PROVIDER.elevenlabs}/stream-input`);
+    expect(ws.url).toContain(`/text-to-speech/${FALLBACK_VOICE_BY_PROVIDER.elevenlabs}/multi-stream-input`);
   });
 
   it("Cartesia sends a real voice.id in the generation payload", async () => {
@@ -159,7 +159,7 @@ describe("TTS adapters with no voice configured (the ADR-102 defect)", () => {
   it("an explicitly configured voice still wins for every provider", async () => {
     const { connectElevenLabsTts } = await import("./elevenlabs");
     connectElevenLabsTts(() => {}, undefined, undefined, "agent-picked-voice", "en");
-    expect(MockWebSocket.instances[0].url).toContain("/text-to-speech/agent-picked-voice/stream-input");
+    expect(MockWebSocket.instances[0].url).toContain("/text-to-speech/agent-picked-voice/multi-stream-input");
 
     const { connectCartesiaTts } = await import("./cartesia");
     const tts = connectCartesiaTts(() => {}, undefined, undefined, "agent-picked-uuid", "en");

@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-20
+updated: 2026-08-24
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,18 @@ updated: 2026-08-20
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **Phase C1 — TTS socket held across turns instead of reopening every one (2026-08-24).**
+  New `TtsSession`/`ConnectTtsSession` shape (`tts/types.ts`, `tts/index.ts`); `stream.ts` holds one
+  session per call (`getOrOpenTtsSession`/`closeTtsSession`), reused turn to turn, pre-warmed at pickup
+  in parallel with STT connect, torn down on barge-in/call-end. Cartesia and ElevenLabs multiplex
+  per-turn `context_id`s over one socket (ElevenLabs moved `/stream-input` -> `/multi-stream-input`);
+  Sarvam sends `config` once then a text/flush cycle per turn. Not pooled across calls — voice identity
+  is per-call. 1542/1542 api tests pass (2 pre-existing tests fixed for the new ElevenLabs endpoint/
+  handshake timing, 10 more updated for the new `./tts` mock shape), typecheck clean. See
+  `active-context.md` for full detail. **Not yet measured against production** —
+  `docs/plans/phase-c-latency.md`'s exit-gate numbers need a `bun run latency:report` pass over real
+  calls; C2/C3/C4 of that plan are untouched.
 
 - **Voice "start" handler: duplicate `orgs` query removed + every seeded greeting made resolvable
   (2026-08-20, `a6d2b87`/`a7b63b6`).** Two pieces. (1) `resolveAgentConfig` no longer fires its own

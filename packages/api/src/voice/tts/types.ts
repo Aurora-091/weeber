@@ -24,6 +24,44 @@ export type TtsConnection = {
 
 export type TtsProvider = "elevenlabs" | "cartesia" | "sarvam";
 
+/**
+ * A persistent provider connection that can serve multiple turns without
+ * reopening its socket (Phase C1, 2026-08-24 — docs/plans/phase-c-latency.md).
+ * `voiceId`/`language` are fixed for the session's whole life, matching how
+ * neither ever changes mid-call. Each provider's own reuse mechanics
+ * (Cartesia/ElevenLabs: a fresh context id per turn on one socket; Sarvam:
+ * one `config` message, then repeated text/flush cycles) are private to that
+ * provider's file — this is the shared shape `tts/index.ts` and `stream.ts`
+ * see either way.
+ */
+export type TtsSession = {
+  /** Starts a new turn, reusing the underlying socket. */
+  startTurn(
+    onAudioChunk: (base64Audio: string) => void,
+    onDone?: () => void,
+    onError?: (err: unknown) => void,
+    onWordTimestamp?: (word: string, startMs: number, endMs: number) => void,
+  ): TtsConnection;
+  /** False once the underlying socket has closed or errored — the caller
+   * (tts/index.ts) must open a fresh session rather than call startTurn on a
+   * dead one. Stays true while still connecting (sends queue until open). */
+  isOpen(): boolean;
+  /** Tears down the underlying socket. Used both at call-end and for a
+   * caller barge-in — every provider here treats an interrupt the same way
+   * Sarvam's docs say to: close and let the next turn reconnect, rather
+   * than trying to cancel a single in-flight turn. */
+  close(): void;
+};
+
+export type ConnectTtsSession = (
+  /** Per-agent voice ID override — falls back to the provider's env-configured default voice when omitted. */
+  voiceId?: string,
+  /** Per-agent language override — see ConnectTts's `language` param for the full explanation. */
+  language?: string,
+  /** Fires once, the first time this session's socket actually opens. */
+  onConnected?: (ms: number) => void,
+) => TtsSession;
+
 export type ConnectTts = (
   onAudioChunk: (base64Audio: string) => void,
   onDone?: () => void,

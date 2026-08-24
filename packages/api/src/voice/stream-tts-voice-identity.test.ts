@@ -25,13 +25,17 @@ import { getCachedTtsAudio, clearTtsCacheForTests, HYBRID_AUDIO_CACHE_FLAG } fro
 
 // ---- Fakes for the seams stream.ts calls into --------------------------------
 
-type TtsCall = {
+type SessionOpen = {
   provider: string | undefined;
   voiceId: string | undefined;
   language: string | undefined;
 };
-let ttsCalls: TtsCall[] = [];
-/** Providers whose connection reports a failure before emitting any audio. */
+/** One entry per actual new socket (connectTtsSession call), not per turn —
+ * Phase C1 reuses one session across turns, so a healthy multi-turn call now
+ * opens exactly one. */
+let sessionOpens: SessionOpen[] = [];
+/** Providers whose session reports a failure before any turn on it ever
+ * emits audio. */
 let failingTtsProviders = new Set<string>();
 
 let lastOnTranscript:
@@ -94,33 +98,60 @@ mock.module("./stt", () => ({
 }));
 
 mock.module("./tts", () => ({
-  connectTts: (
-    onAudioChunk: (base64Audio: string) => void,
-    onDone?: () => void,
-    onError?: (err: unknown) => void,
+  // Session-based reuse (Phase C1) — one call per actual new socket, not per
+  // turn. `startTurn` is what a per-turn `attemptTts` invokes.
+  connectTtsSession: (
     providerOverride?: string | null,
     voiceId?: string,
     language?: string,
+    onConnected?: (ms: number) => void,
   ) => {
-    const provider = providerOverride ?? undefined;
-    ttsCalls.push({ provider: provider ?? undefined, voiceId, language });
+    const provider = providerOverride ?? "cartesia";
+    sessionOpens.push({ provider, voiceId, language });
+    onConnected?.(0);
     const failing = failingTtsProviders.has(String(provider));
-    if (failing) {
-      // Real providers fail asynchronously; a microtask keeps the ordering
-      // deterministic while still landing after stream.ts has assigned the
-      // connection it just created.
-      queueMicrotask(() => onError?.(new Error(`simulated ${provider} failure`)));
-    }
+    let closed = false;
     return {
-      sendText: () => {
-        // A failing provider is failing *before any audio played* — that is the
-        // only condition stream.ts fails over on.
-        if (!failing) onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
+      provider,
+      session: {
+        startTurn(onAudioChunk: (b: string) => void, onDone?: () => void, onError?: (e: unknown) => void) {
+          if (failing) {
+            // Real providers fail asynchronously; a microtask keeps the
+            // ordering deterministic while still landing after stream.ts has
+            // assigned the connection it just created.
+            queueMicrotask(() => onError?.(new Error(`simulated ${provider} failure`)));
+          }
+          return {
+            sendText: () => {
+              // A failing provider fails *before any audio played* — that is
+              // the only condition stream.ts fails over on.
+              if (!failing) onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
+            },
+            endTurn: () => onDone?.(),
+            close: () => {
+              closed = true;
+            },
+          };
+        },
+        // Looks open right up until a turn actually tries it and discovers
+        // the failure — matches isOpen() being a live readyState check in
+        // the real providers, not something that predicts a future error.
+        // A pre-warmed-but-never-used session must still look open; nothing
+        // has happened to it yet.
+        isOpen: () => !closed,
+        close: () => {
+          closed = true;
+        },
       },
-      endTurn: () => onDone?.(),
-      close: () => {},
     };
   },
+  // One-shot shape — stream.ts statically imports it (warmFillerCache), so it
+  // must exist even though this test's flags keep that path off.
+  connectTts: () => ({
+    sendText: () => {},
+    endTurn: () => {},
+    close: () => {},
+  }),
   resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
 }));
 
@@ -186,7 +217,7 @@ function fakeWs() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 beforeEach(() => {
-  ttsCalls = [];
+  sessionOpens = [];
   failingTtsProviders = new Set();
   lastOnTranscript = null;
   agentFlags = {};
@@ -203,40 +234,39 @@ describe("TTS failover keeps one voice identity per call", () => {
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    expect(ttsCalls.length).toBeGreaterThanOrEqual(2);
+    expect(sessionOpens.length).toBeGreaterThanOrEqual(2);
     // The primary gets the voice it was configured with...
-    expect(ttsCalls[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
+    expect(sessionOpens[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
     // ...and the fallback gets NO voice ID, so it uses its own default voice
     // instead of a Cartesia UUID it cannot resolve.
-    expect(ttsCalls[1]?.provider).toBe("elevenlabs");
-    expect(ttsCalls[1]?.voiceId).toBeUndefined();
+    expect(sessionOpens[1]?.provider).toBe("elevenlabs");
+    expect(sessionOpens[1]?.voiceId).toBeUndefined();
 
     handlers.onClose();
   });
 
-  it("keeps the failed-over provider for the rest of the call instead of flipping back", async () => {
+  it("keeps the failed-over provider for the rest of the call instead of flipping back — a new turn reuses the SAME session rather than re-dialling", async () => {
     failingTtsProviders.add("cartesia");
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
 
     await handlers.onMessage(START_EVENT, ws);
     await settle();
-    const turnsAfterGreeting = ttsCalls.length;
-    expect(ttsCalls[turnsAfterGreeting - 1]?.provider).toBe("elevenlabs");
+    const sessionsAfterGreeting = sessionOpens.length;
+    expect(sessionOpens[sessionsAfterGreeting - 1]?.provider).toBe("elevenlabs");
 
-    // Caller speaks -> a new turn. It must stay on the provider the caller is
-    // already hearing, not restart from the (still configured) primary.
+    // Caller speaks -> a new turn. Under Phase C1's reuse, staying on the
+    // provider the caller is already hearing means opening NO new session at
+    // all — the old per-turn-reconnect version of this guarantee was "the
+    // new connection is elevenlabs, not cartesia"; the reuse version is
+    // "nothing reconnects, because the held elevenlabs session is still open".
     lastOnTranscript?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
     await settle();
 
-    const newCalls = ttsCalls.slice(turnsAfterGreeting);
-    expect(newCalls.length).toBeGreaterThanOrEqual(1);
-    for (const call of newCalls) {
-      expect(call.provider).toBe("elevenlabs");
-      expect(call.voiceId).toBeUndefined();
-    }
+    expect(sessionOpens.length).toBe(sessionsAfterGreeting);
     // The primary is never re-dialled after the failover.
-    expect(newCalls.some((c) => c.provider === "cartesia")).toBe(false);
+    expect(sessionOpens.some((s) => s.provider === "cartesia")).toBe(true); // only the original failed attempt
+    expect(sessionOpens.filter((s) => s.provider === "cartesia").length).toBe(1);
 
     handlers.onClose();
   });
@@ -269,10 +299,10 @@ describe("TTS failover keeps one voice identity per call", () => {
     lastOnTranscript?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
     await settle();
 
-    expect(ttsCalls.length).toBeGreaterThanOrEqual(2);
-    for (const call of ttsCalls) {
-      expect(call).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid", language: "en" });
-    }
+    // A healthy call opens exactly one session (the pre-warm) and reuses it
+    // for every turn — this is the point of Phase C1.
+    expect(sessionOpens.length).toBe(1);
+    expect(sessionOpens[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid", language: "en" });
 
     handlers.onClose();
   });

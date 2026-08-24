@@ -117,6 +117,26 @@ mock.module("./tts", () => ({
     endTurn: () => onDone?.(),
     close: () => {},
   }),
+  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
+  // through this instead of connectTts above.
+  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
+    onConnected?.(0);
+    return {
+      provider: providerOverride ?? "cartesia",
+      session: {
+        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
+          sendText: (text: string) => {
+            onTtsSendText?.(text);
+            onAudioChunk(Buffer.from("audio").toString("base64"));
+          },
+          endTurn: () => onDone?.(),
+          close: () => {},
+        }),
+        isOpen: () => true,
+        close: () => {},
+      },
+    };
+  },
   resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
 }));
 

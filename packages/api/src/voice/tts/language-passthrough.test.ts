@@ -95,10 +95,11 @@ describe("connectElevenLabsTts — pronunciation dictionary (Phase 3, 2026-07-16
     process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = "dict-123";
     process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID = "ver-456";
     const { connectElevenLabsTts } = await import("./elevenlabs");
-    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+    const turn = connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
 
     const ws = MockWebSocket.instances[0];
     ws.emitOpen();
+    turn.sendText("hello");
     const handshake = JSON.parse(ws.sent[0]);
     expect(handshake.pronunciation_dictionary_locators).toEqual([
       { pronunciation_dictionary_id: "dict-123", version_id: "ver-456" },
@@ -109,10 +110,11 @@ describe("connectElevenLabsTts — pronunciation dictionary (Phase 3, 2026-07-16
     delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID;
     delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
     const { connectElevenLabsTts } = await import("./elevenlabs");
-    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+    const turn = connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
 
     const ws = MockWebSocket.instances[0];
     ws.emitOpen();
+    turn.sendText("hello");
     const handshake = JSON.parse(ws.sent[0]);
     expect(handshake.pronunciation_dictionary_locators).toBeUndefined();
   });
@@ -121,10 +123,11 @@ describe("connectElevenLabsTts — pronunciation dictionary (Phase 3, 2026-07-16
     process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = "dict-123";
     delete process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID;
     const { connectElevenLabsTts } = await import("./elevenlabs");
-    connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
+    const turn = connectElevenLabsTts(() => {}, undefined, undefined, "voice-abc");
 
     const ws = MockWebSocket.instances[0];
     ws.emitOpen();
+    turn.sendText("hello");
     const handshake = JSON.parse(ws.sent[0]);
     expect(handshake.pronunciation_dictionary_locators).toBeUndefined();
   });

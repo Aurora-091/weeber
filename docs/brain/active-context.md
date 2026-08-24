@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-20
+updated: 2026-08-24
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,37 @@ updated: 2026-08-20
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Phase C1 shipped — the TTS socket is held across turns instead of reopening on every one
+  (2026-08-24, `docs/plans/phase-c-latency.md`).** Audit measured `tts_socket_open_ms` at 197–274 ms on
+  nearly every turn of both production calls, a straight TCP+TLS+WebSocket handshake tax on a provider
+  the call was about to talk to again in ~2 seconds. New `TtsSession`/`ConnectTtsSession` shape
+  (`tts/types.ts`) separates "open the socket" from "run one turn on it": `tts/index.ts`'s
+  `connectTtsSession` opens once per (provider, voice, language); `stream.ts` holds the result in
+  `ttsSession` for the life of the call via `getOrOpenTtsSession`/`closeTtsSession`, reusing it turn to
+  turn and reopening only on a dead socket or a provider failover. Pre-warmed at pickup, fire-and-forget,
+  in parallel with STT connect, so the greeting doesn't pay for the handshake either. Every provider's
+  own reuse mechanic lives in its own file, per the plan's instruction not to implement this three times:
+  Cartesia and ElevenLabs both multiplex independent per-turn `context_id`s over one socket (ElevenLabs
+  switched from `/stream-input` to `/multi-stream-input` for this — its own documented multi-context
+  endpoint); Sarvam sends its `config` message once and then a plain text/flush cycle per turn, per its
+  own docs. All three close-and-let-the-next-turn-reconnect on a caller barge-in rather than trying to
+  cancel a single in-flight turn (Sarvam's docs say to; the other two have no documented per-context
+  cancel). Deliberately **not** pooled across calls — voice identity is per-call config and
+  `stream-tts-voice-identity.test.ts` exists specifically to catch a reused socket carrying the wrong
+  voice. `onSocketOpen` only fires on a genuine new connect, never on a reuse, so `turnTtsSocketOpenMs`
+  stays absent (not 0) on a reused turn — the exact shape the exit gate's condition 3 asks for.
+  `stream-tts-lazy-connect.test.ts` and `stream-tts-voice-identity.test.ts` rewritten for the session
+  model; 10 other `stream-*.test.ts` files needed a `connectTtsSession` export added to their `./tts`
+  mock (Bun throws at import time when a mocked module is missing an export another file statically
+  imports — same discovery method ADR-116's addendum used). Also fixed in the same pass:
+  `default-voices.test.ts` and `language-passthrough.test.ts` still asserted the old single-context
+  `/stream-input` URL and an immediate-on-`open` handshake — both genuinely stale against the new
+  `/multi-stream-input` endpoint and its per-context, lazy-on-first-`sendText` handshake, not a test that
+  should have stayed green. 1542/1542 api tests pass, typecheck clean. **Not yet measured against
+  production** — the plan's ~250 ms/turn win and the exit gate's `tts_socket_open_ms` condition are the
+  plan's claim, unverified by `bun run latency:report` against real calls. C2 (prompt-prefix cache
+  stability), C3 (STT connect off the pickup path) and C4 (terminal tool-batch tail) are untouched.
 
 - **Doc-retirement rule written down as ADR-118; four finished trackers archived (2026-08-21).**
   The audit below made real archive-vs-delete-vs-rewrite choices and recorded none as a decision.
