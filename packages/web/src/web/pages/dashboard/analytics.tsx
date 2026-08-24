@@ -12,6 +12,13 @@ import { StatCard } from "../../components/charts/stat-card";
 import { BreakdownList } from "../../components/charts/breakdown-list";
 import { DateRangeSelector } from "../../components/charts/date-range-selector";
 import { PageHeader } from "../../components/shell/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 
 const CHART_COLORS = [
   "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
@@ -91,19 +98,22 @@ export function AnalyticsPage() {
           >
             Org
           </label>
-          <select
-            id="org-select"
-            value={orgId}
-            onChange={(e) => setOrgId(e.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-ring/40"
+          <Select
+            value={orgId || "all"}
+            onValueChange={(val) => setOrgId(val === "all" ? "" : val)}
           >
-            <option value="">Select an org…</option>
-            {orgRows.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name ?? o.id} ({o.vertical})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="org-select" className="w-full">
+              <SelectValue placeholder="Select an org…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Select an org…</SelectItem>
+              {orgRows.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.name ?? o.id} ({o.vertical})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <DateRangeSelector value={days} onChange={setDays} options={[7, 30, 90]} />
       </div>

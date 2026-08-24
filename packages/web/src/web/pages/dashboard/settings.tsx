@@ -4,6 +4,7 @@ import { KeyRound, Trash2, Plus, Copy, Check, ChartBar as BarChart3, Loader as L
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { formatDateTime } from "../../lib/format";
+import { Button } from "../../components/ui/button";
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "never";
@@ -114,20 +115,20 @@ function TrackingSection() {
               placeholder="GTM-XXXXXXX"
               className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
             />
-            <button
+            <Button
               type="button"
               onClick={() => saveGtm.mutate()}
               disabled={gtmStatus === "saving"}
-              className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+              className="shrink-0"
             >
-              {gtmStatus === "saving" && <Loader2 className="size-4 animate-spin" />}
-              {gtmStatus === "success" && <CheckCircle2 className="size-4" />}
-              {gtmStatus === "error" && <XCircle className="size-4" />}
+              {gtmStatus === "saving" && <Loader2 className="size-4 animate-spin mr-1.5" />}
+              {gtmStatus === "success" && <CheckCircle2 className="size-4 mr-1.5" />}
+              {gtmStatus === "error" && <XCircle className="size-4 mr-1.5" />}
               {gtmStatus === "idle" && "Verify & Save"}
               {gtmStatus === "saving" && "Validating..."}
               {gtmStatus === "success" && "Saved"}
               {gtmStatus === "error" && "Failed"}
-            </button>
+            </Button>
           </div>
           {gtmError && <p className="text-xs text-destructive mt-2">{gtmError}</p>}
           {gtmStatus === "success" && <p className="text-xs text-emerald-600 mt-2">GTM container verified and saved.</p>}
@@ -144,20 +145,20 @@ function TrackingSection() {
               placeholder="G-XXXXXXXXXX"
               className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
             />
-            <button
+            <Button
               type="button"
               onClick={() => saveGa4.mutate()}
               disabled={ga4Status === "saving"}
-              className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+              className="shrink-0"
             >
-              {ga4Status === "saving" && <Loader2 className="size-4 animate-spin" />}
-              {ga4Status === "success" && <CheckCircle2 className="size-4" />}
-              {ga4Status === "error" && <XCircle className="size-4" />}
+              {ga4Status === "saving" && <Loader2 className="size-4 animate-spin mr-1.5" />}
+              {ga4Status === "success" && <CheckCircle2 className="size-4 mr-1.5" />}
+              {ga4Status === "error" && <XCircle className="size-4 mr-1.5" />}
               {ga4Status === "idle" && "Verify & Save"}
               {ga4Status === "saving" && "Validating..."}
               {ga4Status === "success" && "Saved"}
               {ga4Status === "error" && "Failed"}
-            </button>
+            </Button>
           </div>
           {ga4Error && <p className="text-xs text-destructive mt-2">{ga4Error}</p>}
           {ga4Status === "success" && <p className="text-xs text-emerald-600 mt-2">GA4 measurement ID verified and saved.</p>}
@@ -240,17 +241,19 @@ export function SettingsPage() {
               <code className="flex-1 text-xs font-mono bg-card border border-border rounded px-3 py-2 overflow-x-auto">
                 {justCreated.key}
               </code>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   navigator.clipboard.writeText(justCreated.key);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
-                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline shrink-0"
+                className="shrink-0"
               >
-                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {copied ? <Check className="size-4 mr-1.5" /> : <Copy className="size-4 mr-1.5" />}
                 {copied ? "Copied" : "Copy"}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -269,14 +272,13 @@ export function SettingsPage() {
             aria-label="Key label"
             className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
           />
-          <button
+          <Button
             type="submit"
             disabled={!label.trim() || create.isPending}
-            className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            <Plus className="size-4" />
+            <Plus className="size-4 mr-1.5" />
             Generate key
-          </button>
+          </Button>
         </form>
         {error && <p className="text-sm text-destructive -mt-6 mb-6">{error}</p>}
 
@@ -297,13 +299,15 @@ export function SettingsPage() {
                 </div>
               </div>
               {!k.revokedAt && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => revoke.mutate(k.id)}
-                  className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
+                  className="text-muted-foreground hover:text-destructive"
                   aria-label="Revoke key"
                 >
                   <Trash2 className="size-4" />
-                </button>
+                </Button>
               )}
             </div>
           ))}

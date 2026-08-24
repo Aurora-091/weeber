@@ -15,6 +15,13 @@ import { X, Play, Phone, PhoneOff, Loader as Loader2, ShieldCheck, Clock, Messag
 import { appFetch } from "../../lib/user-session";
 import { useVoiceTestCall } from "../../hooks/useVoiceTestCall";
 import { Button } from "../ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import type { WorkflowGraph } from "../canvas/types";
 
 type PreviewStepType = "trigger" | "compliance" | "wait" | "call" | "branch" | "sms" | "addToDnc" | "webhook" | "end" | "error";
@@ -126,18 +133,22 @@ export function FlowPreviewPanel({
               Pick a branch to walk
             </p>
             {splits.map((s) => (
-              <label key={s.id} className="block text-xs">
+              <div key={s.id} className="block text-xs space-y-1">
                 <span className="text-muted-foreground">On call outcome:</span>
-                <select
-                  value={selections[s.id] ?? ""}
-                  onChange={(e) => setSelections((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                <Select
+                  value={selections[s.id] ?? s.branches[0]}
+                  onValueChange={(val) => setSelections((prev) => ({ ...prev, [s.id]: val }))}
                 >
-                  {s.branches.map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </label>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select outcome" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {s.branches.map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             ))}
           </div>
         )}

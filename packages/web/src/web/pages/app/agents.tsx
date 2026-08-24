@@ -378,17 +378,17 @@ function NumberAssignment({ row }: { row: AgentConfigRow }) {
     <div>
       <label htmlFor={`number-${row.templateKey}`} className={labelCls}>Caller ID number</label>
       <div className="flex gap-2">
-        <select
-          id={`number-${row.templateKey}`}
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-          className={fieldCls}
-        >
-          <option value="">Org default (shared number)</option>
-          {activeNumbers.map((n) => (
-            <option key={n.id} value={n.id}>{n.phoneNumber}</option>
-          ))}
-        </select>
+        <Select value={selected || "default"} onValueChange={(val) => setSelected(val === "default" ? "" : val)}>
+          <SelectTrigger id={`number-${row.templateKey}`} className="flex-1">
+            <SelectValue placeholder="Org default (shared number)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Org default (shared number)</SelectItem>
+            {activeNumbers.map((n) => (
+              <SelectItem key={n.id} value={String(n.id)}>{n.phoneNumber}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           size="sm"
           variant="outline"
@@ -435,10 +435,15 @@ function IdentityTab({ row, form, set }: TabProps) {
         </div>
         <div>
           <label htmlFor={`tone-${row.templateKey}`} className={labelCls}>Tone</label>
-          <select id={`tone-${row.templateKey}`} value={form.toneStyle} onChange={(e) => set("toneStyle", e.target.value)} className={fieldCls}>
-            <option value="">Default</option>
-            {TONE_STYLES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <Select value={form.toneStyle || "default"} onValueChange={(v) => set("toneStyle", v === "default" ? "" : v)}>
+            <SelectTrigger id={`tone-${row.templateKey}`} className="w-full">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default</SelectItem>
+              {TONE_STYLES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <div className="grid gap-6 @xl:grid-cols-2">
@@ -476,11 +481,16 @@ function VoiceTab({ row, form, set }: TabProps) {
       <div className="grid gap-6 @xl:grid-cols-2">
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Voice provider</label>
-          <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
-            <option value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</option>
-            <option value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</option>
-            <option value="sarvam">Sarvam — Indian-language ({TTS_COST_TIERS.sarvam.tier})</option>
-          </select>
+          <Select value={form.voiceProvider} onValueChange={(v) => set("voiceProvider", v as FormState["voiceProvider"])}>
+            <SelectTrigger id={`vp-${row.templateKey}`} className="w-full">
+              <SelectValue placeholder="Voice provider" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</SelectItem>
+              <SelectItem value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</SelectItem>
+              <SelectItem value="sarvam">Sarvam — Indian-language ({TTS_COST_TIERS.sarvam.tier})</SelectItem>
+            </SelectContent>
+          </Select>
           <p className="mt-1.5 text-xs text-muted-foreground">
             {TTS_COST_TIERS[form.voiceProvider]?.note ?? ""}
           </p>
@@ -551,11 +561,16 @@ function VoiceTab({ row, form, set }: TabProps) {
       </div>
       <div className="border-t border-border/50 pt-6">
         <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>Speech-to-text</label>
-        <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
-          <option value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</option>
-          <option value="sarvam">Sarvam — Indian-language STT ({STT_COST_TIERS.sarvam.tier})</option>
-          <option value="elevenlabs">ElevenLabs Scribe — Hindi/Hinglish code-switching ({STT_COST_TIERS.elevenlabs.tier})</option>
-        </select>
+        <Select value={form.sttProvider} onValueChange={(v) => set("sttProvider", v as FormState["sttProvider"])}>
+          <SelectTrigger id={`stt-${row.templateKey}`} className="w-full sm:max-w-xs">
+            <SelectValue placeholder="Speech-to-text" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</SelectItem>
+            <SelectItem value="sarvam">Sarvam — Indian-language STT ({STT_COST_TIERS.sarvam.tier})</SelectItem>
+            <SelectItem value="elevenlabs">ElevenLabs Scribe — Hindi/Hinglish code-switching ({STT_COST_TIERS.elevenlabs.tier})</SelectItem>
+          </SelectContent>
+        </Select>
         <p className="mt-1.5 text-xs text-muted-foreground">
           {STT_COST_TIERS[form.sttProvider]?.note ?? ""} — STT cost is similar across all three providers, unlike voice/TTS.
         </p>
@@ -738,16 +753,26 @@ export function ToolsGuardrailsTab({ row, form, set, orgTransferNumber }: TabPro
         <div className="space-y-5">
           <div>
             <label htmlFor={`ts-${row.templateKey}`} className={labelCls}>Stay-on-topic strictness</label>
-            <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
-              {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            <Select value={form.topicBoundaryStrictness} onValueChange={(v) => set("topicBoundaryStrictness", v as FormState["topicBoundaryStrictness"])}>
+              <SelectTrigger id={`ts-${row.templateKey}`} className="w-full sm:max-w-xs">
+                <SelectValue placeholder="Strictness" />
+              </SelectTrigger>
+              <SelectContent>
+                {STRICTNESS_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <GuardrailConsequence text={GUARDRAIL_TOPIC_LINES[form.topicBoundaryStrictness] ?? ""} />
           </div>
           <div>
             <label htmlFor={`is-${row.templateKey}`} className={labelCls}>Manipulation sensitivity</label>
-            <select id={`is-${row.templateKey}`} value={form.injectionSensitivity} onChange={(e) => set("injectionSensitivity", e.target.value)} className={`${fieldCls} sm:max-w-xs`}>
-              {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            <Select value={form.injectionSensitivity} onValueChange={(v) => set("injectionSensitivity", v as FormState["injectionSensitivity"])}>
+              <SelectTrigger id={`is-${row.templateKey}`} className="w-full sm:max-w-xs">
+                <SelectValue placeholder="Sensitivity" />
+              </SelectTrigger>
+              <SelectContent>
+                {STRICTNESS_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <GuardrailConsequence text={GUARDRAIL_INJECTION_LINES[form.injectionSensitivity] ?? ""} />
             {/* Stated plainly because the name implies more than the code does:
                 the runtime injection detector is not wired to this dial and
@@ -811,10 +836,15 @@ function CallingModelTab({ row, form, set }: TabProps) {
         <div className="grid gap-6 @xl:grid-cols-2">
           <div>
             <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>
-            <select id={`llmp-${row.templateKey}`} value={form.llmProvider} onChange={(e) => set("llmProvider", e.target.value)} className={fieldCls}>
-              <option value="gateway">AI Gateway</option>
-              <option value="groq">Groq</option>
-            </select>
+            <Select value={form.llmProvider} onValueChange={(v) => set("llmProvider", v as FormState["llmProvider"])}>
+              <SelectTrigger id={`llmp-${row.templateKey}`} className="w-full">
+                <SelectValue placeholder="LLM provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gateway">AI Gateway</SelectItem>
+                <SelectItem value="groq">Groq</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <label htmlFor={`llmm-${row.templateKey}`} className={labelCls}>Model</label>

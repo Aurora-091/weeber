@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Shield, Plus, ToggleLeft, ToggleRight, Trash2, Loader2, Save } from "lucide-react";
+import { Shield, Plus, Trash2, Loader2, Save } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { Button } from "../../components/ui/button";
+import { Switch } from "../../components/ui/switch";
 
 type FeatureFlag = {
   id: number;
@@ -212,26 +213,22 @@ export function FlagsPage() {
                 {flag.description && <p className="text-xs text-muted-foreground">{flag.description}</p>}
               </div>
 
-              <div className="flex items-center gap-4 shrink-0">
-                <button
-                  onClick={() => toggle.mutate({ id: flag.id, enabled: !flag.enabled })}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Toggle flag"
-                >
-                  {flag.enabled ? (
-                    <ToggleRight className="size-6 text-primary" />
-                  ) : (
-                    <ToggleLeft className="size-6" />
-                  )}
-                </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <Switch
+                  checked={flag.enabled}
+                  onCheckedChange={(checked) => toggle.mutate({ id: flag.id, enabled: checked })}
+                  aria-label={`Toggle flag ${flag.key}`}
+                />
 
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => remove.mutate(flag.id)}
-                  className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                  aria-label="Delete flag"
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label={`Delete flag ${flag.key}`}
                 >
                   <Trash2 className="size-4" />
-                </button>
+                </Button>
               </div>
             </div>
           ))}

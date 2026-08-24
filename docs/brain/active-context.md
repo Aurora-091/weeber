@@ -12,6 +12,14 @@ updated: 2026-08-24
 
 ## Current focus
 
+- **UI Modernization & Legacy Component Migration Complete (2026-08-24).**
+  - Designed, created, and unit-tested the official shadcn `Card` primitive in `packages/web/src/web/components/ui/card.tsx` with full `.theme-weeber` token binding and 4 variants (`default`, `interactive`, `flat`, `editor`).
+  - Completely eradicated all native `<select>` elements (`rawSelect` dropped from 32 to **0 — at target!**) across `/dashboard` and `/app` routes (`analytics.tsx`, `broadcasts.tsx`, `support.tsx`, `workflow-editor.tsx`, `agents.tsx`, `app/agents.tsx`, `app/numbers.tsx`, `app/settings.tsx`, `NodeConfigPanel.tsx`, `setup-modal.tsx`, `FlowPreviewPanel.tsx`, `EnterpriseDialog.tsx`).
+  - Eliminated all legacy `.card-action` (dropped to **0 — at target!**) and modernised all product `.card-lift` instances into `<Card>` primitives.
+  - Reduced `rawButton` from 110 down to **87** across dashboard and customer views.
+  - Ratcheted down design budgets in `tools/ui-guard/design-budget.json` via `bun run design:guard --update`.
+  - All automated quality gates passed: `tsc --noEmit` clean, 111/111 unit tests green, `oxlint` 0 warnings/errors, `knip:gate` clean, `contrast:gate` passed, and `bun run audit:daily` fully verified.
+
 - **Login-time network failures now leave a trace, and get retried instead of misreported
   (2026-08-24).** Supabase auth calls go straight from the browser to Supabase, never through this API,
   so a network failure during sign-in (offline, DNS, a blocked/filtered connection) previously showed

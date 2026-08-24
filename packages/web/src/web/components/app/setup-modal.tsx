@@ -10,6 +10,13 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Skeleton } from "../ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { cn } from "../../lib/utils";
 
@@ -304,16 +311,17 @@ function PhoneNumberStep({ onDone }: { onDone: () => void }) {
           No Twilio account? We'll provision one for you — a real recurring telephony charge applies.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2.5">
-          <select
-            value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
-            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
-          >
-            <option value="US">United States</option>
-            <option value="IN">India</option>
-            <option value="GB">United Kingdom</option>
-            <option value="CA">Canada</option>
-          </select>
+          <Select value={countryCode} onValueChange={setCountryCode}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Country" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="US">United States</SelectItem>
+              <SelectItem value="IN">India</SelectItem>
+              <SelectItem value="GB">United Kingdom</SelectItem>
+              <SelectItem value="CA">Canada</SelectItem>
+            </SelectContent>
+          </Select>
           <Button size="sm" variant="outline" disabled={autoProvisionMutation.isPending} onClick={() => autoProvisionMutation.mutate()}>
             {autoProvisionMutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
             Get me a number

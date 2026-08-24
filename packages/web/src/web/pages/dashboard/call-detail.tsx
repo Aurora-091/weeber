@@ -6,6 +6,7 @@ import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
 import { capturedValue, isUnanswered } from "../../lib/captured-state";
+import { Button } from "../../components/ui/button";
 
 /**
  * Downloads the compliance audit trail for this call as a plain-text file —
@@ -127,13 +128,15 @@ export function CallDetailPage() {
                 Play recording
               </a>
             )}
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => downloadAudit(String(row.id))}
-              className="inline-flex items-center gap-1.5 text-sm text-success hover:underline"
+              className="text-success hover:text-success border-success/30 hover:bg-success/10"
             >
-              <ShieldCheck className="size-4" />
+              <ShieldCheck className="size-4 mr-1.5" />
               Export compliance audit
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -12,6 +12,13 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Switch } from "../../components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 
 const TIMEZONES = [
   "Asia/Kolkata",
@@ -335,10 +342,9 @@ export function UserSettingsPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Business type</Label>
-              <select
+              <Select
                 value={vertical}
-                onChange={(e) => {
-                  const next = e.target.value;
+                onValueChange={(next) => {
                   if (
                     next !== vertical &&
                     !confirm(
@@ -349,12 +355,16 @@ export function UserSettingsPage() {
                   }
                   setVertical(next);
                 }}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                {VERTICAL_OPTIONS.map((v) => (
-                  <option key={v.key} value={v.key}>{v.label}</option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full h-9">
+                  <SelectValue placeholder="Business type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VERTICAL_OPTIONS.map((v) => (
+                    <SelectItem key={v.key} value={v.key}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-[11px] text-muted-foreground">
                 Picked once during setup — change it here if you skipped setup or picked wrong.
               </p>
@@ -370,27 +380,29 @@ export function UserSettingsPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Timezone</Label>
-              <select
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                {TIMEZONES.map((tz) => (
-                  <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
-                ))}
-              </select>
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger className="w-full h-9">
+                  <SelectValue placeholder="Timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz}>{tz.replace(/_/g, " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Country</Label>
-              <select
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
+              <Select value={countryCode} onValueChange={setCountryCode}>
+                <SelectTrigger className="w-full h-9">
+                  <SelectValue placeholder="Country" />
+                </SelectTrigger>
+                <SelectContent>
+                  {COUNTRIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <Button

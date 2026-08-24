@@ -237,18 +237,16 @@ export function TemplatesPage() {
                 {AVAILABLE_TOOLS.map((tool) => {
                   const isChecked = tools.includes(tool);
                   return (
-                    <button
+                    <Button
                       key={tool}
                       type="button"
+                      variant={isChecked ? "default" : "outline"}
+                      size="xs"
                       onClick={() => toggleTool(tool)}
-                      className={`rounded-md border px-3 py-1.5 text-xs font-mono transition-colors ${
-                        isChecked
-                          ? "border-primary bg-primary/10 text-primary font-medium"
-                          : "border-border bg-background text-muted-foreground hover:bg-muted/50"
-                      }`}
+                      className="font-mono"
                     >
                       {tool}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

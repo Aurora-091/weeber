@@ -10,6 +10,13 @@ import { SkeletonTable } from "../../components/shell/skeletons";
 import { DataTable, type Column } from "../../components/shell/data-table";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 
 type BroadcastRow = {
   id: number;
@@ -87,14 +94,16 @@ export function BroadcastsPage() {
       className: "text-right",
       render: (r) =>
         r.status === "draft" ? (
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => send.mutate(r.id)}
             disabled={send.isPending}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            className="text-xs text-muted-foreground hover:text-foreground"
           >
-            <Send className="size-3.5" />
+            <Send className="size-3.5 mr-1" />
             Send
-          </button>
+          </Button>
         ) : null,
     },
   ];
@@ -121,14 +130,15 @@ export function BroadcastsPage() {
           className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
         />
         <div className="flex items-center gap-3">
-          <select
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-            className="rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
-          >
-            <option value="all">All users</option>
-            <option value="waitlist">Waitlist</option>
-          </select>
+          <Select value={audience} onValueChange={setAudience}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Audience" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All users</SelectItem>
+              <SelectItem value="waitlist">Waitlist</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={() => create.mutate()} disabled={!title.trim() || !body.trim() || create.isPending} className="ml-auto">
             {create.isPending && <Loader2 className="size-3.5 animate-spin" />}
             Create draft

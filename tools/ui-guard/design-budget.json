@@ -19,24 +19,24 @@
     "Marketing files are counted even though marketing is out of scope for the current",
     "plan. Fixing them is deferred; REGRESSING them is still blocked."
   ],
-  "recordedAt": "2026-08-20",
+  "recordedAt": "2026-08-24",
   "recordedOn": "branch main, HEAD b5a1fb6",
   "scanRoot": "packages/web/src/web",
   "budget": {
     "rawButton": {
-      "limit": 110,
+      "limit": 87,
       "target": 10,
       "why": "Raw <button> bypasses ui/button: loses focus-visible ring, disabled semantics, size scale and the Phase A no-greyed-primary invariant. Audit §C.",
       "phase": "C7"
     },
     "rawSelect": {
-      "limit": 32,
+      "limit": 0,
       "target": 0,
       "why": "A native <select> paints the OPERATING SYSTEM accent colour into its open dropdown. No amount of chroma:0 in the stylesheet overrides it. This is a hard blocker for the monochrome mandate, not a style preference. Audit §D step 6.",
       "phase": "B8"
     },
     "arbitraryPx": {
-      "limit": 365,
+      "limit": 364,
       "target": 20,
       "why": "365 one-off [Npx] values instead of a scale. Top offenders [10px]x70, [11px]x43, [15px]x33, [14px]x29. NOTE [1100px]x20 is a CONTAINER WIDTH and needs a --container-* token, not a spacing-scale entry — do not let a regex flatten that distinction.",
       "phase": "F1"
@@ -48,13 +48,13 @@
       "phase": "B7"
     },
     "cardLift": {
-      "limit": 15,
+      "limit": 10,
       "target": 0,
       "why": "Third overlapping card treatment alongside .card-weeber and .card-action. Collapses into ui/card variant='interactive'.",
       "phase": "C1"
     },
     "cardAction": {
-      "limit": 2,
+      "limit": 0,
       "target": 0,
       "why": "Second overlapping card treatment. Same collapse as cardLift.",
       "phase": "C1"
@@ -66,7 +66,7 @@
       "phase": "F4"
     },
     "inlineCardClone": {
-      "limit": 46,
+      "limit": 40,
       "target": 5,
       "why": "Files hand-rolling a card as rounded-*+border+bg-* instead of using the card primitive. Count is FILES, not occurrences. Was recorded as 50 because the original ripgrep call passed `-g '!components/ui/**'` — a glob containing a slash is anchored to the search root, so ripgrep silently never applied it and counted dialog/input/select/textarea.tsx as clones of a card. Ratcheted DOWN to the real excluded count when the counter stopped shelling out to rg. rawButton/rawSelect were unaffected: components/ui/ contains zero `<button`/`<select` matches either way.",
       "phase": "C1"

@@ -4,6 +4,7 @@ import { Store, User, Bot, Users, ChevronDown, ChevronUp, Phone, Loader2 } from 
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { formatDate } from "../../lib/format";
+import { Button } from "../../components/ui/button";
 
 type OrgOverviewRow = {
   id: string;
@@ -136,14 +137,15 @@ function TwilioSection({ orgId }: { orgId: string }) {
           {!showByoForm ? (
             <div className="flex flex-wrap gap-2 pt-1">
               {t.mode === "platform" && t.usingGlobalDefault && (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => createSubaccount.mutate()}
                   disabled={anyPending}
-                  className="inline-flex items-center gap-1 rounded border border-border px-2.5 py-1 hover:bg-muted disabled:opacity-50"
                 >
-                  {createSubaccount.isPending && <Loader2 className="size-3 animate-spin" />}
+                  {createSubaccount.isPending && <Loader2 className="size-3 animate-spin mr-1" />}
                   Create Twilio sub-account
-                </button>
+                </Button>
               )}
               {t.mode === "platform" && !t.usingGlobalDefault && (
                 <div className="flex items-center gap-1.5">
@@ -159,32 +161,36 @@ function TwilioSection({ orgId }: { orgId: string }) {
                     placeholder="area code (optional)"
                     className="w-36 rounded border border-border bg-background px-1.5 py-1"
                   />
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => buyNumber.mutate()}
                     disabled={anyPending}
-                    className="inline-flex items-center gap-1 rounded border border-border px-2.5 py-1 hover:bg-muted disabled:opacity-50"
                   >
-                    {buyNumber.isPending && <Loader2 className="size-3 animate-spin" />}
+                    {buyNumber.isPending && <Loader2 className="size-3 animate-spin mr-1" />}
                     Buy a number
-                  </button>
+                  </Button>
                 </div>
               )}
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowByoForm(true)}
                 disabled={anyPending}
-                className="inline-flex items-center gap-1 rounded border border-border px-2.5 py-1 hover:bg-muted disabled:opacity-50"
               >
                 Use my own Twilio account
-              </button>
+              </Button>
               {!t.usingGlobalDefault && (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => reset.mutate()}
                   disabled={anyPending}
-                  className="inline-flex items-center gap-1 rounded border border-destructive/30 px-2.5 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  className="text-destructive hover:bg-destructive/10 border-destructive/30"
                 >
-                  {reset.isPending && <Loader2 className="size-3 animate-spin" />}
+                  {reset.isPending && <Loader2 className="size-3 animate-spin mr-1" />}
                   Reset to platform default
-                </button>
+                </Button>
               )}
             </div>
           ) : (
@@ -209,23 +215,24 @@ function TwilioSection({ orgId }: { orgId: string }) {
                 className="w-full rounded border border-border bg-background px-2 py-1 font-mono"
               />
               <div className="flex gap-2">
-                <button
+                <Button
+                  size="sm"
                   onClick={() => setByo.mutate()}
                   disabled={setByo.isPending || !byoSid || !byoToken || !byoNumber}
-                  className="inline-flex items-center gap-1 rounded bg-primary px-2.5 py-1 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {setByo.isPending && <Loader2 className="size-3 animate-spin" />}
+                  {setByo.isPending && <Loader2 className="size-3 animate-spin mr-1" />}
                   Save & validate
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
                     setShowByoForm(false);
                     setActionError(null);
                   }}
-                  className="rounded border border-border px-2.5 py-1 hover:bg-muted"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )}

@@ -20,6 +20,13 @@ import { ArrowLeft, Save, Loader as Loader2, LayoutTemplate, Trash2 } from "luci
 import { apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { Button } from "../../components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { WorkflowNode } from "../../components/canvas/WorkflowNode";
 import { BranchEdge } from "../../components/canvas/BranchEdge";
@@ -408,16 +415,20 @@ function EditorInner({ template }: { template: TemplateResponse }) {
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   Edge branch
                 </h3>
-                <select
-                  value={(selectedEdge.data?.branch as string) || ""}
-                  onChange={(e) => updateEdgeBranch(selectedEdge.id, e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                <Select
+                  value={(selectedEdge.data?.branch as string) || "none"}
+                  onValueChange={(val) => updateEdgeBranch(selectedEdge.id, val === "none" ? "" : val)}
                 >
-                  <option value="">(none)</option>
-                  {WORKFLOW_OUTCOMES.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="(none)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">(none)</SelectItem>
+                    {WORKFLOW_OUTCOMES.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>

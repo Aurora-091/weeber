@@ -11,6 +11,13 @@ import { DataTable, type Column } from "../../components/shell/data-table";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
 type TicketRow = {
@@ -104,12 +111,17 @@ export function SupportPage() {
       header: "",
       className: "text-right",
       render: (r) => (
-        <button
-          onClick={() => updateStatus.mutate({ id: r.id, status: r.status === "open" ? "closed" : "open" })}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            updateStatus.mutate({ id: r.id, status: r.status === "open" ? "closed" : "open" });
+          }}
+          className="text-xs text-muted-foreground hover:text-foreground"
         >
           Mark {r.status === "open" ? "closed" : "open"}
-        </button>
+        </Button>
       ),
     },
   ];
@@ -120,15 +132,16 @@ export function SupportPage() {
         title="Support"
         description="Tickets submitted from the landing page or the user portal."
         actions={
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring/40"
-          >
-            <option value="">All</option>
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-          </select>
+          <Select value={statusFilter || "all"} onValueChange={(val) => setStatusFilter(val === "all" ? "" : val)}>
+            <SelectTrigger className="w-28">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
+            </SelectContent>
+          </Select>
         }
       />
       {tickets.isLoading && <SkeletonTable columns={6} />}

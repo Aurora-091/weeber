@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ShieldCheck, Download, Search } from "lucide-react";
 import { adminHeaders } from "../../lib/admin-key";
 import { apiFetch } from "../../lib/api";
+import { Button } from "../../components/ui/button";
 
 /**
  * Per-number compliance audit lookup — the more common real request
@@ -74,14 +75,13 @@ export function AuditPage() {
           aria-label="Phone number"
           className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring/40"
         />
-        <button
+        <Button
           type="submit"
           disabled={!phoneNumber || loading}
-          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          <Search className="size-4" />
+          <Search className="size-4 mr-1.5" />
           {loading ? "Looking up…" : "Look up"}
-        </button>
+        </Button>
       </form>
       {error && <p className="text-sm text-destructive mb-4">{error}</p>}
 
@@ -89,13 +89,14 @@ export function AuditPage() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-xs font-mono uppercase tracking-[0.15em] text-muted-foreground">Preview</h2>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={download}
-              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
             >
-              <Download className="size-4" />
+              <Download className="size-4 mr-1.5" />
               Download .txt
-            </button>
+            </Button>
           </div>
           <pre className="rounded-lg border border-border bg-muted/40 p-4 text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
             {preview}

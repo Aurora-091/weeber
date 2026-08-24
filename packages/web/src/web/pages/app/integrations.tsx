@@ -25,6 +25,7 @@ import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
@@ -62,11 +63,10 @@ function PlatformTile({
   status: "connected" | "not-connected" | "coming-soon";
 }) {
   return (
-    <div
-      className={`flex items-center gap-3 p-5 rounded-lg border bg-card transition-colors duration-150 ${
-        status === "coming-soon"
-          ? "opacity-50 border-dashed border-border"
-          : "card-weeber card-lift"
+    <Card
+      variant={status === "coming-soon" ? "flat" : "interactive"}
+      className={`flex items-center gap-3 p-5 ${
+        status === "coming-soon" ? "opacity-50 border-dashed border-border" : ""
       }`}
     >
       <Icon className="size-7 text-primary shrink-0" />
@@ -84,29 +84,31 @@ function PlatformTile({
             Not connected
           </div>
         )}
-        {status === "coming-soon" && <p className="text-xs text-muted-foreground mt-0.5">Coming soon</p>}
+        {status === "coming-soon" && (
+          <p className="text-xs text-muted-foreground mt-0.5">Coming soon</p>
+        )}
       </div>
-    </div>
+    </Card>
   );
 }
 
-/** One "Download as Excel" export card. */
-function ExportCard({
-  icon: Icon,
+/** One export tile (e.g. Orders CSV, Calls CSV). Downloads the file on click. */
+function ExportTile({
   title,
   description,
-  path,
+  icon: Icon,
+  endpoint,
   filename,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   title: string;
   description: string;
-  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+  endpoint: string;
   filename: string;
 }) {
   const downloadMutation = useMutation({
     mutationFn: async () => {
-      const res = await appFetch(path);
+      const res = await appFetch(endpoint);
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       return res.blob();
     },
@@ -127,7 +129,7 @@ function ExportCard({
   });
 
   return (
-    <div className="card-weeber card-lift flex flex-col gap-3 p-5">
+    <Card variant="interactive" className="flex flex-col gap-3 p-5">
       <div className="flex items-start gap-3">
         <Icon className="size-6 text-primary shrink-0" />
         <div>
@@ -154,7 +156,7 @@ function ExportCard({
           </>
         )}
       </Button>
-    </div>
+    </Card>
   );
 }
 
@@ -196,11 +198,10 @@ function TelephonyProviderTile({
   comingSoon?: boolean;
 }) {
   return (
-    <div
-      className={`flex items-center gap-3 p-5 rounded-lg border bg-card transition-colors duration-150 ${
-        comingSoon
-          ? "opacity-50 border-dashed border-border"
-          : "card-weeber card-lift"
+    <Card
+      variant={comingSoon ? "flat" : "interactive"}
+      className={`flex items-center gap-3 p-5 ${
+        comingSoon ? "opacity-50 border-dashed border-border" : ""
       }`}
     >
       <Phone className="size-7 text-primary shrink-0" />
@@ -222,7 +223,7 @@ function TelephonyProviderTile({
           {connected ? "Manage" : "Connect"}
         </Button>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -660,7 +661,7 @@ export function UserIntegrationsPage() {
           {/* Connection Details & Scopes */}
           {activeShop && (
             <div className="grid gap-6 @xl:grid-cols-2">
-              <div className="card-weeber card-lift p-5">
+              <Card className="p-5">
                 <h3 className="text-sm font-semibold">Connection Details</h3>
                 <div className="mt-4 space-y-3 text-xs text-muted-foreground">
                   <div className="flex justify-between border-b border-border pb-2">
@@ -680,9 +681,9 @@ export function UserIntegrationsPage() {
                     <span className="text-foreground font-semibold">{data.enabledAgentCount} active</span>
                   </div>
                 </div>
-              </div>
+              </Card>
 
-              <div className="card-weeber card-lift p-5">
+              <Card className="p-5">
                 <h3 className="text-sm font-semibold flex items-center gap-1.5">
                   <ShieldCheck className="size-4 text-success" />
                   OAuth Scopes Approved
@@ -697,7 +698,7 @@ export function UserIntegrationsPage() {
                     </span>
                   ))}
                 </div>
-              </div>
+              </Card>
             </div>
           )}
 
@@ -1066,25 +1067,25 @@ export function UserIntegrationsPage() {
           Download a spreadsheet snapshot any time — no live sync, just an on-demand .xlsx.
         </p>
         <div className="grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
-          <ExportCard
+          <ExportTile
             icon={ClipboardList}
             title="Orders"
             description="Cart recovery, COD confirmation, and feedback call attempts, with recovered order value."
-            path="/api/app/export/orders.xlsx"
+            endpoint="/api/app/export/orders.xlsx"
             filename="orders.xlsx"
           />
-          <ExportCard
+          <ExportTile
             icon={PhoneCall}
             title="Call Analytics"
             description="Volume, duration, outcomes, and latency for every call."
-            path="/api/app/export/analytics.xlsx"
+            endpoint="/api/app/export/analytics.xlsx"
             filename="call-analytics.xlsx"
           />
-          <ExportCard
+          <ExportTile
             icon={FileSpreadsheet}
             title="Transcripts"
             description="Full turn-by-turn transcripts for every call."
-            path="/api/app/export/transcripts.xlsx"
+            endpoint="/api/app/export/transcripts.xlsx"
             filename="transcripts.xlsx"
           />
         </div>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ShieldOff, Trash2, Plus } from "lucide-react";
 import { api } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
+import { Button } from "../../components/ui/button";
 
 export function DncPage() {
   const queryClient = useQueryClient();
@@ -85,14 +86,13 @@ export function DncPage() {
           aria-label="Reason"
           className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
         />
-        <button
+        <Button
           type="submit"
           disabled={!phoneNumber || add.isPending}
-          className="inline-flex items-center gap-1.5 justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          <Plus className="size-4" />
+          <Plus className="size-4 mr-1" />
           Add
-        </button>
+        </Button>
       </form>
       {error && <p className="text-sm text-destructive -mt-6 mb-6">{error}</p>}
 
@@ -106,13 +106,15 @@ export function DncPage() {
                 {entry.reason ? ` · ${entry.reason}` : ""}
               </div>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => remove.mutate(entry.phoneNumber)}
-              className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
+              className="text-muted-foreground hover:text-destructive"
               aria-label={`Remove ${entry.phoneNumber} from Do Not Call list`}
             >
               <Trash2 className="size-4" />
-            </button>
+            </Button>
           </div>
         ))}
         {dncRows.length === 0 && (

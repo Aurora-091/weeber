@@ -7,6 +7,13 @@ import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { formatDate } from "../../lib/format";
@@ -129,16 +136,17 @@ export function UserNumbersPage() {
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Country</Label>
-            <select
-              value={countryCode}
-              onChange={(e) => setCountryCode(e.target.value)}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40 h-9"
-            >
-              <option value="US">United States</option>
-              <option value="IN">India</option>
-              <option value="GB">United Kingdom</option>
-              <option value="CA">Canada</option>
-            </select>
+            <Select value={countryCode} onValueChange={setCountryCode}>
+              <SelectTrigger className="w-44 h-9">
+                <SelectValue placeholder="Country" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="US">United States</SelectItem>
+                <SelectItem value="IN">India</SelectItem>
+                <SelectItem value="GB">United Kingdom</SelectItem>
+                <SelectItem value="CA">Canada</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Area code (optional)</Label>
@@ -201,7 +209,7 @@ export function UserNumbersPage() {
             description="Buy a number above to give an agent its own dedicated caller ID."
           />
         )}
-        {activeRows.length > 0 && (
+        {!numbers.isLoading && activeRows.length > 0 && (
           <div className="divide-y divide-border content-fade-in">
             {activeRows.map((row) => (
               <div key={row.id} className="flex items-center justify-between py-3">
@@ -212,21 +220,24 @@ export function UserNumbersPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    Series
-                    <select
-                      className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
-                      value={row.numberSeries ?? ""}
-                      onChange={(e) => setSeries.mutate({ id: row.id, numberSeries: e.target.value || null })}
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>Series</span>
+                    <Select
+                      value={row.numberSeries ?? "unset"}
+                      onValueChange={(val) => setSeries.mutate({ id: row.id, numberSeries: (val === "unset" ? null : val) as OrgPhoneNumber["numberSeries"] })}
                       disabled={setSeries.isPending}
-                      aria-label={`TRAI number series for ${row.phoneNumber}`}
                     >
-                      <option value="">— unset —</option>
-                      <option value="140">140 (promotional)</option>
-                      <option value="160">160 (transactional)</option>
-                      <option value="1600">1600 (BFSI/insurance)</option>
-                    </select>
-                  </label>
+                      <SelectTrigger className="w-36 h-7 text-xs" aria-label={`TRAI number series for ${row.phoneNumber}`}>
+                        <SelectValue placeholder="— unset —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unset">— unset —</SelectItem>
+                        <SelectItem value="140">140 (promotional)</SelectItem>
+                        <SelectItem value="160">160 (transactional)</SelectItem>
+                        <SelectItem value="1600">1600 (BFSI/insurance)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -239,7 +250,6 @@ export function UserNumbersPage() {
                     disabled={release.isPending}
                   >
                     <Trash2 className="size-4" />
-                    Release
                   </Button>
                 </div>
               </div>

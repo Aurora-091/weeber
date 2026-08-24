@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Building2, CircleCheck, Mail } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { toast } from "sonner";
 import { apiFetch } from "../../lib/api";
 
@@ -92,8 +99,6 @@ function isStepValid(step: number, formData: FormData): boolean {
   return true;
 }
 
-const selectClass =
-  "w-full bg-[var(--m-bg)] border border-[var(--m-border)] text-[var(--m-text)] rounded-lg px-3.5 py-3 text-[15px] font-medium appearance-none outline-none focus:ring-2 focus:ring-[var(--m-accent-bg)]/20 focus:border-[var(--m-text-muted)] transition-colors cursor-pointer";
 const inputClass =
   "w-full bg-[var(--m-bg)] border border-[var(--m-border)] text-[var(--m-text)] rounded-lg px-3.5 py-3 text-[15px] outline-none focus:ring-2 focus:ring-[var(--m-accent-bg)]/20 focus:border-[var(--m-text-muted)] transition-colors placeholder:text-[var(--m-text-muted)]";
 const textareaClass =
@@ -221,23 +226,18 @@ export function EnterpriseDialog({ open, onOpenChange, context = "enterprise" }:
 
             <div className="mb-2">
               {current.type === "select" && (
-                <div className="relative">
-                  <select className={selectClass} value={formData[current.key]} onChange={(e) => handleChange(e.target.value)}>
-                    <option value="" disabled>
-                      Select an option\u2026
-                    </option>
+                <Select value={formData[current.key]} onValueChange={handleChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an option…" />
+                  </SelectTrigger>
+                  <SelectContent>
                     {current.options!.map((opt) => (
-                      <option key={opt} value={opt}>
+                      <SelectItem key={opt} value={opt}>
                         {opt}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--m-text-muted)]" />
-                    </svg>
-                  </div>
-                </div>
+                  </SelectContent>
+                </Select>
               )}
 
               {current.type === "textarea" && (

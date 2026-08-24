@@ -23,10 +23,18 @@ import { appFetch } from "../../lib/user-session";
 import { appPath } from "../../lib/route-base";
 import { track } from "../../lib/analytics";
 import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { Switch } from "../../components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { PageHeader } from "../../components/shell/page-header";
 import { useShellFullBleed } from "../../components/shell/app-shell";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -866,16 +874,20 @@ function UserWorkflowCanvasEditor({
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   Edge branch
                 </h3>
-                <select
-                  value={(selectedEdge.data?.branch as string) || ""}
-                  onChange={(e) => updateEdgeBranch(selectedEdge.id, e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                <Select
+                  value={(selectedEdge.data?.branch as string) || "none"}
+                  onValueChange={(val) => updateEdgeBranch(selectedEdge.id, val === "none" ? "" : val)}
                 >
-                  <option value="">(none)</option>
-                  {WORKFLOW_OUTCOMES.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="(none)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">(none)</SelectItem>
+                    {WORKFLOW_OUTCOMES.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -981,7 +993,7 @@ export function UserWorkflowsListPage() {
         {rows.map((w) => {
           const active = w.orgConfig.enabled;
           return (
-            <div key={w.id} className="card-action p-5 h-full flex flex-col">
+            <Card key={w.id} variant="interactive" className="p-5 h-full flex flex-col">
               <div className="flex items-start justify-between gap-3">
                 <Link href={appPath(`/workflows/${encodeURIComponent(w.id)}`)} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1018,7 +1030,7 @@ export function UserWorkflowsListPage() {
                   Paused — this workflow won't place any automated calls until you turn it back on.
                 </p>
               )}
-            </div>
+            </Card>
           );
         })}
       </div>

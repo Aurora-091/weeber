@@ -2,6 +2,13 @@ import { useState } from "react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Checkbox } from "../ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { NODE_STYLES } from "./node-styles";
 import { WORKFLOW_OUTCOMES, MERGE_TAGS } from "./types";
 
@@ -59,15 +66,19 @@ function TriggerFields({ config, set }: { config: Record<string, unknown>; set: 
   return (
     <div className="grid gap-1.5">
       <Label>Event</Label>
-      <select
+      <Select
         value={(config.event as string) || "checkout_abandoned"}
-        onChange={(e) => set("event", e.target.value)}
-        className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        onValueChange={(val) => set("event", val)}
       >
-        <option value="checkout_abandoned">Checkout Abandoned</option>
-        <option value="order_placed">Order Placed</option>
-        <option value="order_fulfilled">Order Fulfilled</option>
-      </select>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Select event" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="checkout_abandoned">Checkout Abandoned</SelectItem>
+          <SelectItem value="order_placed">Order Placed</SelectItem>
+          <SelectItem value="order_fulfilled">Order Fulfilled</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -118,23 +129,24 @@ function CallFields({
         <Label>Agent (persona)</Label>
         {personaOptions && personaOptions.length > 0 ? (
           <>
-            <select
+            <Select
               value={persona}
-              onChange={(e) => set("persona", e.target.value)}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              onValueChange={(val) => set("persona", val)}
             >
-              <option value="" disabled>
-                Select an agent…
-              </option>
-              {personaOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-              {hasUnlistedPersona && (
-                <option value={persona}>{persona} (not in your current agents)</option>
-              )}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select an agent…" />
+              </SelectTrigger>
+              <SelectContent>
+                {personaOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+                {hasUnlistedPersona && (
+                  <SelectItem value={persona}>{persona} (not in your current agents)</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
             <p className="text-[10px] text-muted-foreground">
               Which of your voice agents makes this call. Manage agents under Agents.
             </p>
@@ -151,19 +163,23 @@ function CallFields({
 
       <div className="grid gap-1.5">
         <Label>Discount mode</Label>
-        <select
+        <Select
           value={mode}
-          onChange={(e) => {
-            const newMode = e.target.value as "flat" | "escalating";
+          onValueChange={(val) => {
+            const newMode = val as "flat" | "escalating";
             setMode(newMode);
             if (newMode === "flat") set("discountPercent", 0);
             else set("discountPercent", { "1": 0, "2": 10, "3": 20 });
           }}
-          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
         >
-          <option value="flat">Flat %</option>
-          <option value="escalating">Escalating by attempt</option>
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Discount mode" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="flat">Flat %</SelectItem>
+            <SelectItem value="escalating">Escalating by attempt</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {mode === "flat" && (

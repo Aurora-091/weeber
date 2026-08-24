@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/shell/page-header";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 
@@ -134,21 +135,16 @@ export function UserKnowledgeBasePage() {
       />
 
       <div className="card-weeber p-6 mb-6">
-        <div className="mb-4 flex gap-1 rounded-lg bg-muted/60 p-1 w-fit">
-          {SOURCE_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                activeTab === tab.key ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <tab.icon className="size-3.5" aria-hidden />
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="mb-4">
+          <TabsList>
+            {SOURCE_TABS.map((tab) => (
+              <TabsTrigger key={tab.key} value={tab.key} className="gap-1.5">
+                <tab.icon className="size-3.5" aria-hidden />
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <div className="space-y-3 max-w-xl">
           <div className="space-y-1.5">
@@ -239,15 +235,16 @@ export function UserKnowledgeBasePage() {
                   {doc.status === "failed" && doc.errorMessage ? ` · ${doc.errorMessage}` : ""}
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => remove.mutate(doc.id)}
                 disabled={remove.isPending}
-                className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 aria-label={`Remove ${doc.title}`}
               >
                 <Trash2 className="size-4" />
-              </button>
+              </Button>
             </div>
           ))}
         </div>

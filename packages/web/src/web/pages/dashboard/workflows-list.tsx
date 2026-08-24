@@ -9,8 +9,16 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -109,7 +117,7 @@ export function WorkflowsListPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map((t) => (
           <Link key={t.id} href={`/dashboard/workflows/${encodeURIComponent(t.id)}`}>
-            <div className="card-action p-5 h-full">
+            <Card variant="interactive" className="p-5 h-full">
               <div className="flex items-center gap-2 mb-2">
                 <GitBranch className="size-4 text-primary" aria-hidden />
                 <span className="font-medium text-sm truncate">{t.name}</span>
@@ -128,7 +136,7 @@ export function WorkflowsListPage() {
                   <Badge variant="secondary">Inactive</Badge>
                 )}
               </div>
-            </div>
+            </Card>
           </Link>
         ))}
       </div>
@@ -136,9 +144,9 @@ export function WorkflowsListPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create workflow template</DialogTitle>
+            <DialogTitle>New workflow template</DialogTitle>
             <DialogDescription>
-              A new template starts with a single trigger node. Open the canvas to build the full graph.
+              Create a blank workflow template for an industry vertical.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -154,9 +162,11 @@ export function WorkflowsListPage() {
                 id="wf-id"
                 value={newId}
                 onChange={(e) => setNewId(e.target.value)}
-                placeholder="shopify-cart-recovery-v1"
+                placeholder="shopify-cart-recovery"
+                pattern="[a-z0-9-]+"
                 required
               />
+              <p className="text-xs text-muted-foreground">Lowercase letters, numbers, hyphens only.</p>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="wf-name">Name</Label>
@@ -170,16 +180,16 @@ export function WorkflowsListPage() {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="wf-vertical">Vertical</Label>
-              <select
-                id="wf-vertical"
-                value={newVertical}
-                onChange={(e) => setNewVertical(e.target.value)}
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-              >
-                <option value="shopify">Shopify</option>
-                <option value="insurance">Insurance</option>
-                <option value="clinic">Clinic</option>
-              </select>
+              <Select value={newVertical} onValueChange={setNewVertical}>
+                <SelectTrigger id="wf-vertical" className="w-full">
+                  <SelectValue placeholder="Select vertical" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shopify">Shopify</SelectItem>
+                  <SelectItem value="insurance">Insurance</SelectItem>
+                  <SelectItem value="clinic">Clinic</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {create.isError && (
               <p className="text-xs text-destructive">{(create.error as Error).message}</p>

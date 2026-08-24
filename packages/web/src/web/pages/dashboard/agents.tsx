@@ -8,6 +8,13 @@ import { useSelectedOrgId } from "../../lib/org-id";
 import { Switch } from "../../components/ui/switch";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { VoicePicker } from "../../components/voice/VoicePicker";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
@@ -78,15 +85,19 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
         <div className="border-t border-border p-4 space-y-3">
           <p className="text-xs text-muted-foreground">A scripted LLM plays a caller and tests this exact in-progress config — real LLM cost, no telephony required.</p>
           <div className="flex gap-2">
-            <select value={scenarioKey} onChange={(e) => setScenarioKey(e.target.value)} className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none">
-              <option value="">Select a scenario…</option>
-              {(scenarios.data?.scenarios ?? []).map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                  {s.firstSpeaker === "agent" ? " (outbound)" : ""}
-                </option>
-              ))}
-            </select>
+            <Select value={scenarioKey} onValueChange={setScenarioKey}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Select a scenario…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(scenarios.data?.scenarios ?? []).map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                    {s.firstSpeaker === "agent" ? " (outbound)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button size="sm" onClick={() => run.mutate()} disabled={!scenarioKey || run.isPending}>
               {run.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
               Run
@@ -270,10 +281,15 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
         </div>
         <div>
           <label htmlFor={`tone-${row.templateKey}`} className={labelCls}>Tone</label>
-          <select id={`tone-${row.templateKey}`} value={form.toneStyle} onChange={(e) => set("toneStyle", e.target.value)} className={fieldCls}>
-            <option value="">Default</option>
-            {TONE_STYLES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <Select value={form.toneStyle || "default"} onValueChange={(v) => set("toneStyle", v === "default" ? "" : v)}>
+            <SelectTrigger id={`tone-${row.templateKey}`} className="w-full">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default</SelectItem>
+              {TONE_STYLES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label htmlFor={`greeting-${row.templateKey}`} className={labelCls}>Greeting line</label>
@@ -294,11 +310,16 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       <div className="grid sm:grid-cols-3 gap-4 items-end">
         <div>
           <label htmlFor={`vp-${row.templateKey}`} className={labelCls}>Provider</label>
-          <select id={`vp-${row.templateKey}`} value={form.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)} className={fieldCls}>
-            <option value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</option>
-            <option value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</option>
-            <option value="sarvam">Sarvam ({TTS_COST_TIERS.sarvam.tier})</option>
-          </select>
+          <Select value={form.voiceProvider} onValueChange={(v) => set("voiceProvider", v as FormState["voiceProvider"])}>
+            <SelectTrigger id={`vp-${row.templateKey}`} className="w-full">
+              <SelectValue placeholder="Provider" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cartesia">Cartesia ({TTS_COST_TIERS.cartesia.tier})</SelectItem>
+              <SelectItem value="elevenlabs">ElevenLabs ({TTS_COST_TIERS.elevenlabs.tier})</SelectItem>
+              <SelectItem value="sarvam">Sarvam ({TTS_COST_TIERS.sarvam.tier})</SelectItem>
+            </SelectContent>
+          </Select>
           <p className="mt-1 text-xs text-muted-foreground">{TTS_COST_TIERS[form.voiceProvider]?.note ?? ""}</p>
         </div>
         <div>
@@ -361,15 +382,25 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
             <div className="grid sm:grid-cols-3 gap-4">
               <div>
                 <label htmlFor={`ts-${row.templateKey}`} className={labelCls}>Topic boundary strictness</label>
-                <select id={`ts-${row.templateKey}`} value={form.topicBoundaryStrictness} onChange={(e) => set("topicBoundaryStrictness", e.target.value)} className={fieldCls}>
-                  {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                </select>
+                <Select value={form.topicBoundaryStrictness} onValueChange={(v) => set("topicBoundaryStrictness", v as FormState["topicBoundaryStrictness"])}>
+                  <SelectTrigger id={`ts-${row.templateKey}`} className="w-full">
+                    <SelectValue placeholder="Strictness" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STRICTNESS_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label htmlFor={`is-${row.templateKey}`} className={labelCls}>Injection sensitivity</label>
-                <select id={`is-${row.templateKey}`} value={form.injectionSensitivity} onChange={(e) => set("injectionSensitivity", e.target.value)} className={fieldCls}>
-                  {STRICTNESS_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                </select>
+                <Select value={form.injectionSensitivity} onValueChange={(v) => set("injectionSensitivity", v as FormState["injectionSensitivity"])}>
+                  <SelectTrigger id={`is-${row.templateKey}`} className="w-full">
+                    <SelectValue placeholder="Sensitivity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STRICTNESS_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex items-end pb-2">
                 <label className="flex items-center gap-2 text-sm">
@@ -405,19 +436,29 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               </div>
               <div>
                 <label htmlFor={`stt-${row.templateKey}`} className={labelCls}>STT provider</label>
-                <select id={`stt-${row.templateKey}`} value={form.sttProvider} onChange={(e) => set("sttProvider", e.target.value)} className={fieldCls}>
-                  <option value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</option>
-                  <option value="sarvam">Sarvam ({STT_COST_TIERS.sarvam.tier})</option>
-                  <option value="elevenlabs">ElevenLabs Scribe ({STT_COST_TIERS.elevenlabs.tier})</option>
-                </select>
+                <Select value={form.sttProvider} onValueChange={(v) => set("sttProvider", v as FormState["sttProvider"])}>
+                  <SelectTrigger id={`stt-${row.templateKey}`} className="w-full">
+                    <SelectValue placeholder="STT Provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deepgram">Deepgram ({STT_COST_TIERS.deepgram.tier})</SelectItem>
+                    <SelectItem value="sarvam">Sarvam ({STT_COST_TIERS.sarvam.tier})</SelectItem>
+                    <SelectItem value="elevenlabs">ElevenLabs Scribe ({STT_COST_TIERS.elevenlabs.tier})</SelectItem>
+                  </SelectContent>
+                </Select>
                 <p className="mt-1 text-xs text-muted-foreground">{STT_COST_TIERS[form.sttProvider]?.note ?? ""}</p>
               </div>
               <div>
                 <label htmlFor={`llmp-${row.templateKey}`} className={labelCls}>LLM provider</label>
-                <select id={`llmp-${row.templateKey}`} value={form.llmProvider} onChange={(e) => set("llmProvider", e.target.value)} className={fieldCls}>
-                  <option value="gateway">AI Gateway</option>
-                  <option value="groq">Groq</option>
-                </select>
+                <Select value={form.llmProvider} onValueChange={(v) => set("llmProvider", v as FormState["llmProvider"])}>
+                  <SelectTrigger id={`llmp-${row.templateKey}`} className="w-full">
+                    <SelectValue placeholder="LLM Provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gateway">AI Gateway</SelectItem>
+                    <SelectItem value="groq">Groq</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label htmlFor={`llmm-${row.templateKey}`} className={labelCls}>Model</label>
@@ -560,22 +601,25 @@ export function AgentsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Bot className="size-4 text-muted-foreground shrink-0" aria-hidden />
-            <select
-              aria-label="Select org"
-              value={orgId}
-              onChange={(e) => {
-                setOrgId(e.target.value);
+            <Select
+              value={orgId || "none"}
+              onValueChange={(val) => {
+                setOrgId(val === "none" ? "" : val);
                 setExpandedKey(null);
               }}
-              className="rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium transition-colors focus:ring-2 focus:ring-ring/40 focus:outline-none cursor-pointer"
             >
-              <option value="">Select an org…</option>
-              {orgRows.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name ?? o.id} ({o.vertical})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-56" aria-label="Select org">
+                <SelectValue placeholder="Select an org…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select an org…</SelectItem>
+                {orgRows.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.name ?? o.id} ({o.vertical})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         }
       />

@@ -12,6 +12,14 @@ updated: 2026-08-24
 
 ## Done (works end-to-end, real-verified)
 
+- **UI Modernization & Design System Ratchet (2026-08-24).**
+  - Shipped standard shadcn `Card` primitive (`packages/web/src/web/components/ui/card.tsx`) with 4 variants and unit tests.
+  - Eliminated all native `<select>` elements (`rawSelect`: 32 -> 0) and converted all to shadcn `Select`.
+  - Cleared all `.card-action` (2 -> 0) and modernized `.card-lift` instances into `<Card>` primitives.
+  - Reduced `rawButton` from 110 to 87 by adopting shadcn `<Button>` across multiple dashboard & app workflows.
+  - Ratcheted down design budgets in `tools/ui-guard/design-budget.json` via `bun run design:guard --update`.
+  - Verified 100% green against all sentinel gates: `tsc --noEmit`, 111 web unit tests, `oxlint`, `knip:gate`, `contrast:gate`, and `bun run audit:daily`.
+
 - **Login-time network failures now retried and beaconed (2026-08-24).** `login.tsx`'s `withAuthRetry`
   retries every `supabase.auth.*` call up to twice on `AuthRetryableFetchError` (network-class failure,
   never reaches our API) instead of surfacing a wrong "invalid email or password"-shaped message. New
