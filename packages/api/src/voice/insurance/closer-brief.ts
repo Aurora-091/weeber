@@ -159,8 +159,21 @@ export type BriefFact = {
 export type CloserBrief = {
   /** Pre-qual the agent already collected — the advisor should not re-ask these. */
   captured: BriefFact[];
-  /** Labels for pre-qual the agent tried to collect but the caller did not answer. */
+  /**
+   * Labels for pre-qual the agent never got to at all — no `captureField` and
+   * no `markFieldUnanswered` entry exists for the key. Distinct from
+   * `unanswered` below (A2, phase-a-integrity.md): this is "we never got
+   * there", not "we asked and they wouldn't say".
+   */
   missing: string[];
+  /**
+   * Labels for pre-qual the agent explicitly asked about and the caller
+   * declined or evaded (A2) — a `markFieldUnanswered` entry (`value: null`)
+   * exists for the key. An advisor reading this brief needs to know the
+   * difference between this and `missing`: one is a signal about the caller,
+   * the other is an incomplete call.
+   */
+  unanswered: string[];
   /** The regulated steps, in script order, that the advisor performs. */
   advisorSteps: readonly AdvisorStep[];
   /**
@@ -200,6 +213,7 @@ export function buildCloserBrief(capturedState: Record<string, unknown> | null |
   const state = capturedState ?? {};
   const captured: BriefFact[] = [];
   const missing: string[] = [];
+  const unanswered: string[] = [];
 
   for (const { key, label } of PREQUAL_FIELDS) {
     // ADR-120: a captured field is `{ value, heard, transcriptId, turn }`.
@@ -207,8 +221,17 @@ export function buildCloserBrief(capturedState: Record<string, unknown> | null |
     // brief built from an un-migrated row still reports honestly instead of
     // marking every prequal field as missing.
     const entry = state[key];
-    const raw =
-      entry && typeof entry === "object" && "value" in entry ? (entry as { value: unknown }).value : entry;
+    const isEntryObject = entry && typeof entry === "object" && "value" in entry;
+    const raw = isEntryObject ? (entry as { value: unknown }).value : entry;
+    // A2: `value: null` on an object entry is markFieldUnanswered's explicit
+    // "asked, no answer" — a real, distinct signal, not a blank capture. Only
+    // an object-shaped entry can carry this; a bare pre-migration string is
+    // never null (see the ADR-120 tolerance above), so this can't misfire on
+    // an un-migrated row.
+    if (isEntryObject && raw === null) {
+      unanswered.push(label);
+      continue;
+    }
     const value = typeof raw === "string" ? raw.trim() : raw == null ? "" : String(raw).trim();
     if (value) {
       captured.push({ key, label, value });
@@ -220,6 +243,7 @@ export function buildCloserBrief(capturedState: Record<string, unknown> | null |
   return {
     captured,
     missing,
+    unanswered,
     advisorSteps: ADVISOR_ONLY_STEPS,
     prohibitedCaptures: findProhibitedCapture(state),
   };
@@ -243,8 +267,17 @@ export function formatCloserBriefText(brief: CloserBrief): string {
     }
   }
 
+  if (brief.unanswered.length > 0) {
+    // A2: asked and the caller declined or evaded — a signal about the
+    // caller, distinct from `missing` below (never got there this call).
+    lines.push("", "Asked, caller declined or evaded (do not re-ask):");
+    for (const label of brief.unanswered) {
+      lines.push(`  - ${label}`);
+    }
+  }
+
   if (brief.missing.length > 0) {
-    lines.push("", "Not answered on the qualifying call:");
+    lines.push("", "Not reached on the qualifying call:");
     for (const label of brief.missing) {
       lines.push(`  - ${label}`);
     }

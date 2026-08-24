@@ -27,6 +27,15 @@ function facts(entries: Record<string, string>): Record<string, CapturedField> {
   return Object.fromEntries(Object.entries(entries).map(([field, value]) => [field, fact(value)]));
 }
 
+/**
+ * A2 (phase-a-integrity.md): markFieldUnanswered's "asked, no answer" state —
+ * `value: null`, with `heard` quoting the caller's evasion rather than an
+ * answer.
+ */
+function unansweredFact(heard: string): CapturedField {
+  return { value: null, heard, transcriptId: null, turn: 0 };
+}
+
 describe("toTurnTokenUsage", () => {
   it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (Groq/OpenAI automatic caching)", () => {
     const usage = toTurnTokenUsage("groq/llama-3.3-70b-versatile", {
@@ -151,6 +160,35 @@ describe("buildKnownFactsBlock", () => {
     const state = facts({ email: "a@b.com" });
     buildKnownFactsBlock(state);
     expect(state).toEqual(facts({ email: "a@b.com" }));
+  });
+
+  it("A2: renders an answered and an unanswered field in two distinct blocks", () => {
+    const state: Record<string, CapturedField> = {
+      email: fact("a@b.com"),
+      tobacco: unansweredFact("just do some kind of drinks"),
+    };
+    const block = buildKnownFactsBlock(state);
+
+    // The confirmed block, unchanged from before A2.
+    expect(block).toContain("Known facts about this call");
+    expect(block).toContain("- email: a@b.com");
+
+    // The new, separately-labeled unanswered block.
+    expect(block).toContain("Already asked and not answered");
+    expect(block).toContain("- tobacco");
+
+    // The unanswered field must NOT appear in the "already confirmed, do not
+    // ask again" list — that would tell the model a fabricated answer is
+    // settled truth, exactly the failure A1/A2 exist to close.
+    const confirmedSection = block.slice(0, block.indexOf("Already asked and not answered"));
+    expect(confirmedSection).not.toContain("tobacco");
+  });
+
+  it("A2: renders only the unanswered block when nothing was confirmed", () => {
+    const block = buildKnownFactsBlock({ tobacco: unansweredFact("just do some kind of drinks") });
+    expect(block).not.toContain("Known facts about this call");
+    expect(block).toContain("Already asked and not answered");
+    expect(block).toContain("- tobacco");
   });
 });
 
@@ -965,6 +1003,16 @@ describe("buildVoiceTools — §3a wiring", () => {
     // withToolTimeout wraps execute in a new closure; the untouched tool's
     // execute reference should be the same function voiceTools exports.
     expect(tools.captureField!.execute).toBe(voiceTools.captureField.execute);
+  });
+
+  it("A2: markFieldUnanswered is rebuilt alongside captureField when a call-scoped verifier is supplied", () => {
+    // Same wiring, same reason as captureField (ADR-120): both tools' `heard`
+    // arguments need the live call's caller-role transcript to verify
+    // against, and both fall back to the shared unverified instance when no
+    // verifier is given (e.g. text test-chat, synthetic runs).
+    const tools = buildVoiceTools(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, () => true);
+    expect(tools.markFieldUnanswered).toBeDefined();
+    expect(tools.markFieldUnanswered!.execute).not.toBe(voiceTools.markFieldUnanswered.execute);
   });
 });
 

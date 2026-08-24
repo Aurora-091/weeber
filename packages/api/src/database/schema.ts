@@ -156,11 +156,21 @@ export const orgs = pgTable("orgs", {
  * `crmSync` payload, caller memory) to check.
  *
  * - `value` — what the field is, as before. Every reader that used to read the
- *   string reads this and is otherwise unchanged in behaviour.
- * - `heard` — the caller's own words the value came from, quoted by the model.
- *   Verified against this call's caller-role transcript text before the entry is
- *   allowed to persist (see stream.ts's mergeCapturedField). A field whose
- *   `heard` matches nothing the caller said is refused, not stored.
+ *   string reads this and is otherwise unchanged in behaviour. **Null** is a
+ *   distinct, deliberate state (phase-a-integrity.md A2): the caller was asked
+ *   about this field and declined or evaded it. It is never the same thing as
+ *   the key being absent from the record altogether — absent means "never
+ *   asked", null means "asked, and this is what we got instead". See
+ *   `markFieldUnanswered` (voice/tools/markFieldUnanswered.ts), the tool that
+ *   writes this state so the model has a legitimate way to record a non-answer
+ *   instead of inventing one (the call-2 fabrication this whole type exists to
+ *   stop).
+ * - `heard` — the caller's own words the value (or the evasion, when `value`
+ *   is null) came from, quoted by the model. Verified against this call's
+ *   caller-role transcript text before the entry is allowed to persist (see
+ *   stream.ts's mergeCapturedField). A field whose `heard` matches nothing the
+ *   caller said is refused, not stored — this applies identically whether the
+ *   model is claiming an answer or claiming an evasion.
  * - `transcriptId` — the most recent caller-role transcript row at merge time,
  *   so a reader can jump from the fact to the moment it was said. Null when the
  *   entry did not come from a live utterance at all: fields seeded from `leads`
@@ -170,7 +180,7 @@ export const orgs = pgTable("orgs", {
  *   "captured on the turn it was stated, not batched at hangup" measurement.
  */
 export type CapturedField = {
-  value: string;
+  value: string | null;
   heard: string;
   transcriptId: number | null;
   turn: number;

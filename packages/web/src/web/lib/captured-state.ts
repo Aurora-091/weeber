@@ -18,3 +18,15 @@ export function capturedValue(entry: unknown): string {
   }
   return entry == null ? "" : String(entry);
 }
+
+/**
+ * True when this entry is `markFieldUnanswered`'s explicit "asked, no
+ * answer" state (phase-a-integrity.md A2) — a `{ value: null, heard, ... }`
+ * object, never a bare pre-migration string (those are never null; see
+ * `capturedValue`'s own tolerance for that shape). Distinct from a field
+ * that's simply absent from `capturedState` altogether, which this function
+ * is never called for — there's no entry to check.
+ */
+export function isUnanswered(entry: unknown): boolean {
+  return Boolean(entry && typeof entry === "object" && "value" in entry && (entry as { value: unknown }).value === null);
+}

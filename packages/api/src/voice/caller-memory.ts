@@ -47,11 +47,21 @@ export async function upsertCallerMemory(
   capturedThisCall: Record<string, CapturedField>,
   callId: number,
 ): Promise<void> {
-  if (!phoneNumber || Object.keys(capturedThisCall).length === 0) return;
+  // A2 (phase-a-integrity.md): `markFieldUnanswered` writes `value: null` —
+  // "asked, no answer" — into THIS call's capturedState. That's per-call
+  // state, not a durable fact about the caller, so it must not carry forward
+  // into cross-call memory: a caller who evaded a question on call 3 may well
+  // answer it plainly on call 4, and a stale "unanswered" entry sitting in
+  // memory would give buildCallerMemoryBlock nothing useful to render (see its
+  // own defensive filter) while permanently occupying the field's key.
+  const confirmedThisCall = Object.fromEntries(
+    Object.entries(capturedThisCall).filter(([, entry]) => entry.value !== null),
+  );
+  if (!phoneNumber || Object.keys(confirmedThisCall).length === 0) return;
 
   const scopedOrgId = normalizeOrgId(orgId);
   const existing = await getCallerMemory(scopedOrgId, phoneNumber);
-  const merged = { ...existing, ...capturedThisCall };
+  const merged = { ...existing, ...confirmedThisCall };
 
   await withRetry(
     () =>

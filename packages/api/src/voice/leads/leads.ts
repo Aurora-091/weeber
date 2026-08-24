@@ -139,7 +139,19 @@ export async function promoteLeadFromCall(args: {
   // so a merchant's custom intake fields take effect on call promotion too,
   // not just manual/form adds. stream.ts may still pass a pre-resolved schema.
   const schema = args.schema ?? (await resolveIntakeSchema(orgId, vertical));
-  const { accepted } = validateFields(capturedState, schema);
+  // ADR-120/A2: `capturedState` entries are `{ value, heard, transcriptId, turn }`
+  // objects, not raw values — validateFields expects raw values, so this has to
+  // flatten first or every accepted field stringifies to "[object Object]".
+  // Also drops `value: null` (markFieldUnanswered) entries: the leads layer's
+  // `fields` column is a flat Record<string, string> with no room for a
+  // tri-state "asked, no answer", and promoting one in would render as an
+  // empty/garbage field on the lead record instead of just staying absent.
+  const rawValues = Object.fromEntries(
+    Object.entries(capturedState)
+      .filter(([, entry]) => entry.value !== null)
+      .map(([field, entry]) => [field, entry.value]),
+  );
+  const { accepted } = validateFields(rawValues, schema);
 
   // Derive a display name from common capture keys if the schema didn't define
   // one explicitly. Non-fatal if absent.

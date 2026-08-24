@@ -5,7 +5,7 @@ import { ArrowLeft, Sparkles, Wrench, PlayCircle, ShieldCheck, Gauge, RefreshCw 
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
-import { capturedValue } from "../../lib/captured-state";
+import { capturedValue, isUnanswered } from "../../lib/captured-state";
 
 /**
  * Downloads the compliance audit trail for this call as a plain-text file —
@@ -167,6 +167,11 @@ export function CallDetailPage() {
                       state write
                     </span>
                   )}
+                  {tc.toolName === "markFieldUnanswered" && (
+                    <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      unanswered
+                    </span>
+                  )}
                 </div>
                 <pre className="text-xs text-muted-foreground mt-1.5 overflow-x-auto font-mono">
                   {JSON.stringify(tc.input, null, 2)}
@@ -208,7 +213,14 @@ export function CallDetailPage() {
               {facts.map(([field, entry]) => (
                 <div key={field}>
                   <dt className="text-[10px] font-mono uppercase tracking-wider text-success">{field}</dt>
-                  <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
+                  {/* A2 (phase-a-integrity.md): an unanswered field is not a blank capture — it's a
+                      distinct signal the caller declined or evaded, and must read differently from
+                      both a confirmed value and a field the agent never asked about at all. */}
+                  {isUnanswered(entry) ? (
+                    <dd className="text-sm italic text-muted-foreground">Asked — caller declined or evaded</dd>
+                  ) : (
+                    <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
+                  )}
                 </div>
               ))}
             </dl>

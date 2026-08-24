@@ -59,7 +59,8 @@ export function createCaptureFieldTool(isHeardInCall?: HeardVerifier) {
     "Do not call this for small talk or facts that don't matter beyond the current sentence. " +
     "You must quote the caller's own words in `heard`. Only record what the caller actually said: if you " +
     "asked and they changed the subject, declined, or never answered, do not record a value and do not " +
-    "assume one — a fact you inferred, guessed or decided \"for the record\" is refused and not saved.",
+    "assume one — a fact you inferred, guessed or decided \"for the record\" is refused and not saved. " +
+    "Call markFieldUnanswered instead so the call record shows you asked and stops prompting you to ask again.",
   inputSchema: z.object({
     field: z
       .string()

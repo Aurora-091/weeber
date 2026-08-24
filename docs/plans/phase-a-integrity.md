@@ -104,6 +104,27 @@ shape it introduces.
 
 ### A2. "Unanswered" must be a state, not an omission
 
+**Status: shipped 2026-08-24.** Implemented as a sibling tool, `markFieldUnanswered`
+(`voice/tools/markFieldUnanswered.ts`) — same `{field, heard}` shape and the same call-scoped `heard`
+provenance check as `captureField`, so a claimed evasion is verified against the caller's actual speech
+exactly like a claimed answer is. Wired into `buildVoiceTools`/`voiceTools` (agent.ts) and `logToolCall`
+(stream.ts's new `mergeUnansweredField`) in parallel with `captureField`'s existing paths; added to
+`AVAILABLE_TOOL_NAMES` (agent-frame.ts + the web mirror in agent-config.ts) and to every seeded
+template's `defaultTools` alongside `captureField`. `buildKnownFactsBlock` renders unanswered entries in
+a second, separately-labeled list; `buildCloserBrief` gained a third `unanswered` bucket distinct from
+`missing`; both call-detail dashboard pages render an unanswered field as "Asked — caller declined or
+evaded" rather than a blank value.
+
+Two adjacent defects found and fixed in the same commit because A2 either touches or multiplies them:
+`redactCaptureValue` (prohibited-capture.ts) was redacting `value` but not `heard` on a refused
+captureField, leaving a prohibited field's caller-quoted words (e.g. spoken SSN digits) unredacted in
+`tool_calls.input` and the outbound webhook payload — same leak class the function exists to close, just
+through the argument A1 added after it was written. Separately, `promoteLeadFromCall` (leads/leads.ts)
+was passing whole `CapturedField` objects into `validateFields`, which expects raw values — every
+promoted lead field was stringifying to `"[object Object]"`; fixed by flattening to `.value` (and
+dropping unanswered/null entries, which have no representation in the leads layer's flat string schema)
+before validation.
+
 **Where:** `voice/tools/captureField.ts` (or a sibling tool — decide at implementation time and record
 which in the commit), `stream.ts`'s state merge, `agent.ts`'s `buildKnownFactsBlock`, the dashboard
 call-detail view.

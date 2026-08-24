@@ -62,6 +62,19 @@ describe("buildCloserBrief — pre-qual projection", () => {
       { key: "budget_comfort", label: "Comfortable monthly budget", value: "40" },
     ]);
   });
+
+  it("A2: reports a markFieldUnanswered entry (value: null) as unanswered, not missing", () => {
+    // An advisor reading this brief needs "we asked and they wouldn't say"
+    // (unanswered) to read differently from "we never got there" (missing).
+    const brief = buildCloserBrief({
+      tobacco: { value: null, heard: "just do some kind of drinks", transcriptId: 44, turn: 3 },
+      coverage_purpose: "final expenses",
+    });
+
+    expect(brief.unanswered).toEqual(["Tobacco / nicotine"]);
+    expect(brief.missing).not.toContain("Tobacco / nicotine");
+    expect(brief.captured.map((f) => f.key)).toEqual(["coverage_purpose"]);
+  });
 });
 
 describe("ADVISOR_ONLY_STEPS — the regulated half stays with the human", () => {

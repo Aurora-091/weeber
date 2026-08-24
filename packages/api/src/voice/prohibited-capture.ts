@@ -154,5 +154,13 @@ export function redactCaptureValue(input: unknown): unknown {
   if (!input || typeof input !== "object") return input;
   const clone: Record<string, unknown> = { ...(input as Record<string, unknown>) };
   if ("value" in clone) clone.value = "[redacted: prohibited field]";
+  // ADR-120: `heard` quotes the caller's own words verbatim, which for a
+  // prohibited key (SSN, DOB, bank details, a medical condition) IS the
+  // sensitive data — a caller who reads out their SSN and a model that
+  // quotes it back in `heard` would otherwise leave the digits sitting in
+  // `tool_calls.input` and the outbound webhook payload even though `value`
+  // itself was redacted. Same leak this function exists to close, through
+  // the argument A1 added after this function was written.
+  if ("heard" in clone) clone.heard = "[redacted: prohibited field]";
   return clone;
 }

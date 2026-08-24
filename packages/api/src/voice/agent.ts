@@ -6,6 +6,7 @@ import { setDisposition } from "./tools/setDisposition";
 import { setIntent } from "./tools/setIntent";
 import { createCrmSyncTool, type CrmSyncContext } from "./tools/crmSync";
 import { captureField, createCaptureFieldTool, type HeardVerifier } from "./tools/captureField";
+import { markFieldUnanswered, createMarkFieldUnansweredTool } from "./tools/markFieldUnanswered";
 import { sendSms } from "./tools/sendSms";
 import { sendDtmf } from "./tools/sendDtmf";
 import { hangUp } from "./tools/hangUp";
@@ -949,6 +950,7 @@ export const voiceTools = {
   setDisposition,
   setIntent,
   captureField,
+  markFieldUnanswered,
   hangUp,
   transferToHuman,
   flagGuardrailEvent,
@@ -1219,7 +1221,16 @@ export function buildVoiceTools(
     bookAppointment: createBookAppointmentTool(orgId),
     // Rebuilt per call only when a verifier exists, so the shared instance (and
     // the identity agent.test.ts asserts on it) survives for every other caller.
-    ...(isHeardInCall ? { captureField: createCaptureFieldTool(isHeardInCall) } : {}),
+    ...(isHeardInCall
+      ? {
+          captureField: createCaptureFieldTool(isHeardInCall),
+          // A2: same per-call rebuild, same reason — markFieldUnanswered's
+          // `heard` needs the same call-scoped provenance check captureField's
+          // does, and for the same tools it verifies against (this call's
+          // caller-role transcript, nothing else).
+          markFieldUnanswered: createMarkFieldUnansweredTool(isHeardInCall),
+        }
+      : {}),
   };
   // Two concrete object shapes rather than an inline conditional spread or an
   // optional property. Both of those give `offerCartRecoveryDiscount` a value
@@ -1283,16 +1294,38 @@ export function buildVoiceTools(
 export function buildKnownFactsBlock(capturedState?: Record<string, CapturedField>): string {
   const entries = Object.entries(capturedState ?? {});
   if (entries.length === 0) return "";
-  // ADR-120: a captured field is an object now, so render its `value`. The
-  // `heard` quote stays out of the prompt on purpose — it is provenance for
-  // auditors, not context the model needs to keep talking.
-  const lines = entries.map(([field, entry]) => `- ${field}: ${entry.value}`).join("\n");
-  return dedent`
+  // A2 (phase-a-integrity.md): `value === null` is markFieldUnanswered's
+  // explicit "asked, no answer" state — never guessed, never left absent (see
+  // CapturedField's doc comment in database/schema.ts). It renders in its own
+  // list below, phrased as *asked and not answered* rather than *unknown, go
+  // ask again* — this is what breaks the three-ask loop from audit finding 4
+  // without the full question ledger (Phase D).
+  const confirmed = entries.filter(([, entry]) => entry.value !== null);
+  const unanswered = entries.filter(([, entry]) => entry.value === null);
+
+  let block = "";
+  if (confirmed.length > 0) {
+    // ADR-120: a captured field is an object now, so render its `value`. The
+    // `heard` quote stays out of the prompt on purpose — it is provenance for
+    // auditors, not context the model needs to keep talking.
+    const lines = confirmed.map(([field, entry]) => `- ${field}: ${entry.value}`).join("\n");
+    block += dedent`
 
 
-    Known facts about this call — already confirmed, do not ask for these again:
-    ${lines}
-  `;
+      Known facts about this call — already confirmed, do not ask for these again:
+      ${lines}
+    `;
+  }
+  if (unanswered.length > 0) {
+    const lines = unanswered.map(([field]) => `- ${field}`).join("\n");
+    block += dedent`
+
+
+      Already asked and not answered — the caller declined or evaded these, do not ask again unless they bring it up themselves:
+      ${lines}
+    `;
+  }
+  return block;
 }
 
 /**
@@ -1339,7 +1372,14 @@ export function buildWorkflowContextBlock(metadata?: Record<string, string | num
  * safety- or accuracy-critical rather than assume it still holds.
  */
 export function buildCallerMemoryBlock(callerMemory?: Record<string, CapturedField>): string {
-  const entries = Object.entries(callerMemory ?? {});
+  // A2: an unanswered marker (`value: null`) is per-call state about THIS
+  // call's conversation, not a durable fact about the caller — carrying "they
+  // evaded X last time" forward as if it were memory isn't useful to the model
+  // and, unfiltered, would render the literal string "null" here. Cross-call
+  // memory only ever merges in genuinely confirmed values (see
+  // caller-memory.ts's upsertCallerMemory), so this filter is normally a
+  // no-op; it stays defensive rather than assumed.
+  const entries = Object.entries(callerMemory ?? {}).filter(([, entry]) => entry.value !== null);
   if (entries.length === 0) return "";
   const lines = entries.map(([field, entry]) => `- ${field}: ${entry.value}`).join("\n");
   return dedent`

@@ -721,7 +721,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * view during a live call, or the very next agent turn all see the fact
    * right away rather than only once the call finalizes.
    */
-  async function mergeCapturedField(field: string, value: string, heard: string) {
+  async function mergeCapturedField(field: string, value: string | null, heard: string) {
     capturedState = {
       ...capturedState,
       [field]: { value, heard, transcriptId: lastCallerTranscriptId, turn: callerTranscriptCount },
@@ -731,6 +731,21 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       () => db.update(calls).set({ capturedState }).where(eq(calls.id, dbCallId!)),
       { label: "persist-captured-state" },
     ).catch((err) => console.error("[voice] failed to persist captured state", err));
+  }
+
+  /**
+   * A2 (phase-a-integrity.md): writes the `value: null` "asked, no answer"
+   * state via the same merge/persist path as a real capture. Guarded against
+   * downgrading an already-confirmed value: if the caller answered earlier in
+   * the call (or this field arrived pre-seeded from a lead/cross-call memory),
+   * a later `markFieldUnanswered` for the same key must not erase it — a stray
+   * or confused tool call should never make a known fact disappear. A real
+   * `captureField` for the same key still overwrites an unanswered entry, in
+   * either order: an answer always wins.
+   */
+  async function mergeUnansweredField(field: string, heard: string) {
+    if (capturedState[field] && capturedState[field].value !== null) return;
+    await mergeCapturedField(field, null, heard);
   }
 
   async function logToolCall(ws: Sendable, name: string, input: unknown, output: unknown) {
@@ -811,6 +826,52 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
       } else {
         void mergeCapturedField(field, value, heard);
+      }
+    }
+
+    // A2 (phase-a-integrity.md): the "asked, no answer" counterpart to
+    // captureField above. Same two-guard shape (prohibited-key screen, then
+    // provenance) and the same reason for each: a prohibited field must not
+    // become sayable-in-a-guardrail-row just because the model is claiming a
+    // refusal rather than an answer, and an unverified "they evaded" is the
+    // same class of fabrication as an unverified "they said no" — nothing
+    // about being a non-answer makes it exempt from having to be true.
+    if (name === "markFieldUnanswered" && input && typeof input === "object" && "field" in input) {
+      const { field } = input as { field: string };
+      const rawHeard = (input as unknown as { heard?: unknown }).heard;
+      const heard = typeof rawHeard === "string" ? rawHeard : "";
+      const screen = screenCapture(field);
+      if (!screen.allowed) {
+        loggedInput = redactCaptureValue(input);
+        console.warn(`[voice] refused prohibited markFieldUnanswered key "${screen.key}"`);
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "regulated-capture",
+              source: "capture-guard",
+              detail: `refused markFieldUnanswered key "${screen.key}"`,
+            })
+            .catch((err) => console.error("[voice] failed to log capture-guard event", err));
+        }
+      } else if (!heardInCallerSpeech(heard, callerSpeechTokens)) {
+        console.warn(`[voice] refused unheard markFieldUnanswered "${field}" — heard quote not in caller speech`);
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "fabricated-capture",
+              source: "capture-guard",
+              detail: `refused markFieldUnanswered "${field}" — heard quote absent from caller speech: ${JSON.stringify(heard)}`,
+            })
+            .catch((err) => console.error("[voice] failed to log capture-guard event", err));
+        }
+      } else {
+        void mergeUnansweredField(field, heard);
       }
     }
 
@@ -1093,7 +1154,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           void resumeWorkflowAfterCall(
             priorWorkflowRunId,
             capturedDisposition,
-            capturedState?.discount_code?.value,
+            capturedState?.discount_code?.value ?? undefined,
           ).catch((err) => console.error("[voice] graph workflow resume failed", err));
         } else {
           void runWorkflowForOutcome({
@@ -2757,8 +2818,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 // ADR-120: `capturedState` entries are `{ value, heard, ... }`
                 // objects now, so flatten to the value before rendering. Spread
                 // directly, this template would interpolate "[object Object]"
-                // into the caller's greeting.
-                ...Object.fromEntries(Object.entries(capturedState).map(([field, entry]) => [field, entry.value])),
+                // into the caller's greeting. A2: also drop `value: null`
+                // (markFieldUnanswered) entries rather than pass them through —
+                // there is no sensible way to greet a caller with "unanswered",
+                // and leaving the key out lets renderTemplate's existing
+                // unresolved-tag handling apply exactly as it does for a field
+                // that was never captured at all.
+                ...Object.fromEntries(
+                  Object.entries(capturedState)
+                    .filter((entry): entry is [string, CapturedField & { value: string }] => entry[1].value !== null)
+                    .map(([field, entry]) => [field, entry.value]),
+                ),
                 // Trimmed (2026-08-12): these strings are merchant-typed free text
                 // (`org_agent_configs.name`, `orgs.name`) and prod already contains
                 // `"alice "` with a trailing space. Untrimmed, that renders as

@@ -129,6 +129,17 @@ describe("redactCaptureValue", () => {
     expect(redactCaptureValue({ field: "ssn" })).toEqual({ field: "ssn" });
     expect(redactCaptureValue(null)).toBeNull();
   });
+
+  it("also redacts `heard` (ADR-120) — the caller's own quoted words ARE the sensitive data for a prohibited key", () => {
+    const redacted = redactCaptureValue({
+      field: "ssn",
+      value: "123-45-6789",
+      heard: "my social is 123-45-6789",
+    }) as Record<string, unknown>;
+    expect(redacted.field).toBe("ssn");
+    expect(redacted.heard).toBe("[redacted: prohibited field]");
+    expect(JSON.stringify(redacted)).not.toContain("123-45-6789");
+  });
 });
 
 describe("captureField tool result", () => {

@@ -21,6 +21,7 @@ export const AVAILABLE_TOOL_NAMES = [
   "setIntent",
   "crmSync",
   "captureField",
+  "markFieldUnanswered",
   "hangUp",
   "transferToHuman",
   "flagGuardrailEvent",

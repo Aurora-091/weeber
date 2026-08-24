@@ -23,6 +23,7 @@ export const AVAILABLE_TOOL_NAMES = [
   "setIntent",
   "crmSync",
   "captureField",
+  "markFieldUnanswered",
   "hangUp",
   "transferToHuman",
   "flagGuardrailEvent",
@@ -46,6 +47,7 @@ export const TOOL_LABELS: Record<AvailableToolName, string> = {
   setIntent: "Identified caller intent",
   crmSync: "Synced to CRM",
   captureField: "Captured info",
+  markFieldUnanswered: "Noted a question went unanswered",
   hangUp: "Ended call",
   transferToHuman: "Transferred to human",
   flagGuardrailEvent: "Flagged compliance event",
@@ -112,6 +114,11 @@ export const TOOL_EDITOR_META: Record<
   captureField: {
     label: "Remember what the caller says",
     description: "Saves facts like email, order ID or callback time so it never asks twice.",
+    group: "capture",
+  },
+  markFieldUnanswered: {
+    label: "Note when a question goes unanswered",
+    description: "Records that it asked and the caller declined or evaded, instead of guessing an answer or asking again.",
     group: "capture",
   },
   setIntent: {

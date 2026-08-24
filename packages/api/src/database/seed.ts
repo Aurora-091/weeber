@@ -37,7 +37,7 @@ export const AGENT_TEMPLATES = [
       // (tools/lookupInfo.ts) returns an explicit "no knowledge base is
       // configured" note rather than erroring, and its description forbids
       // guessing when nothing comes back.
-      defaultTools: ["offerCartRecoveryDiscount", "lookupInfo", "captureField", "setDisposition", "setIntent"],
+      defaultTools: ["offerCartRecoveryDiscount", "lookupInfo", "captureField", "markFieldUnanswered", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -47,7 +47,7 @@ export const AGENT_TEMPLATES = [
       description: "Confirms Cash on Delivery orders to reduce RTO (Return to Origin) rates.",
       fileName: "02-cod-confirmation-agent.md",
       literalGreetingTemplate: "Hello, this is {{agent_name}} calling from {{merchant_name}}. Can I have two minutes of your time?",
-      defaultTools: ["confirmCodOrder", "lookupInfo", "captureField", "setDisposition", "setIntent"],
+      defaultTools: ["confirmCodOrder", "lookupInfo", "captureField", "markFieldUnanswered", "setDisposition", "setIntent"],
       active: true,
     },
     {
@@ -64,7 +64,7 @@ export const AGENT_TEMPLATES = [
       // time-to-first-token on its opening line. A seeded greeting tag with no
       // producer is an invisible permanent latency regression.
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. Your recent order was delivered — do you have a minute to share how it went?",
-      defaultTools: ["lookupInfo", "captureField", "setDisposition", "setIntent"],
+      defaultTools: ["lookupInfo", "captureField", "markFieldUnanswered", "setDisposition", "setIntent"],
       // Confirmed final by the user 2026-07-18 (was drafted without a Bolna reference sample,
       // unlike 01/02 — held inactive pending explicit confirmation per WEEBER-PLAN.md's
       // STOP-AND-ASK gate #4 / project-brief.md item 4). Flipping to active makes it selectable
@@ -83,7 +83,7 @@ export const AGENT_TEMPLATES = [
       // now explicitly calls it on the new "replacement" refusal (see
       // docs/agent-prompts/00-insurance-regulatory-reference.md); would otherwise repeat the
       // confirmCodOrder/offerCartRecoveryDiscount silent-drop bug seed.test.ts guards against.
-      defaultTools: ["captureField", "setDisposition", "setIntent", "transferToHuman", "flagGuardrailEvent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "setDisposition", "setIntent", "transferToHuman", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {
@@ -105,7 +105,7 @@ export const AGENT_TEMPLATES = [
       // two (2026-08-20)).
       literalGreetingTemplate: "Hi, this is {{agent_name}} calling from {{merchant_name}} — I wanted to quickly follow up with you. Do you have a couple of minutes?",
       // flagGuardrailEvent added 2026-07-16 — same reasoning as insurance-policy-renewal above.
-      defaultTools: ["captureField", "bookAppointment", "setDisposition", "setIntent", "flagGuardrailEvent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "bookAppointment", "setDisposition", "setIntent", "flagGuardrailEvent", "crmSync"],
       active: true,
     },
     {
@@ -117,7 +117,7 @@ export const AGENT_TEMPLATES = [
       // {{lead_name}} and {{interest_area}} removed (2026-08-17): same
       // leads-row dependency as insurance-lead-followup above.
       literalGreetingTemplate: "Hi, this is {{agent_name}} with {{merchant_name}} — I wanted to connect you with one of our licensed advisors. Is now a good time?",
-      defaultTools: ["captureField", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
     {
@@ -128,7 +128,7 @@ export const AGENT_TEMPLATES = [
       fileName: "07-insurance-post-sale-welcome-agent.md",
       // {{policyholder_name}} removed (2026-08-17): same leads-row dependency.
       literalGreetingTemplate: "Hello, this is {{agent_name}} calling on behalf of {{merchant_name}} — a quick welcome call now that your new policy is in place. Do you have a moment?",
-      defaultTools: ["captureField", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "lookupInfo", "transferToHuman", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
     {
@@ -139,7 +139,7 @@ export const AGENT_TEMPLATES = [
       fileName: "08-insurance-feedback-nps-agent.md",
       // {{interaction_type}} removed (2026-08-17): same leads-row dependency.
       literalGreetingTemplate: "Hi, this is {{agent_name}} from {{merchant_name}}. I'm following up on a recent interaction — do you have a minute to share how it went?",
-      defaultTools: ["captureField", "flagGuardrailEvent", "transferToHuman", "setDisposition", "setIntent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "flagGuardrailEvent", "transferToHuman", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
     {
@@ -153,7 +153,7 @@ export const AGENT_TEMPLATES = [
       literalGreetingTemplate: "Hi, this is {{agent_name}} with {{merchant_name}} — you'd recently reached out about final expense coverage, and I wanted to follow up. Do you have a couple of minutes?",
       // sendSms added so the "I'll text you our contact card" step in Section 4 is a real
       // capability rather than a promise the agent cannot keep.
-      defaultTools: ["captureField", "sendSms", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
+      defaultTools: ["captureField", "markFieldUnanswered", "sendSms", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
   ];

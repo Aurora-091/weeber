@@ -8,7 +8,7 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { PageHeader } from "../../components/shell/page-header";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { TOOL_LABELS } from "../../lib/agent-config";
-import { capturedValue } from "../../lib/captured-state";
+import { capturedValue, isUnanswered } from "../../lib/captured-state";
 
 type CallRow = {
   id: number;
@@ -275,7 +275,14 @@ export function UserCallDetailPage() {
                   {facts.map(([field, entry]) => (
                     <div key={field}>
                       <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">{field}</dt>
-                      <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
+                      {/* A2 (phase-a-integrity.md): an unanswered field is a distinct signal
+                          (asked, declined/evaded) — not a blank capture, and not the same as a
+                          field the agent never asked about. */}
+                      {isUnanswered(entry) ? (
+                        <dd className="text-sm italic text-muted-foreground">Asked — caller declined or evaded</dd>
+                      ) : (
+                        <dd className="text-sm font-medium">{capturedValue(entry)}</dd>
+                      )}
                     </div>
                   ))}
                 </dl>
