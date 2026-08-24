@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,17 @@ updated: 2026-08-24
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **Phase C3 shipped, C4 step 3 shipped (2026-08-25).** Both turned out to already be true in the code —
+  verified and guarded with new regression tests, not built. C3: STT connect already ran concurrently
+  with the greeting (`stream.ts`'s "start" handler never awaited `connectSttForCall`), contradicting the
+  2026-08-21 audit's unverified "sits on the critical path" inference; `stream-stt-connect-concurrency.test.ts`
+  proves it and guards it. C4 step 3: `performHangUp` already closed the WebSocket before `finalizeCall`
+  ran `upsertCallerMemory`/the disposition write; `stream-hangup-write-ordering.test.ts` guards it. C4
+  steps 1-2 (confirm the terminal-turn latency spike is gone; cap tool calls per turn if not) remain
+  genuinely blocked on real post-A3 production call data, which doesn't exist yet — deliberately not
+  attempted rather than built speculatively against the highest-risk code path in this phase. 1553/1553
+  api tests pass. See `active-context.md` for full detail.
 
 - **Phase C2 — prompt-cache mid-call drop found and fixed (2026-08-24).** Root cause:
   `scrubSystemPrompt` collapses whitespace across its ENTIRE input whenever the input contains even one

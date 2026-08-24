@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,28 @@ updated: 2026-08-24
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Phase C3 shipped, C4 partial — both turned out to already be true in the code, verified and
+  guarded rather than built (2026-08-25, `docs/plans/phase-c-latency.md`).** C3 (get `stt_connect` off
+  the pickup path): `stream.ts`'s "start" handler already called `connectSttForCall(ws)` without
+  awaiting it, immediately before `await runGreeting(ws)` — STT connect and the greeting's LLM/TTS work
+  already ran concurrently before this phase existed. The 2026-08-21 audit's "`stt_connect_ms` sits on
+  that critical path" claim was an inference from the numbers alone, never verified against the code —
+  the same shape as Finding 1a/1b's debunking of the deep-research report. New
+  `stream-stt-connect-concurrency.test.ts` proves it (a deliberately slow mocked STT connect, greeting
+  audio still sends before it resolves) and guards it against regressing. Dial-time pre-connect (the
+  plan's optional step 2) deliberately not built — no evidence it's worth the cross-request state
+  handoff it would need, and a new flag would default off in production anyway (`feature_flags` is
+  empty). C4 step 3 (finalize writes happen after the audio path closes): `performHangUp` already calls
+  `ws.close()` before `await finalizeCall(...)`, which is what runs `upsertCallerMemory` and the
+  disposition write — already true, now guarded by `stream-hangup-write-ordering.test.ts`. **C4 steps
+  1-2 are genuinely blocked, not skipped** — step 1 needs `bun run latency:report` run against real
+  post-A3 production calls to confirm the terminal-turn spike is actually gone, and production still
+  holds only the same 2 pre-A3 calls the 2026-08-21 audit read. Step 2 (cap tool calls per turn) is
+  conditional on step 1's finding and is the single highest-risk change available in this phase — it
+  touches the exact tool-call-batching machinery behind four prior subtle production defects (ADR-082,
+  -105, -106, -115) — so building it against zero evidence was deliberately not attempted. 1553/1553 api
+  tests pass (3 new), typecheck clean.
 
 - **Phase C2 shipped — found and fixed why the prompt-cache was dropping to 0% mid-call
   (2026-08-24, `docs/plans/phase-c-latency.md`).** Root cause, found by hashing/inspection exactly as the

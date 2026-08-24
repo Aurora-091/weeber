@@ -1,6 +1,7 @@
 # Phase C — Latency, in the order production says
 
-**Status:** In progress — C1 shipped 2026-08-24, C2 shipped 2026-08-24; C3/C4 remaining
+**Status:** In progress — C1/C2 shipped 2026-08-24, C3 shipped 2026-08-25, C4 partial (step 3 shipped
+2026-08-25; steps 1-2 blocked on real post-A3 production call data)
 **Blocks:** Phase D, Phase E
 **Preconditions:** Phase B's exit gate met — in particular `bun run latency:report` reproducing the
 audit's headline numbers. Without that command this phase has no acceptance test and must not start.
@@ -142,6 +143,21 @@ call including turns that add captured facts, workflow metadata and caller memor
 
 ### C3. Get `stt_connect` off the pickup path
 
+**Status: shipped 2026-08-25 — turned out to already be true, verified and guarded rather than built.**
+`stream.ts`'s "start" handler already called `connectSttForCall(ws)` without awaiting it, immediately
+before `await runGreeting(ws)`, before this phase existed — STT connect and the greeting's LLM/TTS work
+already ran concurrently by construction (step 1). The audit's "`stt_connect_ms` sits on that critical
+path" framing was an inference from the numbers alone (both large), not something verified against the
+code — the same class of unverified claim Finding 1a/1b caught in the deep-research report. New
+`stream-stt-connect-concurrency.test.ts` proves it with a deliberately slow (300ms) mocked STT connect:
+the greeting's audio is sent while the connect is still in flight, and `sttConnectMs` is still recorded
+once it completes (step 3 — already true, `persistLatency` always ran regardless of critical-path
+status). **Step 2 (connect at dial time, behind a flag) deliberately not built** — the plan itself frames
+it as optional ("where possible... keep it behind a flag"), `feature_flags` is empty in production so a
+new flag would default off and change nothing until manually enabled, and it needs cross-request state
+handoff between the dial-time webhook handler and the WebSocket stream handler that nothing in this
+codebase does today. No evidence yet that it's worth building. 1553/1553 api tests passing at ship time.
+
 **600–753 ms, once per call**, sitting inside a `pickup_to_first_audio_ms` of 1985–2753 ms against an
 800 ms bar. This is the single biggest component of the first impression.
 
@@ -173,6 +189,29 @@ call including turns that add captured facts, workflow metadata and caller memor
 ---
 
 ### C4. Kill the terminal tool batch — this is the p95
+
+**Status: partially shipped 2026-08-25 — step 3 verified and guarded; steps 1-2 blocked, not attempted.**
+Step 3 turned out already true, same shape as C3: `performHangUp` already calls `ws.close()` before
+`await finalizeCall(...)`, and `finalizeCall` is what runs the disposition write and
+`upsertCallerMemory` — the audio path was already closed before those writes, not something this session
+had to move. New `stream-hangup-write-ordering.test.ts` locks the ordering in. `crmSync` itself is
+**not** a finalizeCall concern — it's a model-invoked tool that necessarily runs mid-turn (it summarizes
+the whole call, so it can't fire until the call is substantially over), and its own description already
+says "use this once you have enough context — not on every turn," which is architecturally different
+from `captureField`'s "call this immediately" instruction, not a missing instance of it.
+
+**Steps 1 and 2 are genuinely blocked, not skipped by choice.** Step 1 requires running
+`bun run latency:report` against real post-A3 production calls to see whether the terminal-turn spike
+is actually gone — **no such calls exist yet** (production still holds only the same 2 pre-A3 calls the
+2026-08-21 audit read). Step 2 (cap tool calls per turn, spill the remainder to the next turn) is
+explicitly conditional on step 1's finding ("if the model still batches..."), and is also the highest-risk
+change available in this phase: it touches the exact tool-call-batching machinery that has produced four
+separate subtle production defects in this codebase's history (ADR-082's phantom turn, ADR-105's dropped
+warm lead, ADR-106's fabricated outbound text, ADR-115's narrated-but-unavailable tool) — building it
+against zero evidence of whether A3's prompt-only fix already solved the problem would be exactly the
+"latency work ahead of correctness, ahead of measurement" pattern this whole plan (and the audit's own
+"what this changes" section) argues against. Needs real calls placed and read with `latency:report`
+before either step is attempted. 1553/1553 api tests passing at ship time.
 
 Phase A3 already moves the captures off the last turn for integrity reasons. This task **collects the
 latency benefit and verifies it**, and it is the only place the p95 target is achievable.
