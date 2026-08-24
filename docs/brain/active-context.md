@@ -12,6 +12,30 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **8 new production calls found (2026-08-24, org "good insurance") and read in full — two real defects
+  root-caused and fixed, C4's latency question answered for real (2026-08-25,
+  `docs/audits/2026-08-25-ten-calls-full-pipeline-review.md`).** `calls` went from 2 rows (2026-08-21
+  audit) to 10 — this session's earlier "no post-A3 data exists" claim was wrong; the data existed and
+  hadn't been queried. Full pipeline re-read: latency pooled stats roughly match the 2026-08-21 baseline
+  (expected — none of this session's C1/C2 work is deployed, `origin/main` is still 6 commits behind);
+  VAD/endpointing's "utterance_end never fires" conclusion is corrected — it fired on 26% of turns in
+  this larger sample, reopening (not resolving) ADR-063's gate; C4's terminal-turn spike is confirmed
+  real but partial (2 of 6 calls), directly traced to `captureField` batching still happening in one
+  turn despite A3's prompt fix; a new, previously-unmeasured latency sink surfaced (8.5s of one call's
+  10.5s pickup-to-first-audio has no component metric — likely the "start" handler's own setup sequence).
+  **Two defects fixed, both with regression tests proven to fail pre-fix:** (1) a caller self-correction
+  split across two `speech_final` events, with the first turn barge-in-aborted before speaking, left two
+  adjacent `{role: "user"}` history entries with no boundary — the model glued them with no space when
+  quoting `heard` for `captureField`, and ADR-120's guard correctly refused the malformed quote, losing a
+  real answered fact 3 times in one call. `stream.ts` now merges consecutive caller turns instead of
+  leaving them separate. (2) `routes.ts`'s fire-and-forget `/incoming` calls-row insert can race
+  `stream.ts`'s own fallback insert; when the fallback loses the `onConflictDoNothing` conflict,
+  `returning()` comes back empty and the old code never re-checked for the row that won — `dbCallId`
+  stayed `null` for the rest of two real calls, silently discarding every transcript/tool_call/
+  turn_latency/guardrail_event write while the final status update (keyed by `callSid`, not `dbCallId`)
+  looked fine. Now re-selects on a lost conflict. 1555/1555 api tests pass (3 new), typecheck clean.
+  **Neither fix is deployed** — same caveat as everything else this session.
+
 - **Phase C3 shipped, C4 partial — both turned out to already be true in the code, verified and
   guarded rather than built (2026-08-25, `docs/plans/phase-c-latency.md`).** C3 (get `stt_connect` off
   the pickup path): `stream.ts`'s "start" handler already called `connectSttForCall(ws)` without

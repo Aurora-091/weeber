@@ -12,6 +12,22 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Two production defects found and fixed via a full 10-call pipeline read (2026-08-25).** `calls` had
+  grown from 2 to 10 rows since the last audit read it — a new org's 8 calls hadn't been looked at.
+  Found: (1) a caller self-correction split across two STT `speech_final` events, with the first turn
+  barge-in-aborted before speaking, left two history entries with no boundary between them — the model
+  glued them with no space when quoting a `captureField` answer, and the (correct) provenance guard
+  refused it, losing a real fact 3 times in one call. Fixed by merging consecutive caller turns in
+  `history` when nothing separates them. (2) A lost `INSERT ... ON CONFLICT DO NOTHING RETURNING` race
+  between `/incoming`'s fire-and-forget calls-row insert and `stream.ts`'s own fallback insert silently
+  set `dbCallId` to `null` for two entire calls, discarding every transcript/tool_call/turn_latency/
+  guardrail_event write while the call otherwise looked fine. Fixed by re-selecting on a lost conflict.
+  Both regression tests proven to fail against the pre-fix code. Also settled C4's latency question with
+  real data (terminal-turn spike confirmed but partial, 2/6 calls) and corrected the 2026-08-21 audit's
+  VAD/endpointing finding (`utterance_end` fires 26% of the time in the larger sample, not 0%). 1555/1555
+  api tests pass. Neither fix is deployed yet. See `active-context.md` and
+  `docs/audits/2026-08-25-ten-calls-full-pipeline-review.md` for full detail.
+
 - **Phase C3 shipped, C4 step 3 shipped (2026-08-25).** Both turned out to already be true in the code —
   verified and guarded with new regression tests, not built. C3: STT connect already ran concurrently
   with the greeting (`stream.ts`'s "start" handler never awaited `connectSttForCall`), contradicting the

@@ -2753,7 +2753,32 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             );
           }
 
-          history.push({ role: "user", content: text });
+          // Production defect (found via live production data, 2026-08-25,
+          // call 6 on org "good insurance"): a caller who self-corrects
+          // mid-word ("I'm looking for funeral ex" ... "funeral expenses.")
+          // produces two separate speech_final events. If the agent's
+          // response to the first fragment gets barge-in-aborted before any
+          // words are spoken, nothing is pushed to `history` for that turn
+          // (see the `wasInterrupted && spokenWords.length > 0` guard in
+          // runTurn) — leaving two consecutive `{role: "user"}` messages with
+          // no assistant turn between them. The model later read that as one
+          // continuous utterance when quoting `heard` for captureField, and
+          // glued the two fragments together with no space
+          // ("funeral exfuneral expenses.") — a real, correctly-answered fact
+          // that `heardInCallerSpeech` (capture-provenance.ts) then correctly
+          // refused as unmatched, since the glued word never appeared in the
+          // caller's actual (space-separated) transcript. Merging here closes
+          // the gap that let two intentionally-separate messages be read as
+          // spanning a fabricated boundary. `transcripts` is unaffected —
+          // logTranscript below still records the caller's fragments as
+          // separate rows, so the audit trail stays faithful to what was
+          // actually said and when; only the model-facing `history` merges.
+          const lastEntry = history.at(-1);
+          if (lastEntry?.role === "user" && typeof lastEntry.content === "string") {
+            lastEntry.content = `${lastEntry.content} ${text}`;
+          } else {
+            history.push({ role: "user", content: text });
+          }
           // Not awaited (2026-08-12): this INSERT is cross-region in production
           // and sat directly inside the caller-perceived voice-to-voice gap. The
           // model reads `history`, not this table — see logTranscript.
@@ -2878,7 +2903,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // "inbound" direction with no persona/org this branch used to
             // fall back to for Twilio never has. onConflictDoNothing means
             // whichever insert (this one, or the webhook's) lands second is
-            // a harmless no-op.
+            // a harmless no-op — for the DATA. It is NOT harmless for `row`:
+            // see the re-select immediately below.
             if (!row && event.from && event.to) {
               // Same org attribution as /incoming's insert (org-attribution.ts):
               // this branch only runs for a genuinely inbound call whose
@@ -2905,7 +2931,25 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 })
                 .onConflictDoNothing()
                 .returning();
-              row = inserted ?? row;
+              row = inserted;
+              // Production defect (found via live production data, 2026-08-25,
+              // calls 9/11 on org "good insurance" — zero transcripts/tool_calls/
+              // turn_latency despite the live health classifier recording real
+              // turns): `INSERT ... ON CONFLICT DO NOTHING RETURNING` returns
+              // EMPTY when THIS statement is the one that loses the race — i.e.
+              // exactly the case the comment above calls "a harmless no-op". The
+              // row is not harmed, but `row` here silently stayed `undefined`
+              // (it was already `undefined` from the SELECT above, which ran
+              // before either insert had landed), so `dbCallId` below resolved
+              // to `null` for the rest of the call even though a row existed —
+              // written by the /incoming webhook's insert, the one that won.
+              // Every downstream write in this call session is gated on
+              // `dbCallId`, so the entire call recorded nothing beyond its own
+              // final status update (which matches on `callSid`, not
+              // `dbCallId`). Re-select on a lost conflict to pick up the winner.
+              if (!row) {
+                [row] = await db.select().from(calls).where(eq(calls.twilioCallSid, callSid)).limit(1);
+              }
             }
 
             dbCallId = row?.id ?? null;
