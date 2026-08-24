@@ -147,6 +147,22 @@ unanswered field renders two distinct blocks, and the unanswered field does not 
 
 ### A3. Persist captured state per turn, not at hangup
 
+**Status: shipped 2026-08-24.** The stable-prefix instruction landed as two new gated lines
+(`immediateCaptureLine`/`immediateUnansweredLine`) inside `buildCallControlBlock` (agent.ts) — appended
+alongside the existing `numbersLine`, so it's in `withCallControl`'s output and therefore in
+`stablePrefix` for every persona source (org override, template, explicit, env map, default), gated on
+`canCaptureField`/`canMarkUnanswered` the same way every other tool-conditional line there already is.
+
+The counter shipped as a small pure module, `voice/capture-timing.ts`
+(`countCapturesByTurnTiming`), rather than inside the `onToolTelemetry` hook the plan text pointed at.
+Deviation, recorded here: A1 had already added `CapturedField.turn` (the caller-turn index at merge
+time) specifically as "the raw material for A3's measurement" (see its doc comment in
+`database/schema.ts`), which makes the count a pure function of `capturedState` at `finalizeCall` —
+comparing each entry's `turn` against `callerTranscriptCount` at that moment — rather than something
+that needs live bookkeeping through the tool-execution telemetry path. Logged (not persisted) at
+`finalizeCall`, per the plan's own "Phase B turns this into a reported metric; here it just needs to be
+recorded."
+
 **Where:** `packages/api/src/voice/stream.ts` — `mergeCapturedField` (:682) already persists on every
 call and is correct. The defect is upstream: the *model* emits its `captureField` calls in a batch at
 the end. Sites to look at: the tool-call handling around `:693`–`:805`, the finalize path at

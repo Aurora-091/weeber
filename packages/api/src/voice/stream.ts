@@ -66,6 +66,7 @@ import { withRetry } from "../database/with-retry";
 import { calls, transcripts, toolCalls, callLatency, turnLatency, toolCallLatency, orgs, optOutEvents, guardrailEvents, type CapturedField } from "../database/schema";
 import { tokenizeSpeech, heardInCallerSpeech } from "./capture-provenance";
 import { classifyCallHealth } from "./call-health";
+import { countCapturesByTurnTiming } from "./capture-timing";
 import {
   applyTransferBlockedPrompt,
   describeTransferBlock,
@@ -1091,6 +1092,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         sttReconnectCount,
         providerFailoverCount,
       });
+
+      // A3 (phase-a-integrity.md): whether this call's captures/unanswered-
+      // marks were a running record or a batch at hangup. Log-only for now —
+      // Phase B is what turns it into a queryable, aggregated metric; this
+      // just has to be visible per call so a prompt regression (a model that
+      // stops calling captureField immediately again) is at least detectable.
+      const captureTiming = countCapturesByTurnTiming(capturedState, callerTranscriptCount);
+      if (captureTiming.midCall + captureTiming.finalTurn > 0) {
+        console.log(
+          `[voice] capture timing — mid-call: ${captureTiming.midCall}, final caller turn: ${captureTiming.finalTurn}`,
+        );
+      }
 
       await withRetry(
         () =>

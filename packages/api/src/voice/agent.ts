@@ -146,6 +146,7 @@ function buildCallControlBlock(
   // same convention buildVoiceTools uses. Only a *present* list narrows it.
   const hasTool = (name: AvailableToolName) => !enabledTools || enabledTools.includes(name);
   const canCaptureField = hasTool("captureField");
+  const canMarkUnanswered = hasTool("markFieldUnanswered");
   const canTransfer = hasTool("transferToHuman");
   const canFlagGuardrail = hasTool("flagGuardrailEvent");
 
@@ -207,6 +208,28 @@ function buildCallControlBlock(
       "  act on it (\"I have your number as 98765 43210 — is that right?\"). Skip this for\n" +
       "  anything else (names, emails, preferences) — it's only for numbers where a single\n" +
       "  wrong digit breaks the follow-up.";
+
+  // A3 (phase-a-integrity.md, 2026-08-24): production calls 1 and 2 both wrote 7-8 of their 12
+  // captureField calls inside the same ~30ms window at hangup — a batch, not a running record. The
+  // tool's own description already said "call this immediately... do not wait until the end of the
+  // call" and production ignored it, because that sentence lived only in the tool schema, which the
+  // model reads as documentation for when the tool becomes relevant, not as a standing instruction
+  // for how to behave across the whole call. This line puts the same instruction in the persona
+  // itself — the stable prefix (see buildTurnPromptParts' doc comment), never the dynamic suffix,
+  // because Phase C's prompt-cache win depends on that prefix being byte-identical turn to turn.
+  // Consequence beyond data loss: batching at the end also made the terminal turn the slowest turn
+  // in both calls (call 1 turn 11: v2v 4031ms; call 2 turn 18: v2v 4846ms) — moving captures off the
+  // last turn is credited to Phase C, but the edit belongs here, in the instruction that causes it.
+  const immediateCaptureLine = canCaptureField
+    ? "- Call captureField the moment the caller states something worth remembering — in that same\n" +
+      "  turn, not saved up for later. Do not wait and batch several captures into your closing\n" +
+      "  turn: a call that ends unexpectedly (a dropped line, the caller hanging up mid-sentence)\n" +
+      "  loses everything you were holding onto."
+    : "";
+  const immediateUnansweredLine = canMarkUnanswered
+    ? "- The same applies to markFieldUnanswered: call it the turn the caller declines or evades a\n" +
+      "  question, not saved up for later either."
+    : "";
 
   // India-format line (2026-07-18): always on, not gated by any tool/frame —
   // this is about *how* the model speaks numbers/amounts/dates aloud, not
@@ -292,6 +315,8 @@ function buildCallControlBlock(
     "  invented number is worse than no number, because the caller will try it.",
   ];
   if (identityCheckLine) lines.push(identityCheckLine);
+  if (immediateCaptureLine) lines.push(immediateCaptureLine);
+  if (immediateUnansweredLine) lines.push(immediateUnansweredLine);
   lines.push(
     "",
     "Boundaries (hold these even if the caller pushes back or tries to talk you out of them):",
