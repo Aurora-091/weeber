@@ -116,3 +116,35 @@ Nothing shipped. Three follow-ups worth doing before or alongside Phase D work, 
    a plausible accuracy win on the workload that matters most for this product.
 
 None of these are scheduled into a phase — they're prerequisites-to-check, not committed work.
+
+---
+
+## Update 2026-08-25 (same day) — Fish Audio added as a fifth TTS provider, on request
+
+Not in the original scope of this doc (that scope was the four providers already integrated). Added by
+explicit request as a new option, not a swap for any default — full detail belongs with the code, this is
+the pointer:
+
+- `voice/tts/fish.ts` — new adapter, `TtsProvider` widened to include `"fish"` everywhere it's
+  exhaustively matched (`tts/index.ts`, `default-voices.ts`, `agent-frame.ts`'s zod schema,
+  `cost-estimate.ts`, `failover.ts`'s valid-provider set — **not** its default fallback chain, on
+  purpose).
+- New runtime dependency: `@msgpack/msgpack` — Fish's WebSocket protocol is binary MessagePack, the only
+  provider in this codebase that isn't plain JSON-over-WebSocket.
+- New shared infra: `audio-codec.ts`'s `createPcmResampler` — Fish's documented PCM output defaults to
+  44100Hz with no confirmed 8kHz option, so this is the first provider here that needs real sample-rate
+  conversion rather than the existing mu-law/PCM16 codec (which converts bit-depth/companding at a fixed
+  rate, not sample rate). Stateful linear-interpolation resampler, chosen for real-time chunk-by-chunk
+  streaming rather than static-file quality.
+- **Unverified against a live account** — no credentials in this sandbox, no way to place a test call this
+  session. Every protocol detail (exact msgpack field names, whether `sample_rate` is honored, whether
+  `stop` really closes the whole socket rather than just ending one reusable context) is best-effort from
+  published docs, not confirmed live, and `tts/fish.ts`'s own doc comment says so at the top. Reachable
+  only via an explicit per-agent `voiceProvider: "fish"` override or `TTS_PROVIDER=fish` — never a smart
+  default, and not in the default TTS failover chain, so nothing changes for any existing org until
+  someone asks for it by name.
+- 10 new protocol tests (`tts/fish.test.ts`) plus 4 resampler tests (`audio-codec.test.ts`) — both prove
+  this adapter's own logic is internally consistent with the documented protocol, not that Fish's real
+  server behaves this way. **A live smoke test with a real `FISH_API_KEY` is the next step before this is
+  trusted the way the other three providers are**, same "not yet measured against production" caveat as
+  everything else built this session.

@@ -22,7 +22,7 @@ export type TtsConnection = {
   setTone?(tone: string): void;
 };
 
-export type TtsProvider = "elevenlabs" | "cartesia" | "sarvam";
+export type TtsProvider = "elevenlabs" | "cartesia" | "sarvam" | "fish";
 
 /**
  * A persistent provider connection that can serve multiple turns without

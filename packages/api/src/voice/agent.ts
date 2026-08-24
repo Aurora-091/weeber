@@ -636,7 +636,7 @@ export type ResolvedAgentConfig = {
    * transfer-capable call-control text the model was otherwise obeying.
    * Recomposition is pure string work; it adds no query to pickup latency. */
   promptInputs?: ComposeSystemPromptOptions;
-  ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
+  ttsProvider?: "elevenlabs" | "cartesia" | "sarvam" | "fish";
   voiceId?: string;
   llmProvider?: "gateway" | "groq";
   llmModel?: string;
@@ -797,7 +797,7 @@ export async function resolveAgentConfig(opts: {
         systemPrompt: composed.text,
         promptInputs,
         promptSegments: composed.segments,
-        ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | null) ?? undefined,
+        ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | "fish" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
         llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,

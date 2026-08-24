@@ -26,10 +26,15 @@ import type { TtsProvider } from "./tts/types";
  * that started on a different provider for language reasons).
  */
 export const DEFAULT_STT_FALLBACK_ORDER: SttProvider[] = ["deepgram", "elevenlabs", "sarvam"];
+// `fish` (2026-08-25) is deliberately NOT in the default chain — it's an
+// unverified-against-a-live-account adapter (see tts/fish.ts's doc comment);
+// failing an existing call over to it automatically would be a worse outage
+// than just ending the call. Valid only via an explicit per-agent
+// `ttsFallbackOrder` override until it's had a real call.
 export const DEFAULT_TTS_FALLBACK_ORDER: TtsProvider[] = ["cartesia", "elevenlabs", "sarvam"];
 
 const STT_PROVIDERS = new Set<SttProvider>(["deepgram", "sarvam", "elevenlabs"]);
-const TTS_PROVIDERS = new Set<TtsProvider>(["elevenlabs", "cartesia", "sarvam"]);
+const TTS_PROVIDERS = new Set<TtsProvider>(["elevenlabs", "cartesia", "sarvam", "fish"]);
 
 /**
  * Builds the ordered list of STT providers to try after `primary` fails.

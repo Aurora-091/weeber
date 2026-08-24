@@ -110,7 +110,7 @@ export const AgentFrameSchema = z.object({
   closingLine: z.string().min(1).max(500).optional(),
   toneStyle: z.enum(TONE_STYLES).optional(),
   personaPrompt: z.string().min(1).max(8000).optional(),
-  voiceProvider: z.enum(["elevenlabs", "cartesia", "sarvam"]).optional(),
+  voiceProvider: z.enum(["elevenlabs", "cartesia", "sarvam", "fish"]).optional(),
   voiceId: z.string().min(1).max(200).optional(),
   /** Free text (see RECOMMENDED_LANGUAGES above for curated options) — one
    * language drives both STT and TTS for the call. India has many more

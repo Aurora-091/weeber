@@ -43,6 +43,12 @@ export const FALLBACK_VOICE_BY_PROVIDER: Record<TtsProvider, string> = {
   /** `bulbul:v3`'s own default speaker. Sarvam takes a fixed speaker *name*,
    * not an ID, and has no list-voices API (see voices-catalog.ts). */
   sarvam: "shubh",
+  /** Unverified (2026-08-25) — no live Fish Audio account in this sandbox to confirm a real
+   * `reference_id` against. Empty string, not a guessed UUID: `resolveVoiceId` treats a blank/
+   * whitespace-only value as "not configured" and every call site here omits an empty `reference_id`
+   * from the request rather than sending one, which per Fish's docs falls back to the selected model's
+   * own built-in default voice. See tts/fish.ts's doc comment. */
+  fish: "",
 };
 
 /**

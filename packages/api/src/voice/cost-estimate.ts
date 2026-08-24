@@ -25,7 +25,7 @@
 
 export type TelephonyProviderForCost = "twilio" | "plivo" | "exotel";
 export type SttProviderForCost = "deepgram" | "sarvam" | "elevenlabs";
-export type TtsProviderForCost = "cartesia" | "elevenlabs" | "sarvam";
+export type TtsProviderForCost = "cartesia" | "elevenlabs" | "sarvam" | "fish";
 
 /** USD per minute, outbound to an Indian mobile number — sourced from each
  * provider's public pricing page (2026-07-18): Twilio ~$0.0075/min (India
@@ -55,6 +55,10 @@ const TTS_RATE_PER_MIN_USD: Record<TtsProviderForCost, number> = {
   cartesia: 0.03,
   sarvam: 0.003,
   elevenlabs: 0.11,
+  /** Fish Audio (2026-08-25): $15/1M UTF-8 characters (public pricing) at an assumed ~800 chars/min
+   * conversational output rate, same estimation basis as the other rows here — not derived from any
+   * real call, since this adapter has never run one. */
+  fish: 0.012,
 };
 
 /** Flat blended estimate for the LLM leg — see the module doc comment for
@@ -69,7 +73,7 @@ function isSttProviderForCost(v: string | null | undefined): v is SttProviderFor
   return v === "deepgram" || v === "sarvam" || v === "elevenlabs";
 }
 function isTtsProviderForCost(v: string | null | undefined): v is TtsProviderForCost {
-  return v === "cartesia" || v === "sarvam" || v === "elevenlabs";
+  return v === "cartesia" || v === "sarvam" || v === "elevenlabs" || v === "fish";
 }
 
 export type EstimateCallCostInput = {

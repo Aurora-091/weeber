@@ -168,7 +168,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let dbCallId: number | null = null;
   let webhookUrl: string | null = null;
   let persona: string | undefined;
-  let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
+  let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | "fish" | undefined;
   let llmProviderOverride: "gateway" | "groq" | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;

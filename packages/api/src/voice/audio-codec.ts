@@ -116,3 +116,77 @@ export function mulawChunkToWavBase64(mulaw: Uint8Array, sampleRate = 8000): str
   const wav = pcm16ToWav(pcm16, sampleRate);
   return Buffer.from(wav).toString("base64");
 }
+
+/**
+ * Fish Audio TTS (2026-08-25, docs/audits/2026-08-25-provider-model-currency-research.md): the first
+ * provider added to this file whose native output isn't already 8kHz — its documented WebSocket `pcm`
+ * format defaults to 44100Hz, with no confirmed way to request 8000Hz directly (unverified against a live
+ * account; see tts/fish.ts's doc comment). Every other provider here (Cartesia/ElevenLabs/Sarvam) was
+ * chosen partly *because* it emits mulaw/8kHz natively — this is the one place in the codebase that has to
+ * do real sample-rate conversion instead of just re-encoding bit depth/companding at a fixed rate.
+ *
+ * Linear interpolation, not a windowed-sinc/polyphase filter — the standard low-latency tradeoff for
+ * real-time streaming resampling (a proper sinc filter needs future samples, i.e. added latency, to do
+ * its job; linear interpolation needs only the previous sample). Audibly worse than a real DSP resampler
+ * on a static WAV file, and not this codebase's concern here: it's downsampling speech, at a bounded
+ * frame size, in a pipeline whose next hop is 8kHz mu-law telephony audio, which is already a lossy,
+ * narrow-band format — the resampler's own artifacts are not the binding constraint on call audio quality.
+ *
+ * Kept as a **stateful factory**, not a one-shot function, because TTS audio arrives in a stream of
+ * chunks, not one buffer — resampling each chunk independently (restarting the fractional read position
+ * at 0 every time) would introduce an audible click/discontinuity at every chunk boundary. The returned
+ * closure carries the fractional position and the last sample of the previous chunk across calls, so the
+ * output is continuous across chunk boundaries exactly as if the whole stream had been resampled at once.
+ */
+export function createPcmResampler(inputSampleRate: number, outputSampleRate: number) {
+  const ratio = inputSampleRate / outputSampleRate;
+  /** Fractional read position into the virtual continuous input stream, relative to the start of the
+   * NEXT chunk this closure will receive — i.e. carried-over sub-sample phase, always in [0, 1). */
+  let phase = 0;
+  /** The last sample of the previous chunk, needed to interpolate across the boundary into the first
+   * new sample of the next chunk. `null` only before the first chunk has ever been processed. */
+  let previousLastSample: number | null = null;
+
+  /** Resample one chunk of 16-bit signed PCM (little-endian bytes). Call repeatedly, in order, on
+   * consecutive chunks of the same stream — do not call concurrently on two different streams sharing
+   * one resampler instance (create one instance per TTS turn/session, same lifetime as the audio it's
+   * resampling). */
+  return function resampleChunk(pcm16: Uint8Array): Uint8Array {
+    const sampleCount = Math.floor(pcm16.length / 2);
+    if (sampleCount === 0) return new Uint8Array(0);
+    const view = new DataView(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+    // `i` reaches -1 only when `phase` carried a negative leftover from the previous chunk (interpolating
+    // across the boundary) — `previousLastSample` covers it. `i` reaching `sampleCount` happens only for
+    // the +1 lookahead on the very last in-range position of this chunk; clamping to the last real sample
+    // is a negligible inaccuracy on that one fractional output sample, corrected for continuity by the
+    // real `previousLastSample` read the next chunk's own boundary interpolation uses.
+    const readSample = (i: number): number => {
+      if (i < 0) return previousLastSample ?? view.getInt16(0, true);
+      if (i >= sampleCount) return view.getInt16((sampleCount - 1) * 2, true);
+      return view.getInt16(i * 2, true);
+    };
+
+    const outSamples: number[] = [];
+    // `phase` starts as a position relative to index 0 of THIS chunk (possibly negative, reaching back
+    // into the previous chunk's last sample via readSample(-1) above) and advances by `ratio` input-
+    // samples per output sample as long as it's still inside this chunk; the leftover (relative to the
+    // next chunk) is carried forward as the new `phase`.
+    let pos = phase;
+    while (pos < sampleCount) {
+      const i0 = Math.floor(pos);
+      const frac = pos - i0;
+      const s0 = readSample(i0);
+      const s1 = readSample(i0 + 1);
+      const interpolated = s0 + (s1 - s0) * frac;
+      outSamples.push(Math.max(-32768, Math.min(32767, Math.round(interpolated))));
+      pos += ratio;
+    }
+    phase = pos - sampleCount;
+    previousLastSample = view.getInt16((sampleCount - 1) * 2, true);
+
+    const out = new Uint8Array(outSamples.length * 2);
+    const outView = new DataView(out.buffer);
+    for (let i = 0; i < outSamples.length; i++) outView.setInt16(i * 2, outSamples[i]!, true);
+    return out;
+  };
+}

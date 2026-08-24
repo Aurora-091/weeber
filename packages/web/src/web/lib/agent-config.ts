@@ -276,6 +276,7 @@ export const TTS_COST_TIERS: Record<string, { tier: "$" | "$" | "$$"; note: stri
   cartesia: { tier: "$", note: "~$0.02-0.04/min (estimated)" },
   sarvam: { tier: "$", note: "~$0.003/min (estimated)" },
   elevenlabs: { tier: "$$", note: "~$0.10-0.12/min (sourced) — roughly 3x Cartesia/Sarvam" },
+  fish: { tier: "$", note: "~$0.012/min (estimated, unverified — new 2026-08-25, no live account confirmed)" },
 };
 
 export const STT_COST_TIERS: Record<string, { tier: "$"; note: string }> = {

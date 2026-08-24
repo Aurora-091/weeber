@@ -2,6 +2,7 @@ import type { ConnectTts, ConnectTtsSession, TtsProvider } from "./types";
 import { connectElevenLabsTts, connectElevenLabsSession } from "./elevenlabs";
 import { connectCartesiaTts, connectCartesiaSession } from "./cartesia";
 import { connectSarvamTts, connectSarvamSession } from "./sarvam";
+import { connectFishTts, connectFishSession } from "./fish";
 import { prefersSarvam } from "../agent-frame";
 
 /**
@@ -13,14 +14,18 @@ const providers: Record<TtsProvider, ConnectTts> = {
   elevenlabs: connectElevenLabsTts,
   cartesia: connectCartesiaTts,
   sarvam: connectSarvamTts,
+  fish: connectFishTts,
 };
 
 /** Session-factory registry, one persistent-connection opener per provider
- * (Phase C1) — see connectTtsSession below. */
+ * (Phase C1) — see connectTtsSession below. `fish` doesn't actually get a
+ * persistent connection (see tts/fish.ts's doc comment) but implements the
+ * same interface. */
 const sessionProviders: Record<TtsProvider, ConnectTtsSession> = {
   elevenlabs: connectElevenLabsSession,
   cartesia: connectCartesiaSession,
   sarvam: connectSarvamSession,
+  fish: connectFishSession,
 };
 
 /**
@@ -34,17 +39,23 @@ const sessionProviders: Record<TtsProvider, ConnectTtsSession> = {
  *   3. TTS_PROVIDER env var -> "cartesia" (works on free/starter tiers without
  *      the library-voice restriction ElevenLabs' free plan has).
  * Falls back with a warning if an unknown value is set.
+ *
+ * `fish` (2026-08-25) is reachable only via an explicit override (step 1) or
+ * `TTS_PROVIDER=fish` (step 3) — deliberately never a smart/env default, the
+ * same caution ADR-119/Phase E-style "explicit, not inferred" pattern this
+ * codebase uses elsewhere, because this adapter is unverified against a live
+ * account (see tts/fish.ts's doc comment). An org has to ask for it by name.
  */
 export function resolveTtsProvider(override?: string | null, language?: string | null): TtsProvider {
   if (override) {
     const explicit = override.toLowerCase();
-    if (explicit === "elevenlabs" || explicit === "cartesia" || explicit === "sarvam") return explicit;
+    if (explicit === "elevenlabs" || explicit === "cartesia" || explicit === "sarvam" || explicit === "fish") return explicit;
     console.warn(`[tts] Unknown TTS provider "${explicit}" — falling back to "cartesia"`);
     return "cartesia";
   }
   if (prefersSarvam(language) && process.env.SARVAM_API_KEY) return "sarvam";
   const configured = (process.env.TTS_PROVIDER ?? "cartesia").toLowerCase();
-  if (configured === "elevenlabs" || configured === "cartesia" || configured === "sarvam") return configured;
+  if (configured === "elevenlabs" || configured === "cartesia" || configured === "sarvam" || configured === "fish") return configured;
   console.warn(`[tts] Unknown TTS provider "${configured}" — falling back to "cartesia"`);
   return "cartesia";
 }

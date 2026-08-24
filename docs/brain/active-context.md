@@ -12,6 +12,25 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Fish Audio added as a fifth TTS provider, on request — unverified against a live account
+  (2026-08-25, `voice/tts/fish.ts`,
+  `docs/audits/2026-08-25-provider-model-currency-research.md`'s "Update" section).** New adapter +
+  `@msgpack/msgpack` dependency (Fish's WebSocket protocol is binary, the only non-JSON provider here) +
+  a new stateful PCM resampler (`audio-codec.ts`'s `createPcmResampler`) since Fish's documented PCM
+  output defaults to 44100Hz with no confirmed 8kHz option — the first provider in this codebase that
+  needs real sample-rate conversion, not just the existing mu-law/PCM16 codec. `TtsProvider` widened
+  everywhere it's exhaustively matched (5 files: `tts/index.ts`, `default-voices.ts`, `agent-frame.ts`'s
+  zod schema, `cost-estimate.ts`, `failover.ts`). Reachable only via an explicit `voiceProvider: "fish"`
+  override or `TTS_PROVIDER=fish` — never a smart default, not in the default TTS failover chain, so
+  nothing changes for any existing org. **No live credentials in this sandbox and no way to place a test
+  call this session** — every protocol detail (exact msgpack field names, whether `sample_rate` is
+  honored, whether `stop` closes the whole socket or just one reusable context) is best-effort from
+  published docs, not confirmed live; `tts/fish.ts`'s own doc comment says so up front. 10 new protocol
+  tests (`tts/fish.test.ts`) + 4 resampler tests (`audio-codec.test.ts`) prove internal consistency with
+  the documented protocol, not real-server correctness — **a live smoke test with a real `FISH_API_KEY`
+  is the next step before this is trusted the way the other three providers are.** 1569/1569 api tests
+  pass, typecheck clean (api + web), lint clean, knip:gate clean.
+
 - **Phase D backlog expanded (D6/D7/D8) with the edge-case research; provider/model currency filed
   separately (2026-08-25, `docs/plans/phase-d-conversation.md`,
   `docs/audits/2026-08-25-provider-model-currency-research.md`).** The 2026-08-25 edge-case research's

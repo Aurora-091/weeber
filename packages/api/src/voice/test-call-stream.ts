@@ -72,7 +72,7 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
   let bargeInStreak = 0;
 
   let persona: string | undefined;
-  let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
+  let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | "fish" | undefined;
   let llmProviderOverride: "gateway" | "groq" | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
