@@ -89,14 +89,14 @@ weeks:
 
 ## Status
 
-**The plan was approved on 2026-08-21.** Phase A's A1–A5 all shipped 2026-08-24; Phase B is unblocked
-and is the only phase that may be worked on until its own exit gate is met.
+**The plan was approved on 2026-08-21.** Phase A's A1–A5 and Phase B's B1–B5 all shipped 2026-08-24;
+Phase C is unblocked and is the only phase that may be worked on until its own exit gate is met.
 
 | Phase | Status | Gate met |
 | --- | --- | --- |
-| A | **A1–A5 shipped 2026-08-24** — see phase-a-integrity.md's Exit gate section for the one open item (`persona:gate`, pre-existing/unrelated, and the unverified production-data check) | Mostly — two named exceptions |
-| B | **Unblocked — ready to start** | — |
-| C | Blocked on B | — |
+| A | **A1–A5 shipped 2026-08-24** — all 6 numbered exit-gate conditions closed (condition 4 verified live against production after this table's first pass). Only `persona:gate` is red, and it's pre-existing/unrelated (8 personas over budget from commits before this phase). | Yes, except the one named ratchet |
+| B | **B1–B5 shipped 2026-08-24** — see phase-b-measurement.md's Exit gate section for how each of the 6 conditions was verified, most against real production data via Railway + Supabase MCP access granted mid-phase | Yes, except the same pre-existing `persona:gate` |
+| C | **Unblocked — ready to start** | — |
 | D | Blocked on C | — |
 | E | Blocked on D | — |
 

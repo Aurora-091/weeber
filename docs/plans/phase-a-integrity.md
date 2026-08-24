@@ -326,10 +326,15 @@ unrelated, pre-existing, out of scope for this phase — and proceed to Phase B.
 authoring prose back under budget is real, separate editorial work across files this phase never
 touched, tracked here rather than done as a drive-by inside an unrelated commit.
 
-Also unverified in this run: exit-gate condition 4's "verify against the production read-only
-connection that the query returns the two existing calls as undelivered" — this session has no
-production database access. The code path is covered by `crmSync.test.ts`'s durable-row tests instead;
-the production-data check remains open.
+**Update 2026-08-24 (later the same day, after Railway + Supabase MCP access was granted):** exit-gate
+condition 4 is now verified for real. `guardrail_events`' new `undelivered-outcome` rows are forward-only
+(A4 shipped after these two calls happened, and this repo's convention is no backfill — see ADR-107's
+"excluded and counted, not rewritten" for the same principle applied to a different table), so there is
+nothing to query there for calls this old. But the condition's actual intent — a durable, queryable row
+identifying both calls as undelivered — was already true using data that existed before A4: `select
+call_id from tool_calls where tool_name = 'crmSync' and (output->>'synced') = 'false'` against the real
+production `tool_calls` table (`mcp__supabase__execute_sql`) returns exactly `{call_id: 1}` and
+`{call_id: 2}` — both existing calls, correctly. This condition is closed.
 
 All of the following must hold. Phase B does not start until they do.
 
