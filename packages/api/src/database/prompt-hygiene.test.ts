@@ -42,7 +42,11 @@ const MERGE_TAG_MIGRATION_BACKLOG = new Set([
   "06-insurance-appointment-setter-agent.md",
   "07-insurance-post-sale-welcome-agent.md",
   "08-insurance-feedback-nps-agent.md",
-  "09-insurance-final-expense-qualifier-agent.md",
+  // A5 (phase-a-integrity.md, 2026-08-24): repointed from
+  // "09-insurance-final-expense-qualifier-agent.md" to the v2 file that
+  // superseded it as the seeded source (seed.ts) — same un-migrated merge
+  // tags, new filename.
+  "09-insurance-final-expense-qualifier-agent-v2.md",
 ]);
 
 /**

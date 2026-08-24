@@ -67,6 +67,7 @@ import { calls, transcripts, toolCalls, callLatency, turnLatency, toolCallLatenc
 import { tokenizeSpeech, heardInCallerSpeech } from "./capture-provenance";
 import { classifyCallHealth } from "./call-health";
 import { countCapturesByTurnTiming } from "./capture-timing";
+import { detectUnsourcedPriceClaims } from "./unsourced-claim-guard";
 import {
   applyTransferBlockedPrompt,
   describeTransferBlock,
@@ -2009,6 +2010,27 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // none of which should ever show `[[tone:calm]]` as if it were
       // something the agent said out loud.
       fullText = stripToneTag(fullText).text;
+      // A5 (phase-a-integrity.md): a narrow, deterministic scan for an
+      // unsourced quantitative cost claim — log-only, never blocking (see
+      // unsourced-claim-guard.ts's doc comment for why). Run against the
+      // turn's full assembled text rather than the streamed deltas: a
+      // sentence split mid-stream would produce false negatives on exactly
+      // the pattern this exists to catch ("...five thousand" | "and eight
+      // thousand dollars." arriving as two separate delta chunks).
+      if (dbCallId) {
+        for (const claim of detectUnsourcedPriceClaims(fullText)) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "unsourced-claim",
+              source: "unsourced-claim-detector",
+              detail: claim.sentence,
+            })
+            .catch((err) => console.error("[voice] failed to log unsourced-claim event", err));
+        }
+      }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         console.error("[voice] agent turn failed", err);

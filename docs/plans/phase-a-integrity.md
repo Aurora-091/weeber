@@ -264,6 +264,33 @@ Two defects, one theme: an outcome the system reports but never delivers.
 
 ### A5. An unsourced price claim is a guardrail event
 
+**Status: shipped 2026-08-24.** Reading the persona that produced the call-2 sentence
+(`09-insurance-final-expense-qualifier-agent.md`) turned up something the plan text didn't anticipate:
+the "typically run between five thousand and eight thousand dollars" figure wasn't a model
+invention at all — it was written into the prompt itself as an unsourced "typical national cost." So
+this shipped as two independent fixes rather than one:
+
+1. **The persona**, fixed at the source. Per ADR-118 (append-only + immovable), the existing file is
+   untouched; `09-insurance-final-expense-qualifier-agent-v2.md` is new, its "Cost context" bullet
+   removes the specific dollar figures and adds an explicit "you have not been given verified cost
+   data" instruction plus a matching guardrail-section line, and `seed.ts`'s `fileName` for the
+   `insurance-final-expense-qualifier` template now points at it. `tools/persona/persona-budget.json`
+   gained a fresh ratchet entry for the new file (12,358 runtime chars, its own measured size — the old
+   file moved to `notSeeded` rather than carrying a stale budget line for a file nothing seeds anymore).
+2. **The general, persona-agnostic detector**, per the plan — `voice/unsourced-claim-guard.ts`'s
+   `detectUnsourcedPriceClaims`, a deterministic per-sentence scan (currency symbol/word + a
+   digit-or-spelled-out quantity, with no nearby source phrase) wired into `stream.ts`'s `speak()`
+   against each turn's full assembled text, logging a `guardrail_events` row (category
+   `unsourced-claim`, source `unsourced-claim-detector`) without blocking anything. This exists so the
+   *next* prompt that writes an ungrounded figure into itself — in this vertical or any other — is
+   caught immediately rather than requiring another audit to find it.
+
+Pre-existing, unrelated finding surfaced while touching `MERGE_TAG_MIGRATION_BACKLOG`
+(`database/prompt-hygiene.test.ts`): the backlog is keyed by filename, so repointing `seed.ts` at the v2
+file required moving the entry too — otherwise the hygiene test would have graded the still-un-migrated
+v2 persona as "should have zero merge tags" and failed. Not itself an integrity defect, just a
+consequence of the file rename that needed the same commit.
+
 **Where:** `packages/api/src/voice/tools/flagGuardrailEvent.ts` and the heuristic detector referenced
 at `org-queries.ts` (`"guardrail-heuristic-detector"`); the agent-side text path in `stream.ts` where
 model output is emitted to TTS.

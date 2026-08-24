@@ -531,6 +531,13 @@ export const guardrailEvents = pgTable("guardrail_events", {
       // this category is what makes that visible and queryable instead of
       // indistinguishable from a real delivery.
       "undelivered-outcome",
+      // A5 (phase-a-integrity.md): outbound agent text naming a currency
+      // amount with no source indicator nearby — see
+      // voice/unsourced-claim-guard.ts. Logged, not blocked: the
+      // false-positive rate is unknown, so cutting off a sentence
+      // mid-utterance would be a worse failure than a row that turns out to
+      // be fine.
+      "unsourced-claim",
       "unknown",
     ],
   }).notNull(),
@@ -548,6 +555,9 @@ export const guardrailEvents = pgTable("guardrail_events", {
       // A4: stream.ts's finalize-time check that a callback-requested
       // disposition actually produced a scheduled_calls row.
       "setDisposition-invariant",
+      // A5: voice/unsourced-claim-guard.ts's deterministic text scan, run
+      // over each turn's assembled outbound text.
+      "unsourced-claim-detector",
     ],
   }).notNull(),
   /** The agent's one-sentence "what the caller asked / how I handled it" (self-report), or the

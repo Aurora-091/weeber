@@ -147,7 +147,12 @@ export const AGENT_TEMPLATES = [
       name: "Insurance Final Expense Qualifier / Warm-Transfer",
       vertical: "insurance",
       description: "Qualifies a warm final-expense lead (need, service preference, cost context, rough budget, benefit timing, tobacco, banking readiness, coarse health-readiness flag), texts the agency's contact card, then live-transfers to a licensed advisor or books a callback. Stops cold at the regulated line — never quotes, recommends a carrier, underwrites, or collects SSN/bank/health details; those seven script sections are handed to the licensed advisor as a pre-filled closer brief instead.",
-      fileName: "09-insurance-final-expense-qualifier-agent.md",
+      // A5 (phase-a-integrity.md, 2026-08-24): repointed to the v2 file — the
+      // v1 persona itself stated an unsourced "typical national cost" figure
+      // for cremation, which is what production call 2 spoke on a recording
+      // with no source (audit finding 8). v1 is left in place, unedited, per
+      // ADR-118 (docs/agent-prompts/ is append-only and immovable).
+      fileName: "09-insurance-final-expense-qualifier-agent-v2.md",
       // {{lead_name}} and {{interest_area}} removed (2026-08-17): same
       // leads-row dependency as the other insurance templates.
       literalGreetingTemplate: "Hi, this is {{agent_name}} with {{merchant_name}} — you'd recently reached out about final expense coverage, and I wanted to follow up. Do you have a couple of minutes?",
