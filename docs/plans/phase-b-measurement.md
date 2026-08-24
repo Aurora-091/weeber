@@ -152,6 +152,25 @@ this is the ADR-088 shape, assert the failure path logs rather than silently ret
 
 ### B3. Prove `guardrail_events` is non-vacuous
 
+**Status: shipped 2026-08-24.** Confirmed `guardrail_events` is 0 rows in production (live query,
+`mcp__supabase__execute_sql`) — genuinely vacuous, not a query artifact. Rather than a synthetic
+AI-to-AI replay (which scripts a *new* conversation against the current persona and cannot prove
+anything about what the two real calls actually said), pulled both calls' real `transcripts` and
+`tool_calls` rows directly from production and replayed them through the actual guard code:
+`production-replay.test.ts` runs the real caller-role transcript text through `heardInCallerSpeech` (A1)
+and the real agent-spoken cost line through `detectUnsourcedPriceClaims` (A5) — confirming call 2's
+tobacco claim is refused, call 2's cremation-cost line is flagged, and call 1's honest captures and
+cost-context line (which correctly cites "the advisor will" as its source) are both accepted, none
+flagged. `stream-guardrail-replay.test.ts` goes one level deeper and replays call 2's tobacco
+fabrication through the real `stream.ts` pipeline end to end, asserting the actual `guardrail_events`
+insert lands with `category: "fabricated-capture"`. Both category values were also verified to insert
+cleanly against the live production schema (`BEGIN; INSERT ...; ROLLBACK;`, no rows left behind).
+
+Deviation from the plan's test spec (`synthetic-scenarios.ts` gains a guardrail-row assertion): not
+added. The synthetic harness has no DB and no concept of a "row" — adding one would mean duplicating
+`logToolCall`'s category-derivation logic a second time for a strictly weaker guarantee than replaying
+the real incident, which was already possible with data this session had direct access to.
+
 **Where:** `packages/api/src/voice/tools/flagGuardrailEvent.ts`, the heuristic detector referenced as
 `"guardrail-heuristic-detector"` in `org-queries.ts`, and Phase A's two new categories
 (`fabricated-capture`, `unsourced-claim`).
