@@ -524,6 +524,13 @@ export const guardrailEvents = pgTable("guardrail_events", {
       // forbidden) because the remedy is different: this one means ask again.
       "fabricated-capture",
       "fabricated-outbound-text",
+      // A4 (phase-a-integrity.md): a completed call whose outcome was reported
+      // to the model as delivered — a CRM sync, a promised callback — but
+      // wasn't. Two production calls' crmSync both returned
+      // `{"synced":false}` and the code carried on as if it had succeeded;
+      // this category is what makes that visible and queryable instead of
+      // indistinguishable from a real delivery.
+      "undelivered-outcome",
       "unknown",
     ],
   }).notNull(),
@@ -531,7 +538,17 @@ export const guardrailEvents = pgTable("guardrail_events", {
   // not a report or a heuristic. No migration needed for either widening: both
   // columns are plain `text` with a TS-level enum, no DB check constraint.
   source: text("source", {
-    enum: ["agent-self-report", "heuristic-detector", "capture-guard", "outbound-text-guard"],
+    enum: [
+      "agent-self-report",
+      "heuristic-detector",
+      "capture-guard",
+      "outbound-text-guard",
+      // A4: crmSync's own tool code, reporting its own synced:false result.
+      "crm-sync",
+      // A4: stream.ts's finalize-time check that a callback-requested
+      // disposition actually produced a scheduled_calls row.
+      "setDisposition-invariant",
+    ],
   }).notNull(),
   /** The agent's one-sentence "what the caller asked / how I handled it" (self-report), or the
    * triggering caller phrase (heuristic detector) — null when neither was captured. */

@@ -1071,7 +1071,7 @@ describe("buildVoiceTools — cart-recovery discount registration (G1.1)", () =>
  * human number doesn't get the tool at all.
  */
 describe("buildVoiceTools — CRM sync registration (G1.4 / ADR-069)", () => {
-  const CRM = { orgId: "org-a", phoneNumber: "+15551234567" };
+  const CRM = { orgId: "org-a", phoneNumber: "+15551234567", callId: 1 };
 
   it("does not register crmSync when no caller identity is bound", () => {
     const tools = buildVoiceTools(undefined, undefined);

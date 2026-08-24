@@ -15,6 +15,8 @@ let orgIntegrationRows: Array<{ provider: string; credentials: Record<string, st
 let lastGoHighLevelArgs: unknown[] | null = null;
 let lastSalesforceArgs: unknown[] | null = null;
 let lastHubspotArgs: unknown[] | null = null;
+// A4: every guardrail_events row this test's mocked db saw inserted.
+let guardrailInserts: Record<string, unknown>[] = [];
 
 // getOrgCrmCredentials queries once per provider, in this fixed order,
 // short-circuiting on the first match — mirrored here so the mock can
@@ -36,6 +38,12 @@ mock.module("../../database", () => ({
           },
         }),
       }),
+    }),
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        guardrailInserts.push(values);
+        return Promise.resolve();
+      },
     }),
   },
 }));
@@ -67,12 +75,19 @@ mock.module("../integrations/hubspot", () => ({
 
 import { createCrmSyncTool, resolveCrmSyncContext } from "./crmSync";
 
-function callTool(orgId: string, phoneNumber = "+15551234567") {
-  const tool = createCrmSyncTool({ orgId, phoneNumber });
+function callTool(orgId: string, phoneNumber = "+15551234567", callId = 1) {
+  const tool = createCrmSyncTool({ orgId, phoneNumber, callId });
   return (tool.execute as (input: unknown) => Promise<unknown>)({
     callerName: "Jamie",
     notes: "asked about pricing",
   });
+}
+
+/** insert() is fire-and-forget (`void db.insert(...).catch(...)`) — give its
+ * microtask a tick to land before asserting on it. */
+async function flush() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe("createCrmSyncTool — §P0 multi-tenant CRM isolation", () => {
@@ -81,6 +96,7 @@ describe("createCrmSyncTool — §P0 multi-tenant CRM isolation", () => {
     lastGoHighLevelArgs = null;
     lastSalesforceArgs = null;
     lastHubspotArgs = null;
+    guardrailInserts = [];
     queryCallIndex = 0;
   });
 
@@ -89,6 +105,53 @@ describe("createCrmSyncTool — §P0 multi-tenant CRM isolation", () => {
     const result = (await callTool("org-a")) as { crm: null; synced: false; message: string };
     expect(result.synced).toBe(false);
     expect(result.message).toContain("No CRM connected for this organization");
+  });
+
+  it("A4: the not-configured path also produces a durable, queryable undelivered-outcome row", async () => {
+    // Two production calls both returned {"synced":false} and nothing
+    // downstream ever noticed — this is the fix: the failure is now a row a
+    // query can find, not just a live-transcript detail.
+    orgIntegrationRows = [];
+    await callTool("org-a", "+15551234567", 42);
+    await flush();
+
+    expect(guardrailInserts).toHaveLength(1);
+    expect(guardrailInserts[0]).toMatchObject({
+      callId: 42,
+      orgId: "org-a",
+      category: "undelivered-outcome",
+      source: "crm-sync",
+    });
+    expect(String(guardrailInserts[0].detail)).toContain("No CRM connected");
+  });
+
+  it("A4: a real provider failure (synced: false from the adapter) also produces the durable row", async () => {
+    orgIntegrationRows = [{ provider: "gohighlevel", credentials: { api_key: "k", location_id: "l" }, enabled: true }];
+    mock.module("../integrations/gohighlevel", () => ({
+      syncToGoHighLevel: async () => ({ synced: false, message: "GoHighLevel API returned 401" }),
+    }));
+
+    await callTool("org-a");
+    await flush();
+
+    expect(guardrailInserts).toHaveLength(1);
+    expect(guardrailInserts[0].category).toBe("undelivered-outcome");
+    expect(String(guardrailInserts[0].detail)).toContain("401");
+
+    // Restore the default success mock so later tests in this file aren't affected.
+    mock.module("../integrations/gohighlevel", () => ({
+      syncToGoHighLevel: async (...args: unknown[]) => {
+        lastGoHighLevelArgs = args;
+        return { synced: true, contactId: "ghl-1" };
+      },
+    }));
+  });
+
+  it("A4: a successful sync produces no undelivered-outcome row", async () => {
+    orgIntegrationRows = [{ provider: "gohighlevel", credentials: { api_key: "k", location_id: "l" }, enabled: true }];
+    await callTool("org-a");
+    await flush();
+    expect(guardrailInserts).toHaveLength(0);
   });
 
   it("uses this org's own stored GoHighLevel credentials, not any other org's or a shared one", async () => {
@@ -135,7 +198,7 @@ describe("createCrmSyncTool — the model cannot choose whose CRM record this wr
   });
 
   it("does not expose phoneNumber as a model-supplied input at all", () => {
-    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567" });
+    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567", callId: 1 });
     // The JSON Schema the model actually sees. If `phoneNumber` reappears here,
     // the upsert key is model-authored again and this whole ADR is undone.
     const schema = tool.inputSchema as { shape?: Record<string, unknown> };
@@ -145,7 +208,7 @@ describe("createCrmSyncTool — the model cannot choose whose CRM record this wr
   });
 
   it("upserts on the bound number, ignoring anything extra the model tries to pass", async () => {
-    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567" });
+    const tool = createCrmSyncTool({ orgId: "org-a", phoneNumber: "+15551234567", callId: 1 });
     await (tool.execute as (input: unknown) => Promise<unknown>)({
       callerName: "Jamie",
       notes: "asked about pricing",
@@ -159,31 +222,42 @@ describe("createCrmSyncTool — the model cannot choose whose CRM record this wr
 });
 
 describe("resolveCrmSyncContext — non-registration is the gate (ADR-069)", () => {
-  it("binds the carrier-reported number when both org and number are present", () => {
-    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567" })).toEqual({
+  it("binds the carrier-reported number when org, number, and callId are all present", () => {
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: 1 })).toEqual({
       orgId: "org-a",
       phoneNumber: "+15551234567",
+      callId: 1,
     });
   });
 
   it("returns undefined with no org — an unattributed call must not reach any CRM", () => {
-    expect(resolveCrmSyncContext({ orgId: undefined, humanNumber: "+15551234567" })).toBeUndefined();
-    expect(resolveCrmSyncContext({ orgId: "   ", humanNumber: "+15551234567" })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: undefined, humanNumber: "+15551234567", callId: 1 })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "   ", humanNumber: "+15551234567", callId: 1 })).toBeUndefined();
   });
 
   it("returns undefined when caller ID was withheld — the tool is omitted, not called with a guess", () => {
-    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: undefined })).toBeUndefined();
-    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "" })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: undefined, callId: 1 })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "", callId: 1 })).toBeUndefined();
   });
 
   it("rejects placeholder values a provider may send instead of a number", () => {
     for (const placeholder of ["unknown", "anonymous", "Anonymous", "restricted", "+"]) {
-      expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: placeholder })).toBeUndefined();
+      expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: placeholder, callId: 1 })).toBeUndefined();
     }
   });
 
   it("accepts formatted numbers the providers actually emit", () => {
-    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+91 98765 43210" })?.phoneNumber).toBe("+91 98765 43210");
-    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "(555) 123-4567" })?.phoneNumber).toBe("(555) 123-4567");
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+91 98765 43210", callId: 1 })?.phoneNumber).toBe(
+      "+91 98765 43210",
+    );
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "(555) 123-4567", callId: 1 })?.phoneNumber).toBe(
+      "(555) 123-4567",
+    );
+  });
+
+  it("A4: returns undefined with no callId — nowhere to attach an undelivered-sync guardrail row", () => {
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567" })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: null })).toBeUndefined();
+    expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: 0 })).toBeUndefined();
   });
 });

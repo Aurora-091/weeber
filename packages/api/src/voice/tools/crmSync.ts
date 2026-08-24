@@ -4,6 +4,8 @@ import { syncToGoHighLevel } from "../integrations/gohighlevel";
 import { syncToSalesforce } from "../integrations/salesforce";
 import { syncToHubspot } from "../integrations/hubspot";
 import { getOrgCrmCredentials } from "../integrations/resolve-crm";
+import { db } from "../../database";
+import { guardrailEvents } from "../../database/schema";
 
 /**
  * Whose CRM record this call writes to — bound server-side at session
@@ -22,6 +24,15 @@ export type CrmSyncContext = {
    * record gets written.
    */
   phoneNumber: string;
+  /**
+   * A4 (phase-a-integrity.md) — this call's `calls.id`, so an undelivered
+   * sync (`synced: false`, whether "not configured" or a real provider
+   * failure) can be recorded as a durable `guardrail_events` row instead of
+   * only ever being visible in this call's live transcript. Two production
+   * calls both returned `{"synced":false}` here and nothing downstream ever
+   * noticed.
+   */
+  callId: number;
 };
 
 /**
@@ -74,12 +85,36 @@ export type CrmSyncContext = {
  * class of side effect that kept `offerCartRecoveryDiscount` out of them.
  */
 export function createCrmSyncTool(ctx: CrmSyncContext) {
-  const { orgId, phoneNumber } = ctx;
+  const { orgId, phoneNumber, callId } = ctx;
+
+  /**
+   * A4: an undelivered sync is recorded as a durable, queryable row the
+   * moment it happens — not left as something only visible in this call's
+   * live transcript, which is how it went unnoticed on two production calls.
+   * Fire-and-forget, same contract as every other guardrail-event insert in
+   * this codebase (stream.ts's logToolCall): a logging failure here must
+   * never surface as a tool error to the model or the caller.
+   */
+  function recordIfUndelivered(result: { synced?: boolean; message?: string }) {
+    if (result.synced !== false) return;
+    void db
+      .insert(guardrailEvents)
+      .values({
+        callId,
+        orgId,
+        category: "undelivered-outcome",
+        source: "crm-sync",
+        detail: result.message ?? "crmSync returned synced: false",
+      })
+      .catch((err) => console.error("[voice] failed to log undelivered crmSync outcome", err));
+  }
+
   return tool({
     description:
       "Log this call to the CRM and create or update the caller's contact record. Use this once you have " +
       "enough context to be worth recording — not on every turn. You do not identify the caller's phone " +
-      "number: this call is already tied to the correct contact.",
+      "number: this call is already tied to the correct contact. If the result says synced: false, the " +
+      "record was NOT delivered — never tell the caller it was logged/saved/synced when it wasn't.",
     inputSchema: z.object({
       callerName: z.string().optional(),
       notes: z.string().describe("Brief summary of what this call was about"),
@@ -87,26 +122,34 @@ export function createCrmSyncTool(ctx: CrmSyncContext) {
     async execute({ callerName, notes }) {
       const crmConfig = await getOrgCrmCredentials(orgId);
       if (!crmConfig) {
-        return {
+        const result = {
           crm: null,
-          synced: false,
+          synced: false as const,
           message: "(not configured) No CRM connected for this organization. Connect one in Settings > Integrations.",
         };
+        recordIfUndelivered(result);
+        return result;
       }
 
       const { provider, credentials } = crmConfig;
       switch (provider) {
         case "gohighlevel": {
-          const result = await syncToGoHighLevel(phoneNumber, callerName, notes, credentials.api_key, credentials.location_id);
-          return { crm: "gohighlevel", ...result };
+          const syncResult = await syncToGoHighLevel(phoneNumber, callerName, notes, credentials.api_key, credentials.location_id);
+          const result = { crm: "gohighlevel", ...syncResult };
+          recordIfUndelivered(result);
+          return result;
         }
         case "salesforce": {
-          const result = await syncToSalesforce(phoneNumber, callerName, notes, credentials.access_token, credentials.instance_url);
-          return { crm: "salesforce", ...result };
+          const syncResult = await syncToSalesforce(phoneNumber, callerName, notes, credentials.access_token, credentials.instance_url);
+          const result = { crm: "salesforce", ...syncResult };
+          recordIfUndelivered(result);
+          return result;
         }
         case "hubspot": {
-          const result = await syncToHubspot(phoneNumber, callerName, notes, credentials.api_key);
-          return { crm: "hubspot", ...result };
+          const syncResult = await syncToHubspot(phoneNumber, callerName, notes, credentials.api_key);
+          const result = { crm: "hubspot", ...syncResult };
+          recordIfUndelivered(result);
+          return result;
         }
       }
     },
@@ -129,10 +172,18 @@ export function createCrmSyncTool(ctx: CrmSyncContext) {
  * digits per E.164) rather than a full parse — this is a "did we get a number
  * at all" guard, not number validation. The number's *authority* comes from it
  * being the carrier's, not from it passing a regex.
+ *
+ * A4: also gated on `callId` now — no call row yet means nowhere to attach an
+ * undelivered-sync guardrail row, so the tool is omitted rather than offered
+ * without the ability to record its own failure. In practice this is never
+ * the live-call path's actual behaviour (the call row is inserted before any
+ * tool could fire); it only ever bites the same non-live surfaces the org/
+ * number checks above already exclude.
  */
 export function resolveCrmSyncContext(input: {
   orgId?: string;
   humanNumber?: string;
+  callId?: number | null;
 }): CrmSyncContext | undefined {
   const orgId = input.orgId?.trim();
   if (!orgId) return undefined;
@@ -141,5 +192,7 @@ export function resolveCrmSyncContext(input: {
   if (!raw) return undefined;
   if (!/^\+?[0-9]{7,15}$/.test(raw.replace(/[\s()\-.]/g, ""))) return undefined;
 
-  return { orgId, phoneNumber: raw };
+  if (!input.callId) return undefined;
+
+  return { orgId, phoneNumber: raw, callId: input.callId };
 }

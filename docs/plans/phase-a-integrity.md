@@ -194,6 +194,34 @@ scenario where the caller states a fact early and the call is cut short must sti
 
 ### A4. `synced: false` is not success, and a promise must create a row
 
+**Status: shipped 2026-08-24.** Both defects closed. `crmSync` (tools/crmSync.ts) now records a
+`guardrail_events` row (category `undelivered-outcome`, source `crm-sync`) for every `synced: false`
+result — not-configured and a real provider failure alike — bound via a new required `callId` on
+`CrmSyncContext` (the tool was already gated on org+number; a call with no row yet is not a real
+scenario, so gating on `callId` too costs nothing). `setDisposition` (tools/setDisposition.ts) became a
+bound factory, `createSetDispositionTool(ctx?)`, mirroring `captureField`/`crmSync`'s pattern: given a
+`DispositionSchedulingContext` (the caller's number, org, persona, webhook URL, and a live getter for any
+captured `callback_time`), a `callback-requested` disposition attempts the `scheduled_calls` insert
+*inside its own `execute()`*, in the same tool call and the same turn as the disposition — so the tool's
+returned `callbackScheduled` is available to the model before it speaks its closing line, which is the
+actual mechanism behind "the disposition must not claim a booking, and hangUp's reason must not either"
+(there is no way to retroactively un-say already-generated speech; the only real lever is grounding what
+the model says in the same turn). `stream.ts` reads `callbackScheduled` off the tool's output in
+`logToolCall` and asserts the invariant at `finalizeCall`, writing a second `undelivered-outcome` row
+(source `setDisposition-invariant`) if it's ever false.
+
+Two deliberate scope cuts, recorded here rather than silently assumed: no natural-language time parsing
+— a captured `callback_time` (e.g. "tomorrow afternoon") is carried into the row's `metadata` verbatim,
+never parsed into an exact `runAt` (see `setDisposition.ts`'s doc comment for why); `runAt` defaults to
+now + 1 hour instead. And no retry configured for the callback row itself (`maxAttempts: 1`) — a missed
+automated callback is not a Phase-A concern.
+
+Test-location deviation: the plan text below points at
+`workflows/scheduler-callback-invariant.test.ts`, written before this shipped and assuming the insert
+would live in the scheduler. It lives in the tool instead, so the tests do too —
+`tools/setDisposition.test.ts` (the scheduling attempt itself) and `stream-callback-invariant.test.ts`
+(the finalize-time invariant).
+
 Two defects, one theme: an outcome the system reports but never delivers.
 
 **Where:**

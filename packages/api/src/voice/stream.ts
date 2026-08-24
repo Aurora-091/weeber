@@ -273,6 +273,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let capturedSentiment: string | undefined;
   let capturedIntent: string | undefined;
   /**
+   * A4 (phase-a-integrity.md): whether the most recent `callback-requested`
+   * disposition actually produced a `scheduled_calls` row (see
+   * `tools/setDisposition.ts`'s `createSetDispositionTool`). `undefined`
+   * until a `callback-requested` disposition is recorded; never reset to
+   * `undefined` afterward, so the finalize-time invariant check below always
+   * reflects the latest attempt even if the model called `setDisposition`
+   * more than once.
+   */
+  let capturedCallbackScheduled: boolean | undefined;
+  /**
    * ADR-062: whether a recording/AI disclosure was resolved+configured for
    * this call (set in the "start" handler where disclosureText/Version are
    * persisted). Gates the `disclosureFiredAt` stamp after the greeting turn —
@@ -990,6 +1000,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       capturedDisposition = String((input as { disposition: unknown }).disposition);
       const sentimentInput = (input as { sentiment?: unknown }).sentiment;
       if (typeof sentimentInput === "string") capturedSentiment = sentimentInput;
+      // A4: `createSetDispositionTool`'s execute() already attempted the
+      // scheduled_calls insert for a callback-requested disposition, in this
+      // same turn — read its real outcome rather than hoping it happened.
+      if (capturedDisposition === "callback-requested") {
+        const scheduledInput = (output as { callbackScheduled?: unknown } | undefined)?.callbackScheduled;
+        capturedCallbackScheduled = typeof scheduledInput === "boolean" ? scheduledInput : false;
+      }
     }
 
     // Intent detection — captured whenever the agent calls setIntent, independent of
@@ -1103,6 +1120,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         console.log(
           `[voice] capture timing — mid-call: ${captureTiming.midCall}, final caller turn: ${captureTiming.finalTurn}`,
         );
+      }
+
+      // A4: the invariant as a check, not a hope — a finalized call whose
+      // disposition implies a follow-up (callback-requested) and which has
+      // no corresponding scheduled_calls row is a defect, not a possibility.
+      // createSetDispositionTool already attempted the insert live, in the
+      // same turn; this asserts its outcome actually landed rather than
+      // trusting that it did.
+      if (capturedDisposition === "callback-requested" && capturedCallbackScheduled !== true) {
+        console.error(
+          `[voice] invariant violated: disposition "callback-requested" with no scheduled_calls row${callSid ? ` (${callSid})` : ""}`,
+        );
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "undelivered-outcome",
+              source: "setDisposition-invariant",
+              detail: "callback-requested disposition recorded with no corresponding scheduled_calls row",
+            })
+            .catch((err) => console.error("[voice] failed to log undelivered-callback invariant violation", err));
+        }
       }
 
       await withRetry(
@@ -2199,6 +2240,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           cartRecovery: cartRecoveryContext,
           codOrder: codOrderContext,
           crmSync: crmSyncContext,
+          // A4 (phase-a-integrity.md): only a real call has a real number to
+          // book a callback against — gated on `humanNumber` the same way
+          // `crmSyncContext` already is. `getCallbackTimeHeard` reads through
+          // a closure rather than a snapshot, same reasoning as
+          // `outboundText.allowedNumbers` below: `capturedState` grows as the
+          // turn runs, and `callback_time` may not exist yet at the moment
+          // this options object is built.
+          dispositionScheduling: humanNumber
+            ? {
+                toNumber: humanNumber,
+                orgId: humanNumberOrgId,
+                persona,
+                webhookUrl,
+                getCallbackTimeHeard: () => capturedState.callback_time?.value ?? undefined,
+              }
+            : undefined,
           outboundText: {
             // ADR-106. Read through a closure, not snapshotted: `humanNumber`
             // resolves during the "start" handler, `orgTransferNumber` with it,
@@ -2301,6 +2358,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           orgId: humanNumberOrgId,
           codOrder: codOrderContext,
           crmSync: crmSyncContext,
+          // A4 (phase-a-integrity.md): only a real call has a real number to
+          // book a callback against — gated on `humanNumber` the same way
+          // `crmSyncContext` already is. `getCallbackTimeHeard` reads through
+          // a closure rather than a snapshot, same reasoning as
+          // `outboundText.allowedNumbers` below: `capturedState` grows as the
+          // turn runs, and `callback_time` may not exist yet at the moment
+          // this options object is built.
+          dispositionScheduling: humanNumber
+            ? {
+                toNumber: humanNumber,
+                orgId: humanNumberOrgId,
+                persona,
+                webhookUrl,
+                getCallbackTimeHeard: () => capturedState.callback_time?.value ?? undefined,
+              }
+            : undefined,
           outboundText: {
             // ADR-106. Read through a closure, not snapshotted: `humanNumber`
             // resolves during the "start" handler, `orgTransferNumber` with it,
@@ -2672,7 +2745,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // G1.4 (ADR-069): bound here, from the same carrier-reported
               // numbers cross-call memory already trusts — not from anything
               // the model says.
-              crmSyncContext = resolveCrmSyncContext({ orgId: humanNumberOrgId, humanNumber });
+              crmSyncContext = resolveCrmSyncContext({ orgId: humanNumberOrgId, humanNumber, callId: dbCallId });
             }
 
             // Per-number config (see number-config.ts) applies to every call

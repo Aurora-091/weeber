@@ -2,7 +2,7 @@ import { streamText, stepCountIs, type ModelMessage } from "ai";
 import dedent from "dedent";
 import { createLookupInfoTool } from "./tools/lookupInfo";
 import { createBookAppointmentTool } from "./tools/bookAppointment";
-import { setDisposition } from "./tools/setDisposition";
+import { setDisposition, createSetDispositionTool, type DispositionSchedulingContext } from "./tools/setDisposition";
 import { setIntent } from "./tools/setIntent";
 import { createCrmSyncTool, type CrmSyncContext } from "./tools/crmSync";
 import { captureField, createCaptureFieldTool, type HeardVerifier } from "./tools/captureField";
@@ -1207,16 +1207,20 @@ export type OutboundTextContext = {
  */
 /** The tools that do awaited external network I/O and are therefore worth
  * bounding independently of the whole-turn timeout — see withToolTimeout.
- * Deliberately excludes captureField/hangUp/transferToHuman/setDisposition/
- * setIntent/sendSms/sendDtmf/flagGuardrailEvent: all in-process, fire-and-
- * forget from the tool's own perspective, or otherwise not doing a blocking
- * network call inside execute(). */
+ * Deliberately excludes captureField/markFieldUnanswered/hangUp/
+ * transferToHuman/setIntent/sendSms/sendDtmf/flagGuardrailEvent: all
+ * in-process, fire-and-forget from the tool's own perspective, or otherwise
+ * not doing a blocking network call inside execute(). `setDisposition` is
+ * gated as of A4 (phase-a-integrity.md) — a `callback-requested` disposition
+ * now does a real `scheduled_calls` insert inside execute(), the same class
+ * of awaited I/O as bookAppointment/crmSync. */
 const TOOL_CALL_TIMEOUT_GATED = new Set<AvailableToolName>([
   "lookupInfo",
   "bookAppointment",
   "crmSync",
   "confirmCodOrder",
   "offerCartRecoveryDiscount",
+  "setDisposition",
 ]);
 
 export function buildVoiceTools(
@@ -1239,6 +1243,15 @@ export function buildVoiceTools(
    * `HeardVerifier`).
    */
   isHeardInCall?: HeardVerifier,
+  /**
+   * A4 (phase-a-integrity.md) — lets a `callback-requested` disposition
+   * actually create a `scheduled_calls` row instead of only recording the
+   * promise. Supplied only by `stream.ts`, which is the only caller with a
+   * real caller number to book against; absent for the text test-chat, the
+   * preview drawer and the synthetic harness, which keep the prior
+   * (record-only) behaviour.
+   */
+  dispositionScheduling?: DispositionSchedulingContext,
 ) {
   const baseTools = {
     ...voiceTools,
@@ -1256,6 +1269,10 @@ export function buildVoiceTools(
           markFieldUnanswered: createMarkFieldUnansweredTool(isHeardInCall),
         }
       : {}),
+    // A4: same per-call-rebuild pattern again — only rebuilt when there's a
+    // real number to book a callback against, so every other caller keeps
+    // the shared record-only instance.
+    ...(dispositionScheduling ? { setDisposition: createSetDispositionTool(dispositionScheduling) } : {}),
   };
   // Two concrete object shapes rather than an inline conditional spread or an
   // optional property. Both of those give `offerCartRecoveryDiscount` a value
@@ -1591,6 +1608,7 @@ export async function runVoiceAgentTurn({
   workflowMetadata,
   onLateToolResult,
   isHeardInCall,
+  dispositionScheduling,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -1679,6 +1697,9 @@ export async function runVoiceAgentTurn({
    * caller-role transcript, so a field the caller never stated is refused to
    * the model instead of written. Live-call-only — see buildVoiceTools. */
   isHeardInCall?: HeardVerifier;
+  /** A4: lets a `callback-requested` disposition create a `scheduled_calls`
+   * row for real. Live-call-only — see buildVoiceTools. */
+  dispositionScheduling?: DispositionSchedulingContext;
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -1752,6 +1773,7 @@ export async function runVoiceAgentTurn({
           outboundText,
           onLateToolResult,
           isHeardInCall,
+          dispositionScheduling,
         ),
         stopWhen: stepCountIs(6),
         abortSignal: combinedSignal,
@@ -1945,6 +1967,7 @@ export function runVoiceAgentGreeting({
   crmSync,
   outboundText,
   workflowMetadata,
+  dispositionScheduling,
 }: {
   persona?: string;
   onTextDelta: (delta: string) => void;
@@ -1985,6 +2008,9 @@ export function runVoiceAgentGreeting({
    * the opening line is exactly where the agent should already know whose cart
    * it's calling about. See runVoiceAgentTurn. */
   workflowMetadata?: Record<string, string | number>;
+  /** A4: see runVoiceAgentTurn. Passed through for the same reason as
+   * `crmSync`/`codOrder` — the greeting turn gets the identical tool set. */
+  dispositionScheduling?: DispositionSchedulingContext;
 }) {
   return runVoiceAgentTurn({
     history: [
@@ -2010,5 +2036,6 @@ export function runVoiceAgentGreeting({
     crmSync,
     outboundText,
     workflowMetadata,
+    dispositionScheduling,
   });
 }
