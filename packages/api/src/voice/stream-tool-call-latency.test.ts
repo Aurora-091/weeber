@@ -270,4 +270,34 @@ describe("tool call execution latency is persisted per invocation (2026-08-20)",
     const ws = await driveCallerTurn();
     expect(ws.sent.length).toBeGreaterThan(0);
   });
+
+  /**
+   * B2 (phase-b-measurement.md) regression test — this table had 0 rows in
+   * production against 24 real tool calls, and this is why: `duration_ms` is
+   * a Postgres `integer` column, but the AI SDK's `toolExecutionMs` (what
+   * `event.durationMs` carries) is a sub-millisecond float. Every insert
+   * failed with `22P02 invalid input syntax for type integer`. Verified
+   * directly against the production deployment's Railway logs from call 2
+   * (2026-08-20 17:39:32Z) — these are that call's literal duration values,
+   * not invented ones. The earlier tests in this file all happen to use
+   * whole-number durationMs, which is exactly how this shipped with unit
+   * tests passing and production silently broken (ADR-088's shape): a mock
+   * that never exercises the one input shape production actually produces.
+   */
+  it("rounds a fractional-millisecond duration to an integer before it reaches the DB", async () => {
+    mockTelemetryEvents = [
+      { toolName: "hangUp", toolCallId: "call_672116", startedAt: 1000, completedAt: 1000.4461219999939203, durationMs: 0.4461219999939203, success: true, timedOut: false },
+      { toolName: "captureField", toolCallId: "call_672083", startedAt: 2000, completedAt: 2001.8839950002729893, durationMs: 1.8839950002729893, success: true, timedOut: false },
+      { toolName: "crmSync", toolCallId: "call_672099", startedAt: 3000, completedAt: 3451.1029129996896, durationMs: 451.1029129996896, success: true, timedOut: false },
+    ];
+    await driveCallerTurn();
+
+    expect(toolCallLatencyRows).toHaveLength(3);
+    for (const row of toolCallLatencyRows) {
+      expect(Number.isInteger(row.durationMs)).toBe(true);
+    }
+    expect(toolCallLatencyRows.find((r) => r.toolCallId === "call_672116")!.durationMs).toBe(0);
+    expect(toolCallLatencyRows.find((r) => r.toolCallId === "call_672083")!.durationMs).toBe(2);
+    expect(toolCallLatencyRows.find((r) => r.toolCallId === "call_672099")!.durationMs).toBe(451);
+  });
 });

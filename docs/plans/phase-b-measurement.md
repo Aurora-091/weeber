@@ -105,6 +105,29 @@ the exclusion total.
 
 ### B2. Fix `tool_call_latency` writing zero rows
 
+**Status: shipped 2026-08-24 — root cause found via live production access (Railway + Supabase MCP),
+not simulated.** Confirmed production is running well past `dec2854` (current live deployment,
+commit `12748df8`, deployed 2026-08-20T21:12:40Z; `dec2854` itself was live from 14:43:53Z, superseded
+~17:57Z the same day — spanning call 2's window). Pulled `dec2854`'s own deploy logs directly
+(`mcp__railway__get-logs`) and found the real cause: **`duration_ms` is a Postgres `integer` column,
+but the AI SDK's `toolExecutionMs` (agent.ts's `onToolExecutionEnd`) is a sub-millisecond float.** Every
+insert since the table's introduction failed with `22P02 invalid input syntax for type integer:
+"0.4876310005784035"` — four such errors are in call 2's own deploy log, one per tool call
+(`hangUp`, `captureField` ×2, `crmSync`), each with its own literal offending float. This was never a
+missing-`.catch` problem — `persistToolCallLatency`'s `.catch` was already there and is exactly what
+logged every one of these errors; that log is how this was found. Fixed with `Math.round(event.durationMs)`
+at the write site (`stream.ts`), verified two ways: a new regression test using call 2's literal
+duration values (`stream-tool-call-latency.test.ts`), and a real `BEGIN; INSERT ...; ROLLBACK;` against
+the live production table (`mcp__supabase__execute_sql`) confirming the exact same insert that failed in
+the logs now succeeds and leaves no residual row.
+
+Also completed the "audit every void-ed persistence call in stream.ts" item: every one already has a
+`.catch` that logs, either directly at the call site (`persistToolCallLatency`, `persistLatency`,
+`resumeWorkflowAfterCall`, `runWorkflowForOutcome`, all the `guardrail_events`/`captureField`-adjacent
+inserts) or because the called function itself never rejects (`dispatchWebhook`, `sendSmsForOrg` both
+catch internally and always resolve). No changes needed there — the plan's premise that this needed
+fixing was itself the thing worth checking, and checking it turned up nothing to fix.
+
 **Where:** `packages/api/src/voice/stream.ts:481` (`persistToolCallLatency`) and its two call sites
 `:1994`, `:2131`. Table in `schema.ts`.
 

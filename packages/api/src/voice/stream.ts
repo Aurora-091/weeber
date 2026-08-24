@@ -524,7 +524,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       toolCallId: event.toolCallId,
       startedAt: new Date(event.startedAt),
       completedAt: new Date(event.completedAt),
-      durationMs: event.durationMs,
+      // B2 (phase-b-measurement.md): `duration_ms` is a Postgres `integer`
+      // column, but the AI SDK's `toolExecutionMs` (agent.ts's
+      // onToolExecutionEnd) is a sub-millisecond float — production logs
+      // show every single insert since this table's introduction (dec2854)
+      // failing with `22P02 invalid input syntax for type integer:
+      // "0.4876310005784035"`, which is why the table had 0 rows against 24
+      // real tool calls despite the write path being reached and its own
+      // `.catch` below logging every failure correctly. Not a missing
+      // catch — the catch is what surfaced this.
+      durationMs: Math.round(event.durationMs),
       success: event.success,
       timedOut: event.timedOut,
     });
