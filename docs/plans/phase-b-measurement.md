@@ -237,6 +237,42 @@ and asserts the read-back order is the utterance order.
 
 ### B5. Make health status mean something
 
+**Status: shipped 2026-08-24.** Pulled both production calls' actual `calls`/`call_latency`/
+`turn_latency` rows live (`mcp__supabase__execute_sql`) and ran them through the pre-B5
+`classifyCallHealth` mentally against the real thresholds: confirmed neither call triggers a single
+silent or degraded reason under the old logic — the stored `health_status = "healthy"` on both rows
+was not a bug in the classifier's arithmetic, the thresholds and the inputs were just wrong for what
+they were supposed to catch.
+
+Three fixes:
+
+1. **`DEAD_AIR_DEGRADED_MS`: 3000 → 1200.** The old value sat above both calls' real numbers (1985ms,
+   2753ms) despite the audit measuring them at 2.5-3.4x the target. 1200ms is not a round-number
+   tightening — it's Phase C's own committed pickup-to-first-audio target (`docs/plans/README.md`), so
+   "degraded" now means "missed the bar the project already set." `STT_CONNECT_DEGRADED_MS`: 2000 → 700,
+   the narrowest change that catches the audit's own named case (753ms) without also flagging call 1's
+   608ms, which the audit never called out.
+2. **A new `maxTurnVoiceToVoiceMs` input and `MAX_TURN_V2V_DEGRADED_MS` (3000ms) threshold.** Every
+   existing latency input to `classifyCallHealth` was call-level/first-turn only — both calls' first
+   turns looked fine (1259ms, 1585ms LLM TTFT) while a *later* turn was catastrophic (turn 11: 4031ms
+   v2v; turn 18: 4846ms v2v, the exact number the audit cites as evidence of the terminal-turn batching
+   problem A3 fixed separately). A call-level-only view structurally cannot see that turn. Wired from a
+   new running max tracked in `persistTurnLatency`.
+3. **`hadFabricatedCapture`/`hadUndeliveredOutcome` as new required inputs**, per the plan's own words:
+   "a call that fabricated a field or promised an undelivered callback is not healthy, whatever its
+   latencies." Both land in the *silent* bucket, not degraded — they're integrity defects, not pipeline
+   slowness, and the plan's framing treats them as more severe than any latency number. Wired from
+   existing per-call state: `hadFabricatedCapture` from A1/A2's `fabricated-capture` guardrail branches
+   (both `captureField` and `markFieldUnanswered`), `hadUndeliveredOutcome` from crmSync's own
+   `synced: false` output (A4 already writes the guardrail row in `tools/crmSync.ts`; this just reads
+   the same field) OR-ed with A4's existing `capturedCallbackScheduled` invariant.
+
+Verified against the real numbers as committed fixtures (not just asserted): call 1 now fails on the
+undelivered crmSync alone (it had no fabrication — the honest-capture control case); call 2 fails on
+both fabrication and undelivered outcomes, landing in `silent-failure`. Both fixtures are pulled
+verbatim from production, cited by exact column values in the test's own comments, not paraphrased from
+the audit doc.
+
 **Where:** `packages/api/src/voice/call-health.ts` (`:127`, `:183` and the thresholds around them).
 
 **How:** both production calls are `health_status = healthy` while being 2.5–3.4× off the latency bar

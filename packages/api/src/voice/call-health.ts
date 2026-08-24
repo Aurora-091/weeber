@@ -77,6 +77,32 @@ export interface CallHealthInput {
   sttReconnectCount: number;
   /** Cross-provider STT/TTS failovers mid-call. */
   providerFailoverCount: number;
+  /**
+   * B5 (phase-b-measurement.md): the worst (max) per-turn voice-to-voice
+   * latency this call actually produced, from `turnLatency` rows — distinct
+   * from `pickupToFirstAudioMs`/`llmTtftMs`/`ttsFirstByteMs` above, which are
+   * all first-turn/call-level numbers. Both production calls' first turns
+   * looked fine (call 2: 1585ms LLM TTFT) while a LATER turn was
+   * catastrophic (call 2 turn 18: 4436ms) — a call-level-only view never
+   * sees that turn at all. Undefined when no turn ever produced a
+   * measurable voiceToVoiceMs (e.g. every turn aborted before TTS produced
+   * audio).
+   */
+  maxTurnVoiceToVoiceMs?: number;
+  /**
+   * B5: whether A1/A2's provenance guard refused a fabricated capture this
+   * call — production call 2's tobacco fabrication is the case this exists
+   * for. A call that invented a fact is not healthy regardless of how fast
+   * it was.
+   */
+  hadFabricatedCapture: boolean;
+  /**
+   * B5: whether A4's undelivered-outcome guardrail fired this call — a
+   * `synced: false` CRM sync, or a `callback-requested` disposition with no
+   * `scheduled_calls` row. A call that promised something it didn't deliver
+   * is not healthy regardless of how fast it was.
+   */
+  hadUndeliveredOutcome: boolean;
 }
 
 export interface CallHealthResult {
@@ -88,17 +114,53 @@ export interface CallHealthResult {
 /**
  * Dead air (pickup -> first agent audio) at or above this is a caller-visible
  * problem worth flagging as degraded.
+ *
+ * B5 (phase-b-measurement.md): recalibrated from 3000ms. The prior value sat
+ * above BOTH production calls (1985ms, 2753ms) despite the audit measuring
+ * them at 2.5-3.4x over the actual target — a threshold set above every
+ * real sample it was supposed to catch was not a threshold, it was a no-op.
+ * 1200ms is not an arbitrary tightening: it is Phase C's own committed
+ * pickup-to-first-audio target (docs/plans/README.md's phase table,
+ * `docs/plans/phase-c-latency.md`) — "degraded" now means the same thing as
+ * "missed the bar the project already set for itself."
  */
-export const DEAD_AIR_DEGRADED_MS = 3000;
+export const DEAD_AIR_DEGRADED_MS = 1200;
 /**
  * Dead air at or above this is effectively a silent failure — most callers
  * have given up or are convinced the line is dead by the time audio arrives.
  */
 export const DEAD_AIR_SILENT_MS = 8000;
-/** LLM time-to-first-token at or above this is a degraded, sluggish turn. */
+/**
+ * LLM time-to-first-token at or above this is a degraded, sluggish turn —
+ * checked against the call-level (first-turn) value. B5: left at 2500ms
+ * deliberately, unlike the other thresholds below — neither production
+ * call's FIRST turn was actually slow (1259ms, 1585ms); their slow turns
+ * came later in the call, which is exactly why `maxTurnVoiceToVoiceMs` and
+ * `MAX_TURN_V2V_DEGRADED_MS` exist below instead of just lowering this
+ * number until it caught something it was never measuring.
+ */
 export const LLM_TTFT_DEGRADED_MS = 2500;
-/** STT connect at or above this delays the whole first turn — degraded. */
-export const STT_CONNECT_DEGRADED_MS = 2000;
+/**
+ * STT connect at or above this delays the whole first turn — degraded.
+ *
+ * B5: recalibrated from 2000ms. The audit's own finding: "STT_CONNECT_
+ * DEGRADED_MS did not fire on a 753ms connect" — i.e. 753ms was already a
+ * defect worth flagging and the threshold sat nearly 3x above it. 700ms
+ * catches call 2's 753ms connect without also flagging call 1's 608ms,
+ * which the audit never called out — this is the narrowest change that
+ * fixes the named case rather than a round-number guess.
+ */
+export const STT_CONNECT_DEGRADED_MS = 700;
+/**
+ * B5: the worst single turn's voice-to-voice latency at or above this is
+ * degraded, even when every other signal (including the call-level
+ * first-turn numbers above) looks fine. Both production calls' worst turns
+ * (4031ms, 4846ms) are close to 4x Phase C's 1100ms p50 target
+ * (docs/plans/README.md) — 3000ms sits meaningfully above that target
+ * (there is room for one genuinely slow turn in an otherwise fine call
+ * before this fires) while still catching both real cases with margin.
+ */
+export const MAX_TURN_V2V_DEGRADED_MS = 3000;
 
 /**
  * Classify a finalized call's pipeline health. Pure and deterministic.
@@ -167,6 +229,18 @@ export function classifyCallHealth(input: CallHealthInput): CallHealthResult {
       `${input.pickupToFirstAudioMs}ms of dead air before first audio (>= ${DEAD_AIR_SILENT_MS}ms)`,
     );
   }
+  // B5 (phase-b-measurement.md): "a call that fabricated a field or promised
+  // an undelivered callback is not healthy, whatever its latencies" — the
+  // plan's own words. Both are data-integrity defects, not pipeline slowness,
+  // and both are worse than any latency number: a fast call that invented a
+  // fact or silently failed to deliver its outcome is more dangerous than a
+  // slow one, because every other signal on it looks clean.
+  if (input.hadFabricatedCapture) {
+    silent.push("a captureField write was refused as fabricated — the model invented a fact this call");
+  }
+  if (input.hadUndeliveredOutcome) {
+    silent.push("an outcome this call reported (a sync or a promised callback) was not actually delivered");
+  }
 
   // ---- degraded signals -------------------------------------------------
   // Slow but present first audio.
@@ -182,6 +256,12 @@ export function classifyCallHealth(input: CallHealthInput): CallHealthResult {
   }
   if (input.sttConnectMs !== undefined && input.sttConnectMs >= STT_CONNECT_DEGRADED_MS) {
     degraded.push(`slow STT connect: ${input.sttConnectMs}ms`);
+  }
+  // B5: the call-level LLM/TTS numbers above are first-turn only and can
+  // look fine while a later turn was catastrophic — this is the signal that
+  // actually catches that shape.
+  if (input.maxTurnVoiceToVoiceMs !== undefined && input.maxTurnVoiceToVoiceMs >= MAX_TURN_V2V_DEGRADED_MS) {
+    degraded.push(`at least one turn was very slow: ${input.maxTurnVoiceToVoiceMs}ms voice-to-voice`);
   }
   if (input.sttReconnectCount > 0) {
     degraded.push(

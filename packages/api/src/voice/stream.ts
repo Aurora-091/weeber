@@ -283,6 +283,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * more than once.
    */
   let capturedCallbackScheduled: boolean | undefined;
+  // B5 (phase-b-measurement.md): health inputs classifyCallHealth needs that
+  // no existing per-call variable already tracked.
+  let maxTurnVoiceToVoiceMs: number | undefined;
+  let hadFabricatedCapture = false;
+  let hadUndeliveredCrmSync = false;
   /**
    * ADR-062: whether a recording/AI disclosure was resolved+configured for
    * this call (set in the "start" handler where disclosureText/Version are
@@ -484,6 +489,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       outputTokens?: number;
     },
   ) {
+    // B5 (phase-b-measurement.md): tracked here, unconditionally, rather
+    // than only when dbCallId is set below — this is in-memory-only and
+    // feeds classifyCallHealth at finalize, not a DB write.
+    if (metrics.voiceToVoiceMs !== undefined && metrics.voiceToVoiceMs > (maxTurnVoiceToVoiceMs ?? 0)) {
+      maxTurnVoiceToVoiceMs = metrics.voiceToVoiceMs;
+    }
     if (!dbCallId) return;
     await db
       .insert(turnLatency)
@@ -851,6 +862,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         // it is that it is unsourced. Keeping the attempt verbatim in
         // `tool_calls` is what makes a fabrication auditable after the fact.
         console.warn(`[voice] refused unheard captureField "${field}" — heard quote not in caller speech`);
+        hadFabricatedCapture = true;
         if (dbCallId) {
           void db
             .insert(guardrailEvents)
@@ -901,6 +913,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         }
       } else if (!heardInCallerSpeech(heard, callerSpeechTokens)) {
         console.warn(`[voice] refused unheard markFieldUnanswered "${field}" — heard quote not in caller speech`);
+        hadFabricatedCapture = true;
         if (dbCallId) {
           void db
             .insert(guardrailEvents)
@@ -1041,6 +1054,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       }
     }
 
+    // B5 (phase-b-measurement.md): crmSync's own tool code (tools/crmSync.ts)
+    // already wrote the undelivered-outcome guardrail row for this — this is
+    // just reading the same `synced` field off the tool's output to feed
+    // classifyCallHealth, not a second write.
+    if (name === "crmSync" && output && typeof output === "object" && (output as { synced?: unknown }).synced === false) {
+      hadUndeliveredCrmSync = true;
+    }
+
     // Intent detection — captured whenever the agent calls setIntent, independent of
     // disposition (a call can have an intent recorded well before its final outcome is known).
     if (name === "setIntent" && input && typeof input === "object" && "intent" in input) {
@@ -1140,6 +1161,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         pickupToFirstAudioMs,
         sttReconnectCount,
         providerFailoverCount,
+        maxTurnVoiceToVoiceMs,
+        hadFabricatedCapture,
+        // B5: a crmSync `synced: false` and a callback-requested disposition
+        // with no scheduled_calls row are the same class of defect (A4) —
+        // either one is enough to make this call not-healthy.
+        hadUndeliveredOutcome:
+          hadUndeliveredCrmSync || (capturedDisposition === "callback-requested" && capturedCallbackScheduled !== true),
       });
 
       // A3 (phase-a-integrity.md): whether this call's captures/unanswered-

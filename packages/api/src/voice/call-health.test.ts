@@ -24,6 +24,8 @@ function healthyCall(overrides: Partial<CallHealthInput> = {}): CallHealthInput 
     pickupToFirstAudioMs: 900,
     sttReconnectCount: 0,
     providerFailoverCount: 0,
+    hadFabricatedCapture: false,
+    hadUndeliveredOutcome: false,
     ...overrides,
   };
 }
@@ -226,6 +228,64 @@ describe("classifyCallHealth", () => {
       );
       expect(r.status).toBe("healthy");
       expect(r.reasons).toEqual([]);
+    });
+  });
+
+  /**
+   * B5 (phase-b-measurement.md) — "the two production calls' actual numbers
+   * must not classify as healthy." Both fixtures below are the real numbers,
+   * pulled directly from the production database on 2026-08-24
+   * (`mcp__supabase__execute_sql` against calls/call_latency/turn_latency/
+   * transcripts) — the same incident `docs/audits/2026-08-21-first-two-
+   * production-calls.md` describes by hand. Both rows are stored in
+   * production today with `health_status = "healthy"`, `health_reasons = []`
+   * — that stale verdict was computed by the pre-B5 thresholds/logic and is
+   * exactly what this fixes.
+   */
+  describe("the two production calls that motivated this phase", () => {
+    it("call 1 (2026-08-20 11:52 UTC) does not classify as healthy — undelivered crmSync", () => {
+      const r = classifyCallHealth({
+        finalStatus: "completed",
+        answered: true,
+        turnCount: 12, // turn_latency turn_index 0-11
+        transcriptCount: 22,
+        callerTranscriptCount: 10,
+        hadDisposition: true, // setDisposition({ disposition: "no-decision", ... })
+        sttConnectMs: 608,
+        llmTtftMs: 1259,
+        ttsFirstByteMs: 414,
+        pickupToFirstAudioMs: 1985, // audit finding 7: 2.5x the 800ms bar
+        sttReconnectCount: 0,
+        providerFailoverCount: 0,
+        maxTurnVoiceToVoiceMs: 4031, // turn_index 11
+        hadFabricatedCapture: false, // the honest-capture control call — tobacco was genuinely stated
+        hadUndeliveredOutcome: true, // crmSync returned { synced: false, message: "(not configured) ..." }
+      });
+      expect(r.status).not.toBe("healthy");
+      expect(r.reasons.some((x) => x.includes("not actually delivered"))).toBe(true);
+    });
+
+    it("call 2 (2026-08-20 17:34 UTC) does not classify as healthy — fabricated capture AND undelivered outcomes", () => {
+      const r = classifyCallHealth({
+        finalStatus: "completed",
+        answered: true,
+        turnCount: 19, // turn_latency turn_index 0-18
+        transcriptCount: 32,
+        callerTranscriptCount: 14,
+        hadDisposition: true, // setDisposition({ disposition: "callback-requested", ... })
+        sttConnectMs: 753, // the audit's own named case: STT_CONNECT_DEGRADED_MS never fired on this
+        llmTtftMs: 1585,
+        ttsFirstByteMs: 463,
+        pickupToFirstAudioMs: 2753, // audit finding 7: 3.4x the 800ms bar
+        sttReconnectCount: 0,
+        providerFailoverCount: 0,
+        maxTurnVoiceToVoiceMs: 4846, // turn_index 18 — audit finding 3's "terminal turn is the slowest turn"
+        hadFabricatedCapture: true, // audit finding 1: tobacco=no, caller never said it
+        hadUndeliveredOutcome: true, // crmSync not configured AND callback-requested with no scheduled_calls row (finding 2)
+      });
+      expect(r.status).toBe("silent-failure"); // fabrication + undelivered outcome both land in the silent bucket
+      expect(r.reasons.some((x) => x.includes("invented a fact"))).toBe(true);
+      expect(r.reasons.some((x) => x.includes("not actually delivered"))).toBe(true);
     });
   });
 });
