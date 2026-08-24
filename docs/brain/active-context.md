@@ -12,6 +12,20 @@ updated: 2026-08-24
 
 ## Current focus
 
+- **Pre-C2 review: fillers/backchannels are fully built and entirely inert in production; `tool_call_latency`
+  still writes 0 rows (2026-08-24, `docs/audits/2026-08-24-latency-vad-bargein-fillers-observability-review.md`).**
+  Code-grounded answer to a founder questionnaire on latency, VAD/endpointing, barge-in, fillers,
+  observability, and cascade-vs-S2S, asked before starting Phase C2. Two findings worth carrying forward:
+  (1) `maybePlayToolCallFiller`/`maybePlayBackchannel` are fully implemented (threshold-gated, cached-audio,
+  barge-in-interruptible, one-per-turn) but gated on `feature_flags["hybrid-audio-cache"]`, and
+  `feature_flags` has 0 rows in production — **never once executed in a real call**; the real remaining
+  gaps are tool-specific line selection and Hindi/Hinglish localization, both unbuilt. (2) `tool_call_latency`
+  (`stream.ts:483`, `persistToolCallLatency`) still writes 0 rows against real tool calls, first found in
+  the 2026-08-21 audit and unresolved — breaks both per-tool latency measurement and any future per-call
+  observability trace. VAD/endpointing and semantic-turn-detection are confirmed (again) as correctly out
+  of scope for Phase C — 26/26 production turns resolved via `speech_final`, `utterance_end` never fired.
+  No code changed by this review.
+
 - **UI Modernization & Legacy Component Migration Complete (2026-08-24).**
   - Designed, created, and unit-tested the official shadcn `Card` primitive in `packages/web/src/web/components/ui/card.tsx` with full `.theme-weeber` token binding and 4 variants (`default`, `interactive`, `flat`, `editor`).
   - Completely eradicated all native `<select>` elements (`rawSelect` dropped from 32 to **0 — at target!**) across `/dashboard` and `/app` routes (`analytics.tsx`, `broadcasts.tsx`, `support.tsx`, `workflow-editor.tsx`, `agents.tsx`, `app/agents.tsx`, `app/numbers.tsx`, `app/settings.tsx`, `NodeConfigPanel.tsx`, `setup-modal.tsx`, `FlowPreviewPanel.tsx`, `EnterpriseDialog.tsx`).
