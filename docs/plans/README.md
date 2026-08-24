@@ -89,13 +89,13 @@ weeks:
 
 ## Status
 
-**The plan was approved on 2026-08-21.** Phase A is unblocked and is the only phase that may be worked
-on until its exit gate is met.
+**The plan was approved on 2026-08-21.** Phase A's A1–A5 all shipped 2026-08-24; Phase B is unblocked
+and is the only phase that may be worked on until its own exit gate is met.
 
 | Phase | Status | Gate met |
 | --- | --- | --- |
-| A | **Approved — ready to start**, begin at A1 | — |
-| B | Blocked on A | — |
+| A | **A1–A5 shipped 2026-08-24** — see phase-a-integrity.md's Exit gate section for the one open item (`persona:gate`, pre-existing/unrelated, and the unverified production-data check) | Mostly — two named exceptions |
+| B | **Unblocked — ready to start** | — |
 | C | Blocked on B | — |
 | D | Blocked on C | — |
 | E | Blocked on D | — |

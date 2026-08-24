@@ -314,6 +314,23 @@ provided material.
 
 ## Exit gate
 
+**Run 2026-08-24, after A1–A5 all shipped.** `lint`, `typecheck` (all three packages), `packages/api`'s
+test suite (1508 pass), `knip:gate`, `design:guard`, and `contrast:gate` are all clean. `persona:gate`
+fails — but not from this phase's work: 8 personas (01–03, 04–08; none touched by A1–A5) are over their
+runtime-char budget by 36–124 chars each, and this failure was verified present on `main` *before* A2
+started (`git stash` of every A-series change, gate re-run, identical failure). The new file this phase
+added (`09-insurance-final-expense-qualifier-agent-v2.md`, A5) lands exactly on its own budget
+(12,358/12,358) — it does not contribute to the failure. Decision, made explicitly rather than by
+silently widening the budget: **treat this the same as the plan's own remote-CI carve-out below** —
+unrelated, pre-existing, out of scope for this phase — and proceed to Phase B. Trimming the 8 personas'
+authoring prose back under budget is real, separate editorial work across files this phase never
+touched, tracked here rather than done as a drive-by inside an unrelated commit.
+
+Also unverified in this run: exit-gate condition 4's "verify against the production read-only
+connection that the query returns the two existing calls as undelivered" — this session has no
+production database access. The code path is covered by `crmSync.test.ts`'s durable-row tests instead;
+the production-data check remains open.
+
 All of the following must hold. Phase B does not start until they do.
 
 ```bash
