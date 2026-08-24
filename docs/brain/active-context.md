@@ -12,6 +12,25 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Pipeline edge-case research filed against outside literature, cross-referenced to actual code
+  (2026-08-25, `docs/audits/2026-08-25-pipeline-edge-cases-research.md`).** No code changed. Four real
+  gaps found with a direct line to this product's own vertical: (1) `SILENCE_WARNING_MS`/`SILENCE_HANGUP_MS`
+  are global hardcoded constants despite the flagship `insurance-final-expense-qualifier` persona being
+  explicitly elderly-skewing — academic/industry research names adaptive-per-persona timeout as the
+  standard fix, not a tuning number; (2) `endsMidThought` (`turn-detection/heuristic.ts`) only catches
+  trailing filler words, not an incomplete dictated sequence (phone number, email, spelled name) — a
+  caller pausing mid-dictation gets cut off; (3) no tool call anywhere reads `abortSignal` or has any
+  "non-interruptible" concept, so a barge-in can orphan `bookAppointment`/`crmSync`/`sendSms` mid-flight —
+  independently confirms a gap this session already found from reading the code directly, this time named
+  by outside literature too; (4) the mandatory recording-consent disclosure is fully interruptible
+  (`agentIsSpeaking = true` set unconditionally at the top of every `speak()` call) despite being the most
+  compliance-load-bearing line in the call. Two things checked and found ALREADY handled, not gaps:
+  backchannel/barge-in are already structurally separate gates, and Hinglish code-switching already
+  routes to Deepgram's real `multi` mode (`toDeepgramNova3Language`), not a naive language-detect-then-
+  switch shim. Ranked priority list and lower-confidence items (STT-level PII redaction, inbound DTMF, ASR
+  hallucination — unverified for Deepgram specifically, the one study found is Whisper-specific) are in
+  the doc. Nothing implemented — reference for whoever picks up Phase D or a future PII pass.
+
 - **8 new production calls found (2026-08-24, org "good insurance") and read in full — two real defects
   root-caused and fixed, C4's latency question answered for real (2026-08-25,
   `docs/audits/2026-08-25-ten-calls-full-pipeline-review.md`).** `calls` went from 2 rows (2026-08-21
