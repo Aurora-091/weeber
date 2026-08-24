@@ -765,7 +765,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         if (role === "caller" && inserted) lastCallerTranscriptId = inserted.id;
         return inserted;
       })
-      .catch(() => undefined as unknown);
+      .catch((err) => {
+        // Previously swallowed with no trace at all — a call could go
+        // completely silent-failure ("caller was never transcribed") not
+        // because STT missed anything, but because every insert on this
+        // chain failed and nothing said so. Surfacing it here doesn't fix
+        // the underlying write failure, but it stops it from being invisible.
+        console.error("[voice] failed to persist transcript", { callId: callIdForInsert, role, sequence, err });
+        return undefined as unknown;
+      });
     void dispatchWebhook(webhookUrl, "call.transcript", { callSid, callId: dbCallId, role, text });
   }
 
