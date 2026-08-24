@@ -12,6 +12,13 @@ updated: 2026-08-24
 
 ## Done (works end-to-end, real-verified)
 
+- **Login-time network failures now retried and beaconed (2026-08-24).** `login.tsx`'s `withAuthRetry`
+  retries every `supabase.auth.*` call up to twice on `AuthRetryableFetchError` (network-class failure,
+  never reaches our API) instead of surfacing a wrong "invalid email or password"-shaped message. New
+  `POST /api/public/client-error` (`public-routes.ts`), best-effort/fire-and-forget/rate-limited
+  30/min-per-IP, gives login-time network failures a trace in Railway logs where previously there was
+  none — Supabase auth calls never route through this API. 3 new api tests, typecheck clean.
+
 - **Phase C1 — TTS socket held across turns instead of reopening every one (2026-08-24).**
   New `TtsSession`/`ConnectTtsSession` shape (`tts/types.ts`, `tts/index.ts`); `stream.ts` holds one
   session per call (`getOrOpenTtsSession`/`closeTtsSession`), reused turn to turn, pre-warmed at pickup

@@ -12,6 +12,22 @@ updated: 2026-08-24
 
 ## Current focus
 
+- **Login-time network failures now leave a trace, and get retried instead of misreported
+  (2026-08-24).** Supabase auth calls go straight from the browser to Supabase, never through this API,
+  so a network failure during sign-in (offline, DNS, a blocked/filtered connection) previously showed
+  the caller a generic auth error and left zero trace anywhere on our side — "nothing in Railway logs"
+  was structural, not a logging gap. `login.tsx`'s `withAuthRetry` wraps every `supabase.auth.*` call
+  site (signup, OTP verify/resend, sign-in, password reset/update): on `AuthRetryableFetchError`
+  (supabase-js's own class for a request that never got a response) it retries up to twice with a 1s
+  delay before giving up, same class of transient failure `user-shell.tsx`'s post-login `me` query
+  already retries; a real auth error (bad password, expired code) still returns immediately, never
+  retried. `describeAuthError` shows "Can't reach Weeber" for the network case instead of the wrong
+  "invalid email or password"-shaped message. New `POST /api/public/client-error` beacon
+  (`public-routes.ts`) is what the browser calls to actually leave a trace — best-effort, fire-and-forget,
+  never fails or blocks the flow it's reporting on, console-logged only (grep `[client-error]` in Railway
+  logs, no DB write — this is a debugging aid, not a queryable metric yet), rate-limited 30/min per IP
+  since it's an unauthenticated public endpoint. 3 new api tests, typecheck clean.
+
 - **Phase C1 shipped — the TTS socket is held across turns instead of reopening on every one
   (2026-08-24, `docs/plans/phase-c-latency.md`).** Audit measured `tts_socket_open_ms` at 197–274 ms on
   nearly every turn of both production calls, a straight TCP+TLS+WebSocket handshake tax on a provider

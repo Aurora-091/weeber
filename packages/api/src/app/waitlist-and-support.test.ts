@@ -173,3 +173,50 @@ describe("Public routes", () => {
     expect(res.status).toBe(201);
   });
 });
+
+// Login's Supabase calls never reach this API, so a network failure during
+// sign-in previously left no trace anywhere we could see it — this beacon
+// closes that gap (2026-08-24). See public-routes.ts's own comment on the
+// route for the full rationale.
+describe("POST /client-error", () => {
+  it("accepts a well-formed beacon and returns 202", async () => {
+    const res = await publicRoutes.request("/client-error", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.1" },
+      body: JSON.stringify({
+        kind: "auth_network_retry",
+        message: "Failed to fetch",
+        path: "/login",
+        attempt: 1,
+        exhausted: false,
+      }),
+    });
+    expect(res.status).toBe(202);
+  });
+
+  it("still returns 202 on a malformed body — best-effort, never fails the caller", async () => {
+    const res = await publicRoutes.request("/client-error", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.2" },
+      body: "not json",
+    });
+    expect(res.status).toBe(202);
+  });
+
+  it("rate-limits after 30 requests from the same IP in one window", async () => {
+    const ip = "203.0.113.3";
+    for (let i = 0; i < 30; i++) {
+      await publicRoutes.request("/client-error", {
+        method: "POST",
+        headers: { "x-forwarded-for": ip },
+        body: JSON.stringify({ kind: "auth_network_retry" }),
+      });
+    }
+    const res = await publicRoutes.request("/client-error", {
+      method: "POST",
+      headers: { "x-forwarded-for": ip },
+      body: JSON.stringify({ kind: "auth_network_retry" }),
+    });
+    expect(res.status).toBe(429);
+  });
+});

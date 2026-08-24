@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Loader as Loader2, Mail, Sparkles, ShieldCheck, Zap } from "lucide-react";
-import type { Session } from "@supabase/supabase-js";
+import { isAuthRetryableFetchError, type AuthError, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
+import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
 import { appUrl, wwwUrl } from "../../lib/domains";
@@ -19,6 +20,82 @@ type Mode = "signin" | "signup";
  *   The confirmation email carries a 6-digit code (OTP-only templates,
  *   ADR-043 — no link), verified inline on this same screen. */
 type SignupState = "idle" | "needs-confirmation";
+
+// A network-level failure (offline, DNS, a blocked/filtered connection) never
+// reaches Supabase — supabase-js reports it as AuthRetryableFetchError, not
+// the API's own error shape. "Invalid email or password" is the wrong
+// message for a request that never got a response; same distinction
+// user-shell.tsx's `me` query makes post-login via `instanceof TypeError`.
+function describeAuthError(error: AuthError): string {
+  return isAuthRetryableFetchError(error)
+    ? "Can't reach Weeber — check your connection and try again."
+    : error.message;
+}
+
+const AUTH_NETWORK_RETRY_ATTEMPTS = 2;
+const AUTH_NETWORK_RETRY_DELAY_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fire-and-forget beacon so a login-time network failure leaves a trace
+ * somewhere visible. The browser's auth calls go straight to Supabase, never
+ * through our own API, so nothing about a failure here ever reached Railway's
+ * logs before this — grep `[client-error]` there. Never throws, never blocks
+ * the retry/login flow it's reporting on.
+ */
+function reportAuthNetworkIssue(message: string, attempt: number, exhausted: boolean): void {
+  try {
+    void apiFetch("/api/public/client-error", {
+      method: "POST",
+      keepalive: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "auth_network_retry",
+        message,
+        path: window.location.pathname,
+        attempt,
+        exhausted,
+        connection: (navigator as unknown as { connection?: { effectiveType?: string } }).connection?.effectiveType ?? null,
+      }),
+    }).catch(() => {});
+  } catch {
+    // logging must never break the login flow it's reporting on
+  }
+}
+
+/**
+ * Retries a Supabase auth call when it fails with a network-class error
+ * (AuthRetryableFetchError — offline, DNS, a dropped connection mid-request)
+ * up to AUTH_NETWORK_RETRY_ATTEMPTS times, same class of transient failure
+ * the post-login `me` query already retries in user-shell.tsx. A real auth
+ * error (bad password, expired code) is returned immediately, never retried.
+ *
+ * `client` is taken as an explicit argument (not closed over) so every call
+ * site passes the already-null-checked `supabase` — `tsc -b`'s build-mode
+ * check (unlike plain `--noEmit`) does not narrow a nullable module binding
+ * captured inside a nested closure, so relying on the outer `if (!supabase)
+ * return` guard here would fail that check.
+ */
+async function withAuthRetry<R extends { error: AuthError | null }>(
+  client: SupabaseClient,
+  call: (client: SupabaseClient) => Promise<R>,
+): Promise<R> {
+  let result = await call(client);
+  let attempt = 0;
+  while (result.error && isAuthRetryableFetchError(result.error) && attempt < AUTH_NETWORK_RETRY_ATTEMPTS) {
+    attempt++;
+    reportAuthNetworkIssue(result.error.message, attempt, false);
+    await sleep(AUTH_NETWORK_RETRY_DELAY_MS);
+    result = await call(client);
+  }
+  if (result.error && isAuthRetryableFetchError(result.error)) {
+    reportAuthNetworkIssue(result.error.message, attempt, true);
+  }
+  return result;
+}
 
 /**
  * Hands a freshly-materialized session from weeber.ai off to app.weeber.ai.
@@ -169,10 +246,10 @@ export function LoginPage() {
     setError(null);
 
     if (mode === "signin") {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error: authError } = await withAuthRetry(supabase, (c) => c.auth.signInWithPassword({ email, password }));
       setPending(false);
       if (authError) {
-        setError(authError.message);
+        setError(describeAuthError(authError));
         return;
       }
       if (data.session) handOffToApp(data.session);
@@ -183,10 +260,10 @@ export function LoginPage() {
     // confirmation is off for this project. When confirmation is required,
     // `data.session` is null and no error is raised either — that's the
     // signal to show the confirmation step, not a failure.
-    const { data, error: authError } = await supabase.auth.signUp({ email, password });
+    const { data, error: authError } = await withAuthRetry(supabase, (c) => c.auth.signUp({ email, password }));
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     if (data.session) {
@@ -201,14 +278,16 @@ export function LoginPage() {
     if (!supabase || !otpCode.trim()) return;
     setPending(true);
     setError(null);
-    const { data, error: authError } = await supabase.auth.verifyOtp({
-      email,
-      token: otpCode.trim(),
-      type: "signup",
-    });
+    const { data, error: authError } = await withAuthRetry(supabase, (c) =>
+      c.auth.verifyOtp({
+        email,
+        token: otpCode.trim(),
+        type: "signup",
+      }),
+    );
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     if (data.session) handOffToApp(data.session);
@@ -217,9 +296,9 @@ export function LoginPage() {
   async function resendConfirmation() {
     if (!supabase) return;
     setResendState("sending");
-    const { error: authError } = await supabase.auth.resend({ type: "signup", email });
+    const { error: authError } = await withAuthRetry(supabase, (c) => c.auth.resend({ type: "signup", email }));
     setResendState("sent");
-    if (authError) setError(authError.message);
+    if (authError) setError(describeAuthError(authError));
   }
 
   // Passwordless sign-in, step 1: email the 6-digit code. OTP-only on
@@ -230,10 +309,10 @@ export function LoginPage() {
     if (!supabase) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    const { error: authError } = await withAuthRetry(supabase, (c) => c.auth.signInWithOtp({ email }));
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     setOtpCode("");
@@ -249,14 +328,16 @@ export function LoginPage() {
     if (!supabase || otpCode.trim().length < 6) return;
     setPending(true);
     setError(null);
-    const { data, error: authError } = await supabase.auth.verifyOtp({
-      email,
-      token: otpCode.trim(),
-      type: "email",
-    });
+    const { data, error: authError } = await withAuthRetry(supabase, (c) =>
+      c.auth.verifyOtp({
+        email,
+        token: otpCode.trim(),
+        type: "email",
+      }),
+    );
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     if (data.session) handOffToApp(data.session);
@@ -265,9 +346,9 @@ export function LoginPage() {
   async function resendSigninCode() {
     if (!supabase) return;
     setResendState("sending");
-    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    const { error: authError } = await withAuthRetry(supabase, (c) => c.auth.signInWithOtp({ email }));
     setResendState("sent");
-    if (authError) setError(authError.message);
+    if (authError) setError(describeAuthError(authError));
   }
 
   async function submitForgotPassword(e: React.FormEvent) {
@@ -275,10 +356,10 @@ export function LoginPage() {
     if (!supabase || !email.trim()) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.resetPasswordForEmail(email);
+    const { error: authError } = await withAuthRetry(supabase, (c) => c.auth.resetPasswordForEmail(email));
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     setForgotSent(true);
@@ -289,14 +370,16 @@ export function LoginPage() {
     if (!supabase || forgotCode.trim().length < 6) return;
     setPending(true);
     setError(null);
-    const { error: authError } = await supabase.auth.verifyOtp({
-      email,
-      token: forgotCode.trim(),
-      type: "recovery",
-    });
+    const { error: authError } = await withAuthRetry(supabase, (c) =>
+      c.auth.verifyOtp({
+        email,
+        token: forgotCode.trim(),
+        type: "recovery",
+      }),
+    );
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     setForgotVerified(true);
@@ -315,10 +398,10 @@ export function LoginPage() {
     }
     setPending(true);
     setError(null);
-    const { data, error: authError } = await supabase.auth.updateUser({ password: newPassword });
+    const { data, error: authError } = await withAuthRetry(supabase, (c) => c.auth.updateUser({ password: newPassword }));
     setPending(false);
     if (authError) {
-      setError(authError.message);
+      setError(describeAuthError(authError));
       return;
     }
     setResetDone(true);

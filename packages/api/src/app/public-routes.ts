@@ -25,6 +25,16 @@ import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
 // key-authed ingest path. Process-local, same tradeoff as the other limiters.
 const hostedFormLimiter = makeFixedWindowLimiter(60_000, 10);
 
+// Per-IP limiter for the client-error beacon below — unauthenticated, so it
+// needs its own abuse gate; generous enough that a real retry storm during
+// genuine connectivity trouble isn't shed, tight enough that it can't be used
+// to spam Railway's logs.
+const clientErrorLimiter = makeFixedWindowLimiter(60_000, 30);
+
+const CLIENT_ERROR_KIND_RE = /^[a-z][a-z0-9_]{2,63}$/;
+const MAX_CLIENT_ERROR_MESSAGE_LEN = 500;
+const MAX_CLIENT_ERROR_PATH_LEN = 256;
+
 function unsubscribePageHtml(message: string, isError = false): string {
   const color = isError ? "#dc2626" : "#0a0a0a";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Waitlist — Weeber</title></head>
@@ -231,6 +241,36 @@ export const publicRoutes = new Hono()
       source: "form",
     });
     return c.json({ ok: true, submitted: true, leadId: id, created }, created ? 201 : 200);
+  })
+
+  // Client-side auth/network failure beacon (2026-08-24). Login's Supabase
+  // calls go straight from the browser to Supabase, never through this API —
+  // so a network failure during sign-in previously left zero trace anywhere
+  // we could see it ("nothing on Railway" was structurally true, not a
+  // logging gap). Best-effort and console-logged (grep `[client-error]` in
+  // Railway logs); never fails the caller and never blocks the login flow
+  // it's reporting on. No DB write — this is a debugging aid, not a metric
+  // that needs querying yet.
+  .post("/client-error", async (c) => {
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    if (clientErrorLimiter(ip)) return c.body(null, 429);
+
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.body(null, 202);
+    const { kind, message, path, attempt, exhausted, connection } = body as Record<string, unknown>;
+
+    console.warn("[client-error]", {
+      kind: typeof kind === "string" && CLIENT_ERROR_KIND_RE.test(kind) ? kind : "unknown",
+      message: typeof message === "string" ? message.slice(0, MAX_CLIENT_ERROR_MESSAGE_LEN) : null,
+      path: typeof path === "string" ? path.slice(0, MAX_CLIENT_ERROR_PATH_LEN) : null,
+      attempt: typeof attempt === "number" ? attempt : null,
+      exhausted: Boolean(exhausted),
+      connection: typeof connection === "string" ? connection.slice(0, 32) : null,
+      ip,
+      userAgent: c.req.header("user-agent")?.slice(0, 200) ?? null,
+    });
+
+    return c.body(null, 202);
   })
 
   .get("/tracking-config", async (c) => {
