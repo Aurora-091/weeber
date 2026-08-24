@@ -426,7 +426,15 @@
   --weeber-paper-2: oklch(0.995 0.001 80); /* elevated card surface — brighter than bg */
   --weeber-ink: oklch(0.14 0 0);
   --weeber-ink-soft: oklch(0.46 0 0);
-  --weeber-border: oklch(0.88 0.004 80);   /* warm-tinted border */
+  --weeber-border: oklch(0.88 0.004 80);   /* warm-tinted border — decorative (card/section edges), WCAG 1.4.11 non-text-contrast does not apply here */
+  /* Design audit Phase 1 (2026-08-25, tools/ui-guard/tokens.json's knownFailures) — a form CONTROL's
+     boundary (input/select/textarea) IS a 1.4.11 non-text UI component and needs 3:1, unlike a
+     decorative card border. --weeber-border measured 1.24-1.42:1 here — "no amount of chroma:0 in the
+     stylesheet overrides it" was the wrong instinct; the actual bug was reusing a decorative-strength
+     border on an accessibility-mandated one. Split out rather than darkening --weeber-border itself,
+     which would also darken every card/section edge in the product for a requirement that doesn't apply
+     to them. */
+  --weeber-input-border: oklch(0.62 0.006 80);
 
   /* Accent */
   --weeber-accent: oklch(0.14 0 0);
@@ -442,7 +450,11 @@
   /* Status */
   --weeber-success: oklch(0.52 0.14 150);
   --weeber-success-soft: oklch(0.93 0.05 150);
-  --weeber-warning: oklch(0.62 0.15 80);
+  /* Design audit Phase 1: darkened from 0.62 — the swatch/dot lightness read fine as a small fill but
+     failed 4.5:1 as body text (3.54:1 measured); --weeber-warning is used as both, so this darkens the
+     one shared token rather than forking a text-only variant, matching how --weeber-success already
+     works at a similar lightness for both roles. */
+  --weeber-warning: oklch(0.5 0.15 80);
   --weeber-warning-soft: oklch(0.93 0.07 80);
   --weeber-error: oklch(0.55 0.2 25);
   --weeber-error-soft: oklch(0.93 0.06 25);
@@ -463,7 +475,7 @@
   --accent-foreground: var(--weeber-ink);
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
-  --input: var(--weeber-border);
+  --input: var(--weeber-input-border);
   --ring: oklch(0.55 0 0);
   --sidebar: oklch(0.955 0.004 80); /* warm sidebar bg — clearly recessed vs paper (0.985) and cards (0.995) */
   --sidebar-foreground: var(--weeber-ink);
@@ -698,6 +710,9 @@
   --weeber-ink: oklch(0.93 0 0);
   --weeber-ink-soft: oklch(0.71 0.004 80); /* was 0.62 — too dim against near-black; still secondary vs 0.93 */
   --weeber-border: oklch(0.32 0.006 80);   /* was 0.27 — clearer card/section edges */
+  /* Design audit Phase 1 (2026-08-25) — see the light block's matching comment. Dark mode needs a
+     LIGHTER (not darker) input border than --weeber-border to clear 3:1 against a near-black page. */
+  --weeber-input-border: oklch(0.58 0.006 80);
 
   --weeber-accent: oklch(0.93 0 0);
   --weeber-accent-soft: oklch(0.22 0.003 240);
@@ -713,7 +728,10 @@
   --weeber-success-soft: oklch(0.25 0.06 150);
   --weeber-warning: oklch(0.75 0.15 80);
   --weeber-warning-soft: oklch(0.28 0.07 80);
-  --weeber-error: oklch(0.62 0.2 25);
+  /* Design audit Phase 1: lightened from 0.62 — passed on page (4.96:1) but failed on the lighter
+     card surface (4.26:1, floor 4.5). Card is the more common place error text actually appears
+     (form validation, inline messages), so tuning to clear both takes priority over the page number. */
+  --weeber-error: oklch(0.68 0.19 25);
   --weeber-error-soft: oklch(0.26 0.07 25);
 
   --background: var(--weeber-paper);
@@ -732,8 +750,10 @@
   --accent-foreground: var(--weeber-ink);
   --destructive: var(--weeber-error);
   --border: var(--weeber-border);
-  --input: var(--weeber-border);
-  --ring: oklch(0.5 0 0);
+  --input: var(--weeber-input-border);
+  /* Design audit Phase 1: nudged from 0.5 — passed on page (3.32:1) and sidebar (3.43:1) but failed
+     on card (2.85:1, floor 3:1), the most common surface a focused control actually sits on. */
+  --ring: oklch(0.58 0 0);
   --sidebar: oklch(0.1 0.003 240);
   --sidebar-foreground: var(--weeber-ink);
   --sidebar-primary: var(--weeber-accent);

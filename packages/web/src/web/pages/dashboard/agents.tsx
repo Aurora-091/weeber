@@ -8,6 +8,7 @@ import { useSelectedOrgId } from "../../lib/org-id";
 import { Switch } from "../../components/ui/switch";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { Card } from "../../components/ui/card";
 import {
   Select,
   SelectContent,
@@ -126,11 +127,11 @@ function SyntheticTestPanel({ orgId, templateKey, form }: { orgId: string; templ
                   </li>
                 ))}
               </ul>
-              <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 space-y-1 text-xs">
+              <Card variant="flat" className="block max-h-48 overflow-y-auto bg-muted/30 p-2 space-y-1 text-xs">
                 {result.transcript.map((t, i) => (
                   <p key={i}><span className="font-medium">{t.role === "caller" ? "Caller" : "Agent"}:</span> {t.text}</p>
                 ))}
-              </div>
+              </Card>
             </div>
           )}
         </div>
@@ -327,10 +328,10 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
           <VoicePicker provider={form.voiceProvider} value={form.voiceId} language={form.language} onChange={(v) => set("voiceId", v)} scope="admin" previewText="Hi, this is Weeber. I can help with bookings, cart recovery, and follow-ups." />
         </div>
         <div className="flex items-end gap-2">
-          <button type="button" onClick={playPreview} disabled={previewState === "loading"} className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50">
+          <Button type="button" variant="outline" size="sm" onClick={playPreview} disabled={previewState === "loading"}>
             {previewState === "loading" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
             Preview
-          </button>
+          </Button>
           {previewUrl && (
             // eslint-disable-next-line jsx-a11y/media-has-caption
             <audio controls src={previewUrl} className="h-9" aria-label="Voice preview playback" />
@@ -467,7 +468,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               </div>
             </div>
             {form.llmProvider === "groq" && form.language.trim().toLowerCase() === "hi" && (
-              <div className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
+              <Card variant="flat" className="border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
                 <p className="text-foreground">
                   <span className="font-medium">Groq + Hindi — not yet live-verified.</span>{" "}
                   Llama 3.3 70B officially supports Hindi, but only on formal-language benchmarks, not
@@ -477,7 +478,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                   until this has been tested the same way; Groq is a strong pick for English-language
                   agents specifically.
                 </p>
-              </div>
+              </Card>
             )}
 
             <SectionDivider>Cross-provider failover</SectionDivider>
@@ -519,7 +520,7 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               const matchesRecommended = recommended && form.sttProvider === recommended.sttProvider && form.voiceProvider === recommended.voiceProvider;
               if (!recommended || matchesRecommended) return null;
               return (
-                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
+                <Card variant="flat" className="border-primary/30 bg-primary/5 px-3 py-2.5 text-xs">
                   <p className="text-foreground">
                     <span className="font-medium">Recommended for Hindi/Hinglish:</span> ElevenLabs Scribe (STT) +
                     ElevenLabs (voice) — live-tested to keep English words in Latin script mid-sentence instead of
@@ -530,17 +531,19 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                     tier — roughly 3-4x the per-minute cost of Cartesia/Sarvam ({TTS_COST_TIERS.elevenlabs.note}). Confirm
                     this org's plan accounts for it before enabling on a high-volume agent.
                   </p>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       set("sttProvider", recommended.sttProvider);
                       set("voiceProvider", recommended.voiceProvider);
                     }}
-                    className="mt-1.5 inline-flex items-center rounded-md border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                    className="mt-1.5 h-auto border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
                   >
                     Use recommended (ElevenLabs)
-                  </button>
-                </div>
+                  </Button>
+                </Card>
               );
             })()}
           </div>

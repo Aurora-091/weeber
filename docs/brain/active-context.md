@@ -12,6 +12,31 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Design audit Phase 1 shipped — the "looks poorly worked" complaint traced to broken tokens, not the
+  shadcn conversion itself; monochrome direction confirmed, not revisited (2026-08-25, `.theme-weeber` in
+  `packages/web/src/web/styles.css`).** User's own framing was exactly right: converting `<select>`/
+  `<button>` to shadcn fixed component correctness but never touched the underlying design tokens those
+  components render with. Found via `contrast:gate` (already run earlier this session) that
+  `tools/ui-guard/tokens.json`'s 9 declared-known contrast failures were real, systemic, and its own "why"
+  notes already diagnosed the root cause: `--input` was aliased straight to the same soft `--weeber-border`
+  used for decorative card/section edges (1.24-1.57:1 measured, need 3:1 — "affects every field on ~40
+  pages" per the tool's own note). Fixed by **splitting** a new `--weeber-input-border` token from
+  `--weeber-border` rather than darkening the shared one — WCAG 1.4.11 non-text-contrast applies to a form
+  control's boundary, not to a decorative card edge, so darkening the shared token would have fixed
+  accessibility at the cost of darkening every card border in the product for a requirement that doesn't
+  apply to them. Also retuned `--weeber-warning` (light), `--weeber-error` (dark), and `--ring` (dark) —
+  all now measured, not guessed (`bun run contrast:gate --strict` iterated to exact passing values, not
+  hand-computed). **42/42 pairs now pass; `knownFailures` pruned 9→0 via `--update`.** Second half of
+  Phase 1: finished the Agent-page portion of the `<Card>`/`transition-all` migration `design:guard` was
+  already tracking as incomplete — `inlineCardClone` 40→38, `transitionAll` 20→16, `rawButton` 87→84 (3
+  raw `<button>`s converted to the real `Button` component, which also cleared their inlineCardClone
+  false-matches — the metric is a text-pattern match, not JSX-aware, so this only works when the override
+  className drops the now-redundant `rounded-*` token the primitive already supplies). Budget ratcheted
+  down via `design:guard --update` to lock in the gains. **User explicitly confirmed keeping the
+  monochrome design direction** (ADR-039) — the zero-accent-color question from the audit is closed, not
+  revisited. Typecheck/lint/build/knip:gate/contrast:gate/design:guard/111 web tests all clean.
+  `docs/decisions/adr-032-...md`/ADR-039/ADR-044 describe the system this extends, not supersedes.
+
 - **Fish Audio added as a fifth TTS provider, on request — unverified against a live account
   (2026-08-25, `voice/tts/fish.ts`,
   `docs/audits/2026-08-25-provider-model-currency-research.md`'s "Update" section).** New adapter +

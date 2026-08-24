@@ -9,6 +9,7 @@ import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import { Switch } from "../../components/ui/switch";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { Card } from "../../components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
 import { VoicePicker } from "../../components/voice/VoicePicker";
@@ -514,7 +515,7 @@ function VoiceTab({ row, form, set }: TabProps) {
         />
       </div>
       {recommended && !matchesRecommended && (
-        <div className="rounded-lg border border-primary/20 border-l-2 border-l-primary bg-primary/5 px-4 py-3 text-xs">
+        <Card variant="flat" className="border-primary/20 border-l-2 border-l-primary bg-primary/5 px-4 py-3 text-xs">
           <div className="flex items-start gap-2.5">
             <Info className="size-4 mt-0.5 shrink-0 text-primary" />
             <div>
@@ -530,19 +531,21 @@ function VoiceTab({ row, form, set }: TabProps) {
                 use up a plan's included minutes noticeably faster; worth confirming it's accounted for before turning
                 it on for a high-volume agent.
               </p>
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   set("sttProvider", recommended.sttProvider);
                   set("voiceProvider", recommended.voiceProvider);
                 }}
-                className="mt-2 inline-flex items-center rounded-lg border border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors duration-150"
+                className="mt-2 h-auto border-primary/40 bg-background px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
               >
                 Use recommended (ElevenLabs)
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
       )}
       <div className="border-t border-border/50 pt-6">
         <label className={labelCls}>Voice</label>
@@ -655,7 +658,7 @@ export function ToolsGuardrailsTab({ row, form, set, orgTransferNumber }: TabPro
                         // appears in call logs and API payloads, so hiding it
                         // outright would break the trail from UI to timeline.
                         title={name}
-                        className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-150 select-none ${
+                        className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors duration-150 select-none ${
                           disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"
                         } ${
                           checked
@@ -853,7 +856,7 @@ function CallingModelTab({ row, form, set }: TabProps) {
           </div>
         </div>
         {form.llmProvider === "groq" && ["hi", "hinglish"].includes(form.language.trim().toLowerCase()) && (
-          <div className="mt-3 rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
+          <Card variant="flat" className="mt-3 border-warning/30 bg-warning-soft px-3 py-2.5 text-xs">
             <p className="text-foreground">
               <span className="font-medium">Groq + Hindi/Hinglish — not yet live-verified for this platform.</span>{" "}
               Groq's fastest model (Llama 3.3 70B) officially supports Hindi, but that's tested on
@@ -864,7 +867,7 @@ function CallingModelTab({ row, form, set }: TabProps) {
               quality here has been tested the same way — Groq is a strong pick for English-language
               agents specifically, where this risk doesn't apply.
             </p>
-          </div>
+          </Card>
         )}
       </div>
 
@@ -1049,7 +1052,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
             </Select>
           )}
           <PreviewButton onClick={() => setDrawerOpen(true)} />
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-all duration-150">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-[filter] duration-150">
             {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
             {!dirty && save.isSuccess ? "Saved" : "Save changes"}
           </Button>
@@ -1058,33 +1061,33 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
 
       {/* Readiness — why an agent may not actually be running even when toggled on. */}
       {readiness.state === "paused" ? (
-        <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+        <Card variant="flat" className="flex flex-row items-start gap-2.5 bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
           <p>
             <span className="font-medium text-foreground/80">Paused.</span> This agent won't place or receive any
             calls until you turn it on with the toggle above.
           </p>
-        </div>
+        </Card>
       ) : readiness.state === "needs-number" ? (
         // Semantic warning tokens, not raw Tailwind `amber-*`. This banner used
         // to hardcode dark-mode-only values (`text-amber-200/90` on
         // `bg-amber-500/10`), which rendered as near-white text on a pale
         // background in the light theme — effectively invisible in the mode
         // most merchants use. Found 2026-08-01 while verifying Phase III.
-        <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-xs">
+        <Card variant="flat" className="flex flex-row items-start gap-2.5 border-warning/30 bg-warning-soft px-4 py-3 text-xs">
           <PhoneCall className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p className="text-foreground/80">
             <span className="font-medium text-foreground">Live, but no phone number to call from.</span> Assign a
             caller ID on the <button type="button" onClick={() => setTab("calling")} className="underline underline-offset-2 hover:text-foreground">Calling &amp; Model</button> tab
             (or buy one on the Phone Numbers page) — until then this agent can't actually place calls.
           </p>
-        </div>
+        </Card>
       ) : readiness.state === "degraded" ? (
         // ADR-105: the backend drops `transferToHuman` from the tool set when the
         // org has no transfer number, so the agent runs a full call and then has
         // nowhere to send a qualified lead. It is not a refusal and not an error,
         // which is why it needs its own banner rather than a toast at call time.
-        <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-xs">
+        <Card variant="flat" className="flex flex-row items-start gap-2.5 border-warning/30 bg-warning-soft px-4 py-3 text-xs">
           <PhoneCall className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p className="text-foreground/80">
             <span className="font-medium text-foreground">Live, but it can't hand anyone over.</span>{" "}
@@ -1095,7 +1098,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
             or switch the ability off on the Tools &amp; Guardrails tab so the agent stops implying a
             handover it can't do.
           </p>
-        </div>
+        </Card>
       ) : null}
 
       <PreviewDrawer
@@ -1113,7 +1116,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="grid w-full grid-cols-2 @2xl:grid-cols-4 rounded-full bg-muted/40 p-1 h-auto">
           {TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key} className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all duration-200">
+            <TabsTrigger key={t.key} value={t.key} className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm transition-[background-color,box-shadow] duration-200">
               <t.icon className="size-3.5" />
               {t.label}
             </TabsTrigger>
@@ -1131,7 +1134,7 @@ function AgentEditor({ row, allRows }: { row: AgentConfigRow; allRows: AgentConf
       {/* Bottom save, mirrored for long tab content so you don't have to
        * scroll back up — same mutation/state as the header's button. */}
       <div className="flex items-center justify-end border-t border-border/60 pt-6">
-        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-all duration-150">
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty} size="sm" className="h-9 rounded-lg shadow-sm hover:brightness-110 transition-[filter] duration-150">
           {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
           {!dirty && save.isSuccess ? "Saved" : "Save changes"}
         </Button>

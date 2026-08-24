@@ -24,7 +24,7 @@
   "scanRoot": "packages/web/src/web",
   "budget": {
     "rawButton": {
-      "limit": 87,
+      "limit": 84,
       "target": 10,
       "why": "Raw <button> bypasses ui/button: loses focus-visible ring, disabled semantics, size scale and the Phase A no-greyed-primary invariant. Audit §C.",
       "phase": "C7"
@@ -60,13 +60,13 @@
       "phase": "C1"
     },
     "transitionAll": {
-      "limit": 20,
+      "limit": 16,
       "target": 0,
       "why": "transition-all animates layout-affecting properties and forces reflow. Name the properties, and animate transform/opacity where possible.",
       "phase": "F4"
     },
     "inlineCardClone": {
-      "limit": 40,
+      "limit": 38,
       "target": 5,
       "why": "Files hand-rolling a card as rounded-*+border+bg-* instead of using the card primitive. Count is FILES, not occurrences. Was recorded as 50 because the original ripgrep call passed `-g '!components/ui/**'` — a glob containing a slash is anchored to the search root, so ripgrep silently never applied it and counted dialog/input/select/textarea.tsx as clones of a card. Ratcheted DOWN to the real excluded count when the counter stopped shelling out to rg. rawButton/rawSelect were unaffected: components/ui/ contains zero `<button`/`<select` matches either way.",
       "phase": "C1"

@@ -12,6 +12,17 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Design audit Phase 1 — broken contrast tokens fixed, Agent-page card/button migration finished
+  (2026-08-25).** `--input` was aliased to the same soft `--weeber-border` used for decorative card edges
+  (1.24-1.57:1 measured, need 3:1 for a form control per WCAG 1.4.11) — this, not the earlier shadcn
+  conversion, was the real source of the "looks poorly worked" complaint. Fixed by splitting a dedicated
+  `--weeber-input-border` token rather than darkening the shared one (which would have darkened every card
+  border for a requirement that doesn't apply to them); also retuned `--weeber-warning`/`--weeber-error`/
+  `--ring` to real measured values. `contrast:gate`: 9 known failures → 0, 42/42 pairs pass. Finished the
+  Agent-page portion of the already-tracked `<Card>`/button migration: `inlineCardClone` 40→38,
+  `transitionAll` 20→16, `rawButton` 87→84. Monochrome design direction (ADR-039) confirmed by the user,
+  not revisited. All gates clean. See `active-context.md` for full detail.
+
 - **Two production defects found and fixed via a full 10-call pipeline read (2026-08-25).** `calls` had
   grown from 2 to 10 rows since the last audit read it — a new org's 8 calls hadn't been looked at.
   Found: (1) a caller self-correction split across two STT `speech_final` events, with the first turn
