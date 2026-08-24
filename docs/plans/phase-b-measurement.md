@@ -49,6 +49,22 @@ acceptance test for the next phase.
 
 ### B1. One command that prints the latency distribution
 
+**Status: shipped 2026-08-24.** `voice/latency-report.ts` (pure aggregation: `computeStats`,
+`partitionByAdr107Cutover`, `computeV2vDecomposition`, `summarizeGuardrailEvents`,
+`summarizeCaptureTiming`, `summarizeByOrg`) plus `scripts/latency-report.ts` (the DB-querying CLI),
+wired as the root `latency:report` script. Covers every item in "How" below, including the A3
+terminal-turn-capture ratio (item 4) — recomputed from `capturedState`'s per-entry `turn` field against
+a caller-turn count derived by counting `transcripts` rows per call, since A3 deliberately only ever
+logs that ratio per call rather than persisting it (see phase-a-integrity.md's A3 status note).
+
+**Unverified in this session:** exit-gate condition 1 ("reproduces the audit's headline numbers against
+production") — this environment has no `DATABASE_URL`/production database access, so the tool has been
+exercised only via its pure-function unit tests (`latency-report.test.ts`, 16 cases, including the
+even-length-set p50 pin and the pre-cutover-exclusion case the plan's own test spec asks for) plus a
+typecheck pass on the CLI script. Running `bun run latency:report` against the real database and
+confirming it reproduces the audit's numbers remains open, same class of gap as A4's exit-gate condition
+4.
+
 **Where:**
 
 - New: `packages/api/src/voice/latency-report.ts` — the aggregation, exported as functions so it is

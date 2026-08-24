@@ -29,7 +29,8 @@
     "audit:daily": "bun tools/sentinel/daily-audit.ts",
     "knip": "bunx knip-bun --no-progress",
     "knip:gate": "bun tools/dead-code/knip-gate.ts",
-    "persona:gate": "bun tools/persona/persona-gate.ts"
+    "persona:gate": "bun tools/persona/persona-gate.ts",
+    "latency:report": "cd packages/api && bun run scripts/latency-report.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
