@@ -12,6 +12,15 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **User reports the Railway deploy approval is done (2026-08-25); not yet independently confirmed by a
+  live call.** As of the last Supabase check this session, the most recent row in `calls` still started
+  `2026-08-25 10:04 UTC` — well before this session's Phase C/D/backchannel pushes — so no post-deploy call
+  has landed yet to actually verify the exit-gate live-measurement conditions. Once a real call lands,
+  re-run `latency:report` and reconcile against the pre-deploy baseline in `phase-c-latency.md` before
+  trusting either phase's exit gate. Following the approval, did a 3-track optimization/research pass (see
+  `## Done` in `progress.md`) — 3 dated audits plus 3 shipped quick-win fixes (tool-call filler pre-warm,
+  merged filler/backchannel helper, single-scrub `composeTurnSystemPrompt`). Not deployed.
+
 - **Phase C and Phase D both code-complete (2026-08-25); both still pending the same manual deploy
   approval before either exit gate can be evaluated.** Phase C's 3 commits and Phase D's D1-D8 (8 commits),
   plus one follow-up commit flipping `BACKCHANNEL_FLAG` to default-on (same opt-out pattern as D4's

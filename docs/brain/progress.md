@@ -12,6 +12,34 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Post-Railway-approval optimization pass: 3 research audits + 3 quick-win fixes shipped (2026-08-25).**
+  At the user's request, three parallel research forks produced dated audits: `docs/audits/2026-08-25-
+  provider-currency-deep-dive.md` (Deepgram Flux worth an A/B test but a multi-day migration, no
+  `smart_format` equivalent found; Cartesia Sonic-3.6's filler-insertion mechanism is undocumented
+  everywhere and needs a hands-on test; Groq's `Llama-3-Groq-70B-Tool-Use` confirmed **gone** from Groq's
+  catalog — that prior recommendation is dead, `gpt-oss-120b` is a fresh candidate if ADR-109 ever
+  activates), `docs/audits/2026-08-25-fresh-sota-sweep.md` (barge-in has no acoustic confidence signal —
+  2026 practice uses learned classifiers/VAD targeting <2% false-barge-in rate; recommends measuring our
+  actual rate before building; cost benchmarks confirm the stack is already near price floor;
+  speech-to-speech production-readiness has no new evidence beyond the existing 2026-08-16 audit), and
+  `docs/audits/2026-08-25-code-perf-simplification-audit.md` (3 findings, all shipped — see below). No
+  dead code found from this session's own C1-C4/D1-D8 layering; `knip:gate` confirms 0 new findings.
+  **Shipped from the code-perf audit:** (1) tool-call filler lines now pre-warm at call start, mirroring
+  the backchannel warm-up — previously every call's first slow tool call played silent dead air since the
+  filler cache only warmed lazily on first trigger; (2) `maybePlayToolCallFiller`/`maybePlayBackchannel`
+  merged into one shared `playOrWarmCachedLine` helper — they'd grown near-identical independently from
+  two separate flag flips hours apart; (3) `composeTurnSystemPrompt` now returns its already-scrubbed
+  `stablePrefix` instead of the caller re-scrubbing it a second time per turn just to hash it — removes a
+  literal duplicate regex scan every turn while keeping composeTurnSystemPrompt as the sole function that
+  decides how the prefix gets scrubbed. (Full cross-turn memoization — computing the scrub/hash once per
+  call instead of once per turn — was assessed and deliberately not done: the audit itself confirms this
+  is sub-millisecond, not latency-critical, and doing it properly means threading new call-scoped state
+  across the stream.ts/agent.ts boundary for a non-issue; not worth the added surface area.)
+  `stream-tool-call-filler.test.ts` updated (a stale doc comment/test claiming "the first trigger only
+  warms" no longer described reality post-fix; replaced with a test proving the first trigger now also
+  forwards audio). 1643/1643 api tests pass, typecheck/lint/knip:gate/design:guard/contrast:gate all
+  clean. Not deployed.
+
 - **Backchannels flipped to default-on, same D4 opt-out pattern (2026-08-25, at the user's explicit
   direction, follow-up to D4).** `stream.ts`'s `backchannelsEnabled` now reads
   `noiseFilterFlags[BACKCHANNEL_FLAG] !== false` (was `=== true`) — identical reasoning to D4's

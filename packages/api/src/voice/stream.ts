@@ -1722,6 +1722,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     setCachedTtsAudio(provider, voiceId, languageOverride, text, chunks);
   }
 
+  /**
+   * Perf audit (2026-08-25, docs/audits/2026-08-25-code-perf-simplification-
+   * audit.md finding 3): the shared body maybePlayToolCallFiller and
+   * maybePlayBackchannel used to duplicate — pick a random line, resolve the
+   * current TTS voice, look up cached audio, forward-or-warm. They grew that
+   * shape independently from two separate flag-default flips (D4, then
+   * backchannels) landing hours apart. Callers own their own gating (the
+   * flag check for filler, `shouldBackchannel` for backchannel) before
+   * calling this — this only renders/warms the clip.
+   */
+  function playOrWarmCachedLine(ws: Sendable, lines: readonly string[], logLabel: string) {
+    if (ended || !streamSid) return;
+    const text = lines[Math.floor(Math.random() * lines.length)];
+    const { provider: resolvedProvider, voiceId: resolvedVoiceId } = currentTtsVoice();
+    const cached = getCachedTtsAudio(resolvedProvider, resolvedVoiceId, languageOverride, text);
+    if (!cached) {
+      // Not warmed yet — skip this one and warm it for next time rather than
+      // stalling the caller with a live synth. Both filler and backchannel
+      // audio are best-effort, never worth the latency of a live synth.
+      void warmFillerCache(text);
+      return;
+    }
+    try {
+      ws.send(transport.buildOutboundMedia(streamSid, cached));
+    } catch (err) {
+      console.error(`[voice] failed to forward ${logLabel} audio to ${provider}`, err);
+    }
+  }
+
   async function maybePlayToolCallFiller(ws: Sendable) {
     const fillerFlags = resolvedFlagsReady
       ? resolvedFlags
@@ -1729,20 +1758,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // D4: same default flip as speakCannedLine above — absent reads as ON,
     // `enabled: false` is still the kill switch.
     if (fillerFlags[HYBRID_AUDIO_CACHE_FLAG] === false) return;
-    if (ended || !streamSid) return;
-
-    const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];
-    const { provider: resolvedProvider, voiceId: resolvedVoiceId } = currentTtsVoice();
-    const cached = getCachedTtsAudio(resolvedProvider, resolvedVoiceId, languageOverride, text);
-    if (!cached) {
-      void warmFillerCache(text);
-      return;
-    }
-    try {
-      ws.send(transport.buildOutboundMedia(streamSid, cached));
-    } catch (err) {
-      console.error(`[voice] failed to forward filler audio to ${provider}`, err);
-    }
+    playOrWarmCachedLine(ws, TOOL_CALL_FILLER_LINES, "filler");
   }
 
   /**
@@ -1756,21 +1772,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * a backchannel is not a turn.
    */
   function maybePlayBackchannel(ws: Sendable) {
-    if (ended || !streamSid) return;
-    const text = BACKCHANNEL_LINES[Math.floor(Math.random() * BACKCHANNEL_LINES.length)];
-    const { provider: resolvedProvider, voiceId: resolvedVoiceId } = currentTtsVoice();
-    const cached = getCachedTtsAudio(resolvedProvider, resolvedVoiceId, languageOverride, text);
-    if (!cached) {
-      // Not warmed yet — skip this one and warm it for next time rather than
-      // stalling the caller with a live synth. Backchannels are best-effort.
-      void warmFillerCache(text);
-      return;
-    }
-    try {
-      ws.send(transport.buildOutboundMedia(streamSid, cached));
-    } catch (err) {
-      console.error(`[voice] failed to forward backchannel audio to ${provider}`, err);
-    }
+    playOrWarmCachedLine(ws, BACKCHANNEL_LINES, "backchannel");
   }
 
   /**
@@ -3446,10 +3448,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // Warm the backchannel clips now (fire-and-forget), only when the
             // feature is on, so the first mid-utterance ack is an instant
             // cache hit rather than a live synth — same warm-on-start pattern
-            // as the tool-call fillers. No-op past the first call thanks to
-            // the shared tts-cache.
+            // as the tool-call fillers below.
             if (backchannelsEnabled) {
               for (const line of BACKCHANNEL_LINES) void warmFillerCache(line);
+            }
+            // Perf audit (2026-08-25, docs/audits/2026-08-25-code-perf-
+            // simplification-audit.md finding 1): the backchannel warm above
+            // had no equivalent for the tool-call filler lines, so every
+            // call's FIRST slow tool call got silent dead air instead of
+            // filler audio — maybePlayToolCallFiller only warms lazily, on
+            // that first real trigger, by which point it's too late to play
+            // anything for it. Warming here means even the first slow tool
+            // call of a call gets a cache hit.
+            if (noiseFilterFlags[HYBRID_AUDIO_CACHE_FLAG] !== false) {
+              for (const line of TOOL_CALL_FILLER_LINES) void warmFillerCache(line);
             }
           }
 

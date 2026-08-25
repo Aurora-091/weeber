@@ -1822,12 +1822,34 @@ export function buildTurnPromptParts(input: {
  * pure function of `stablePrefix` alone — see this file's
  * "stablePrefix hash is stable across a turn with a stray merge tag in the
  * suffix" test.
+ *
+ * Perf audit (2026-08-25, docs/audits/2026-08-25-code-perf-simplification-
+ * audit.md finding 2): `runVoiceAgentTurn` used to call this, THEN call
+ * `scrubSystemPrompt(stablePrefix)` a second time just to hash it — the
+ * same scan over the same call-invariant string, twice a turn, purely
+ * because this function used to return only the composed string with no way
+ * to hand the already-scrubbed prefix back out. Returning it here removes
+ * that literal duplicate scan while keeping the invariant the original
+ * design cared about: this is still the ONLY function that decides how the
+ * prefix gets scrubbed — callers reuse its output, they never re-derive it.
  */
-export function composeTurnSystemPrompt(stablePrefix: string, dynamicSuffix: string, label?: string): string {
-  return (
-    scrubSystemPrompt(stablePrefix, label ? `${label} — prefix` : undefined) +
-    scrubSystemPrompt(dynamicSuffix, label ? `${label} — suffix` : undefined)
-  );
+export interface TurnSystemPromptResult {
+  /** scrubbedStablePrefix + scrubbedDynamicSuffix — what actually gets sent as `system`. */
+  text: string;
+  /** The prefix half alone, already scrubbed — for `hashStablePrefix` without a second scan. */
+  scrubbedStablePrefix: string;
+}
+
+export function composeTurnSystemPrompt(
+  stablePrefix: string,
+  dynamicSuffix: string,
+  label?: string,
+): TurnSystemPromptResult {
+  const scrubbedStablePrefix = scrubSystemPrompt(stablePrefix, label ? `${label} — prefix` : undefined);
+  return {
+    text: scrubbedStablePrefix + scrubSystemPrompt(dynamicSuffix, label ? `${label} — suffix` : undefined),
+    scrubbedStablePrefix,
+  };
 }
 
 /**
@@ -2113,14 +2135,8 @@ export async function runVoiceAgentTurn({
   // `stablePrefix`, which is exactly what scrubbing the concatenation as one
   // string used to allow.
   const { stablePrefix, dynamicSuffix } = buildTurnPromptParts({ persona, workflowMetadata, callerMemory, capturedState });
-  const systemPrompt = composeTurnSystemPrompt(stablePrefix, dynamicSuffix);
-  // Re-scrubbing stablePrefix alone to hash it is redundant with the scrub
-  // composeTurnSystemPrompt just did internally — cheap in the common (no
-  // unresolved tag) case, where stripUnresolvedMergeTags is a single regex
-  // scan that early-returns, and correctness (one function, composeTurnSystemPrompt,
-  // is the only place that decides how the prefix is scrubbed) matters more
-  // here than saving that scan.
-  onStablePrefixHash?.(hashStablePrefix(scrubSystemPrompt(stablePrefix)));
+  const { text: systemPrompt, scrubbedStablePrefix } = composeTurnSystemPrompt(stablePrefix, dynamicSuffix);
+  onStablePrefixHash?.(hashStablePrefix(scrubbedStablePrefix));
 
   try {
     /**

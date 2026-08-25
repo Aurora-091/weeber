@@ -850,18 +850,20 @@ describe("composeTurnSystemPrompt / hashStablePrefix — Phase C2 prompt-cache s
 
     // Neither run may have touched the prefix's own whitespace — both must
     // still start with the raw, uncollapsed persona text.
-    expect(noTagInSuffix.startsWith(persona)).toBe(true);
-    expect(strayTagInSuffix.startsWith(persona)).toBe(true);
-    // The prefix-length prefix of both composed strings must be byte-for-byte
-    // identical, regardless of what the suffix beyond it contains.
-    expect(strayTagInSuffix.slice(0, persona.length)).toBe(noTagInSuffix.slice(0, persona.length));
+    expect(noTagInSuffix.text.startsWith(persona)).toBe(true);
+    expect(strayTagInSuffix.text.startsWith(persona)).toBe(true);
+    // The returned scrubbedStablePrefix must be byte-for-byte identical,
+    // regardless of what the suffix contains — this is the exact value
+    // hashStablePrefix now hashes directly (perf audit, 2026-08-25), so
+    // testing it here rather than re-deriving it via string-slicing.
+    expect(strayTagInSuffix.scrubbedStablePrefix).toBe(noTagInSuffix.scrubbedStablePrefix);
   });
 
   it("hashStablePrefix is constant across a simulated multi-turn call with growing captured facts, workflow metadata, and caller memory — including a turn with a stray merge-tag-shaped value", () => {
     // The persona itself has no unresolved tags, so scrubbing it alone is a
     // no-op (stripUnresolvedMergeTags' early return) — this is the value
     // every turn below must hash to, however much the suffix around it grows.
-    const baselineHash = hashStablePrefix(composeTurnSystemPrompt(persona, ""));
+    const baselineHash = hashStablePrefix(composeTurnSystemPrompt(persona, "").scrubbedStablePrefix);
 
     const turn0 = buildTurnPromptParts({ persona, capturedState: {} });
     const turn1 = buildTurnPromptParts({
@@ -890,7 +892,7 @@ describe("composeTurnSystemPrompt / hashStablePrefix — Phase C2 prompt-cache s
     // in the suffix rewrite the prefix's whitespace too.
     const hashes = [turn0, turn1, turn2, turn3].map((t) => {
       const composed = composeTurnSystemPrompt(t.stablePrefix, t.dynamicSuffix);
-      return hashStablePrefix(composed.slice(0, persona.length));
+      return hashStablePrefix(composed.scrubbedStablePrefix);
     });
 
     // Every turn's stablePrefix hashes the same as the persona scrubbed alone
