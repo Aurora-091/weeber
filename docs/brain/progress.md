@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,23 @@ updated: 2026-08-25
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **Assembled synthetic suite closes part of Phase D's "never actually built" exit-gate gap (2026-08-26).**
+  New `packages/api/src/voice/stream-synthetic-suite.test.ts` (built on the new shared harness) drives ONE
+  simulated call through D6 (dictation-sequence pause), D7 item 2 (non-interruptible disclosure), and D8
+  (spell-back correction) together — proving they compose, not just that each holds in isolation. Three
+  tests: a mid-spelling pause that correctly withholds the turn then a real word that correctly triggers
+  one, a barge-in attempt during the disclosure-bearing greeting that does NOT cut it off, and a negative
+  control proving that protection is specific to `disclosureConfigured` (an ordinary greeting with no
+  disclosure IS still interruptible — same barge-in injection technique, opposite and correct result).
+  Confirmed `synthetic-test.ts` (Misc-9's separate AI-to-AI text-turn suite) architecturally cannot reach
+  D1/D6/D7 at all — no STT interim events, no audio timing — before deciding a new stream-level file was
+  the right vehicle rather than extending that one. D7 item 1 (non-interruptible tool calls) and D1
+  (idle-prompt) deliberately left to their existing coverage (agent.test.ts's wiring tests;
+  stream-idle-prompt-bargein.test.ts) rather than force-duplicated here. 1646/1646 api tests pass,
+  typecheck/lint/knip:gate/design:guard/contrast:gate clean. Not deployed — this narrows but does not
+  close the exit gate's live-call replay condition, which still needs a real post-deploy call. See
+  `docs/plans/phase-d-conversation.md`'s top status note (updated).
 
 - **Shared test harness for stream-*.test.ts, all 22 files migrated (2026-08-25, at the user's request
   for "a better testing framework").** New `packages/api/src/voice/test-helpers/stream-harness.ts`

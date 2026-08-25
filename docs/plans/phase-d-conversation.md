@@ -8,9 +8,19 @@ approval outside this session's reach (see `phase-c-latency.md`'s closing status
 a real post-deploy call yet. A pre-deploy baseline is recorded in `phase-c-latency.md` (v2v p50 1481ms, p95
 3463ms) to satisfy this section's own precondition well enough to start; whoever approves the pending
 deploys should re-run `latency:report` against real post-deploy calls and reconcile that baseline, and
-should also run the synthetic suite conditions (1, 8, 9, 10) explicitly before treating this phase's exit
-gate as met — this session ran every item's own unit/integration tests but did not separately assemble and
-run the full cross-item synthetic-suite replay the exit gate describes.
+should also confirm the synthetic suite conditions (1, 8, 9, 10) against real post-deploy calls before
+treating this phase's exit gate as met. Update 2026-08-26: `stream-synthetic-suite.test.ts` now assembles
+D6 + D7(item 2) + D8 into one simulated call proving they compose correctly together (a mid-spelling pause
+that doesn't trigger a turn, a disclosure-bearing greeting that survives a barge-in attempt with a
+negative control proving that protection is specific to disclosure — not a blanket "greetings can't be
+interrupted" — and a spell-back correction that overwrites an earlier mis-hearing, all in one call). D7
+item 1 (non-interruptible tool calls) is deliberately not re-tested there — it lives inside
+`buildVoiceTools`, which every `stream-*.test.ts` file bypasses by mocking `./agent`; `agent.test.ts`'s own
+wiring tests are the right layer for that. D1's idle-prompt interruption stays covered by its own isolated
+`stream-idle-prompt-bargein.test.ts` — composing it into the same call as D6/D7/D8 didn't add proportionate
+value over what's already proven in isolation. This closes the "never assembled" gap for the mechanisms
+that benefit most from proving they interact correctly; the *live-call* replay condition 1 still needs a
+real post-deploy call, same as conditions 5/6.
 **Blocks:** Phase E
 **Preconditions:** Phase C's exit gate met, with the achieved p95 recorded in that phase's closing
 commit. D changes turn structure and will move those numbers; there must be a recorded baseline to move
