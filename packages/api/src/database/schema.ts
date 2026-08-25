@@ -568,6 +568,13 @@ export const guardrailEvents = pgTable("guardrail_events", {
       // A5: voice/unsourced-claim-guard.ts's deterministic text scan, run
       // over each turn's assembled outbound text.
       "unsourced-claim-detector",
+      // D3 (phase-d-conversation.md): stream.ts's finalize-time check that a
+      // field which hit the re-ask cap (D2) was followed by a defined
+      // outcome (disposition set, or a transfer requested) — same
+      // invariant-as-a-check shape as setDisposition-invariant above, for
+      // the "never a silent continuation" requirement D3's escalation
+      // triggers name.
+      "ledger-exhaustion",
     ],
   }).notNull(),
   /** The agent's one-sentence "what the caller asked / how I handled it" (self-report), or the

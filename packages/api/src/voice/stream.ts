@@ -13,6 +13,7 @@ import {
   runVoiceAgentGreeting,
   resolveAgentConfig,
   composeSystemPrompt,
+  hasExhaustedField,
   type ToolExecutionTelemetry,
 } from "./agent";
 import { getActiveModelLabel } from "./llm";
@@ -1250,6 +1251,34 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               detail: "callback-requested disposition recorded with no corresponding scheduled_calls row",
             })
             .catch((err) => console.error("[voice] failed to log undelivered-callback invariant violation", err));
+        }
+      }
+
+      // D3 (phase-d-conversation.md), trigger 1/2 — "ledger exhaustion"/
+      // "repeated non-comprehension" must produce a defined outcome, never a
+      // silent continuation. Cannot force the model's tool choice the way A4
+      // forces the DB insert above, so this is the audit-trail half of the
+      // same pattern: if the call ends with a field at MAX_FIELD_ASK_COUNT
+      // and neither a disposition was ever set nor a transfer was ever
+      // requested, that is the trigger firing with no delivered outcome —
+      // log it rather than let it pass silently. `capturedDisposition` and
+      // `transferLatched` are both call-lifetime state, so this reads
+      // whatever happened at any point in the call, not just at hangup.
+      if (hasExhaustedField(capturedState) && capturedDisposition === undefined && !transferLatched) {
+        console.warn(
+          `[voice] escalation trigger fired with no delivered outcome — exhausted field(s), no disposition, no transfer${callSid ? ` (${callSid})` : ""}`,
+        );
+        if (dbCallId) {
+          void db
+            .insert(guardrailEvents)
+            .values({
+              callId: dbCallId,
+              orgId: humanNumberOrgId ?? null,
+              category: "undelivered-outcome",
+              source: "ledger-exhaustion",
+              detail: "a field reached the re-ask cap and the call ended with no disposition set and no transfer requested",
+            })
+            .catch((err) => console.error("[voice] failed to log ledger-exhaustion invariant violation", err));
         }
       }
 

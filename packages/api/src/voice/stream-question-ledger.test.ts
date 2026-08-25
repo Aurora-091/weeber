@@ -85,6 +85,7 @@ type OnToolCall = (name: string, input: unknown, output: unknown) => void;
 
 mock.module("./agent", () => ({
   composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
+    hasExhaustedField: () => false,
   resolveAgentConfig: async () => ({
     systemPrompt: "You are a test agent.",
     ttsProvider: "cartesia",

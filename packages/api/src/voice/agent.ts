@@ -1485,6 +1485,19 @@ export function buildVoiceTools(
 export const MAX_FIELD_ASK_COUNT = 2;
 
 /**
+ * D3 (phase-d-conversation.md) — true when at least one field has hit
+ * `MAX_FIELD_ASK_COUNT` and is still unanswered. `stream.ts`'s `finalizeCall`
+ * uses this to check whether the call ended with a defined outcome
+ * (disposition set, or a transfer requested) despite an exhausted field —
+ * see that call site for the guardrail-event audit trail this feeds.
+ */
+export function hasExhaustedField(capturedState?: Record<string, CapturedField>): boolean {
+  return Object.values(capturedState ?? {}).some(
+    (entry) => entry.value === null && (entry.askCount ?? 1) >= MAX_FIELD_ASK_COUNT,
+  );
+}
+
+/**
  * Renders the current structured call state as a compact, explicit block the
  * model reads as ground truth — separate from (and prioritized over) the raw
  * transcript. This is the fix for the "asks for the same info twice" failure
@@ -1539,6 +1552,27 @@ export function buildKnownFactsBlock(capturedState?: Record<string, CapturedFiel
 
       Asked ${MAX_FIELD_ASK_COUNT} times, still not answered — DO NOT ask again this call, even if it feels natural. The caller has declined or evaded this repeatedly; move the conversation forward instead:
       ${lines}
+    `;
+    // D3 (phase-d-conversation.md), trigger 1/2 — "ledger exhaustion" and
+    // "repeated non-comprehension" collapse into the same observable signal
+    // here: this codebase has no separate "pending question" tracker outside
+    // captureField/markFieldUnanswered asks, and the plan's own text requires
+    // this be "measurable from the ledger... do not invent a comprehension
+    // score" — an exhausted field already is that measurement. Appended once
+    // per call (not per field) as an explicit call-to-action distinct from
+    // the per-field "do not ask again" lines above: those say what NOT to do;
+    // this says what TO do instead, matching the plan's "never a silent
+    // continuation" requirement. Cannot force the model's hand — only a
+    // stronger, harder-to-miss instruction — so stream.ts's finalizeCall also
+    // logs a guardrail event if the call ends with an exhausted field and no
+    // disposition/transfer was ever recorded, the same audit-trail pattern
+    // A4 already uses for an undelivered callback promise.
+    block += dedent`
+
+
+      Before ending this call, you must do ONE of the following in response to the field(s) above: offer to
+      transfer to a human, offer a callback, or call setDisposition to record what could not be collected.
+      Do not simply end the call without acknowledging the gap.
     `;
   }
   return block;

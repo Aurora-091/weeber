@@ -12,6 +12,20 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D3 (escalation triggers) shipped — trigger 3 already existed, triggers 1-2 collapsed into one audit
+  guardrail (2026-08-25).** Verified trigger 3 (explicit caller request → transfer/callback) needed
+  nothing new: `transferToHuman`/`pendingTransfer` (ADR-105/114/115) and A4's `callback-requested` →
+  guaranteed `scheduled_calls` row already satisfy it. Triggers 1-2 (ledger exhaustion / repeated
+  non-comprehension) collapsed into one signal — D2's `askCount` cap is the only "measurable from the
+  ledger" fact this codebase has, and the plan's own text bans inventing a second comprehension score.
+  User's explicit call to unblock trigger 1's "required field" scope: any exhausted field counts, not just
+  ones from a required-fields schema (which stays deferred, D2 item 4). Shipped: a call-level prompt
+  directive once any field is exhausted, plus a `finalizeCall` audit check (new `guardrail_events` source
+  `ledger-exhaustion`) that fires if the call ends with an exhausted field and no disposition/transfer —
+  the same invariant-as-a-check pattern A4 uses, since nothing can force the model's tool choice. New
+  `stream-ledger-exhaustion-invariant.test.ts` + `hasExhaustedField` unit tests. 1596/1596 api tests pass,
+  typecheck/lint/knip:gate clean. Not deployed. See `docs/plans/phase-d-conversation.md`'s D3 status note.
+
 - **D2 (question ledger) shipped — the tobacco-loop fix gets a real per-field ask count (2026-08-25).**
   `CapturedField` gained `askCount` (no migration, `capturedState` is jsonb); `mergeUnansweredField`
   carries it forward across repeated evasions of the same field. `buildKnownFactsBlock` now splits the

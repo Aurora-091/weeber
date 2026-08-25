@@ -140,6 +140,7 @@ mock.module("./agent", () => {
     // this export too. These configs carry no `promptInputs`, so the
     // recomposition is skipped and only the override block is appended.
     composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
+    hasExhaustedField: () => false,
     resolveAgentConfig: async () => ({
       systemPrompt: "You are a test agent.",
       ttsProvider: "cartesia",

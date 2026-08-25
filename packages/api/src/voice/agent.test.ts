@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import {
   buildKnownFactsBlock,
   MAX_FIELD_ASK_COUNT,
+  hasExhaustedField,
   buildWorkflowContextBlock,
   buildCallerMemoryBlock,
   buildTurnPromptParts,
@@ -260,6 +261,37 @@ describe("buildKnownFactsBlock — D2 ask-count cap (phase-d-conversation.md)", 
     expect(exhaustedSection).not.toContain("income_type");
     expect(retryableSection).toContain("income_type");
     expect(retryableSection).not.toContain("tobacco");
+  });
+});
+
+describe("hasExhaustedField (D3, phase-d-conversation.md)", () => {
+  function unansweredWithCount(askCount: number): CapturedField {
+    return { value: null, heard: "evasive answer", transcriptId: null, turn: 0, askCount };
+  }
+
+  it("is false with no captured state at all", () => {
+    expect(hasExhaustedField(undefined)).toBe(false);
+    expect(hasExhaustedField({})).toBe(false);
+  });
+
+  it("is false when every field is confirmed or below the cap", () => {
+    expect(hasExhaustedField({ email: fact("a@b.com") })).toBe(false);
+    expect(hasExhaustedField({ tobacco: unansweredWithCount(1) })).toBe(false);
+  });
+
+  it("is true once any field reaches the cap, even alongside confirmed/retryable fields", () => {
+    expect(hasExhaustedField({ tobacco: unansweredWithCount(MAX_FIELD_ASK_COUNT) })).toBe(true);
+    expect(
+      hasExhaustedField({
+        email: fact("a@b.com"),
+        income_type: unansweredWithCount(1),
+        tobacco: unansweredWithCount(MAX_FIELD_ASK_COUNT),
+      }),
+    ).toBe(true);
+  });
+
+  it("is false for a field with no recorded askCount (pre-D2 rows default to 1, below the cap)", () => {
+    expect(hasExhaustedField({ tobacco: unansweredFact("evasive answer") })).toBe(false);
   });
 });
 

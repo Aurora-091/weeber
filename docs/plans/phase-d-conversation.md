@@ -197,6 +197,41 @@ third time, and the call must end with the field unanswered and no fabricated va
 
 ### D3. Three deterministic escalation triggers
 
+**Status: shipped 2026-08-25 — trigger 3 was already fully satisfied by existing machinery; triggers 1-2
+collapsed into one signal and shipped as an audit-trail guardrail, at the user's explicit direction to
+scope "required field" as "any field," broader than this section's own literal text.**
+
+**Trigger 3 (explicit caller request) needed nothing new.** `transferToHuman`'s tool description already
+requires the model to speak the handoff line before calling it, and `stream.ts`'s `pendingTransfer`
+handling (ADR-105/114/115) already guarantees the real Twilio transfer happens right after. A
+`callback-requested` disposition already guarantees a `scheduled_calls` row in the same tool call, in the
+same turn (A4, `tools/setDisposition.ts`) — exactly this section's "must create a `scheduled_calls` row"
+requirement. Verified against the existing code rather than rebuilt, same discipline as C3/D1.
+
+**Triggers 1-2 (ledger exhaustion / repeated non-comprehension) collapsed into one signal.** This
+codebase has no "pending question" tracker outside `captureField`/`markFieldUnanswered` asks, and this
+section's own text requires trigger 2 be "measurable from the ledger... do not invent a comprehension
+score" — an exhausted field (D2's `askCount` reaching the cap) already is that measurement, so building a
+second, separate mechanism for trigger 2 would be inventing exactly the score this section refuses.
+Trigger 1's literal text ("a **required** field") assumes a required-vs-optional distinction this codebase
+doesn't have and D2 explicitly declined to build without its own ADR (item 4) — **user's explicit call**:
+treat every field that reaches the cap as escalation-worthy, broader than "required" fields only, rather
+than blocking on that ADR or guessing at which fields qualify.
+
+Two things shipped: (1) `agent.ts`'s `buildKnownFactsBlock`, once any field is exhausted, now appends a
+single call-level directive (not per-field) telling the model it must transfer, offer a callback, or call
+`setDisposition` before ending the call — distinct from D2's per-field "do not ask again" lines, which say
+what NOT to do, not what to do instead. (2) Since the model still decides whether to comply — nothing here
+can force a tool call the way A4 forces a DB insert — `stream.ts`'s `finalizeCall` gained the audit-trail
+half of the same invariant-as-a-check pattern A4 already uses for an undelivered callback: if the call
+ends with `hasExhaustedField(capturedState)` true and neither `capturedDisposition` was ever set nor
+`transferLatched` was ever true, that's the trigger firing with no delivered outcome, logged as a new
+`guardrail_events` row (`category: "undelivered-outcome"`, `source: "ledger-exhaustion"` — added to the
+schema's TS-level enum, no migration needed, same as every other category/source addition here). New
+`stream-ledger-exhaustion-invariant.test.ts` (3 cases: fires with no outcome, silent when a disposition
+was set, silent below the cap) plus `hasExhaustedField` unit tests in `agent.test.ts`. 1596/1596 api tests
+pass, typecheck/lint/knip:gate clean. **Not deployed, not measured live.**
+
 **Where:** `packages/api/src/voice/tools/transferToHuman.ts`, `tools/setDisposition.ts`,
 `tools/hangUp.ts`, and the ledger from D2.
 
