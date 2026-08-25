@@ -12,6 +12,24 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D8 shipped — critical-field spell-back confirmation, prompt-level only (2026-08-25). Phase D is now
+  code-complete, D1-D8.** New `critical-field-classification.ts`'s `isCriticalField` (name/phone/order/
+  policy/vehicle/PAN/SSN-shaped keys, reusing `prohibited-capture.ts`'s `compact`/`tokenize` without
+  merging the two lists — same "screens a different thing" reasoning that file already documents) exists
+  purely to describe the risk class; no new provenance mechanism, per this item's own explicit scope. New
+  persona instruction in `buildCallControlBlock` (gated on `captureField`, stable prefix): spell a critical
+  field back character/digit-by-digit and wait for explicit yes/no before calling `captureField` — stricter
+  than the pre-existing `numbersLine` (whole-number read-back) for this named risk class, layered on top of
+  it rather than replacing it. What makes a caller's correction land correctly needed zero new code:
+  `mergeCapturedField` already overwrites on every write, so a later corrected capture already beats an
+  earlier mis-heard one. New `stream-critical-field-spellback.test.ts` proves it against the real
+  `createVoiceStreamHandlers` state machine (misheard "Jon" → corrected "John" via a real spell-back
+  utterance); its first draft's second-turn transcript ended on a lone spelled letter and got correctly
+  withheld by D6's brand-new `DictationSequenceDetector` — not a bug, fixed by ending the test's line on a
+  real word, which is D6 and D8 correctly not interfering with each other. 1640/1640 api tests pass,
+  typecheck/lint/knip:gate/design:guard/contrast:gate all clean. Not deployed. See
+  `docs/plans/phase-d-conversation.md`'s D8 status note and its updated top-of-file status.
+
 - **D7 shipped — non-interruptible tool calls and a non-interruptible recording-consent disclosure
   (2026-08-25).** One shared call-scoped `nonInterruptibleCounter`, owned by `stream.ts`: `barge-in.ts`'s
   `decideBargeIn` refuses to fire at all while it's non-zero (freezing, not resetting, a short fragment's

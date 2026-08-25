@@ -1,12 +1,16 @@
 # Phase D — Conversation intelligence
 
-**Status:** In progress (2026-08-25) — started at the user's explicit direction. Phase C is code-complete
-(all four sub-phases) and pushed, but its exit gate's live-measurement conditions are pending a manual
-Railway deploy approval outside this session's reach (see `phase-c-latency.md`'s closing status). A
-pre-deploy baseline is recorded there (v2v p50 1481ms, p95 3463ms) to satisfy this section's own
-precondition well enough to start; whoever approves the pending deploys should re-run `latency:report`
-against real post-deploy calls and reconcile that baseline before this phase's own exit gate condition 5/6
-(latency-regression / p95-comparison) are trusted.
+**Status:** Code-complete (2026-08-25) — all eight items (D1-D8) shipped, committed, and pushed to
+`origin/main` in one session at the user's explicit direction. Phase C is also code-complete (all four
+sub-phases) and pushed, but both phases share the same open item: the exit gate's live-measurement
+conditions (this phase's 5/6/8/9/10, Phase C's own equivalents) are pending a manual Railway deploy
+approval outside this session's reach (see `phase-c-latency.md`'s closing status) — nothing has run against
+a real post-deploy call yet. A pre-deploy baseline is recorded in `phase-c-latency.md` (v2v p50 1481ms, p95
+3463ms) to satisfy this section's own precondition well enough to start; whoever approves the pending
+deploys should re-run `latency:report` against real post-deploy calls and reconcile that baseline, and
+should also run the synthetic suite conditions (1, 8, 9, 10) explicitly before treating this phase's exit
+gate as met — this session ran every item's own unit/integration tests but did not separately assemble and
+run the full cross-item synthetic-suite replay the exit gate describes.
 **Blocks:** Phase E
 **Preconditions:** Phase C's exit gate met, with the achieved p95 recorded in that phase's closing
 commit. D changes turn structure and will move those numbers; there must be a recorded baseline to move
@@ -537,6 +541,46 @@ silently marked fired on a partial read.
 ---
 
 ### D8. Confirm critical spoken identifiers the way NATO/telephony best practice does, not by trusting STT once
+
+**Status: shipped 2026-08-25.** Prompt-level only, per this item's own step 3 — no new provenance
+mechanism, no synchronous blocking added to `captureField`.
+
+New `critical-field-classification.ts`: `isCriticalField` classifies a `captureField` key as `critical`
+(name, phone, order, policy, vehicle, PAN, SSN-shaped) using the same `compact`/`tokenize` normalization
+`prohibited-capture.ts` already uses, reused rather than duplicated, but kept as its own list — same
+"screens a different thing" reasoning that file's own doc comment gives for keeping
+`PROHIBITED_CAPTURE_KEYS` and `REGULATED_FIELD_MARKERS` apart. `pan`/`ssn` are included even though
+`prohibited-capture.ts` already refuses those keys outright — the classification describes the *shape* of
+a high-stakes identifier, per this section's own framing, not just what one deployment happens to permit.
+
+New persona instruction in `agent.ts`'s `buildCallControlBlock` (stable prefix, gated on `captureField`
+being enabled — same convention as `numbersLine`/`immediateCaptureLine`): for a name, phone/order/policy
+number, vehicle registration, or government ID, read it back character-by-character (name) or
+digit-by-digit (number) — not as a single repeated whole, which is what the pre-existing `numbersLine`
+already asked for — and wait for an explicit yes/no before calling `captureField`; a "no" means read the
+corrected part back too. Layered on top of `numbersLine` rather than replacing it: `numbersLine` still
+covers dates and other numeric fields outside the critical set.
+
+What makes a caller's correction during spell-back actually land correctly needed no new code:
+`stream.ts`'s `mergeCapturedField` already unconditionally overwrites `capturedState[field]` on every
+write, so a later, corrected `captureField` call for the same key already wins over an earlier mis-heard
+one. New `stream-critical-field-spellback.test.ts` drives the real `createVoiceStreamHandlers` state
+machine through exactly that two-turn sequence (misheard "Jon" captured turn 1, corrected "John" captured
+turn 2 after a real spell-back utterance) and proves the corrected value survives, not the mis-hearing —
+the plan's own "synthetic scenario" test, against the real state machine rather than hand-built fixtures,
+same pattern D2's `stream-question-ledger.test.ts` used. Writing that test's second-turn transcript to end
+on a lone spelled-out letter ("...J O H N") first tripped D7... no — tripped **D6**'s brand-new
+`DictationSequenceDetector`, which correctly judged the utterance still-spelling and withheld the turn;
+fixed by ending the test's caller line on a real word instead, which is D6 and D8 correctly *not*
+interfering with each other, not a defect in either.
+
+New `critical-field-classification.test.ts` (classifier correctness: every named category, realistic
+snake_case/camelCase keys, case/separator insensitivity, ordinary fields like `coverage_purpose`/
+`income_type` correctly excluded, no false positive on vocabulary containing `pan`/`ssn` as a substring)
+and two `agent.test.ts` `composeSystemPrompt` cases (spell-back phrasing present when `captureField` is
+enabled, absent when it is not — there is nothing to call it ahead of). 1640/1640 api tests pass,
+typecheck/lint/knip:gate/design:guard/contrast:gate all clean. Not deployed, not measured live — same
+standing status as D6/D7, for the same reason (Phase C's pending deploy approval).
 
 **Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md`, filed here because it
 extends the same `captureField`/ADR-120 provenance machinery D2's ledger already governs, and because the

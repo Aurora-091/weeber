@@ -1724,6 +1724,27 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
       .map((s) => s.id);
     expect(changed).toEqual(["call-control"]);
   });
+
+  /**
+   * D8 (phase-d-conversation.md) — a critical-field spell-back instruction is
+   * a prompt-level addition ahead of captureField, not a new provenance
+   * mechanism, so this is what the plan's own test asks for: the classified
+   * fields trigger spell-back phrasing in the persona instructions. See
+   * `critical-field-classification.test.ts` for the classifier itself.
+   */
+  it("D8: includes character/digit-by-digit spell-back instructions when captureField is enabled", () => {
+    const composed = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp", "captureField"] });
+    expect(composed.text).toContain("character-by-character");
+    expect(composed.text).toContain("digit-by-digit");
+    expect(composed.text).toContain("full name");
+    expect(composed.text).toContain("wait for an\n  explicit yes or no before calling captureField");
+  });
+
+  it("D8: omits the spell-back instruction entirely when captureField is not enabled — nothing to call it ahead of", () => {
+    const composed = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });
+    expect(composed.text).not.toContain("character-by-character");
+    expect(composed.text).not.toContain("digit-by-digit");
+  });
 });
 
 /**

@@ -232,6 +232,28 @@ function buildCallControlBlock(
       "  question, not saved up for later either."
     : "";
 
+  // D8 (phase-d-conversation.md, 2026-08-25): a head-to-head production-audio
+  // study put Deepgram's missed named-entity/alphanumeric-string rate at
+  // 25.5% — the provider this codebase actually runs. `numbersLine` above
+  // already asks for a whole-number read-back on phone/date/order numbers,
+  // but explicitly skips names, and a whole-number repeat-back is not what
+  // telephony/NATO best practice recommends for something this error-prone:
+  // confirm once, after the full sequence, and spell it, not just say it
+  // back. This is stricter than numbersLine for the identifiers where a
+  // single wrong character means a wrong appointment, order, or policy —
+  // not a blocking rule for every field (coverage_purpose/income_type are
+  // unaffected), only this named risk class.
+  const criticalFieldSpellBackLine = canCaptureField
+    ? "- A caller's full name, a phone number, an order/policy number, a vehicle registration, or a\n" +
+      "  government ID number is worth extra care — speech recognition mishears these more than\n" +
+      "  ordinary words. Once the caller finishes stating one, read it back character-by-character\n" +
+      "  for a name or digit-by-digit for a number (\"Alex — A, L, E, X, is that right?\" / \"nine,\n" +
+      "  eight, seven, six, five — is that right?\"), not as a single repeated whole, and wait for an\n" +
+      "  explicit yes or no before calling captureField. If they say no, ask them to repeat the part\n" +
+      "  that was wrong and read that back too — never call captureField with a value they have not\n" +
+      "  confirmed this way."
+    : "";
+
   // India-format line (2026-07-18): always on, not gated by any tool/frame —
   // this is about *how* the model speaks numbers/amounts/dates aloud, not
   // about which tool it calls. Wrong here reads as untrustworthy instantly
@@ -316,6 +338,7 @@ function buildCallControlBlock(
     "  invented number is worse than no number, because the caller will try it.",
   ];
   if (identityCheckLine) lines.push(identityCheckLine);
+  if (criticalFieldSpellBackLine) lines.push(criticalFieldSpellBackLine);
   if (immediateCaptureLine) lines.push(immediateCaptureLine);
   if (immediateUnansweredLine) lines.push(immediateUnansweredLine);
   lines.push(
