@@ -450,6 +450,54 @@ between the two halves.
 
 ### D7. No tool call, and no critical spoken line, is protected from a barge-in
 
+**Status: shipped 2026-08-25.** Both gaps closed via one shared mechanism: a call-scoped
+`nonInterruptibleCounter: { count: number }`, owned by `stream.ts`, that `barge-in.ts`'s `decideBargeIn`
+now checks (`nonInterruptibleInFlight: nonInterruptibleCounter.count > 0`) and refuses to fire while
+non-zero — freezing rather than resetting or advancing the short-fragment streak, so nothing is lost, the
+decision is just deferred until the protected thing finishes.
+
+**Item 1 (tool calls).** `agent.ts`'s new `NON_INTERRUPTIBLE_TOOLS` set covers `bookAppointment`,
+`crmSync`, `confirmCodOrder`, `offerCartRecoveryDiscount` — deliberately narrower than the plan's own
+example list. `sendSms`/`transferToHuman` are excluded after reading their actual `execute` bodies: both
+already fire-and-forget their real side effect independently of `turnAbortController`, so aborting the
+*turn* around them doesn't orphan anything the way it would for the other four (an awaited, irreversible
+external write). `confirmCodOrder`/`offerCartRecoveryDiscount` are included despite not being named in the
+plan's example list — same at-risk shape (awaited I/O, irreversible on the far side) as `bookAppointment`/
+`crmSync`. The new `withNonInterruptible` wrapper increments/decrements the shared counter around a tool's
+`execute`, applied in `buildVoiceTools` as `protectedTools` — layered on top of the already-timeout-gated
+tool (not the raw one), so a genuinely stuck provider call suppresses barge-in for a bounded window
+(`TOOL_CALL_TIMEOUT_MS`) rather than indefinitely; once the timeout side of that race wins, barge-in
+becomes possible again exactly when the model gets its "still working" placeholder. `nonInterruptibleCounter`
+is threaded through as a 12th param to `buildVoiceTools`/`runVoiceAgentTurn`/`runVoiceAgentGreeting` —
+unlike the per-turn `toolCallCounter` (fresh every turn), this one is call-scoped and created once by
+`stream.ts`, because item 2 below shares the exact same counter for a non-tool-call reason.
+
+**Item 2 (disclosure).** Chose "make it explicitly non-interruptible" (the plan's first option) over
+re-queueing: `runGreeting()` now increments `nonInterruptibleCounter` before speaking (only when
+`disclosureConfigured`) and decrements it in a `finally`, wrapping both the literal-greeting fast path
+(`speakCannedLine`) and the LLM-generated greeting path (`runGreetingTurn`, split out of the old
+`runGreeting` body for this). Because `decideBargeIn` refuses to fire at all while the counter is
+non-zero, `turnAbortController.abort()` (barge-in's only call site) is structurally unreachable for the
+whole disclosure window — so the pre-existing `stampDisclosureFired()` (called unconditionally after
+`speak()` resolves) is now safe by construction for the barge-in case: `speak()`'s internal
+`wasInterrupted` can only become true via barge-in-triggered abort, which cannot happen here. Left
+unconditional deliberately rather than also threading `wasInterrupted` out of `speak()` — the plan's test
+requirement is scoped to barge-in, not to a call disconnecting entirely mid-greeting, which is a
+pre-existing, unrelated condition this change doesn't newly introduce.
+
+**Tests.** `barge-in.test.ts`: `nonInterruptibleInFlight` never fires regardless of text length/streak,
+freezes (not resets/advances) the streak, resumes normal streak advancement once the flag clears, and
+`agentIsSpeaking: false` still short-circuits first regardless of ordering. `agent.test.ts`:
+`withNonInterruptible` in isolation (increments before the first await, decrements after resolve *and*
+after reject, composes under overlap via the counter rather than a boolean, no-op passthrough with no
+`execute`); `buildVoiceTools` wiring (`bookAppointment` marked in-flight for the duration of a real
+`execute()` call via its own `orgId: undefined` fast path — no DB needed; omitting the counter leaves it
+unwrapped; a tool outside `NON_INTERRUPTIBLE_TOOLS` like `captureField` never touches the counter;
+`crmSync`/`confirmCodOrder` register correctly when their contexts are bound — their actual `execute`
+paths hit live Shopify/CRM integrations and are intentionally not invoked from this test). 1629/1629 api
+tests pass, typecheck/lint/`knip:gate`/`design:guard`/`contrast:gate` all clean. **Not deployed, not
+measured live** — same status as D6, for the same reason (Phase C's pending deploy approval).
+
 **Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md` items 3-4. Two related
 gaps, same root cause (every `speak()` call and every tool `execute()` treats interruption identically,
 with no per-message or per-tool policy), confirmed independently by both reading this codebase directly

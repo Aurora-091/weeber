@@ -660,6 +660,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * bridging. */
   let transferLatched = false;
 
+  /** D7 (phase-d-conversation.md): shared with agent.ts's `withNonInterruptible`
+   * tool wrapper AND runGreeting's disclosure window below — a plain count
+   * rather than a boolean because a tool call and the disclosure can't
+   * overlap in practice, but a count is correct even if that ever changes,
+   * where a boolean guarded by two independent increment/decrement sites
+   * would go stale. `decideBargeIn` (barge-in.ts) checks `count > 0` and
+   * refuses to fire while it's non-zero — see its `nonInterruptibleInFlight`
+   * doc comment for why that's a freeze, not a reset, of the streak. */
+  let nonInterruptibleCounter = { count: 0 };
+
   /** Caller-silence handling (re-prompt once, then hang up) — see armSilenceTimer. */
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceWarningIssued = false;
@@ -2541,6 +2551,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               outcome.status === "resolved" ? outcome.value : { error: String(outcome.error) },
             );
           },
+          nonInterruptibleCounter,
         }),
       { turnStartedAt, turnLlmTtftRef, turnLlmModelRef, turnUsageRef, endpointSignal, endpointingDelayMs },
     );
@@ -2565,17 +2576,37 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   async function runGreeting(ws: Sendable) {
-    // Latency fix (2026-07-16): a fully-resolved literal greeting was
-    // rendered in the "start" handler — speak it directly via the same
-    // canned-line path as the silence re-prompt/goodbye (no LLM call, and
-    // eligible for the hybrid-audio-cache flag same as those). Falls
-    // through to the LLM-generated greeting below whenever this is unset.
-    if (literalGreetingText) {
-      await speakCannedLine(ws, literalGreetingText);
-      stampDisclosureFired();
-      return;
-    }
+    // D7 (phase-d-conversation.md): the recording-consent disclosure is
+    // prepended to this exact turn (see stampDisclosureFired's doc comment),
+    // so for as long as this function is running, a barge-in must not be
+    // allowed to cut it short and have stampDisclosureFired() below wrongly
+    // treat a partial read as delivered. Shares `nonInterruptibleCounter`
+    // with agent.ts's tool-call protection (D7 item 1) rather than a
+    // dedicated flag, since decideBargeIn only ever needs to know "is
+    // *something* non-interruptible in flight right now" — never gated on
+    // `disclosureConfigured`, so a call with no disclosure configured simply
+    // never increments it here and behaves exactly as before.
+    if (disclosureConfigured) nonInterruptibleCounter.count += 1;
+    try {
+      // Latency fix (2026-07-16): a fully-resolved literal greeting was
+      // rendered in the "start" handler — speak it directly via the same
+      // canned-line path as the silence re-prompt/goodbye (no LLM call, and
+      // eligible for the hybrid-audio-cache flag same as those). Falls
+      // through to the LLM-generated greeting below whenever this is unset.
+      if (literalGreetingText) {
+        await speakCannedLine(ws, literalGreetingText);
+        stampDisclosureFired();
+        return;
+      }
 
+      await runGreetingTurn(ws);
+      stampDisclosureFired();
+    } finally {
+      if (disclosureConfigured) nonInterruptibleCounter.count -= 1;
+    }
+  }
+
+  async function runGreetingTurn(ws: Sendable) {
     const turnLlmTtftRef: { value?: number } = {};
     const turnLlmModelRef: { value?: string } = {};
     const turnUsageRef: { value?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } } = {};
@@ -2635,6 +2666,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             },
           },
           workflowMetadata,
+          nonInterruptibleCounter,
           onLatency: (ms, model) => {
             console.log(`[voice] greeting time-to-first-token: ${ms}ms (${model})`);
             recordLlmLatency(ms);
@@ -2662,7 +2694,6 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // response to caller speech, so there's no voiceToVoiceMs to measure.
       { turnLlmTtftRef, turnLlmModelRef, turnUsageRef },
     );
-    stampDisclosureFired();
   }
 
   /**
@@ -2691,7 +2722,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // rationale — short/urgent interruptions still fire on the first
           // hit; only short, isolated fragments require a second consecutive
           // hit before they're trusted.
-          const bargeIn = decideBargeIn({ agentIsSpeaking, text, priorStreak: bargeInStreak });
+          const bargeIn = decideBargeIn({
+            agentIsSpeaking,
+            text,
+            priorStreak: bargeInStreak,
+            // D7: refuses to fire while a non-interruptible tool call or the
+            // disclosure-bearing greeting is in flight — see the counter's
+            // declaration above for why this is shared state, not per-call-site.
+            nonInterruptibleInFlight: nonInterruptibleCounter.count > 0,
+          });
           bargeInStreak = bargeIn.nextStreak;
           if (bargeIn.fire) {
             if (streamSid) ws.send(transport.buildClear(streamSid));

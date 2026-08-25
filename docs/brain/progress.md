@@ -12,6 +12,25 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D7 shipped — non-interruptible tool calls and a non-interruptible recording-consent disclosure
+  (2026-08-25).** One shared call-scoped `nonInterruptibleCounter`, owned by `stream.ts`: `barge-in.ts`'s
+  `decideBargeIn` refuses to fire at all while it's non-zero (freezing, not resetting, a short fragment's
+  streak). Item 1: new `NON_INTERRUPTIBLE_TOOLS` set (`bookAppointment`, `crmSync`, `confirmCodOrder`,
+  `offerCartRecoveryDiscount`) — deliberately excludes the plan's own `sendSms`/`transferToHuman` after
+  reading their `execute` bodies showed both already fire-and-forget independently of the turn's abort
+  signal, and deliberately includes `confirmCodOrder`/`offerCartRecoveryDiscount` (not in the plan's
+  example list) since they share the same awaited-irreversible-I/O shape. New `withNonInterruptible`
+  wrapper, applied in `buildVoiceTools` on top of the already-timeout-gated tool so a stuck provider call
+  only suppresses barge-in for a bounded window, not indefinitely. Item 2: chose "make it explicitly
+  non-interruptible" over re-queueing — `runGreeting` increments the same counter around the whole
+  disclosure-bearing greeting (both the literal-greeting fast path and the LLM-generated path), which
+  makes `turnAbortController.abort()` structurally unreachable during that window, so the pre-existing
+  unconditional `stampDisclosureFired()` call is now safe by construction for the barge-in case. New
+  `barge-in.test.ts` cases (freeze/resume semantics) and `agent.test.ts` cases (`withNonInterruptible` in
+  isolation plus `buildVoiceTools` wiring, using `bookAppointment`'s own `orgId: undefined` fast path so no
+  DB mocking was needed). 1629/1629 api tests pass, typecheck/lint/knip:gate/design:guard/contrast:gate all
+  clean. Not deployed. See `docs/plans/phase-d-conversation.md`'s D7 status note.
+
 - **D6 shipped — a second turn-detection heuristic for mid-dictation pauses (2026-08-25).** Confirmed
   against fresh research (Decagon, Cekura, LiveKit, a 2026 arXiv paper) that "pause mid-dictation" is a
   real, named failure class before building, and that the SOTA fix (semantic VAD) is a full model — out

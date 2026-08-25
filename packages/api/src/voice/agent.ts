@@ -1123,6 +1123,62 @@ export function withToolTimeout<T extends { execute?: (...args: never[]) => unkn
 }
 
 /**
+ * D7 (phase-d-conversation.md) — the tools whose `execute()` awaits a real,
+ * irreversible external side effect (a calendar booking, a CRM write, a
+ * Shopify order cancel/confirm, an issued discount code) and would be
+ * orphaned by `turnAbortController.abort()` firing mid-call: nothing today
+ * cancels the in-flight request, and nothing waits for it before the model
+ * moves on. Deliberately narrower than the plan's own example list
+ * (`bookAppointment`/`crmSync`/`sendSms`/`transferToHuman`) — checked
+ * against the actual code before building, the same discipline this session
+ * used throughout: `sendSms`'s real send and `transferToHuman`'s real
+ * transfer both happen fire-and-forget / after the turn, in `stream.ts`,
+ * already decoupled from this turn's abort signal, so aborting the turn
+ * doesn't orphan either one — protecting their tool call itself would guard
+ * a window that was never actually at risk. `confirmCodOrder` and
+ * `offerCartRecoveryDiscount` share the exact at-risk shape as
+ * `bookAppointment`/`crmSync` (awaited I/O, irreversible outcome) despite
+ * not being named in the plan's example list, so they're included here.
+ * `lookupInfo` (also awaited I/O, `TOOL_CALL_TIMEOUT_GATED`'s other member)
+ * is deliberately excluded — a read with no side effect to protect.
+ */
+const NON_INTERRUPTIBLE_TOOLS = new Set<AvailableToolName>([
+  "bookAppointment",
+  "crmSync",
+  "confirmCodOrder",
+  "offerCartRecoveryDiscount",
+]);
+
+/**
+ * Marks a tool's `execute()` as in-flight for the duration of the call,
+ * via a shared counter `stream.ts` also reads before deciding whether to
+ * honor a barge-in (see `barge-in.ts`'s `nonInterruptibleInFlight`). Never
+ * changes what the tool returns, how long it takes, or whether it throws —
+ * purely a side-channel presence signal, same shape as `withFillerTimer`.
+ * The counter (not a boolean) is what lets this compose correctly with
+ * `withPerTurnCap`/failover retries, where more than one non-interruptible
+ * call could theoretically overlap.
+ */
+export function withNonInterruptible<T extends { execute?: (...args: never[]) => unknown }>(
+  toolDef: T,
+  counter: { count: number },
+): T {
+  if (!toolDef.execute) return toolDef;
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    execute: async (...args: never[]) => {
+      counter.count += 1;
+      try {
+        return await originalExecute(...args);
+      } finally {
+        counter.count -= 1;
+      }
+    },
+  };
+}
+
+/**
  * §3a: wraps a single AI-SDK tool's `execute` with a threshold timer —
  * fires `onSlowToolCall(name)` once if `execute` is still running after
  * `TOOL_CALL_FILLER_THRESHOLD_MS`, then lets the real execution finish and
@@ -1391,6 +1447,17 @@ export function buildVoiceTools(
    * rather than a plain number.
    */
   toolCallCounter?: { count: number },
+  /**
+   * D7 (phase-d-conversation.md) — shared in-flight counter for
+   * `NON_INTERRUPTIBLE_TOOLS`. Unlike `toolCallCounter`, this is call-scoped,
+   * not turn-scoped: `stream.ts` owns it (creates it once per call) because
+   * it also increments it directly around the greeting/disclosure turn, not
+   * just around tool calls — passed straight through here, never created
+   * fresh. Omitted (text test-chat, synthetic harness, preview drawer) means
+   * these tools run unwrapped, same as every other call-bound protection in
+   * this function.
+   */
+  nonInterruptibleCounter?: { count: number },
 ) {
   const baseTools = {
     ...voiceTools,
@@ -1451,13 +1518,29 @@ export function buildVoiceTools(
         : [name, def],
     ),
   );
+  // D7: applied around the ALREADY-timeout-gated tool, not the raw one — the
+  // in-flight window this marks must be bounded by the same race
+  // withToolTimeout already runs (real completion vs. TOOL_CALL_TIMEOUT_MS),
+  // or a genuinely slow provider call would suppress barge-in indefinitely
+  // instead of for a bounded ~4s. Once the timeout side of that race wins,
+  // the model gets its "still working" placeholder and the turn moves on —
+  // barge-in becomes possible again exactly when it should.
+  const protectedTools = nonInterruptibleCounter
+    ? Object.fromEntries(
+        Object.entries(timeoutGated).map(([name, def]) =>
+          NON_INTERRUPTIBLE_TOOLS.has(name as AvailableToolName)
+            ? [name, withNonInterruptible(def, nonInterruptibleCounter)]
+            : [name, def],
+        ),
+      )
+    : timeoutGated;
   // Screen first, then wrap for filler audio: the filler timer measures how
   // long a tool takes, and a refused call does no work at all.
   const guarded = outboundText
     ? Object.fromEntries(
-        Object.entries(timeoutGated).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
+        Object.entries(protectedTools).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
       )
-    : timeoutGated;
+    : protectedTools;
   const filled = onSlowToolCall
     ? Object.fromEntries(
         Object.entries(guarded).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
@@ -1866,6 +1949,7 @@ export async function runVoiceAgentTurn({
   isHeardInCall,
   dispositionScheduling,
   onStablePrefixHash,
+  nonInterruptibleCounter,
 }: {
   history: ModelMessage[];
   persona?: string;
@@ -1963,6 +2047,12 @@ export async function runVoiceAgentTurn({
    * be impossible now that `composeTurnSystemPrompt` scrubs the prefix
    * independently of the suffix. See composeTurnSystemPrompt's doc comment. */
   onStablePrefixHash?: (hash: string) => void;
+  /** D7 (phase-d-conversation.md): call-scoped in-flight counter for
+   * NON_INTERRUPTIBLE_TOOLS — owned and created by `stream.ts`, forwarded
+   * here unchanged (never created fresh per turn, unlike `toolCallCounter`),
+   * since `stream.ts` also increments it directly around the greeting's
+   * disclosure window, not just around tool calls. See buildVoiceTools. */
+  nonInterruptibleCounter?: { count: number };
 }): Promise<string> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), TURN_TIMEOUT_MS);
@@ -2055,6 +2145,7 @@ export async function runVoiceAgentTurn({
           isHeardInCall,
           dispositionScheduling,
           toolCallCounter,
+          nonInterruptibleCounter,
         ),
         stopWhen: stepCountIs(6),
         abortSignal: combinedSignal,
@@ -2249,6 +2340,7 @@ export function runVoiceAgentGreeting({
   outboundText,
   workflowMetadata,
   dispositionScheduling,
+  nonInterruptibleCounter,
 }: {
   persona?: string;
   onTextDelta: (delta: string) => void;
@@ -2292,6 +2384,11 @@ export function runVoiceAgentGreeting({
   /** A4: see runVoiceAgentTurn. Passed through for the same reason as
    * `crmSync`/`codOrder` — the greeting turn gets the identical tool set. */
   dispositionScheduling?: DispositionSchedulingContext;
+  /** D7: see runVoiceAgentTurn. `stream.ts` also increments this directly
+   * around the whole greeting call (disclosure protection) — passed through
+   * here so the greeting's own tool calls (rare, but possible) count against
+   * the same shared counter too. */
+  nonInterruptibleCounter?: { count: number };
 }) {
   return runVoiceAgentTurn({
     history: [
@@ -2318,5 +2415,6 @@ export function runVoiceAgentGreeting({
     outboundText,
     workflowMetadata,
     dispositionScheduling,
+    nonInterruptibleCounter,
   });
 }

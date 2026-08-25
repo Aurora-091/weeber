@@ -60,4 +60,80 @@ describe("decideBargeIn", () => {
     expect(d.fire).toBe(true);
     expect(d.nextStreak).toBe(0);
   });
+
+  describe("D7: nonInterruptibleInFlight", () => {
+    test("never fires on a long/urgent utterance while non-interruptible, even though it would otherwise fire immediately", () => {
+      const d = decideBargeIn({
+        agentIsSpeaking: true,
+        text: "Wait, stop, hold on",
+        priorStreak: 0,
+        nonInterruptibleInFlight: true,
+      });
+      expect(d.fire).toBe(false);
+    });
+
+    test("never fires even once a short fragment's streak would otherwise satisfy BARGE_IN_STREAK_REQUIRED", () => {
+      let streak = 0;
+      for (let hit = 1; hit <= BARGE_IN_STREAK_REQUIRED + 2; hit++) {
+        const d = decideBargeIn({
+          agentIsSpeaking: true,
+          text: "no",
+          priorStreak: streak,
+          nonInterruptibleInFlight: true,
+        });
+        expect(d.fire).toBe(false);
+        streak = d.nextStreak;
+      }
+    });
+
+    test("freezes the streak rather than resetting or advancing it", () => {
+      const d = decideBargeIn({
+        agentIsSpeaking: true,
+        text: "no",
+        priorStreak: 1,
+        nonInterruptibleInFlight: true,
+      });
+      expect(d.nextStreak).toBe(1);
+    });
+
+    test("a short fragment's streak resumes advancing normally once the flag clears", () => {
+      const frozen = decideBargeIn({
+        agentIsSpeaking: true,
+        text: "no",
+        priorStreak: 1,
+        nonInterruptibleInFlight: true,
+      });
+      expect(frozen.fire).toBe(false);
+      expect(frozen.nextStreak).toBe(1);
+      const resumed = decideBargeIn({
+        agentIsSpeaking: true,
+        text: "no",
+        priorStreak: frozen.nextStreak,
+        nonInterruptibleInFlight: false,
+      });
+      expect(resumed.fire).toBe(true);
+    });
+
+    test("agent-not-speaking still short-circuits before the non-interruptible check (order doesn't matter)", () => {
+      const d = decideBargeIn({
+        agentIsSpeaking: false,
+        text: "Wait",
+        priorStreak: 0,
+        nonInterruptibleInFlight: true,
+      });
+      expect(d.fire).toBe(false);
+      expect(d.nextStreak).toBe(0);
+    });
+
+    test("undefined nonInterruptibleInFlight behaves identically to false (default/back-compat)", () => {
+      const withUndefined = decideBargeIn({ agentIsSpeaking: true, text: "Wait", priorStreak: 0 });
+      const withFalse = decideBargeIn({
+        agentIsSpeaking: true,
+        text: "Wait",
+        priorStreak: 0,
+        nonInterruptibleInFlight: false,
+      });
+      expect(withUndefined).toEqual(withFalse);
+    });
+  });
 });

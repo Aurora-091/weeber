@@ -1005,6 +1005,7 @@ import {
   withFillerTimer,
   withToolTimeout,
   withPerTurnCap,
+  withNonInterruptible,
   TOOL_CALL_FILLER_THRESHOLD_MS,
   MAX_TOOL_CALLS_PER_TURN,
   buildVoiceTools,
@@ -1209,6 +1210,68 @@ describe("withPerTurnCap — C4 step 2 per-turn tool-call budget", () => {
   });
 });
 
+/**
+ * D7 (phase-d-conversation.md) — the wrapper mechanism in isolation; the
+ * buildVoiceTools wiring tests below cover which tools actually get it and
+ * the shared-counter behavior with stream.ts's own greeting-window increment.
+ */
+describe("withNonInterruptible — D7 barge-in protection for irreversible tool calls", () => {
+  it("increments the shared counter before execute runs and decrements it once execute resolves", async () => {
+    const counter = { count: 0 };
+    let observedDuring = -1;
+    const wrapped = withNonInterruptible(
+      {
+        execute: async () => {
+          observedDuring = counter.count;
+          return { booked: true };
+        },
+      },
+      counter,
+    );
+    const result = await wrapped.execute();
+    expect(observedDuring).toBe(1);
+    expect(result).toEqual({ booked: true });
+    expect(counter.count).toBe(0);
+  });
+
+  it("decrements the counter even when execute rejects — a barge-in must become possible again after a failed call too", async () => {
+    const counter = { count: 0 };
+    const wrapped = withNonInterruptible(
+      {
+        execute: async () => {
+          throw new Error("calendar API down");
+        },
+      },
+      counter,
+    );
+    await expect(wrapped.execute()).rejects.toThrow("calendar API down");
+    expect(counter.count).toBe(0);
+  });
+
+  it("composes correctly if two non-interruptible calls somehow overlap — the counter, not a boolean, tracks concurrency", async () => {
+    const counter = { count: 0 };
+    const resolvers: Array<(v: unknown) => void> = [];
+    const wrapped = withNonInterruptible(
+      { execute: () => new Promise((resolve) => resolvers.push(resolve)) },
+      counter,
+    );
+    const first = wrapped.execute();
+    const second = wrapped.execute();
+    expect(counter.count).toBe(2);
+    resolvers[0]("a");
+    await first;
+    expect(counter.count).toBe(1);
+    resolvers[1]("b");
+    await second;
+    expect(counter.count).toBe(0);
+  });
+
+  it("is a no-op passthrough when the tool has no execute", () => {
+    const toolDef: { execute?: (...args: never[]) => unknown; description: string } = { description: "none" };
+    expect(withNonInterruptible(toolDef, { count: 0 })).toBe(toolDef);
+  });
+});
+
 describe("buildVoiceTools — §3a wiring", () => {
   it("returns unwrapped tools when onSlowToolCall is omitted, unchanged from before §3a", () => {
     const tools = buildVoiceTools(undefined, undefined);
@@ -1320,6 +1383,76 @@ describe("buildVoiceTools — C4 step 2 per-turn tool-call cap wiring (phase-c-l
     expect(tools.hangUp!.execute).toBe(voiceTools.hangUp.execute);
     expect(tools.transferToHuman!.execute).toBe(voiceTools.transferToHuman.execute);
     expect(tools.flagGuardrailEvent!.execute).toBe(voiceTools.flagGuardrailEvent.execute);
+  });
+});
+
+/**
+ * D7 (phase-d-conversation.md) — bookAppointment/crmSync/confirmCodOrder/
+ * offerCartRecoveryDiscount must mark `nonInterruptibleCounter` in-flight
+ * around their execute; every other tool (a pure state write like
+ * captureField, or a read like lookupInfo) must never touch it. bookAppointment
+ * is exercised with `orgId: undefined` (its own "not configured" fast path,
+ * see bookAppointment.ts) specifically so this test needs no DB — the wrapper
+ * being exercised is `withNonInterruptible`, not Calendar integration.
+ */
+describe("buildVoiceTools — D7 non-interruptible tool wiring", () => {
+  it("marks bookAppointment in-flight for the duration of execute, then clears it", async () => {
+    const counter = { count: 0 };
+    const tools = buildVoiceTools(
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, counter,
+    );
+    const pending = (tools.bookAppointment!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { callerName: "Alex", dateTimeIso: "2026-09-01T10:00:00Z" },
+      { toolCallId: "t1", messages: [] },
+    );
+    // withNonInterruptible increments synchronously, before the first await
+    // inside the real execute — no need to race a timer to observe it.
+    expect(counter.count).toBe(1);
+    await pending;
+    expect(counter.count).toBe(0);
+  });
+
+  it("does not wrap bookAppointment at all when nonInterruptibleCounter is omitted — unchanged from before D7", async () => {
+    const counter = { count: 0 }; // never passed to buildVoiceTools below
+    const tools = buildVoiceTools(undefined);
+    await (tools.bookAppointment!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { callerName: "Alex", dateTimeIso: "2026-09-01T10:00:00Z" },
+      { toolCallId: "t1", messages: [] },
+    );
+    expect(counter.count).toBe(0);
+  });
+
+  it("never touches the counter for a tool outside NON_INTERRUPTIBLE_TOOLS, e.g. captureField", async () => {
+    const counter = { count: 0 };
+    const tools = buildVoiceTools(
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, () => true, undefined, undefined, counter,
+    );
+    await (tools.captureField!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { field: "email", value: "a@b.com", heard: "a@b.com" },
+      { toolCallId: "t1", messages: [] },
+    );
+    expect(counter.count).toBe(0);
+  });
+
+  it("registers crmSync and confirmCodOrder as non-interruptible-eligible (membership check) — their actual execute paths hit live Shopify/CRM integrations and are exercised in confirmCodOrder.test.ts/crmSync.test.ts instead, not here", () => {
+    const counter = { count: 0 };
+    const tools = buildVoiceTools(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { shop: "acme.myshopify.com", orderId: 1 },
+      { orgId: "org-a", phoneNumber: "+15551234567", callId: 1 },
+      undefined, undefined, undefined, undefined, undefined,
+      counter,
+    );
+    // Both tools must be registered at all (context bound) — the NON_INTERRUPTIBLE_TOOLS
+    // membership itself (agent.ts) is what determines they'd be wrapped; bookAppointment
+    // above already proves the wrapping mechanism fires correctly through buildVoiceTools.
+    expect(tools.confirmCodOrder).toBeDefined();
+    expect(tools.crmSync).toBeDefined();
   });
 });
 

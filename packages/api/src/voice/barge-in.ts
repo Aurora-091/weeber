@@ -50,6 +50,16 @@ export type BargeInDecisionInput = {
    * own resetting this to 0 whenever the agent stops speaking, the utterance
    * ends, or a barge-in has just fired. */
   priorStreak: number;
+  /** D7 (phase-d-conversation.md) — true while something that must not be
+   * cut off mid-flight is in progress: an irreversible-side-effect tool call
+   * (bookAppointment/crmSync/confirmCodOrder/offerCartRecoveryDiscount — see
+   * agent.ts's NON_INTERRUPTIBLE_TOOLS) or the recording-consent disclosure,
+   * which is prepended to the greeting/opening turn. Deferred, not dropped:
+   * the caller's speech doesn't vanish, this decision simply never fires
+   * while the flag is set — the very next STT event, once whatever's
+   * protected finishes, is free to fire normally if the caller is still
+   * talking. */
+  nonInterruptibleInFlight?: boolean;
 };
 
 export type BargeInDecision = {
@@ -69,6 +79,14 @@ export function decideBargeIn(i: BargeInDecisionInput): BargeInDecision {
   const trimmed = i.text.trim();
   if (!i.agentIsSpeaking || trimmed.length === 0) {
     return { fire: false, nextStreak: 0 };
+  }
+  // D7: never fire while something non-interruptible is in flight — checked
+  // before the streak logic below, and deliberately freezes rather than
+  // resets or advances the streak, so a short fragment that arrived mid-tool
+  // -call doesn't have to start its 2-hit streak over once the tool finishes
+  // and interruption becomes possible again.
+  if (i.nonInterruptibleInFlight) {
+    return { fire: false, nextStreak: i.priorStreak };
   }
   if (trimmed.length >= BARGE_IN_MIN_CHARS) {
     // Long/deliberate enough to trust immediately — do not make an urgent
