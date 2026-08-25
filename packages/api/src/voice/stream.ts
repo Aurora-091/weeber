@@ -56,7 +56,7 @@ import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backch
 import { decideBargeIn } from "./barge-in";
 import {
   createTurnDetector,
-  HeuristicTurnDetector,
+  createBaseHeuristic,
   SEMANTIC_TURN_DETECTION_FLAG,
   type TurnEndDetector,
 } from "./turn-detection";
@@ -362,7 +362,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * this is byte-identical to the old inline `endsMidThought` call until a
    * real model is dropped in behind the flag.
    */
-  let turnDetector: TurnEndDetector = new HeuristicTurnDetector();
+  let turnDetector: TurnEndDetector = createBaseHeuristic();
   /**
    * Structured, deterministic call state (see tools/captureField.ts and
    * agent.ts's buildKnownFactsBlock) — the ground truth the agent reads back

@@ -9,7 +9,7 @@
     "Regenerate with `bun run knip:gate --update` when a cleanup lands, and commit the",
     "new baseline WITH that cleanup."
   ],
-  "recordedAt": "2026-08-20",
+  "recordedAt": "2026-08-25",
   "recordedOn": "branch main, HEAD 602857a",
   "known": [
     "duplicates:packages/web/src/web/pages/__harness/index.tsx#VisualHarness|default",
@@ -29,7 +29,6 @@
     "exports:packages/api/src/voice/tools/bookAppointment.ts#bookAppointment",
     "exports:packages/api/src/voice/turn-detection/index.ts#createCompositeTurnDetector",
     "exports:packages/api/src/voice/turn-detection/index.ts#endsMidThought",
-    "exports:packages/api/src/voice/turn-detection/index.ts#HEURISTIC_DETECTOR_NAME",
     "exports:packages/api/src/voice/turn-detection/index.ts#withLatencyBudget",
     "exports:packages/api/src/voice/workflows/index.ts#advanceWorkflow",
     "exports:packages/api/src/voice/workflows/index.ts#buildWorkflowFactsBlock",

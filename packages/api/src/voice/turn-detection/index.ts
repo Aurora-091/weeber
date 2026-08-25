@@ -1,12 +1,32 @@
 import type { TurnEndDetector } from "./types";
 import { HeuristicTurnDetector } from "./heuristic";
+import { DictationSequenceDetector } from "./dictation";
 import { withLatencyBudget } from "./budgeted";
 import { createCompositeTurnDetector } from "./composite";
 
 export type { TurnEndInput, TurnEndDecision, TurnEndDetector } from "./types";
-export { endsMidThought, HeuristicTurnDetector, HEURISTIC_DETECTOR_NAME } from "./heuristic";
+// D6 (2026-08-25): HeuristicTurnDetector/DictationSequenceDetector and their
+// pure-function/name-constant siblings are deliberately NOT re-exported here
+// — nothing consumes them through this barrel (stream.ts only ever needs
+// createTurnDetector/createBaseHeuristic below; every test imports the
+// individual detector files directly). Re-exporting them anyway is exactly
+// the kind of unused-export knip:gate's ratchet exists to catch.
+export { endsMidThought } from "./heuristic";
 export { withLatencyBudget } from "./budgeted";
 export { createCompositeTurnDetector } from "./composite";
+
+/**
+ * D6 (phase-d-conversation.md, 2026-08-25) — the always-on base detector:
+ * the filler-word heuristic and the dictation-sequence heuristic chained via
+ * the same composite policy Phase V built for a model refiner (see
+ * composite.ts's doc comment). Both are zero-I/O, so this is still
+ * synchronous-resolving end to end — no latency budget needed for either
+ * leg. This replaces a bare `new HeuristicTurnDetector()` everywhere a "just
+ * the cheap heuristics, no model" detector is needed.
+ */
+export function createBaseHeuristic(): TurnEndDetector {
+  return createCompositeTurnDetector(new HeuristicTurnDetector(), new DictationSequenceDetector());
+}
 
 /**
  * Org feature flag (same pattern as EXPRESSIVE_DELIVERY_FLAG / backchannels):
@@ -47,7 +67,7 @@ export type TurnDetectorConfig = {
  * this: pass a `refiner`, flip the flag.
  */
 export function createTurnDetector(config: TurnDetectorConfig): TurnEndDetector {
-  const heuristic = new HeuristicTurnDetector();
+  const heuristic = createBaseHeuristic();
   const refiner = config.refiner ?? null;
   if (!config.semanticEnabled || !refiner) return heuristic;
   const budgeted = withLatencyBudget(

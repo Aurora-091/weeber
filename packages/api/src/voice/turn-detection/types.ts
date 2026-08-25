@@ -29,7 +29,7 @@ export type TurnEndDecision = {
   /** Which detector produced this decision — observability + budget-fallback attribution. */
   by: string;
   /** Present only when done=false, why we're holding. */
-  reason?: "mid-thought";
+  reason?: "mid-thought" | "incomplete-dictation";
 };
 
 export interface TurnEndDetector {

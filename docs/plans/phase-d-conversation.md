@@ -376,6 +376,48 @@ invented price range.
 
 ### D6. Endpointing has no concept of an incomplete dictated sequence
 
+**Status: shipped 2026-08-25.** Confirmed against fresh research (Decagon, Cekura, LiveKit, a 2026 arXiv
+paper on Thai semantic end-of-turn detection) before building: the "pause mid-dictation" failure mode is
+real and named in the current literature, and the state-of-the-art fix (semantic VAD recognizing "a phrase
+that introduces a number" context) is a full model, out of scope here per this section's own "not a model
+call" constraint — confirms the cheap regex-signal approach below is the right-sized fix for this phase,
+not an outdated one.
+
+New `packages/api/src/voice/turn-detection/dictation.ts`: `endsWithIncompleteDictation` checks three
+concrete, regex-detectable signals — a **lone** trailing digit (not part of a multi-digit number: "4242" is
+whole, "4, 2" pausing after a comma ends on a standalone "2"), a **lone** trailing letter (spelling: "j" as
+in "j, o, h, n"), and a trailing hyphen (Deepgram's own convention for a word its model believes was cut
+off). `DictationSequenceDetector` wraps it as a `TurnEndDetector`, kept in its own file rather than folded
+into `endsMidThought` (per this section's own instruction) so the two failure modes stay independently
+testable. Composed with the existing filler-word heuristic via `composite.ts` — the exact seam Phase V
+built for a model refiner, reused here for a second heuristic instead (`composite.ts`'s doc comment
+updated to say so): `turn-detection/index.ts`'s new `createBaseHeuristic()` chains them, and replaces the
+bare `new HeuristicTurnDetector()` both at `stream.ts`'s default and inside `createTurnDetector`'s
+model-refiner fallback — so a slow/failing model now degrades to catching *both* failure modes, not just
+filler-word trail-off. `TurnEndDecision.reason` widened to include `"incomplete-dictation"`.
+
+**Tests, in two passes.** Plan-specified cases first (lone digit/letter, trailing hyphen, the exact
+"my email is j" → pause → "o-h-n at gmail dot com" two-fragment scenario — the first fragment reads as
+incomplete, the second as complete, proving the agent wouldn't respond between them). Then a second pass
+of edge cases this session added on its own initiative to stress the regex before trusting it: a
+multi-digit/multi-letter ending must NOT be flagged (the whole point of "lone"), a decimal number ("3.14")
+doesn't falsely trigger the lone-digit check, trailing punctuation is tolerated the same way
+`TRAILING_FILLER_PATTERN` already tolerates it, case-insensitivity, a hyphenated compound word ending
+normally isn't mistaken for a cut-off, empty/whitespace input never flags, and a documented accepted false
+positive (a single letter/digit as someone's *whole* answer costs one extra beat, same tradeoff
+`endsMidThought` already accepts). `turn-detection.test.ts`'s existing factory tests updated for the new
+composite shape (behavior-checked, not `instanceof`, since the "no model" path is a composite object now,
+not a bare class instance). Also pruned `turn-detection/index.ts`'s barrel re-exports down to what's
+actually consumed through it — `HeuristicTurnDetector`/`DictationSequenceDetector`/their name constants
+were being re-exported for nothing, which `knip:gate` caught immediately; fixed by removing the unused
+re-exports (every real caller already imports the individual detector files directly) rather than
+widening the baseline, and the baseline **shrank** by one in the process (a pre-existing unused
+`HEURISTIC_DETECTOR_NAME` re-export the barrel had already been carrying). 1615/1615 api tests pass
+(31 in `turn-detection/`), typecheck/lint/knip:gate clean. **Not deployed, not measured live** — no
+dictation-cutoff has been directly observed in production calls read so far; this closes a real, externally-
+documented gap ahead of evidence of it happening here, the one item in this phase built that way on
+purpose (see this section's own framing below).
+
 **Added 2026-08-25** — `docs/audits/2026-08-25-pipeline-edge-cases-research.md` item 2. Not from
 production audit findings (no dictation-cutoff has been observed in the 10 calls read so far) — from
 external research on a well-documented, named failure mode, filed here because it's the same mechanism

@@ -12,6 +12,21 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D6 shipped — a second turn-detection heuristic for mid-dictation pauses (2026-08-25).** Confirmed
+  against fresh research (Decagon, Cekura, LiveKit, a 2026 arXiv paper) that "pause mid-dictation" is a
+  real, named failure class before building, and that the SOTA fix (semantic VAD) is a full model — out
+  of scope, confirming the cheap-regex approach is right-sized. New
+  `turn-detection/dictation.ts`: `endsWithIncompleteDictation` catches a lone trailing digit, lone
+  trailing letter, or trailing hyphen (Deepgram's own cut-off-word marker); `DictationSequenceDetector`
+  composed with the existing filler-word heuristic via the same seam Phase V built for a model refiner.
+  `createBaseHeuristic()` replaces every bare `new HeuristicTurnDetector()`, including the model-refiner's
+  own timeout fallback. Two test passes: plan-specified cases (including the exact "j" → pause →
+  "o-h-n at gmail dot com" scenario) plus new edge cases this session added on its own initiative
+  (multi-digit/letter endings must NOT flag, decimal numbers, punctuation tolerance, case-insensitivity,
+  hyphenated compound words, empty input). Also pruned unused barrel re-exports knip:gate caught, shrinking
+  the baseline by one in the process. 1615/1615 api tests pass, typecheck/lint/knip:gate clean. Not
+  deployed. See `docs/plans/phase-d-conversation.md`'s D6 status note.
+
 - **D5 decided — keep the unsourced-claim detector logging, do not promote to blocking (2026-08-25).**
   Queried `guardrail_events` for `category='unsourced-claim'` across all 17 production calls: zero rows,
   ever. Promoting a detector with zero real firings to blocking-and-rephrasing would be guessing at its

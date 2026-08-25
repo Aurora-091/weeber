@@ -5,9 +5,11 @@ import { withLatencyBudget } from "./budgeted";
 import { createCompositeTurnDetector } from "./composite";
 import {
   createTurnDetector,
+  createBaseHeuristic,
   SEMANTIC_TURN_DETECTION_FLAG,
   DEFAULT_REFINER_BUDGET_MS,
 } from "./index";
+import { DICTATION_DETECTOR_NAME } from "./dictation";
 
 // A controllable model stand-in: a network round-trip the tests can make
 // answer, stall past the budget, or throw — no real vendor.
@@ -116,31 +118,55 @@ describe("createCompositeTurnDetector", () => {
 });
 
 describe("createTurnDetector factory", () => {
-  test("flag off → plain heuristic (today's behavior)", () => {
+  // D6 (2026-08-25): the "no model" path is now createBaseHeuristic()'s
+  // composite (filler-word + dictation-sequence), not a bare
+  // HeuristicTurnDetector instance — these tests check behavior (does it
+  // still catch a filler-word trail-off? does it now ALSO catch a
+  // dictation-sequence pause?) rather than instanceof, which is an
+  // implementation detail that changed on purpose.
+  test("flag off → the base heuristic (today's behavior, filler-word + dictation-sequence combined)", async () => {
     const d = createTurnDetector({ semanticEnabled: false, refiner: new StubModelTurnDetector({ kind: "answer", done: true }) });
-    expect(d).toBeInstanceOf(HeuristicTurnDetector);
+    expect((await d.decide({ text: "I want to order and" })).reason).toBe("mid-thought");
+    expect((await d.decide({ text: "my email is j" })).reason).toBe("incomplete-dictation");
+    expect((await d.decide({ text: "I want to cancel my order" })).done).toBe(true);
   });
 
-  test("flag on but no refiner (Phase V default) → plain heuristic", () => {
+  test("flag on but no refiner (Phase V default) → the base heuristic, model never consulted", async () => {
     const d = createTurnDetector({ semanticEnabled: true, refiner: null });
-    expect(d).toBeInstanceOf(HeuristicTurnDetector);
+    expect((await d.decide({ text: "I want to order and" })).reason).toBe("mid-thought");
+    expect((await d.decide({ text: "spell that: j" })).reason).toBe("incomplete-dictation");
   });
 
   test("flag on + refiner → budgeted composite that can override", async () => {
     const refiner = new StubModelTurnDetector({ kind: "answer", done: false });
     const d = createTurnDetector({ semanticEnabled: true, refiner });
-    expect(d).not.toBeInstanceOf(HeuristicTurnDetector);
+    expect(d).not.toBe(createBaseHeuristic());
     const r = await d.decide({ text: "I want to cancel my order" });
     expect(r.done).toBe(false);
     expect(r.by).toBe("stub-model");
   });
 
-  test("a slow refiner degrades to the heuristic within budget", async () => {
+  test("a slow refiner degrades to the base heuristic within budget, never the model", async () => {
     const refiner = new StubModelTurnDetector({ kind: "answer", done: false, delayMs: 50 });
     const d = createTurnDetector({ semanticEnabled: true, refiner, refinerBudgetMs: 5 });
     const r = await d.decide({ text: "I want to cancel my order" });
     expect(r.done).toBe(true);
-    expect(r.by).toBe(HEURISTIC_DETECTOR_NAME);
+    // Whichever of the two base heuristics ends up owning the "done"
+    // verdict (see composite.ts — the second only runs once the first says
+    // done, and its result is what's returned) is an implementation detail;
+    // what this regression guard actually cares about is that the timed-out
+    // model's answer was NOT used.
+    expect(r.by).not.toBe("stub-model");
+    expect([HEURISTIC_DETECTOR_NAME, DICTATION_DETECTOR_NAME]).toContain(r.by);
+  });
+
+  test("a slow refiner still degrades to catching a dictation-sequence pause, not just filler-word", async () => {
+    const refiner = new StubModelTurnDetector({ kind: "answer", done: true, delayMs: 50 });
+    const d = createTurnDetector({ semanticEnabled: true, refiner, refinerBudgetMs: 5 });
+    const r = await d.decide({ text: "my email is j" });
+    expect(r.done).toBe(false);
+    expect(r.reason).toBe("incomplete-dictation");
+    expect(r.by).toBe(DICTATION_DETECTOR_NAME);
   });
 
   test("exposed constants are stable", () => {
