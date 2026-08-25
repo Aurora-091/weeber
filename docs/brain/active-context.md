@@ -12,6 +12,25 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Phase C pushed and deploys pending manual approval; Phase D started, D1 shipped (2026-08-25).** Pushed
+  the 3 Phase C commits to `origin/main` at the user's explicit direction; Railway auto-triggered deploys
+  for both `production` and `staging`, but both sit in `NEEDS_APPROVAL` — confirmed via Railway's own agent
+  that no API/MCP path exists to approve a pending deployment, only the dashboard's Approve button. Ran the
+  equivalent of `bun run latency:report` via Supabase MCP directly (this sandbox's Railway OAuth connection
+  redacts `DATABASE_URL`, and the Railway CLI isn't installed/authenticated) and recorded the pre-deploy
+  baseline into `phase-c-latency.md`: v2v p50 1481ms, p95 3463ms, over all 15 calls. Then moved to Phase D
+  at the user's direction — its own precondition (a recorded Phase C baseline) is satisfied provisionally
+  by that pre-deploy number, flagged for reconciliation once someone approves the deploys and real post-fix
+  calls land. **D1** (idle prompt interruption): verified by construction that barge-in already interrupts
+  a playing idle-prompt line (new `stream-idle-prompt-bargein.test.ts`) — items 1/4 of the plan's own spec
+  were already true, same pattern as C3's "verify before building." Shipped the one real gap: item 3, a
+  per-template silence-timeout override (`agent.ts`'s `resolveSilenceTimeouts`) raising
+  `insurance-final-expense-qualifier`'s thresholds to 12000/10000ms (from the global 8000/7000ms) given
+  that persona's explicit elderly-skew. 1583/1583 api tests pass, typecheck/lint/knip:gate clean. Not
+  committed yet — about to be. D2-D8 (question ledger, escalation triggers, filler-line rewrite, unsourced-
+  claim decision, dictation-endpointing, non-interruptible tools/disclosure, critical-field spell-back) are
+  substantial, real product/compliance decisions each — not yet started.
+
 - **Phase C (latency) is code-complete as of 2026-08-25 — all four sub-phases shipped, at the user's
   direction to research, fix, and close the phase in one session (`docs/plans/phase-c-latency.md`).** C1
   (TTS session reuse, 2026-08-24) + its barge-in follow-up (2026-08-25, see bullet above); C2 (prompt-cache

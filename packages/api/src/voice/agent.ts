@@ -688,6 +688,11 @@ export type ResolvedAgentConfig = {
    * undefined rather than fake a segmentation they didn't produce. Never read
    * on a live call; `systemPrompt` remains the only thing the model sees. */
   promptSegments?: PromptSegment[];
+  /** D1 (phase-d-conversation.md) — per-template override of `stream.ts`'s
+   * caller-silence warning/hangup thresholds. Undefined = use stream.ts's own
+   * global defaults, unchanged. See `resolveSilenceTimeouts`'s doc comment. */
+  silenceWarningMs?: number;
+  silenceHangupMs?: number;
 };
 
 /**
@@ -714,6 +719,54 @@ export type ResolvedAgentConfig = {
  */
 function defaultToolsFallback(defaultTools: unknown): AvailableToolName[] | undefined {
   return Array.isArray(defaultTools) && defaultTools.length > 0 ? (defaultTools as AvailableToolName[]) : undefined;
+}
+
+/**
+ * D1 (phase-d-conversation.md) — the caller-silence re-prompt/hangup timers
+ * (`stream.ts`'s `SILENCE_WARNING_MS`/`SILENCE_HANGUP_MS`, 8000/7000ms) were a
+ * single global constant despite call 2's production data showing the
+ * warning line fire 4 times in one call, twice colliding with the caller
+ * (2026-08-21 audit, finding 4). Raising the global default would under-serve
+ * every persona that doesn't need it raised — this codebase's own D1 research
+ * (2026-08-25, docs/audits/2026-08-25-pipeline-edge-cases-research.md item 1)
+ * names *why* specifically for `insurance-final-expense-qualifier`: it is
+ * explicitly elderly-skewing by design (final-expense/burial insurance), not
+ * incidentally, and the cited literature (UC Berkeley AgeVoicE;
+ * dementia-friendly-EVA, *Frontiers in Dementia* 2024) documents that older
+ * callers' real speech is slower and more frequently paused than a generic
+ * assistant's default silence window assumes — the fix in that literature is
+ * a persona/demographic-adaptive value, not one raised global number.
+ *
+ * Values below are a reasoned estimate (50% more time before the warning,
+ * proportionally more before hangup), not a controlled A/B result — there is
+ * no experiment behind the exact numbers yet, only the direction the
+ * evidence points. Revisit once `latency:report`/a call-quality read confirms
+ * whether this actually cuts false warnings without excessively delaying a
+ * genuine hangup-worthy silence. Every other template keeps today's values —
+ * this is a targeted override, not a rebaseline.
+ *
+ * Deliberately a code-level map keyed by template, not a new
+ * `orgAgentConfigs` column: no product/compliance reason yet to let a
+ * merchant self-tune this per org (unlike `humanTransferNumber`, which is a
+ * real per-org business fact), and adding DB/UI surface for a value with no
+ * A/B evidence behind it yet would be exactly the kind of premature schema
+ * ADR-012 already warns against building ahead of a real need.
+ */
+const SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE: Record<string, { warningMs: number; hangupMs: number }> = {
+  "insurance-final-expense-qualifier": { warningMs: 12000, hangupMs: 10000 },
+};
+
+/**
+ * Resolves this call's silence-warning/hangup thresholds — the template
+ * override above if one exists for `templateKey`, otherwise `undefined` so
+ * `stream.ts` falls through to its own existing global defaults. Exported
+ * standalone (not folded silently into `resolveAgentConfig`'s two return
+ * branches as inline object literals) so it's independently testable without
+ * needing a DB-backed config row.
+ */
+export function resolveSilenceTimeouts(templateKey: string | undefined): { warningMs?: number; hangupMs?: number } {
+  if (!templateKey) return {};
+  return SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE[templateKey] ?? {};
 }
 
 /**
@@ -827,6 +880,7 @@ export async function resolveAgentConfig(opts: {
         literalGreetingTemplate: config.personaPrompt
           ? undefined
           : resolveLocalizedGreeting(resolvedTemplateKey, config.language ?? undefined, tmpl?.literalGreetingTemplate ?? undefined),
+        ...resolveSilenceTimeouts(resolvedTemplateKey),
       };
     }
   }
@@ -856,6 +910,7 @@ export async function resolveAgentConfig(opts: {
         literalGreetingTemplate: tmpl.literalGreetingTemplate,
         disclosureText: disclosure.text,
         disclosureVersion: disclosure.version,
+        ...resolveSilenceTimeouts(resolvedTemplateKey),
       };
     }
   }
@@ -869,7 +924,13 @@ export async function resolveAgentConfig(opts: {
   const promptInputs: ComposeSystemPromptOptions = { jobDescription: await resolvePersonaBody(opts), direction };
   const systemPrompt = composeSystemPrompt(promptInputs).text;
   const disclosure = resolveDisclosure({});
-  return { systemPrompt, promptInputs, disclosureText: disclosure.text, disclosureVersion: disclosure.version };
+  return {
+    systemPrompt,
+    promptInputs,
+    disclosureText: disclosure.text,
+    disclosureVersion: disclosure.version,
+    ...resolveSilenceTimeouts(resolvedTemplateKey),
+  };
 }
 
 /**

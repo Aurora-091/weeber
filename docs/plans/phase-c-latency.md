@@ -427,6 +427,20 @@ window:
 7. p95 < 1200 ms is the **stated target but not the gate**, because it depends on Phase D's turn-taking
    work. Record the achieved p95 in the commit message so D can be judged against it.
 
+**Baseline recorded 2026-08-25 (pre-deploy — the number Phase D diffs against once live data confirms the
+fixes):** `bun run latency:report`'s equivalent (run via Supabase MCP directly, since this sandbox's
+Railway connection can't expose `DATABASE_URL` — see below) over all 15 calls in production at push time:
+per-turn **`voiceToVoice` p50 1481ms, p95 3463ms**, n=90; `pickupToFirstAudio` p50 1985ms, p95 10487ms
+(call 3's 8.5s unaccounted-for gap, Finding 3 of the 2026-08-25 ten-call review, still unexplained); v2v
+decomposition LLM 73% / TTS 22% / other 5%; cache-hit p50 33%, mid-call drop on 6 calls (2, 5, 6, 7, 8,
+16 — expected under C2's corrected condition 4 for any call with mid-call captures, not yet cross-checked
+call-by-call). **This is still pre-deploy data** — commits `abef5ee`/`1cc5b51`/`3727f91` were pushed to
+`origin/main` this session and Railway auto-triggered both `production` and `staging` deployments, but
+both sit in `NEEDS_APPROVAL` — Railway's own agent confirmed no API/MCP path exists to approve a pending
+deployment, only the dashboard's Approve button. **Whoever approves those deploys should re-run
+`latency:report` afterward against real post-deploy calls and update this baseline note** — that is the
+actual close of this exit gate's live conditions, not this entry.
+
 ---
 
 ## Explicitly refused

@@ -9,6 +9,7 @@ import {
   hashStablePrefix,
   isTimedOutToolResult,
   resolveAgentConfig,
+  resolveSilenceTimeouts,
   toTurnTokenUsage,
 } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
@@ -75,6 +76,25 @@ describe("toTurnTokenUsage", () => {
       outputTokens: undefined,
       cachedInputTokens: undefined,
     });
+  });
+});
+
+describe("resolveSilenceTimeouts (D1, phase-d-conversation.md)", () => {
+  it("returns the elderly-skewing insurance persona's raised thresholds", () => {
+    expect(resolveSilenceTimeouts("insurance-final-expense-qualifier")).toEqual({
+      warningMs: 12000,
+      hangupMs: 10000,
+    });
+  });
+
+  it("returns empty (stream.ts keeps its own defaults) for every other template", () => {
+    expect(resolveSilenceTimeouts("shopify-cart-recovery")).toEqual({});
+    expect(resolveSilenceTimeouts("insurance-lead-followup")).toEqual({});
+  });
+
+  it("returns empty for an unknown or absent template key", () => {
+    expect(resolveSilenceTimeouts(undefined)).toEqual({});
+    expect(resolveSilenceTimeouts("not-a-real-template")).toEqual({});
   });
 });
 

@@ -12,6 +12,16 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Phase D started; D1 (idle-prompt interruption) mostly already true, one real gap shipped (2026-08-25).**
+  Verified by construction (new `stream-idle-prompt-bargein.test.ts`) that barge-in already interrupts a
+  playing idle-prompt/goodbye line — `speakCannedLine` shares the same `speak()`/`agentIsSpeaking` path
+  every real turn uses, so an interim caller transcript already cuts it off. Real gap: the 8000/7000ms
+  silence-warning/hangup thresholds were one global constant despite `insurance-final-expense-qualifier`
+  being explicitly elderly-skewing (cited literature: older callers' real speech is slower/more paused than
+  generic-assistant defaults assume). New `resolveSilenceTimeouts` in `agent.ts` gives that one template
+  12000/10000ms; every other template keeps today's values. 1583/1583 api tests pass, typecheck/lint/
+  knip:gate clean. Not deployed or measured live. See `docs/plans/phase-d-conversation.md`'s D1 status note.
+
 - **C1 barge-in regression fixed — interrupting the agent no longer force-closes the held TTS session
   (2026-08-25).** Root cause: `stream.ts` closed the whole socket on every barge-in because Cartesia/
   ElevenLabs were believed to have no way to cancel just the interrupted turn's context — current provider

@@ -1,10 +1,16 @@
 # Phase D — Conversation intelligence
 
-**Status:** Blocked on Phase C
+**Status:** In progress (2026-08-25) — started at the user's explicit direction. Phase C is code-complete
+(all four sub-phases) and pushed, but its exit gate's live-measurement conditions are pending a manual
+Railway deploy approval outside this session's reach (see `phase-c-latency.md`'s closing status). A
+pre-deploy baseline is recorded there (v2v p50 1481ms, p95 3463ms) to satisfy this section's own
+precondition well enough to start; whoever approves the pending deploys should re-run `latency:report`
+against real post-deploy calls and reconcile that baseline before this phase's own exit gate condition 5/6
+(latency-regression / p95-comparison) are trusted.
 **Blocks:** Phase E
 **Preconditions:** Phase C's exit gate met, with the achieved p95 recorded in that phase's closing
 commit. D changes turn structure and will move those numbers; there must be a recorded baseline to move
-them from.
+them from. **(Satisfied provisionally — see Status above.)**
 **Evidence:** `docs/audits/2026-08-21-first-two-production-calls.md`, findings 4, 8 and the sentiment
 item under "smaller items"; `docs/audits/2026-08-25-pipeline-edge-cases-research.md` items 1-4 (added
 2026-08-25 — external research on silence-timeout demographics, dictation-sequence endpointing, tool-call
@@ -47,6 +53,40 @@ Two smaller items belong here because they are the same category — what the ag
 ## The work
 
 ### D1. Rework the idle prompt so it cannot interrupt
+
+**Status: items 1, 2, and 4 verified already true by construction; item 3 shipped 2026-08-25.**
+
+Before building anything, tested whether the existing barge-in mechanism (`decideBargeIn` +
+`agentIsSpeaking`, `barge-in.ts`) already interrupts a playing idle-prompt line — `speakCannedLine` routes
+through the same shared `speak()` every real turn uses, which sets `agentIsSpeaking = true` regardless of
+which code path is speaking, and the STT handler's barge-in check runs on every transcript event
+unconditionally. New `stream-idle-prompt-bargein.test.ts` proves it directly: an interim (not final)
+caller transcript arriving while the "Are you still there?" line's text is being handed to TTS closes the
+turn's TTS handle — the same observable signature a normal mid-turn barge-in produces. **Items 1 and 4 are
+therefore already satisfied** — the idle line is interruptible, and it is cut the instant caller speech is
+detected, not merely checked-for-and-abandoned after the fact. (`stream-silence-timeout.test.ts`'s
+existing race test only proves the separate *escalation* decision is correct — that the call doesn't
+wrongly hang up — using a seam that fires before any audio streams; it does not by itself prove the audio
+gets cut, which is why this needed its own test rather than reusing that one's passing status as evidence.)
+**Item 2** (debounce before the idle timer may arm) also appears satisfied by construction: the timer only
+ever arms from `speak()`'s own tail, after the agent's reply has been generated and sent — which is
+naturally gapped by real LLM+TTS turn latency (our own data: v2v p50 ≈1.5s), not a fixed guess — but this
+has not been independently verified with a dedicated test the way items 1/4 now are, so treat it as
+plausible, not proven.
+
+**Item 3 — shipped.** `agent.ts`'s `resolveSilenceTimeouts(templateKey)` returns a per-template override
+of `SILENCE_WARNING_MS`/`SILENCE_HANGUP_MS` (8000/7000ms defaults, unchanged for every other template):
+`insurance-final-expense-qualifier` gets 12000/10000ms, a reasoned ~50% increase (not a controlled A/B
+result — flagged as such in the code) based on the cited elderly-skewing literature. Wired into
+`ResolvedAgentConfig`'s three `resolveAgentConfig` return branches and consumed in `stream.ts` via new
+call-scoped `silenceWarningMs`/`silenceHangupMs` variables (defaulting to the existing module constants),
+set once at "start" from `agentConfig.silenceWarningMs`/`silenceHangupMs`. Deliberately a code-level map,
+not a new `orgAgentConfigs` column — no product/compliance reason yet to let a merchant self-tune this per
+org, and adding DB/UI surface for a value with no A/B evidence behind it would be the exact premature
+schema ADR-012 already warns against. New `resolveSilenceTimeouts` unit tests. 1583/1583 api tests pass,
+typecheck/lint/knip:gate clean. **Not deployed, not measured live** — same caveat as everything else this
+session; revisit the exact multiplier once real calls on this persona confirm whether it actually cuts
+false warnings without excessively delaying a genuine hangup-worthy silence.
 
 **Where:**
 

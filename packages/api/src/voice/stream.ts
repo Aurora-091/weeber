@@ -662,6 +662,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /** Caller-silence handling (re-prompt once, then hang up) — see armSilenceTimer. */
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceWarningIssued = false;
+  // D1 (phase-d-conversation.md): per-template override, set once at "start"
+  // from resolveAgentConfig's silenceWarningMs/silenceHangupMs — see
+  // agent.ts's resolveSilenceTimeouts. Defaults to the module-level constants
+  // (below) unchanged for every template with no override.
+  let silenceWarningMs: number = SILENCE_WARNING_MS;
+  let silenceHangupMs: number = SILENCE_HANGUP_MS;
 
   /**
    * Monotonic counter bumped at the one place a caller utterance is actually
@@ -1722,7 +1728,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     if (ended) return;
     clearSilenceTimer();
     const armedAtEpoch = callerSpeechEpoch;
-    const threshold = silenceWarningIssued ? SILENCE_HANGUP_MS : SILENCE_WARNING_MS;
+    const threshold = silenceWarningIssued ? silenceHangupMs : silenceWarningMs;
     silenceTimer = setTimeout(() => {
       void handleSilenceTimeout(ws, armedAtEpoch);
     }, unplayedAudioMs + threshold);
@@ -3077,6 +3083,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             resolvedFlags = effectiveFlagsResult;
             resolvedFlagsReady = true;
             persona = agentConfig.systemPrompt;
+            // D1: per-template silence-timeout override, if resolveAgentConfig
+            // found one for this call's template — see resolveSilenceTimeouts.
+            if (agentConfig.silenceWarningMs !== undefined) silenceWarningMs = agentConfig.silenceWarningMs;
+            if (agentConfig.silenceHangupMs !== undefined) silenceHangupMs = agentConfig.silenceHangupMs;
 
             // Global Compliance Engine Tier 0 (2026-07-16,
             // docs/global-compliance-engine-plan.md #2/#3): persist the exact
