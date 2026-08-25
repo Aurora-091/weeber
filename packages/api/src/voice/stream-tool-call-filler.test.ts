@@ -1,4 +1,5 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import { getCachedTtsAudio, clearTtsCacheForTests } from "./tts-cache";
 
 /**
  * maybePlayToolCallFiller() (stream.ts) used to call getEffectiveFlags()
@@ -142,9 +143,13 @@ mock.module("./twilio-client", () => ({
 mock.module("./org-queries", () => ({
   getEffectiveFlags: async () => {
     getEffectiveFlagsCallCount += 1;
-    // Flag off — maybePlayToolCallFiller returns immediately after reading
-    // it, before touching any TTS-cache code this test doesn't mock.
-    return {};
+    // D4 (2026-08-25): an absent hybrid-audio-cache row now reads as ON
+    // (was off before that flip), so maybePlayToolCallFiller proceeds into
+    // the cache lookup instead of returning immediately — harmless here
+    // since this test only asserts getEffectiveFlags call-count dedup, not
+    // filler content, and the mocked ./tts's connectTts covers
+    // warmFillerCache's one-shot warm path either way.
+    return agentFlagsOverride ?? {};
   },
 }));
 mock.module("./leads/leads", () => ({
@@ -160,15 +165,20 @@ const START_EVENT = JSON.stringify({
 });
 
 function fakeWs() {
-  return { send: () => {}, close: () => {} };
+  const sent: string[] = [];
+  return { sent, send: (data: string) => sent.push(data), close: () => {} };
 }
 
 const settle = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let agentFlagsOverride: Record<string, boolean> | undefined;
 
 beforeEach(() => {
   getEffectiveFlagsCallCount = 0;
   lastOnTranscript = null;
   slowToolCallsThisTurn = 1;
+  agentFlagsOverride = undefined;
+  clearTtsCacheForTests();
 });
 
 describe("maybePlayToolCallFiller reuses the call-start effective flags (2026-08-20)", () => {
@@ -202,5 +212,60 @@ describe("maybePlayToolCallFiller reuses the call-start effective flags (2026-08
     handlers.onClose();
 
     expect(getEffectiveFlagsCallCount).toBe(1);
+  });
+});
+
+/**
+ * D4 (phase-d-conversation.md, 2026-08-25) — hybrid-audio-cache flipped from
+ * opt-in to opt-out: an absent `feature_flags` row (production's actual
+ * state — the table is empty) now means the filler is ON, not off. An
+ * explicit `enabled: false` row is still the kill switch. The first
+ * slow-tool-call trigger only warms the cache (nothing cached yet to send);
+ * the second, one turn later, should find a hit and actually forward audio.
+ */
+const FILLER_TEXTS = ["One moment.", "Just a second."];
+function anyFillerCached(): boolean {
+  return FILLER_TEXTS.some((text) => getCachedTtsAudio("cartesia", "cartesia-voice-uuid", "en", text) !== undefined);
+}
+
+describe("hybrid-audio-cache default flip (D4, 2026-08-25)", () => {
+  it("with no flags row at all, a slow tool call warms and then uses the filler cache", async () => {
+    agentFlagsOverride = undefined; // {} from the mock above — the real production shape
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    // First trigger: nothing cached yet, so this only warms it.
+    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    await settle();
+    expect(anyFillerCached()).toBe(true);
+
+    // Second trigger, one turn later: the warm from turn 1 is now a hit,
+    // so the filler actually gets forwarded to the caller.
+    const sentBeforeSecondTurn = ws.sent.length;
+    lastOnTranscript?.({ text: "and what about the refund", isFinal: true, speechFinal: true });
+    await settle();
+    handlers.onClose();
+
+    expect(ws.sent.length).toBeGreaterThan(sentBeforeSecondTurn);
+  });
+
+  it("an explicit enabled: false still suppresses the filler — the kill switch survives the default flip", async () => {
+    agentFlagsOverride = { "hybrid-audio-cache": false };
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    await settle();
+    lastOnTranscript?.({ text: "and what about the refund", isFinal: true, speechFinal: true });
+    await settle();
+    handlers.onClose();
+
+    // Never even warmed, let alone sent — maybePlayToolCallFiller returns
+    // before touching the cache at all when the flag is explicitly off.
+    expect(anyFillerCached()).toBe(false);
   });
 });

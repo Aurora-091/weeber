@@ -1619,7 +1619,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     const flags = resolvedFlagsReady
       ? resolvedFlags
       : await getEffectiveFlags(humanNumberOrgId ?? "").catch((): Record<string, boolean> => ({}));
-    const hybridCacheEnabled = flags[HYBRID_AUDIO_CACHE_FLAG] === true;
+    // D4 (phase-d-conversation.md, 2026-08-25): default flipped from opt-in
+    // to opt-out, at the user's explicit direction — "hybrid-audio-cache"
+    // had been fully built (cached canned lines, tool-call filler) and
+    // never once executed in production, because `feature_flags` is empty
+    // and an absent row previously read as off. An absent row now reads as
+    // ON; an explicit `enabled: false` row is still the kill switch for any
+    // org that needs one. See maybePlayToolCallFiller below for the other
+    // call site — both flipped together, one flag, one meaning.
+    const hybridCacheEnabled = flags[HYBRID_AUDIO_CACHE_FLAG] !== false;
 
     if (!hybridCacheEnabled) {
       await speak(ws, async () => {
@@ -1653,8 +1661,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   /**
-   * §3a: tool-call filler audio — a short line ("One moment, let me check
-   * that." / "Let me look into that for you.") played the instant a tool
+   * §3a: tool-call filler audio — a short line played the instant a tool
    * call has been running past agent.ts's TOOL_CALL_FILLER_THRESHOLD_MS
    * (lookupInfo's knowledge-base search, bookAppointment/crmSync's outbound
    * HTTP calls), so the caller hears *something* instead of dead air while
@@ -1668,8 +1675,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * defeating the entire point of a filler. Fire-and-forget warms it in
    * the background instead, so the *next* slow tool call (this call or
    * any other) gets an instant cache hit.
+   *
+   * D4 (phase-d-conversation.md, 2026-08-25): the original pair ("One
+   * moment, let me check that." / "Let me look into that for you.")
+   * committed the agent to having found something before the tool had
+   * returned — not outcome-neutral once Phase A made "the tool returned
+   * nothing useful" (e.g. crmSync's `synced: false`) a first-class,
+   * frequently-true outcome. Rewritten as pure time-buying phrases that
+   * imply nothing about what the tool will report back.
    */
-  const TOOL_CALL_FILLER_LINES = ["One moment, let me check that.", "Let me look into that for you."];
+  const TOOL_CALL_FILLER_LINES = ["One moment.", "Just a second."];
 
   async function warmFillerCache(text: string) {
     // Warm against the voice the caller is hearing right now (post-failover if
@@ -1701,7 +1716,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     const fillerFlags = resolvedFlagsReady
       ? resolvedFlags
       : await getEffectiveFlags(humanNumberOrgId ?? "").catch((): Record<string, boolean> => ({}));
-    if (fillerFlags[HYBRID_AUDIO_CACHE_FLAG] !== true) return;
+    // D4: same default flip as speakCannedLine above — absent reads as ON,
+    // `enabled: false` is still the kill switch.
+    if (fillerFlags[HYBRID_AUDIO_CACHE_FLAG] === false) return;
     if (ended || !streamSid) return;
 
     const text = TOOL_CALL_FILLER_LINES[Math.floor(Math.random() * TOOL_CALL_FILLER_LINES.length)];

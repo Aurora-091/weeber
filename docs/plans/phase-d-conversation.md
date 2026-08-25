@@ -261,6 +261,46 @@ the `scheduled_calls` row where applicable.
 
 ### D4. Outcome-neutral filler lines, and natural discourse markers beyond tool-call coverage
 
+**Status: partially shipped 2026-08-25 — filler-line rewrite + the flag flip; discourse markers,
+localization, and the native-TTS-capability comparison deliberately not built.**
+
+**Filler lines rewritten.** `TOOL_CALL_FILLER_LINES` was `["One moment, let me check that.", "Let me look
+into that for you."]` — both commit the agent to having found something before the tool returns. Now
+`["One moment.", "Just a second."]`: pure time-buying phrases, no implication about what the tool reports
+back.
+
+**The flag flipped — user's explicit direction, not a default I chose unilaterally.** This section's own
+text named it "the first, cheapest step" but a flag flip is new audio behavior for every live caller once
+deployed, a different kind of change than a logic fix, so it was raised as its own decision rather than
+folded in silently. `hybrid-audio-cache` (`tts-cache.ts`) was opt-in (`flags[FLAG] === true`, so an absent
+row — production's actual state, `feature_flags` is empty — read as off) and had been fully built and
+never once executed live. Both `stream.ts` call sites (`speakCannedLine`'s silence-timeout lines,
+`maybePlayToolCallFiller`'s tool-call filler) now read `!== false` instead of `=== true`: an absent row
+means ON, an explicit `enabled: false` row is still the kill switch for any org that needs one.
+**`BACKCHANNEL_FLAG` ("backchannels") is a SEPARATE flag and was deliberately left untouched** — the user's
+direction was scoped to this section's own named flag, and flipping backchannels on is a different UX
+surface (mid-utterance acknowledgment sounds, Five Bets Phase IV) this session was not asked to touch.
+
+New `stream-tool-call-filler.test.ts` cases prove both directions: an absent row eventually forwards
+cached filler audio (first trigger warms, second — one turn later — hits and sends), and an explicit
+`enabled: false` row never even warms the cache. `tts-cache.ts`'s doc comment updated (was "opt-in staged
+rollout", now describes the flip and why). 1598/1598 api tests pass, typecheck/lint/knip:gate clean. **Not
+deployed, not measured live** — this is the one item this session shipped whose effect will be
+immediately audible to real callers the moment it deploys, not just a backend correctness fix; worth a
+live smoke test before trusting it the way the rest of today's work is trusted.
+
+**Not built, out of scope for this session:**
+- **Natural discourse markers beyond tool-call coverage** (item 2 — "let me check that," "noting that
+  down," fired right after a `captureField` call, not only on the existing filler-threshold gate). Genuine
+  new code (a second cached-audio trigger point, sequenced against live turn audio) rather than the
+  copy-edit + flag-semantics change above — needs its own design/testing pass, not attempted today.
+- **Localization** (item 3 — both `TOOL_CALL_FILLER_LINES` and `BACKCHANNEL_LINES` are English-only; a
+  Hindi/Hinglish call gets English filler audio in the Hindi voice). Needs real translated content from
+  someone who can validate it, not LLM-authored copy for a compliance-adjacent live call surface.
+- **The Cartesia Sonic-3.6 native-filler-words comparison** (item 4). A research/measurement task, not
+  something to build speculatively — "worth a direct comparison before investing further" per this
+  section's own text.
+
 **Where:** `packages/api/src/voice/stream.ts` — `TOOL_CALL_FILLER_LINES`, `maybePlayToolCallFiller`,
 `BACKCHANNEL_LINES` (`backchannel.ts`), `tts-cache.ts`'s `HYBRID_AUDIO_CACHE_FLAG`.
 

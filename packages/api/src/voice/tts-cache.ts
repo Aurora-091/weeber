@@ -15,8 +15,13 @@
  * restart pays full TTS latency for this one line, same as today."
  *
  * Gated behind the "hybrid-audio-cache" org/global feature flag (see
- * org-queries.ts's getEffectiveFlags) — opt-in staged rollout rather than a
- * silent behavior change, since it's new enough to want a kill switch.
+ * org-queries.ts's getEffectiveFlags). D4 (phase-d-conversation.md,
+ * 2026-08-25) flipped the default from opt-in to opt-out — the flag had
+ * been fully built and never once executed in production, because
+ * `feature_flags` is empty and an absent row used to mean off. An absent
+ * row now means ON (stream.ts's speakCannedLine/maybePlayToolCallFiller
+ * both read `!== false` rather than `=== true`); an explicit
+ * `enabled: false` row is still the kill switch for any org that needs one.
  */
 
 export const HYBRID_AUDIO_CACHE_FLAG = "hybrid-audio-cache";

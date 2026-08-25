@@ -12,6 +12,19 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D4 partially shipped — filler lines rewritten outcome-neutral, hybrid-audio-cache flipped to
+  opt-out (2026-08-25).** `TOOL_CALL_FILLER_LINES` no longer implies a lookup succeeded ("One moment." /
+  "Just a second." instead of "let me check that"/"let me look into that"). At the user's explicit
+  direction (a live-audio behavior change, not a logic fix, so raised as its own decision):
+  `hybrid-audio-cache` — built and never once executed in production since `feature_flags` is empty and
+  an absent row read as off — now reads absent as ON at both `stream.ts` call sites, with an explicit
+  `enabled: false` row still the kill switch. `BACKCHANNEL_FLAG` (a separate flag) deliberately untouched.
+  New `stream-tool-call-filler.test.ts` cases prove both directions. Discourse markers beyond tool-call
+  coverage, localization, and the Cartesia Sonic-3.6 native-filler comparison deliberately not built —
+  real new-feature/content/research work, not today's scope. 1598/1598 api tests pass, typecheck/lint/
+  knip:gate clean. Not deployed — this is the one change this session shipped that callers will actually
+  hear the moment it deploys. See `docs/plans/phase-d-conversation.md`'s D4 status note.
+
 - **D3 (escalation triggers) shipped — trigger 3 already existed, triggers 1-2 collapsed into one audit
   guardrail (2026-08-25).** Verified trigger 3 (explicit caller request → transfer/callback) needed
   nothing new: `transferToHuman`/`pendingTransfer` (ADR-105/114/115) and A4's `callback-requested` →
