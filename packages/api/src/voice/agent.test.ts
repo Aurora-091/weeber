@@ -1080,7 +1080,7 @@ describe("withPerTurnCap — C4 step 2 per-turn tool-call budget", () => {
     );
     const result = await wrapped.execute();
     expect(result).toMatchObject({ deferred: true });
-    expect((result as { message: string }).message).toContain("captureField");
+    expect((result as unknown as { message: string }).message).toContain("captureField");
     expect(realCalls).toBe(0);
     expect(counter.count).toBe(2);
   });

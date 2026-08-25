@@ -2630,11 +2630,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (streamSid) ws.send(transport.buildClear(streamSid));
             turnAbortController?.abort();
             tts?.close();
-            // Phase C1: same reasoning as finalizeCall — a barge-in between
-            // turns (tts already null) must still close the held session,
-            // and every provider here treats an interrupt as "close and
-            // reconnect on the next turn" regardless.
-            closeTtsSession();
+            // C1 follow-up (2026-08-25, phase-c-latency.md): no longer
+            // force-closes the held session here. Cartesia/ElevenLabs'
+            // turn-level close() above now cancels just the interrupted
+            // turn's context (see tts/cartesia.ts, tts/elevenlabs.ts) and
+            // leaves the socket open; Sarvam's turn-level close() still
+            // tears down its one shared socket, per its own docs — either
+            // way, `getOrOpenTtsSession`'s own `isOpen()` liveness check at
+            // the START of the next turn is what decides reuse vs.
+            // reconnect, correctly, for all three providers, without
+            // special-casing here. `finalizeCall` still unconditionally
+            // calls `closeTtsSession()` at real call end, so a session that
+            // survives every barge-in of a call is still torn down when the
+            // call itself ends.
             tts = null;
             agentIsSpeaking = false;
             // Caller cut in — a fresh utterance begins; restart the timer so a

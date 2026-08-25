@@ -2,7 +2,10 @@
 
 **Status:** In progress — C1/C2 shipped 2026-08-24, C3 shipped 2026-08-25, C4 steps 1-3 shipped 2026-08-25
 (step 2 built after fresh post-deploy production data confirmed the batching pattern reproduces even on
-fully-shipped code). C1/C2 both have open regressions found while verifying C4 — see their status notes.
+fully-shipped code). Re-verifying C4 against that fresh data surfaced open regressions in both C1 and C2;
+C1's is fixed (2026-08-25, per-context cancel on barge-in instead of a full socket close); C2's is
+confirmed structurally expected, not a bug, with a proposed exit-gate rewording not yet applied — see
+their status notes.
 **Blocks:** Phase D, Phase E
 **Preconditions:** Phase B's exit gate met — in particular `bun run latency:report` reproducing the
 audit's headline numbers. Without that command this phase has no acceptance test and must not start.
@@ -87,10 +90,10 @@ reconnects and the reconnect is recorded; voice identity is correct on turn 2.
 **Expected:** `tts_first_byte_ms` median from ≈ 412 ms toward ≈ 160 ms; ≈ 250 ms off v2v on every turn
 after the first.
 
-**Open regression, found 2026-08-25 while re-verifying C4 against fresh post-deploy data — root-caused,
-not yet fixed.** Exit gate condition 3 ("`tts_socket_open_ms` is absent or < 20 ms on every turn after the
-first") is not holding in production. Calls 13-16 (2026-08-25, post-deploy) show real non-null values
-(76-284 ms) on many turns after turn 0, not just the first.
+**Regression found 2026-08-25 while re-verifying C4 against fresh post-deploy data — root-caused and
+fixed the same day.** Exit gate condition 3 ("`tts_socket_open_ms` is absent or < 20 ms on every turn
+after the first") was not holding in production. Calls 13-16 (2026-08-25, post-deploy) showed real
+non-null values (76-284 ms) on many turns after turn 0, not just the first.
 
 **Root cause, found by reading the code against fresh provider-docs research (2026-08-25), not a bug —
 Cartesia's documented idle-disconnect is 5 minutes ([Cartesia docs][cartesia-limits]), and every observed
@@ -113,14 +116,27 @@ disagree:
   here).
 
 Real calls barge in often enough that this plausibly explains most of the observed reopens — every
-interruption currently pays a fresh ~80-280ms handshake before the next turn's audio can start, which is
+interruption used to pay a fresh ~80-280ms handshake before the next turn's audio could start, which is
 caller-perceived latency landing on exactly the turns where responsiveness matters most (right after the
-caller just interrupted). **Proposed follow-up (not built, not scoped into a step yet):** send Cartesia's
-`cancel` / ElevenLabs' `close_context` message on barge-in instead of closing the socket, keeping the
-session held exactly as C1 already does at call boundaries; keep Sarvam's existing socket-close-on-
-interrupt unchanged. Needs verifying the exact message shape against a live account before shipping (docs
-can lag or gate features by plan tier) and a test proving the socket survives a barge-in and the next
-turn's `tts_socket_open_ms` stays absent.
+caller just interrupted).
+
+**Fixed 2026-08-25.** `tts/cartesia.ts` and `tts/elevenlabs.ts`'s per-turn `close()` now sends the
+provider's per-context cancel (`{context_id, cancel: true}` / `{context_id, close_context: true}`) instead
+of closing the socket, marking the turn `finished` synchronously so a late provider ack for the
+now-canceled context can't double-fire `onDone`/`onError` (both files' message listeners gained a
+`turn.finished` guard for this). `stream.ts`'s barge-in handler no longer calls `closeTtsSession()` at
+all — `getOrOpenTtsSession`'s own `isOpen()` liveness check at the start of the next turn is what decides
+reuse vs. reconnect, correctly, for all three providers without special-casing: Cartesia/ElevenLabs' socket
+stays open (their turn-level `close()` no longer touches it) and gets reused; Sarvam's turn-level `close()`
+is unchanged (still tears down its one shared socket, per its own docs), so its session correctly reports
+`isOpen() === false` and reconnects fresh, same as before. `finalizeCall` still unconditionally calls
+`closeTtsSession()` at real call end, so nothing leaks. New `stream-tts-bargein-reuse.test.ts` — proven to
+fail against the pre-fix code (`session.dead` was `true` after a barge-in; now stays `false`, and the
+following turn reuses the same session, `sessionOpens.length` staying at 1 throughout). 1579/1579 api
+tests pass (`bun run test`, `--isolate`), typecheck/lint/knip:gate clean. **Not deployed, not measured
+against a real call yet** — the exact Cancel Context Request / close_context message shapes are current
+per the docs fetched 2026-08-25 but unverified against a live Cartesia/ElevenLabs account in this sandbox;
+worth a live smoke test before fully trusting it the way C1's original session-reuse work is trusted.
 
 [cartesia-limits]: https://docs.cartesia.ai/use-the-api/concurrency-limits-and-timeouts
 [cartesia-tts]: https://docs.cartesia.ai/api-reference/tts/tts
@@ -336,14 +352,13 @@ shipped: `maxToolSteps` ([vercel/ai #5026][ai-5026]) and `singleToolPerStep`
 exactly why this needed a custom wrapper at the tool-`execute` level (`withPerTurnCap`) rather than an SDK
 option. Confirms this is the right layer to build it at, not a missed built-in.
 
-**Two open items surfaced while re-verifying, out of scope for this task, not fixed:** C1's
-`tts_socket_open_ms` is non-null on many mid-call turns in the fresh sample, not just the first — root-
-caused to barge-in closing the whole socket when Cartesia/ElevenLabs both support a cheaper per-context
-cancel (see C1's status note above; proposed fix not yet built, holding per explicit instruction to review
-the whole phase as one batch first). C2's cache-hit percentage still drops to 0 mid-call in call 16 —
-confirmed by construction to be structurally expected on any turn right after a new capture, not a
-`stablePrefix` bug, with a real (already-written) proposed fix for the exit-gate wording itself (see C2's
-status note above). Both need their own follow-up before this phase's exit gate can close.
+**Two open items surfaced while re-verifying, out of scope for this task:** C1's `tts_socket_open_ms` being
+non-null on many mid-call turns was root-caused to barge-in closing the whole socket when Cartesia/
+ElevenLabs both support a cheaper per-context cancel, and **fixed the same day** (see C1's status note
+above) — unverified against a live account. C2's cache-hit percentage still drops to 0 mid-call in call
+16 — confirmed by construction to be structurally expected on any turn right after a new capture, not a
+`stablePrefix` bug, with a proposed exit-gate rewording written but not yet applied to the exit gate below
+(see C2's status note above).
 
 [ai-5026]: https://github.com/vercel/ai/issues/5026
 [ai-3854]: https://github.com/vercel/ai/issues/3854
@@ -393,8 +408,12 @@ window:
 1. **per-turn `voice_to_voice_ms` p50 < 1100 ms** (from ≈ 1750).
 2. **`pickup_to_first_audio_ms` < 1200 ms** (from 1985 / 2753).
 3. **`tts_socket_open_ms` is absent or < 20 ms on every turn after the first** of a call.
-4. **`stablePrefix` hash is constant within a call**, asserted by test, and no call shows a mid-call
-   cached-token drop to 0 after a non-zero turn.
+4. **`stablePrefix` hash is constant within a call** (asserted by test — already provably true by
+   construction, see C2's status note), **and a cached-token drop to 0 only ever follows a turn that wrote
+   a new `captureField`/`markFieldUnanswered` fact** — a call with no new captures between two turns must
+   show no drop between them. (Rewritten 2026-08-25: the original "no mid-call drop to 0, period" asked
+   the architecture for a guarantee it cannot make whenever a call captures a fact — see C2's status note
+   for the production evidence this rewording is based on.)
 5. **No terminal-turn latency spike**: the slowest turn of a call is not systematically its last.
 6. n ≥ 10 calls behind these numbers. Two calls is what produced a wrong baseline in the first place;
    do not close this gate on a sample of two. Place them via the synthetic/test-call path if real

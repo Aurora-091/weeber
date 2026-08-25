@@ -12,6 +12,17 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **C1 barge-in regression fixed — interrupting the agent no longer force-closes the held TTS session
+  (2026-08-25).** Root cause: `stream.ts` closed the whole socket on every barge-in because Cartesia/
+  ElevenLabs were believed to have no way to cancel just the interrupted turn's context — current provider
+  docs say otherwise (`{context_id, cancel: true}` / `{context_id, close_context: true}`). Both providers'
+  turn-level `close()` now send that instead; `stream.ts` no longer calls `closeTtsSession()` on barge-in
+  at all, relying on `getOrOpenTtsSession`'s existing liveness check to correctly reuse (Cartesia/
+  ElevenLabs) or reconnect (Sarvam, unchanged, still correct per its docs). New
+  `stream-tts-bargein-reuse.test.ts`, proven to fail pre-fix. 1579/1579 api tests pass, typecheck/lint/
+  knip:gate clean. Not deployed or measured against a real call yet; message shapes unverified against a
+  live account. See `active-context.md` and `docs/plans/phase-c-latency.md`'s C1 status note.
+
 - **C4 step 2 (per-turn tool-call cap) shipped, but only after re-verifying against fresh post-deploy
   production data (2026-08-25).** The prior "C4 step 1 answered, thin evidence" read 8 calls that predated
   the actual production deploy of this session's own work — Railway showed the real deploy landed
@@ -296,18 +307,17 @@ updated: 2026-08-25
 
 ## Known issues / debt (open)
 
-- **Phase C's exit gate conditions 3 and 4 are not holding in production — both now root-caused
-  (2026-08-25), neither fixed yet.** C1: `tts_socket_open_ms` is non-null (76-284ms) on many mid-call turns
-  across calls 13-16, not just the first. Root cause: `stream.ts` closes the whole TTS socket on every
-  barge-in, but current Cartesia/ElevenLabs docs both support canceling just the interrupted context
-  without tearing down the connection — a cheaper fix exists, not yet built (held pending a full-phase
-  review). C2: `llm_cached_input_tokens` drops to 0 mid-call repeatedly in one 33-turn call. Confirmed by
+- **Phase C's exit gate condition 4 is not holding in production — root-caused 2026-08-25, exit-gate
+  wording rewritten, underlying architecture not changed.** (Condition 3's C1 regression is fixed — see
+  Done.) `llm_cached_input_tokens` drops to 0 mid-call repeatedly in one 33-turn call. Confirmed by
   construction this is NOT a `stablePrefix` instability bug (proven incapable of varying mid-call) — it's
   the "Known facts" block being concatenated into the same `system` string as the stable persona, so any
   provider caching on literal prefix bytes structurally misses on the turn right after a new capture. Exit
-  gate condition 4 as worded asks for something the architecture cannot deliver; a rewritten condition is
-  proposed in the plan doc, not applied. See `docs/plans/phase-c-latency.md`'s C1/C2 status notes for full
-  detail and sources. Blocks Phase C's exit gate until acted on.
+  gate condition 4 as originally worded asked for something the architecture cannot deliver — rewritten
+  (2026-08-25) to allow a drop only on the turn immediately following a new capture, applied to the plan
+  doc's exit gate itself. Whether determinism matters enough to build Gemini's explicit `cachedContent` API
+  on top is still an open product call, not decided or built. See `docs/plans/phase-c-latency.md`'s C2
+  status note for full detail and sources.
 
 - **The caller-silence race-condition test fails (2026-08-20, `stream-silence-timeout.test.ts`,
   found while landing `a6d2b87`, not fixed).** "does not hang up on a caller who answers while the

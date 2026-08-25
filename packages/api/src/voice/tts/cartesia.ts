@@ -84,7 +84,13 @@ export const connectCartesiaSession: ConnectTtsSession = (voiceIdOverride, langu
     try {
       const msg = JSON.parse(event.data as string);
       const turn = current;
-      if (!turn || msg.context_id !== turn.contextId) return;
+      // `turn.finished` guard added alongside the cancel-on-barge-in change
+      // below: close() now marks the turn finished synchronously, before any
+      // provider ack arrives, so a late message for an already-canceled
+      // context (the cancel request is fire-and-forget, no confirmation
+      // awaited) can't double-fire onDone/onError against a turn the caller
+      // has already moved on from.
+      if (!turn || turn.finished || msg.context_id !== turn.contextId) return;
       if (msg.type === "chunk" && (msg.data || msg.audio)) turn.onAudioChunk((msg.data ?? msg.audio) as string);
       // Word-level timing (add_timestamps: true below) — see types.ts's
       // onWordTimestamp doc comment for why stream.ts needs this for
@@ -149,12 +155,20 @@ export const connectCartesiaSession: ConnectTtsSession = (voiceIdOverride, langu
           send(buildPayload("", false));
         },
         close() {
-          // Barge-in / abort: Cartesia has no documented "cancel just this
-          // context" message, and every provider here closes the whole
-          // socket on interrupt anyway (Sarvam's docs say so explicitly for
-          // theirs) — the next turn reconnects transparently either way.
-          closedIntentionally = true;
-          if (opened) ws.close();
+          // Barge-in / abort follow-up (2026-08-25, phase-c-latency.md C1):
+          // cancel just this context instead of closing the whole socket.
+          // The original comment here ("Cartesia has no documented 'cancel
+          // just this context' message") was wrong — docs.cartesia.ai/
+          // api-reference/tts/tts documents a Cancel Context Request
+          // (`context_id` + `cancel: true`): "Use this to cancel a context,
+          // so that no more messages are generated for that context." The
+          // socket stays open, so the next turn's startTurn() reuses it
+          // instead of paying a fresh ~80-280ms handshake on every
+          // barge-in. Marked finished synchronously (not waiting for a
+          // provider ack) so the message listener's `turn.finished` guard
+          // drops any stray late message for this now-canceled context.
+          if (current && current.contextId === contextId) current.finished = true;
+          send({ context_id: contextId, cancel: true });
         },
         setTone(tone: string) {
           currentEmotion = tone;

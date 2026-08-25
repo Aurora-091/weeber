@@ -80,7 +80,12 @@ export const connectElevenLabsSession: ConnectTtsSession = (voiceIdOverride, lan
     try {
       const msg = JSON.parse(event.data as string);
       const turn = current;
-      if (!turn || msg.contextId !== turn.contextId) return;
+      // `turn.finished` guard added alongside the close_context-on-barge-in
+      // change below: close() now marks the turn finished synchronously,
+      // before any provider ack arrives, so a late message for an
+      // already-closed context can't double-fire onDone/onError against a
+      // turn the caller has already moved on from.
+      if (!turn || turn.finished || msg.contextId !== turn.contextId) return;
       if (msg.audio) turn.onAudioChunk(msg.audio as string);
       if (msg.isFinal) {
         turn.finished = true;
@@ -141,12 +146,18 @@ export const connectElevenLabsSession: ConnectTtsSession = (voiceIdOverride, lan
           send({ context_id: contextId, close_context: true });
         },
         close() {
-          // Barge-in / abort: no documented way to cancel a single context
-          // mid-generation, and closing the whole socket on interrupt is
-          // what every provider here does — the next turn reconnects
-          // transparently either way.
-          closedIntentionally = true;
-          ws.close();
+          // Barge-in / abort follow-up (2026-08-25, phase-c-latency.md C1):
+          // close just this context — the same close_context message
+          // endTurn() above already sends for the graceful case — instead
+          // of the whole socket. The original comment here ("no documented
+          // way to cancel a single context mid-generation") missed that
+          // close_context is exactly that: ElevenLabs' own docs say it
+          // "closes the specified context... while the connection remains
+          // active." Marked finished synchronously (not waiting for a
+          // provider ack) so the message listener's `turn.finished` guard
+          // drops any stray late message for this now-closed context.
+          if (current && current.contextId === contextId) current.finished = true;
+          send({ context_id: contextId, close_context: true });
         },
       };
     },

@@ -12,6 +12,23 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **C1's barge-in regression fixed — a caller interruption no longer force-closes the held TTS session
+  (2026-08-25, `packages/api/src/voice/tts/{cartesia,elevenlabs}.ts`, `stream.ts`,
+  `docs/plans/phase-c-latency.md`).** Follow-up to the research bullet below: `tts/cartesia.ts`'s and
+  `tts/elevenlabs.ts`'s per-turn `close()` now send the provider's own per-context cancel
+  (`{context_id, cancel: true}` / `{context_id, close_context: true}`) instead of closing the whole
+  socket, each marking the turn `finished` synchronously so a late provider ack for the now-canceled
+  context can't double-fire `onDone`/`onError` (both files' message listeners gained a `turn.finished`
+  guard). `stream.ts`'s barge-in handler no longer calls `closeTtsSession()` at all — `getOrOpenTtsSession`'s
+  own `isOpen()` check at the next turn now correctly decides reuse (Cartesia/ElevenLabs, socket untouched)
+  vs. reconnect (Sarvam, whose turn-level `close()` is unchanged, still correct per its own docs) without
+  any special-casing in `stream.ts` itself. `finalizeCall` still unconditionally tears the session down at
+  real call end. New `stream-tts-bargein-reuse.test.ts`, proven to fail against the pre-fix code (session
+  was force-closed on barge-in; now survives, and the following turn reuses it). 1579/1579 api tests pass
+  (`bun run test`, `--isolate`), typecheck/lint/knip:gate clean. **Not deployed, not measured against a
+  real call** — the exact Cartesia/ElevenLabs message shapes are current per docs fetched 2026-08-25 but
+  unverified against a live account.
+
 - **Phase C's two open regressions researched and, for C2, confirmed by construction — no code changed
   this pass, doc-only (2026-08-25, `docs/plans/phase-c-latency.md`).** User asked to review the whole C
   phase with internet/GitHub research before committing anything. Findings, both written into the plan
