@@ -130,6 +130,41 @@ timing (0.4 s gap) as a named fixture citing the audit.
 
 ### D2. A question ledger — nothing gets asked twice
 
+**Status: shipped 2026-08-25 — items 1-3 built; item 4 (a compliance-required-fields schema) deliberately
+not built, per its own explicit gate.**
+
+`CapturedField` (database/schema.ts) gained an optional `askCount` — the "same structure extended with an
+ask count, not a second parallel store" this section's own spec asked for, no migration needed since
+`capturedState` is `jsonb`. `stream.ts`'s `mergeUnansweredField` now carries the count forward across
+repeated evasions of the same field (1 on the first mark, incrementing on every later one for that key) —
+`mergeCapturedField` gained an optional 4th `askCount` param to thread it through the same merge/persist
+path a real capture already uses. `agent.ts`'s `buildKnownFactsBlock` (still the one render site, per this
+section's own "Where") now splits the unanswered list by `MAX_FIELD_ASK_COUNT` (2, chosen from the exact
+evidence this section names — call 2's third ask is what preceded the fabrication): below the cap, the
+model is told it may try once more if natural; at the cap, the instruction becomes an unambiguous stop
+("DO NOT ask again this call") with the real count spoken plainly, replacing an A2-era static line that
+said "do not ask again" after a single miss regardless of how many times the field had actually been
+tried — which was stricter in wording than this section's own cap asks for, and (being a bare instruction
+with no data behind it) was exactly the kind of thing a model can talk itself past a third time. New
+`stream-question-ledger.test.ts` drives two real evasions of the same field through the actual state
+machine (not hand-built fixtures) and asserts the persisted `askCount` reaches 2, not resetting between
+turns; `agent.test.ts` covers the cap-crossing render logic directly, including the "no `askCount` on the
+row" default (existing pre-D2 rows) resolving to retryable rather than exhausted. 1589/1589 api tests pass,
+typecheck/lint/knip:gate clean. **Not deployed, not measured live.**
+
+**Item 4 (a "not yet asked" list driven by a per-persona required-fields schema) deliberately not built.**
+This section's own text gates it explicitly: *"If a slot schema lands here, it needs its own ADR — do not
+smuggle a compliance-required-fields concept in as an implementation detail."* Building it today would be
+exactly that smuggling. Flagged, not forgotten — the confirmed/unanswered split this session shipped is
+the two-thirds of the three-list design that don't need a new compliance decision first.
+
+**What D2 does NOT yet do: mechanically stop a third ask, only tell the model not to.** The plan's own "How"
+item 3 frames this correctly — "the flow moves on **or escalates (D3)**" — D3 is what turns "the model was
+told to stop" into an actual, observable state-machine consequence (a defined trigger with a defined
+outcome). Until D3 ships, an exhausted field is a strongly-worded prompt instruction, not a hard block; the
+per-field `askCount` this session added is exactly the observable-state signal D3's "ledger exhaustion"
+trigger is specified to consume.
+
 **Where:**
 
 - `packages/api/src/voice/agent.ts` — `buildKnownFactsBlock` and the prompt assembly at `:1624`. The

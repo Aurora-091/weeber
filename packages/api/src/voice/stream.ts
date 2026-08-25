@@ -802,10 +802,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * view during a live call, or the very next agent turn all see the fact
    * right away rather than only once the call finalizes.
    */
-  async function mergeCapturedField(field: string, value: string | null, heard: string) {
+  async function mergeCapturedField(field: string, value: string | null, heard: string, askCount?: number) {
     capturedState = {
       ...capturedState,
-      [field]: { value, heard, transcriptId: lastCallerTranscriptId, turn: callerTranscriptCount },
+      [field]: {
+        value,
+        heard,
+        transcriptId: lastCallerTranscriptId,
+        turn: callerTranscriptCount,
+        ...(askCount !== undefined ? { askCount } : {}),
+      },
     };
     if (!dbCallId) return;
     await withRetry(
@@ -823,10 +829,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * or confused tool call should never make a known fact disappear. A real
    * `captureField` for the same key still overwrites an unanswered entry, in
    * either order: an answer always wins.
+   *
+   * D2 (phase-d-conversation.md): carries `askCount` forward across repeated
+   * evasions of the same field — 1 on the first mark, incrementing on every
+   * subsequent one for the same key — so `buildKnownFactsBlock` can render a
+   * real per-field count and switch to a hard stop once the cap is reached,
+   * instead of a static "do not ask again" that a model can (and, per audit
+   * finding 4, did) override on a third attempt.
    */
   async function mergeUnansweredField(field: string, heard: string) {
-    if (capturedState[field] && capturedState[field].value !== null) return;
-    await mergeCapturedField(field, null, heard);
+    const existing = capturedState[field];
+    if (existing && existing.value !== null) return;
+    const askCount = (existing?.askCount ?? 0) + 1;
+    await mergeCapturedField(field, null, heard, askCount);
   }
 
   async function logToolCall(ws: Sendable, name: string, input: unknown, output: unknown) {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import {
   buildKnownFactsBlock,
+  MAX_FIELD_ASK_COUNT,
   buildWorkflowContextBlock,
   buildCallerMemoryBlock,
   buildTurnPromptParts,
@@ -195,22 +196,70 @@ describe("buildKnownFactsBlock", () => {
     expect(block).toContain("Known facts about this call");
     expect(block).toContain("- email: a@b.com");
 
-    // The new, separately-labeled unanswered block.
-    expect(block).toContain("Already asked and not answered");
+    // The new, separately-labeled unanswered block — below the D2 cap
+    // (askCount 1 by default), so it's the retryable phrasing.
+    expect(block).toContain("Asked once and not answered");
     expect(block).toContain("- tobacco");
 
     // The unanswered field must NOT appear in the "already confirmed, do not
     // ask again" list — that would tell the model a fabricated answer is
     // settled truth, exactly the failure A1/A2 exist to close.
-    const confirmedSection = block.slice(0, block.indexOf("Already asked and not answered"));
+    const confirmedSection = block.slice(0, block.indexOf("Asked once and not answered"));
     expect(confirmedSection).not.toContain("tobacco");
   });
 
   it("A2: renders only the unanswered block when nothing was confirmed", () => {
     const block = buildKnownFactsBlock({ tobacco: unansweredFact("just do some kind of drinks") });
     expect(block).not.toContain("Known facts about this call");
-    expect(block).toContain("Already asked and not answered");
+    expect(block).toContain("Asked once and not answered");
     expect(block).toContain("- tobacco");
+  });
+});
+
+/**
+ * D2 (phase-d-conversation.md) — the mechanical fix for the tobacco loop:
+ * production call 2 asked a third time and got a fabricated answer, so the
+ * prompt must distinguish "one retry is still fine" from "stop, this field
+ * is closed" using a real per-field count, not one static line for every
+ * unanswered field regardless of how many times it's actually been tried.
+ */
+describe("buildKnownFactsBlock — D2 ask-count cap (phase-d-conversation.md)", () => {
+  function unansweredWithCount(heard: string, askCount: number): CapturedField {
+    return { value: null, heard, transcriptId: null, turn: 0, askCount };
+  }
+
+  it("a field below the cap gets the retryable phrasing with its real count", () => {
+    const block = buildKnownFactsBlock({ tobacco: unansweredWithCount("just do some kind of drinks", 1) });
+    expect(block).toContain("Asked once and not answered");
+    expect(block).toContain("- tobacco (asked 1x, no answer yet)");
+    expect(block).not.toContain("DO NOT ask again");
+  });
+
+  it("a field AT the cap gets the hard-stop phrasing, not the retryable one", () => {
+    const block = buildKnownFactsBlock({ tobacco: unansweredWithCount("just do some kind of drinks", MAX_FIELD_ASK_COUNT) });
+    expect(block).toContain(`Asked ${MAX_FIELD_ASK_COUNT} times, still not answered`);
+    expect(block).toContain("DO NOT ask again");
+    expect(block).toContain(`- tobacco (asked ${MAX_FIELD_ASK_COUNT}x)`);
+    expect(block).not.toContain("Asked once and not answered");
+  });
+
+  it("a field with no recorded askCount (rows written before D2) defaults to retryable, not exhausted", () => {
+    const block = buildKnownFactsBlock({ tobacco: unansweredFact("just do some kind of drinks") });
+    expect(block).toContain("Asked once and not answered");
+    expect(block).not.toContain("DO NOT ask again");
+  });
+
+  it("splits multiple unanswered fields into their correct bucket by count", () => {
+    const block = buildKnownFactsBlock({
+      tobacco: unansweredWithCount("evasive answer", MAX_FIELD_ASK_COUNT),
+      income_type: unansweredWithCount("didn't say", 1),
+    });
+    const exhaustedSection = block.slice(block.indexOf(`Asked ${MAX_FIELD_ASK_COUNT} times`));
+    const retryableSection = block.slice(block.indexOf("Asked once"), block.indexOf(`Asked ${MAX_FIELD_ASK_COUNT} times`));
+    expect(exhaustedSection).toContain("tobacco");
+    expect(exhaustedSection).not.toContain("income_type");
+    expect(retryableSection).toContain("income_type");
+    expect(retryableSection).not.toContain("tobacco");
   });
 });
 

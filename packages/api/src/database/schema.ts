@@ -184,6 +184,16 @@ export type CapturedField = {
   heard: string;
   transcriptId: number | null;
   turn: number;
+  /** D2 (phase-d-conversation.md) — how many times this field has been asked
+   * about this call, counting every `markFieldUnanswered` write for the same
+   * key (an evasion/decline), starting at 1 on the first. Undefined on rows
+   * written before this field existed and on a field that was answered on
+   * the first ask (a captured value never needed a count) — both read as "no
+   * prior asks" by `buildKnownFactsBlock`'s cap check, which is the correct
+   * default (nothing to cap). Not incremented by `captureField` itself: a
+   * successful answer ends the loop this exists to break, so it never
+   * re-enters the unanswered list regardless of how many prior asks it had. */
+  askCount?: number;
 };
 
 export const calls = pgTable("calls", {

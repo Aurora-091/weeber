@@ -1475,6 +1475,16 @@ export function buildVoiceTools(
 }
 
 /**
+ * D2 (phase-d-conversation.md) — the ceiling on how many times one field may
+ * be asked about before `buildKnownFactsBlock` switches from "you may try
+ * again" to a hard stop. Chosen from the tobacco loop the cap exists to
+ * break: production call 2 asked a third time and got a fabricated answer —
+ * "the third ask is what preceded the fabrication" — so 2 is the last ask
+ * this mechanism still allows, not a number to raise without new evidence.
+ */
+export const MAX_FIELD_ASK_COUNT = 2;
+
+/**
  * Renders the current structured call state as a compact, explicit block the
  * model reads as ground truth — separate from (and prioritized over) the raw
  * transcript. This is the fix for the "asks for the same info twice" failure
@@ -1489,10 +1499,16 @@ export function buildKnownFactsBlock(capturedState?: Record<string, CapturedFiel
   // explicit "asked, no answer" state — never guessed, never left absent (see
   // CapturedField's doc comment in database/schema.ts). It renders in its own
   // list below, phrased as *asked and not answered* rather than *unknown, go
-  // ask again* — this is what breaks the three-ask loop from audit finding 4
-  // without the full question ledger (Phase D).
+  // ask again*.
   const confirmed = entries.filter(([, entry]) => entry.value !== null);
   const unanswered = entries.filter(([, entry]) => entry.value === null);
+  // D2: split by the cap instead of one static "do not ask again" line for
+  // every unanswered field regardless of how many times it's actually been
+  // tried — a field asked once may still be worth a natural second attempt;
+  // a field at the cap must not be, and says so with the real count, not a
+  // vague "do not ask again" a model can talk itself past a third time.
+  const retryable = unanswered.filter(([, entry]) => (entry.askCount ?? 1) < MAX_FIELD_ASK_COUNT);
+  const exhausted = unanswered.filter(([, entry]) => (entry.askCount ?? 1) >= MAX_FIELD_ASK_COUNT);
 
   let block = "";
   if (confirmed.length > 0) {
@@ -1507,12 +1523,21 @@ export function buildKnownFactsBlock(capturedState?: Record<string, CapturedFiel
       ${lines}
     `;
   }
-  if (unanswered.length > 0) {
-    const lines = unanswered.map(([field]) => `- ${field}`).join("\n");
+  if (retryable.length > 0) {
+    const lines = retryable.map(([field, entry]) => `- ${field} (asked ${entry.askCount ?? 1}x, no answer yet)`).join("\n");
     block += dedent`
 
 
-      Already asked and not answered — the caller declined or evaded these, do not ask again unless they bring it up themselves:
+      Asked once and not answered — you may ask ONE more time if it comes up naturally, otherwise move on:
+      ${lines}
+    `;
+  }
+  if (exhausted.length > 0) {
+    const lines = exhausted.map(([field, entry]) => `- ${field} (asked ${entry.askCount ?? 1}x)`).join("\n");
+    block += dedent`
+
+
+      Asked ${MAX_FIELD_ASK_COUNT} times, still not answered — DO NOT ask again this call, even if it feels natural. The caller has declined or evaded this repeatedly; move the conversation forward instead:
       ${lines}
     `;
   }

@@ -12,6 +12,17 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D2 (question ledger) shipped — the tobacco-loop fix gets a real per-field ask count (2026-08-25).**
+  `CapturedField` gained `askCount` (no migration, `capturedState` is jsonb); `mergeUnansweredField`
+  carries it forward across repeated evasions of the same field. `buildKnownFactsBlock` now splits the
+  unanswered list at `MAX_FIELD_ASK_COUNT` (2, from the exact evidence naming it — the third ask is what
+  preceded the fabrication): below the cap, a natural retry is allowed; at the cap, an unambiguous stop
+  with the real count, replacing an A2-era static line that was stricter in wording but backed by no data.
+  New `stream-question-ledger.test.ts` proves the count increments through the real state machine, not
+  just hand-built fixtures. Item 4 (a required-fields schema) deliberately not built — the plan's own text
+  gates it behind its own ADR. 1589/1589 api tests pass, typecheck/lint/knip:gate clean. Not deployed. See
+  `docs/plans/phase-d-conversation.md`'s D2 status note.
+
 - **Phase D started; D1 (idle-prompt interruption) mostly already true, one real gap shipped (2026-08-25).**
   Verified by construction (new `stream-idle-prompt-bargein.test.ts`) that barge-in already interrupts a
   playing idle-prompt/goodbye line — `speakCannedLine` shares the same `speak()`/`agentIsSpeaking` path
