@@ -281,17 +281,25 @@ row — production's actual state, `feature_flags` is empty — read as off) and
 never once executed live. Both `stream.ts` call sites (`speakCannedLine`'s silence-timeout lines,
 `maybePlayToolCallFiller`'s tool-call filler) now read `!== false` instead of `=== true`: an absent row
 means ON, an explicit `enabled: false` row is still the kill switch for any org that needs one.
-**`BACKCHANNEL_FLAG` ("backchannels") is a SEPARATE flag and was deliberately left untouched** — the user's
-direction was scoped to this section's own named flag, and flipping backchannels on is a different UX
-surface (mid-utterance acknowledgment sounds, Five Bets Phase IV) this session was not asked to touch.
+**`BACKCHANNEL_FLAG` ("backchannels") was initially left untouched as a separate flag — since flipped,
+also at the user's explicit direction (2026-08-25, after D8).** The user asked directly for both the
+tool-call filler AND the mid-utterance backchannel to be on; `stream.ts`'s `backchannelsEnabled` now reads
+`noiseFilterFlags[BACKCHANNEL_FLAG] !== false` (was `=== true`), the identical opt-out flip as
+`hybrid-audio-cache` above, for the identical reason — built (Five Bets Phase IV) and never once fired in
+production. An explicit `enabled: false` row is still the kill switch. `EXPRESSIVE_DELIVERY_FLAG` /
+`ADAPTIVE_NOISE_FILTER_FLAG` remain untouched — this flip is scoped to the two flags the user actually
+named. New `stream-backchannel-default-flip.test.ts` proves both directions against the real state
+machine (a caller utterance held past `BACKCHANNEL_MIN_UTTERANCE_MS` gets a backchannel with no flags row
+at all; an explicit `{backchannels: false}` suppresses it) — `shouldBackchannel`'s own gating logic
+(threshold, rate limit, never-over-the-agent) is unchanged and already covered by `backchannel.test.ts`.
 
-New `stream-tool-call-filler.test.ts` cases prove both directions: an absent row eventually forwards
-cached filler audio (first trigger warms, second — one turn later — hits and sends), and an explicit
-`enabled: false` row never even warms the cache. `tts-cache.ts`'s doc comment updated (was "opt-in staged
-rollout", now describes the flip and why). 1598/1598 api tests pass, typecheck/lint/knip:gate clean. **Not
-deployed, not measured live** — this is the one item this session shipped whose effect will be
-immediately audible to real callers the moment it deploys, not just a backend correctness fix; worth a
-live smoke test before trusting it the way the rest of today's work is trusted.
+New `stream-tool-call-filler.test.ts` cases prove both directions for the tool-call filler: an absent row
+eventually forwards cached filler audio (first trigger warms, second — one turn later — hits and sends),
+and an explicit `enabled: false` row never even warms the cache. `tts-cache.ts`'s doc comment updated (was
+"opt-in staged rollout", now describes the flip and why). 1642/1642 api tests pass, typecheck/lint/
+knip:gate clean. **Not deployed, not measured live** — both flag flips in this item are audible to real
+callers the moment they deploy, not just backend correctness fixes; worth a live smoke test before
+trusting them the way the rest of today's work is trusted.
 
 **Not built, out of scope for this session:**
 - **Natural discourse markers beyond tool-call coverage** (item 2 — "let me check that," "noting that

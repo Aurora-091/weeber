@@ -12,6 +12,20 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Backchannels flipped to default-on, same D4 opt-out pattern (2026-08-25, at the user's explicit
+  direction, follow-up to D4).** `stream.ts`'s `backchannelsEnabled` now reads
+  `noiseFilterFlags[BACKCHANNEL_FLAG] !== false` (was `=== true`) — identical reasoning to D4's
+  `hybrid-audio-cache` flip: Five Bets Phase IV built this and it never once fired in production because
+  `feature_flags` is empty and an absent row read as off. An explicit `enabled: false` row is still the
+  kill switch. `EXPRESSIVE_DELIVERY_FLAG`/`ADAPTIVE_NOISE_FILTER_FLAG` untouched — scoped to the two flags
+  the user actually asked for (tool-call filler + backchannel). New
+  `stream-backchannel-default-flip.test.ts` proves both directions against the real
+  `createVoiceStreamHandlers` state machine, waiting past the real `BACKCHANNEL_MIN_UTTERANCE_MS` (2500ms)
+  rather than mocking the clock; `shouldBackchannel`'s own gating logic is unchanged and already covered
+  by `backchannel.test.ts`. 1642/1642 api tests pass, typecheck/lint/knip:gate clean. **Not deployed, not
+  measured live** — audible to real callers the moment it deploys, same as D4's flip. See
+  `docs/plans/phase-d-conversation.md`'s D4 status note (updated).
+
 - **D8 shipped — critical-field spell-back confirmation, prompt-level only (2026-08-25). Phase D is now
   code-complete, D1-D8.** New `critical-field-classification.ts`'s `isCriticalField` (name/phone/order/
   policy/vehicle/PAN/SSN-shaped keys, reusing `prohibited-capture.ts`'s `compact`/`tokenize` without

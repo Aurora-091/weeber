@@ -15,9 +15,12 @@
  * warm cache) lives in stream.ts, same split as every other audio feature.
  *
  * Design guardrails baked into `shouldBackchannel`:
- *  - Off by default — org feature flag (BACKCHANNEL_FLAG), enable for
- *    final-expense / elderly personas first, same kill-switch pattern as
- *    EXPRESSIVE_DELIVERY_FLAG / ADAPTIVE_NOISE_FILTER_FLAG.
+ *  - Org feature flag (BACKCHANNEL_FLAG) — on by default as of 2026-08-25,
+ *    same opt-out flip and reasoning as HYBRID_AUDIO_CACHE_FLAG (phase-d-
+ *    conversation.md D4): built and never once fired in production while an
+ *    absent `feature_flags` row read as off. An explicit `enabled: false`
+ *    row is still the kill switch — EXPRESSIVE_DELIVERY_FLAG /
+ *    ADAPTIVE_NOISE_FILTER_FLAG remain opt-in, untouched by this flip.
  *  - NEVER during the agent's own turn (would talk over the agent).
  *  - NEVER on speech_final — that's a real end-of-turn, not a mid-utterance
  *    moment; the turn handler owns it.
@@ -31,7 +34,9 @@
  * cannot corrupt turn-taking, barge-in, or endsMidThought.
  */
 
-/** Opt-in org/global feature flag — see org-queries.ts getEffectiveFlags. */
+/** Opt-out org/global feature flag (default ON as of 2026-08-25) — see
+ * org-queries.ts getEffectiveFlags and stream.ts's `backchannelsEnabled`
+ * resolution for the exact default-flip reasoning. */
 export const BACKCHANNEL_FLAG = "backchannels";
 
 /**

@@ -13,20 +13,24 @@ updated: 2026-08-25
 ## Current focus
 
 - **Phase C and Phase D both code-complete (2026-08-25); both still pending the same manual deploy
-  approval before either exit gate can be evaluated.** Phase C's 3 commits and Phase D's D1-D8 (8 commits)
-  are all on `origin/main`; Railway auto-triggered `production`/`staging` deploys back when Phase C pushed,
-  both still sit in `NEEDS_APPROVAL` — confirmed no API/MCP path exists to approve one, only the
-  dashboard's Approve button, so this is a standing external blocker, not something to keep re-checking.
-  Phase D's own precondition (a recorded Phase C baseline) was satisfied provisionally by the pre-deploy
-  numbers in `phase-c-latency.md` (v2v p50 1481ms, p95 3463ms); every D-item's own unit/integration tests
-  pass (1640/1640 api tests as of D8), but the exit gate's cross-item synthetic-suite replay (conditions
-  1/8/9/10) and the live-latency conditions (5/6) still need someone to approve the deploys, then re-run
-  `latency:report` against real post-fix calls and run the synthetic suite, before either phase's exit gate
-  is trusted. D1-D8 are each detailed under `## Done` in `progress.md` (D1 idle-prompt thresholds, D2
-  question ledger/askCount, D3 escalation-trigger audit guardrail, D4 filler-line rewrite +
-  hybrid-audio-cache opt-out, D5 unsourced-claim decision — no code, D6 dictation-sequence endpointing, D7
-  non-interruptible tool calls/disclosure, D8 critical-field spell-back). **Nothing left to build in either
-  phase — the next step for whoever picks this up is approving the Railway deploys, not more code.**
+  approval before either exit gate can be evaluated.** Phase C's 3 commits and Phase D's D1-D8 (8 commits),
+  plus one follow-up commit flipping `BACKCHANNEL_FLAG` to default-on (same opt-out pattern as D4's
+  `hybrid-audio-cache` flip, at the user's explicit direction — they asked for both the tool-call filler
+  AND the mid-utterance backchannel on), are all on `origin/main`. Railway auto-triggered `production`/
+  `staging` deploys back when Phase C pushed, both still sit in `NEEDS_APPROVAL` — confirmed no API/MCP
+  path exists to approve one, only the dashboard's Approve button, so this is a standing external blocker,
+  not something to keep re-checking. Phase D's own precondition (a recorded Phase C baseline) was satisfied
+  provisionally by the pre-deploy numbers in `phase-c-latency.md` (v2v p50 1481ms, p95 3463ms); every
+  item's own unit/integration tests pass (1642/1642 api tests as of the backchannel flip), but the exit
+  gate's cross-item synthetic-suite replay (conditions 1/8/9/10) and the live-latency conditions (5/6)
+  still need someone to approve the deploys, then re-run `latency:report` against real post-fix calls and
+  run the synthetic suite, before either phase's exit gate is trusted. D1-D8 plus the backchannel flip are
+  each detailed under `## Done` in `progress.md` (D1 idle-prompt thresholds, D2 question ledger/askCount,
+  D3 escalation-trigger audit guardrail, D4 filler-line rewrite + hybrid-audio-cache opt-out, D5
+  unsourced-claim decision — no code, D6 dictation-sequence endpointing, D7 non-interruptible tool
+  calls/disclosure, D8 critical-field spell-back, backchannel default-on follow-up). **Nothing left to
+  build in either phase — the next step for whoever picks this up is approving the Railway deploys, not
+  more code.**
 
 - **Phase C (latency) is code-complete as of 2026-08-25 — all four sub-phases shipped, at the user's
   direction to research, fix, and close the phase in one session (`docs/plans/phase-c-latency.md`).** C1

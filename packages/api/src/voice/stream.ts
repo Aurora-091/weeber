@@ -3428,7 +3428,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               windFilter = createHighPassFilter();
             }
             expressiveDeliveryEnabled = noiseFilterFlags[EXPRESSIVE_DELIVERY_FLAG] === true;
-            backchannelsEnabled = noiseFilterFlags[BACKCHANNEL_FLAG] === true;
+            // D4-pattern flip (2026-08-25, at the user's explicit direction —
+            // same live-audio-behavior call as HYBRID_AUDIO_CACHE_FLAG above):
+            // backchannels were built (Phase IV) and never once fired in
+            // production, since an absent feature_flags row reads `=== true`
+            // as off. Absent now reads as ON; an explicit `enabled: false` row
+            // is still the kill switch, same convention as HYBRID_AUDIO_CACHE_FLAG.
+            backchannelsEnabled = noiseFilterFlags[BACKCHANNEL_FLAG] !== false;
             // Phase V: build the per-call end-of-turn detector from the flag.
             // refiner is null (no model vendor wired — deferred per the
             // build-plan gate), so today this returns the plain heuristic and
