@@ -12,6 +12,13 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **D5 decided — keep the unsourced-claim detector logging, do not promote to blocking (2026-08-25).**
+  Queried `guardrail_events` for `category='unsourced-claim'` across all 17 production calls: zero rows,
+  ever. Promoting a detector with zero real firings to blocking-and-rephrasing would be guessing at its
+  precision, not deciding from it — the same "logging feels like it already handled it" trap this
+  section warns against, from the opposite direction. No code changed; the decision is the deliverable.
+  See `docs/plans/phase-d-conversation.md`'s D5 status note.
+
 - **D4 partially shipped — filler lines rewritten outcome-neutral, hybrid-audio-cache flipped to
   opt-out (2026-08-25).** `TOOL_CALL_FILLER_LINES` no longer implies a lookup succeeded ("One moment." /
   "Just a second." instead of "let me check that"/"let me look into that"). At the user's explicit

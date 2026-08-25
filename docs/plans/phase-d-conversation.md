@@ -350,6 +350,20 @@ item 3 lands.
 
 ### D5. Decide on blocking unsourced claims
 
+**Status: decided 2026-08-25 — keep logging, do not promote to blocking. Zero code changed; the decision
+itself, backed by a live query, is the deliverable this section asks for.**
+
+**Row count: 0.** Queried `guardrail_events` for `category = 'unsourced-claim'` across every production
+call to date (17 calls, `qghtkadxbtptvbfbmsdz`) — zero rows. The detector (A5, `unsourced-claim-guard.ts`)
+has never fired once in production. This section's own instructions frame the decision as a choice between
+two data-backed outcomes — "if precision is high, promote... if it is noisy, keep logging" — and zero rows
+is neither: there is no false-positive rate to measure, and no evidence of the real problem (a caller
+hearing an invented price) recurring either. **Promoting a detector with zero real firings from logging to
+blocking-and-rephrasing would be pure speculation about its precision, not a decision informed by it** —
+exactly the "logging feels like it already handled it" trap this section warns against, just from the
+opposite direction (guessing ahead of data instead of ignoring the data that exists). Keep logging. Revisit
+when real rows exist to actually read.
+
 **Where:** the `unsourced-claim` detector added in Phase A (A5).
 
 **How:** by this point there are rows. Read them. If precision is high, promote the detector from
