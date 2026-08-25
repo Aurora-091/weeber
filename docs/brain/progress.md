@@ -12,6 +12,21 @@ updated: 2026-08-26
 
 ## Done (works end-to-end, real-verified)
 
+- **Live provider testing attempted (2026-08-26) — found `CARTESIA_API_KEY` is invalid, everything else
+  checked out.** Went to run the Sonic-3.6 filler-insertion test the 2026-08-25 provider-currency-deep-dive
+  audit called for. Confirmed `sonic-3.6` isn't a real `model_id` (Cartesia's live docs: `sonic-3`/
+  `sonic-3.5`/`sonic-latest`), then found `CARTESIA_API_KEY` in this environment's `.env` returns `401
+  Invalid API key` directly against Cartesia's own REST endpoint — a dead credential, not an env-loading
+  bug (verified the key loads with the right length/prefix). **That test needs a rotated Cartesia
+  credential before it can run at all.** `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY` are both live and
+  valid: ran a real ElevenLabs (`eleven_flash_v2_5`) → Deepgram (`nova-3`) round trip using this
+  codebase's actual pinned models/voice IDs — worked cleanly end to end. Also confirmed Deepgram's `flux`
+  model needs `/v2/listen` (WebSocket-only), not the `/v1/listen` REST path — consistent with, not new
+  beyond, the deep-dive audit's "different protocol, real migration project" finding. See
+  `docs/audits/2026-08-25-provider-currency-deep-dive.md`'s "Attempted 2026-08-26" addendum for the full
+  method (ready to rerun once the Cartesia credential works). No code changed — this was a live-API
+  research pass, not an implementation.
+
 - **Assembled synthetic suite closes part of Phase D's "never actually built" exit-gate gap (2026-08-26).**
   New `packages/api/src/voice/stream-synthetic-suite.test.ts` (built on the new shared harness) drives ONE
   simulated call through D6 (dictation-sequence pause), D7 item 2 (non-interruptible disclosure), and D8

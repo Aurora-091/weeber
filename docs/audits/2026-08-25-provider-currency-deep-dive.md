@@ -17,7 +17,7 @@
 | Item | Verdict |
 |---|---|
 | Deepgram Flux vs Nova-3 | **Worth a live A/B test, not a blind swap.** Flux's turn-detection genuinely appears built to solve D6's exact scenario, and its `StartOfTurn`/`TurnResumed` events look like they'd replace D7's barge-in gating too — but it's a different API (`/v2/listen`), a different message shape (turn events, not `is_final`/`speech_final`), and it drops `smart_format`, which this codebase actively depends on (`deepgram.ts:96`). Real migration effort, not a config flag. |
-| Cartesia Sonic-3.6 fillers | **Not enough public information to decide — the mechanism itself is undocumented.** No source (official or third-party) confirms whether "natural pauses and filler words" means the model inserts content not in the input text, or renders existing disfluencies more naturally. That distinction is exactly what determines whether it threatens D8's controlled spell-back speech. Needs a hands-on test, not more searching. |
+| Cartesia Sonic-3.6 fillers | **Still undocumented, and the live test is now blocked, not just unrun.** `sonic-3.6` isn't a real `model_id` (Cartesia's live docs list `sonic-3`/`sonic-3.5`/`sonic-latest`), and this environment's `CARTESIA_API_KEY` is invalid against Cartesia's own API (confirmed directly, 401) — someone needs to rotate that credential before the hands-on test can run. A live ElevenLabs↔Deepgram round trip using this codebase's actual pins worked cleanly in the meantime, as an unrelated regression check. |
 | Groq tool-use model swap | **Moot — the model is gone.** `Llama-3-Groq-70B-Tool-Use` does not appear in Groq's current (August 2026) model catalog or docs. The specific swap the prior research named is no longer available to make. |
 
 ---
@@ -138,6 +138,45 @@ more naturally, it's safe to adopt broadly, including for D8's controlled speech
 unscripted content, it needs to be scoped OUT of D8's spell-back path even if adopted elsewhere. This is
 the same recommendation the original research made ("worth evaluating on sonic-preview") — this pass
 didn't find a shortcut past that, only sharpened exactly what the test needs to check.
+
+### Attempted 2026-08-26 — blocked, not resolved
+
+Went to actually run the hands-on test the verdict above calls for. First, checked Cartesia's own live API
+docs for the exact `model_id` string: **`sonic-3.6` does not exist as a documented value.** The
+enumerated `model_id` list is `sonic-3`, `sonic-3.5`, `sonic-latest` — "Sonic-3.6" is Cartesia's public/
+marketing name for whatever `sonic-latest` (or `sonic-3.5`) resolves to server-side; there's no way to
+address it explicitly by that string.
+
+More fundamentally: **the `CARTESIA_API_KEY` value in this environment's `.env` is invalid.** Confirmed
+directly against Cartesia's REST endpoint (`POST /tts/bytes`), not an environment-loading bug — the key
+loads correctly (29 chars, `sk_car_...` prefix) and Cartesia's own API returns
+`401 {"message":"Invalid API key."}`. The WebSocket path this codebase's actual `tts/cartesia.ts` adapter
+uses failed the same way (`Expected 101 status code`), consistent with the same root cause. **This test
+cannot run in this environment until someone rotates/replaces that credential** — a separate, unrelated
+finding from the filler-insertion question itself, but it blocks answering it.
+
+What was verified live instead, since `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY` both authenticate
+successfully: a real ElevenLabs TTS (`eleven_flash_v2_5`, this codebase's actual pinned model) → Deepgram
+STT (`nova-3`, this codebase's actual pinned model) round trip, using the same voice ID
+(`EXAVITQu4vr4xnSDxMaL`) and provider pins this codebase ships. Input `"Please confirm your appointment
+for the fifteenth at three PM."` came back as `"Please confirm your appointment for the fifteenth at
+3PM."` — the only difference is Deepgram's `smart_format` rendering "three PM" as "3PM", not an inserted
+or fabricated word. This is a live regression check that both of this codebase's actually-configured
+adapters still work end-to-end against real accounts, independent of the Cartesia question — it does not
+answer the Sonic-3.6 question, since ElevenLabs is a different provider on a different model.
+
+Also checked, same session: Deepgram's `flux` model is **not reachable through the batch `/v1/listen`
+REST endpoint** this codebase's `stt/deepgram.ts` doesn't currently use for Flux anyway — Deepgram's own
+API explicitly rejects it (`V2_MODEL_ON_V1_LISTEN_ENDPOINT`, "use `/v2/listen`"), and `/v2/listen` itself
+returned `405` on a plain POST, consistent with it being a WebSocket-only streaming endpoint. This
+confirms (rather than newly discovers) §1's finding that Flux is a different protocol, not a same-shape
+model swap — a real entitlement/access check would need a full WebSocket handshake test, which is the
+same "real migration project, not a config flag" scope §1 already named, not a quick smoke test.
+
+**Next step for whoever has a working Cartesia credential:** re-run this exact test —
+`send the literal D4/D8 filler/spell-back text to sonic-latest, transcribe the output back through
+Deepgram, diff against the input`. The method is proven (the ElevenLabs/Deepgram round trip above used
+the identical technique successfully); only the credential is blocking it.
 
 ---
 
