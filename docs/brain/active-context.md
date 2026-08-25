@@ -12,6 +12,22 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Phase C (latency) is code-complete as of 2026-08-25 — all four sub-phases shipped, at the user's
+  direction to research, fix, and close the phase in one session (`docs/plans/phase-c-latency.md`).** C1
+  (TTS session reuse, 2026-08-24) + its barge-in follow-up (2026-08-25, see bullet above); C2 (prompt-cache
+  scrubbing, 2026-08-24) + its exit-gate condition 4 rewritten to match what the architecture can actually
+  guarantee (2026-08-25, applied to the exit gate below the status line); C3 (STT-off-pickup-path,
+  2026-08-25, verified already true); C4 (terminal-tool-batch cap, 2026-08-25, all 3 steps). Local exit-gate
+  checks run and clean: lint, typecheck (`bun run typecheck`, not a bare root `tsc` — that command picks up
+  unrelated pre-existing errors in `packages/web`/`supabase/functions`/`tools/*` and is not this repo's real
+  gate), 1579/1579 api tests (`bun run test`, `--isolate`), `knip:gate`, `design:guard`, `contrast:gate`
+  (42/42). `persona:gate` is red but pre-existing and untouched by this phase — a separate content-budget
+  item, not a latency defect. `bun run latency:report` cannot run in this sandbox (no `DATABASE_URL`), and
+  nothing this phase shipped is deployed (commits are local only, not pushed) — so every condition that
+  needs real post-fix production calls is the same single open item, not evidence anything is wrong. Three
+  commits this session: C4 step 2 (`abef5ee`), C1 barge-in follow-up (`1cc5b51`), plus this doc-only
+  closing pass.
+
 - **C1's barge-in regression fixed — a caller interruption no longer force-closes the held TTS session
   (2026-08-25, `packages/api/src/voice/tts/{cartesia,elevenlabs}.ts`, `stream.ts`,
   `docs/plans/phase-c-latency.md`).** Follow-up to the research bullet below: `tts/cartesia.ts`'s and

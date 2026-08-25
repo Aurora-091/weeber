@@ -1,11 +1,17 @@
 # Phase C — Latency, in the order production says
 
-**Status:** In progress — C1/C2 shipped 2026-08-24, C3 shipped 2026-08-25, C4 steps 1-3 shipped 2026-08-25
-(step 2 built after fresh post-deploy production data confirmed the batching pattern reproduces even on
-fully-shipped code). Re-verifying C4 against that fresh data surfaced open regressions in both C1 and C2;
-C1's is fixed (2026-08-25, per-context cancel on barge-in instead of a full socket close); C2's is
-confirmed structurally expected, not a bug, with a proposed exit-gate rewording not yet applied — see
-their status notes.
+**Status:** All four sub-phases code-complete as of 2026-08-25 (C1/C2/C3/C4 — see each section's status
+note). C1's original session-reuse work shipped 2026-08-24; C3 shipped 2026-08-25 (verified already true);
+C4 shipped 2026-08-25 (steps 1-3, step 2 built after fresh post-deploy data confirmed the batching pattern
+survives the fix). Re-verifying C4 against that fresh data surfaced two regressions, both now closed: C1's
+(barge-in force-closing the held session) fixed 2026-08-25 with a per-context cancel; C2's (mid-call
+cache-hit drops) confirmed structurally expected, not a bug, with the exit gate's condition 4 rewritten to
+match reality (applied below). **What remains is entirely measurement, not code**: nothing in this phase's
+work is deployed (commits are local, not pushed), and this sandbox has no `DATABASE_URL` for
+`bun run latency:report` to run against even if it were — every "not yet measured against production"
+note in this file is the same open item, not four separate ones. Local gates (lint/typecheck/test/
+knip:gate/design:guard/contrast:gate) are clean. `persona:gate` is red — pre-existing, unrelated to
+latency, not touched by this phase's work; carried forward as its own item, not a Phase C blocker.
 **Blocks:** Phase D, Phase E
 **Preconditions:** Phase B's exit gate met — in particular `bun run latency:report` reproducing the
 audit's headline numbers. Without that command this phase has no acceptance test and must not start.
