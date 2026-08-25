@@ -1,5 +1,16 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
 import { clearTtsCacheForTests } from "./tts-cache";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Backchannel default flip (2026-08-25, at the user's explicit direction —
@@ -19,63 +30,13 @@ import { clearTtsCacheForTests } from "./tts-cache";
  * genuinely waits past it rather than mocking the clock.
  */
 
-const callRow = { id: 1, orgId: "org_test", direction: "inbound", status: "in-progress" };
+const db = createDbHarness();
+const stt = createSttHarness();
+const orgQueries = createOrgQueriesHarness();
 
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
-const dbLike = {
-  select: () => ({ from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []) }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
-
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript: ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return { sendAudio: () => {}, getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }), close: () => {} };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => ({
   composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
@@ -101,61 +62,38 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-let agentFlagsOverride: Record<string, boolean> | undefined;
-mock.module("./org-queries", () => ({
-  getEffectiveFlags: async () => agentFlagsOverride ?? {},
-}));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", orgQueries.module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
-
-const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 // BACKCHANNEL_MIN_UTTERANCE_MS is 2500 — the interim STT events below are
 // spaced past it deliberately, so this is not an arbitrary settle().
 const PAST_MIN_UTTERANCE_MS = 2600;
 
 beforeEach(() => {
-  lastOnTranscript = null;
-  agentFlagsOverride = undefined;
+  orgQueries.reset();
   clearTtsCacheForTests();
 });
 
 describe("backchannel default flip (2026-08-25)", () => {
   it("with no flags row at all, a long caller utterance gets a mid-utterance backchannel", async () => {
-    agentFlagsOverride = undefined; // {} from the mock above — the real production shape
+    orgQueries.setFlags({}); // the real production shape
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle(30);
 
     // Starts the utterance timer.
-    lastOnTranscript?.({ text: "well, so, I was calling about", isFinal: false, speechFinal: false });
+    stt.getLastOnTranscript()?.({ text: "well, so, I was calling about", isFinal: false, speechFinal: false });
     await settle(PAST_MIN_UTTERANCE_MS);
     const sentBeforeSecondInterim = ws.sent.length;
     // Still mid-utterance (not speechFinal) — this is where a backchannel
     // may fire, now that the utterance has run past BACKCHANNEL_MIN_UTTERANCE_MS.
-    lastOnTranscript?.({ text: "well, so, I was calling about my order", isFinal: false, speechFinal: false });
+    stt.getLastOnTranscript()?.({ text: "well, so, I was calling about my order", isFinal: false, speechFinal: false });
     await settle(30);
     handlers.onClose();
 
@@ -163,16 +101,16 @@ describe("backchannel default flip (2026-08-25)", () => {
   }, 10000);
 
   it("an explicit enabled: false still suppresses the backchannel — the kill switch survives the default flip", async () => {
-    agentFlagsOverride = { backchannels: false };
+    orgQueries.setFlags({ backchannels: false });
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle(30);
 
-    lastOnTranscript?.({ text: "well, so, I was calling about", isFinal: false, speechFinal: false });
+    stt.getLastOnTranscript()?.({ text: "well, so, I was calling about", isFinal: false, speechFinal: false });
     await settle(PAST_MIN_UTTERANCE_MS);
     const sentBeforeSecondInterim = ws.sent.length;
-    lastOnTranscript?.({ text: "well, so, I was calling about my order", isFinal: false, speechFinal: false });
+    stt.getLastOnTranscript()?.({ text: "well, so, I was calling about my order", isFinal: false, speechFinal: false });
     await settle(30);
     handlers.onClose();
 

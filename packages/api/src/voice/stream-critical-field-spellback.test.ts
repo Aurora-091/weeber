@@ -1,4 +1,15 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * D8 (phase-d-conversation.md) — "a synthetic scenario where the caller
@@ -25,70 +36,20 @@ type CapturedFieldRow = { value: string | null; heard: string; transcriptId: num
 let persistedCapturedStates: Record<string, CapturedFieldRow>[] = [];
 let turnCallCount = 0;
 
-const callRow = { id: 1, orgId: "org-1", direction: "inbound", status: "in-progress" };
-
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "from", "values"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
-const dbLike = {
-  select: () => ({ from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []) }),
-  insert: () => chain([]),
-  update: () => ({
-    set: (values: { capturedState?: Record<string, CapturedFieldRow> }) => {
-      if (values.capturedState) persistedCapturedStates.push(values.capturedState);
-      return chain([]);
-    },
-  }),
-  execute: async () => [],
-};
-
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return { sendAudio: () => {}, getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }), close: () => {} };
+const db = createDbHarness({
+  tables: { calls: [{ id: 1, orgId: "org-1", direction: "inbound", status: "in-progress" }] },
+  onUpdate: (_table, values) => {
+    if (values.capturedState) {
+      persistedCapturedStates.push(values.capturedState as Record<string, CapturedFieldRow>);
+    }
   },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+});
+const stt = createSttHarness();
+const orgQueries = createOrgQueriesHarness();
 
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 type OnToolCall = (name: string, input: unknown, output: unknown) => void;
 
@@ -134,36 +95,18 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", orgQueries.module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  return { send: () => {}, close: () => {} };
-}
-
-const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 beforeEach(() => {
   persistedCapturedStates = [];
   turnCallCount = 0;
-  lastOnTranscript = null;
+  orgQueries.reset();
 });
 
 describe("D8 — a spell-back correction overwrites an earlier mis-heard capture, not the reverse", () => {
@@ -172,7 +115,7 @@ describe("D8 — a spell-back correction overwrites an earlier mis-heard capture
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
 
-    void lastOnTranscript?.({ text: "My name is Jon", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "My name is Jon", isFinal: true, speechFinal: true });
     await settle(30);
 
     expect(turnCallCount).toBe(1);
@@ -187,12 +130,12 @@ describe("D8 — a spell-back correction overwrites an earlier mis-heard capture
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
 
-    void lastOnTranscript?.({ text: "My name is Jon", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "My name is Jon", isFinal: true, speechFinal: true });
     await settle(30);
     // Ends on a full word, deliberately not a lone spelled-out letter — D6's
     // DictationSequenceDetector correctly treats "...J O H N" as still-spelling
     // and withholds the turn, which would make this test about D6, not D8.
-    void lastOnTranscript?.({ text: "No, it's John, spelled J O H N, that's correct", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "No, it's John, spelled J O H N, that's correct", isFinal: true, speechFinal: true });
     await settle(30);
 
     expect(turnCallCount).toBe(2);

@@ -12,6 +12,20 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **Shared test harness for stream-*.test.ts, all 22 files migrated (2026-08-25, at the user's request
+  for "a better testing framework").** New `packages/api/src/voice/test-helpers/stream-harness.ts`
+  extracts the drizzle chain stub, STT/TTS/twilio-client/org-queries/leads mocks, `fakeWs`, `settle`, and
+  the "start" event builder that every `stream-*.test.ts` file had been hand-copying (and slowly
+  diverging — three different accumulated `chain()` signatures existed before this). Deliberately does
+  NOT provide an `./agent` mock — that's always the actual test scenario, never boilerplate. Files whose
+  own scenario IS the STT/TTS/db internals (voice-identity failover, insert-capture ordering, multi-table
+  selects) keep a custom mock for that one piece and use the harness for the rest — not force-fit.
+  Net: -1362 lines across the 22 test files, +285 for the harness itself (-1077 net), same 1643 tests
+  passing before and after, zero assertions changed. One real behavior fix surfaced during migration:
+  `createDbHarness`'s insert defaults now seed `{id: 1}` for `.returning()` (some files already did this,
+  others silently didn't — standardized on the safer one). 1643/1643 api tests pass, typecheck/lint/
+  knip:gate/design:guard/contrast:gate all clean. Not deployed (test-only change).
+
 - **Post-Railway-approval optimization pass: 3 research audits + 3 quick-win fixes shipped (2026-08-25).**
   At the user's request, three parallel research forks produced dated audits: `docs/audits/2026-08-25-
   provider-currency-deep-dive.md` (Deepgram Flux worth an A/B test but a multi-day migration, no

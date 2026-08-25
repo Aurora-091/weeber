@@ -1,5 +1,16 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
 import { getCachedTtsAudio, clearTtsCacheForTests } from "./tts-cache";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * maybePlayToolCallFiller() (stream.ts) used to call getEffectiveFlags()
@@ -17,79 +28,28 @@ import { getCachedTtsAudio, clearTtsCacheForTests } from "./tts-cache";
  * buildVoiceTools' withFillerTimer uses in production), and assert
  * getEffectiveFlags was called exactly once for the whole call — from
  * "start" — not once more per filler trigger.
+ *
+ * Migrated (2026-08-25) to the shared `test-helpers/stream-harness.ts`. The
+ * call-count instrumentation below decorates `orgQueries.module()` locally —
+ * that's specific to this one file's own assertion, not shared harness
+ * behavior.
  */
 
 let getEffectiveFlagsCallCount = 0;
 
-const callRow = { id: 1, orgId: "org_test", direction: "inbound", status: "in-progress" };
-
-/** Same drizzle-chain stub shape as the other stream-*.test.ts files. */
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
+const db = createDbHarness();
+const stt = createSttHarness();
+const orgQueries = createOrgQueriesHarness();
 
 // ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
 // imports both `db` and `dbBackground` — both must resolve here.
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript: ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 mock.module("./tts", () => ({
   // One-shot shape — still used by warmFillerCache, which this test exercises
   // directly (the whole point of maybePlayToolCallFiller's cache warming).
-  connectTts: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
-  // through this instead of connectTts above.
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
+  ...createTtsHarness().module(),
 }));
 
 /** How many slow-tool-call fillers each turn simulates — proves the fix
@@ -133,13 +93,7 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
+mock.module("./twilio-client", twilioClientHarnessModule);
 mock.module("./org-queries", () => ({
   getEffectiveFlags: async () => {
     getEffectiveFlagsCallCount += 1;
@@ -149,35 +103,19 @@ mock.module("./org-queries", () => ({
     // since this test only asserts getEffectiveFlags call-count dedup, not
     // filler content, and the mocked ./tts's connectTts covers
     // warmFillerCache's one-shot warm path either way.
-    return agentFlagsOverride ?? {};
+    return orgQueries.module().getEffectiveFlags();
   },
 }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
-
-const settle = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
-
-let agentFlagsOverride: Record<string, boolean> | undefined;
+const START_EVENT = buildStartEvent();
 
 beforeEach(() => {
   getEffectiveFlagsCallCount = 0;
-  lastOnTranscript = null;
   slowToolCallsThisTurn = 1;
-  agentFlagsOverride = undefined;
+  orgQueries.reset();
   clearTtsCacheForTests();
 });
 
@@ -191,7 +129,7 @@ describe("maybePlayToolCallFiller reuses the call-start effective flags (2026-08
     // The "start" handler's own startup batch is the only expected call.
     expect(getEffectiveFlagsCallCount).toBe(1);
 
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
     handlers.onClose();
 
@@ -207,7 +145,7 @@ describe("maybePlayToolCallFiller reuses the call-start effective flags (2026-08
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
     handlers.onClose();
 
@@ -235,7 +173,7 @@ function anyFillerCached(): boolean {
 
 describe("hybrid-audio-cache default flip (D4, 2026-08-25)", () => {
   it("with no flags row at all, the filler cache is already warm by the time 'start' finishes — before any turn runs", async () => {
-    agentFlagsOverride = undefined; // {} from the mock above — the real production shape
+    orgQueries.setFlags({}); // the real production shape
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
@@ -246,14 +184,14 @@ describe("hybrid-audio-cache default flip (D4, 2026-08-25)", () => {
   });
 
   it("the very first slow-tool-call trigger of a fresh call forwards filler audio, not just warms it", async () => {
-    agentFlagsOverride = undefined;
+    orgQueries.setFlags({});
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
     const sentBeforeFirstTurn = ws.sent.length;
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
     handlers.onClose();
 
@@ -261,15 +199,15 @@ describe("hybrid-audio-cache default flip (D4, 2026-08-25)", () => {
   });
 
   it("an explicit enabled: false still suppresses the filler — the kill switch survives the default flip", async () => {
-    agentFlagsOverride = { "hybrid-audio-cache": false };
+    orgQueries.setFlags({ "hybrid-audio-cache": false });
     const handlers = createVoiceStreamHandlers("twilio");
     const ws = fakeWs();
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
-    lastOnTranscript?.({ text: "and what about the refund", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "and what about the refund", isFinal: true, speechFinal: true });
     await settle();
     handlers.onClose();
 

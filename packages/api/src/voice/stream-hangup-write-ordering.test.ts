@@ -1,4 +1,12 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Phase C4 (2026-08-24, docs/plans/phase-c-latency.md) step 3 — "whatever
@@ -40,24 +48,6 @@ let scriptedToolCalls: { name: string; input: unknown }[] = [];
 let dbUpdates: { table: string | undefined; values: Record<string, unknown> }[] = [];
 let events: string[] = [];
 
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(rows: unknown[], onValues?: (values: Record<string, unknown>) => void): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate", "values"]) {
-    p[method] = () => chain(rows, onValues);
-  }
-  p.set = (values: Record<string, unknown>) => {
-    onValues?.(values);
-    return chain(rows, onValues);
-  };
-  return p;
-}
-
 const callRow: CallRow = {
   id: 1,
   orgId: "org_test",
@@ -69,55 +59,15 @@ const callRow: CallRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: () => chain([]),
-  update: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([], (values) => dbUpdates.push({ table: name, values }));
-  },
-  execute: async () => [],
-};
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onUpdate: (table, values) => dbUpdates.push({ table, values }),
+});
+const stt = createSttHarness();
 
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript: ((p: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => ({
-    __capture: (lastOnTranscript = onTranscript),
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => {
   const run = async ({
@@ -147,16 +97,8 @@ mock.module("./agent", () => {
   };
 });
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({
-    calls: () => ({ update: async () => ({}) }),
-  }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
 mock.module("./leads/leads", () => ({
   promoteLeadFromCall: async () => {
     events.push("promoteLeadFromCall");
@@ -176,10 +118,7 @@ mock.module("./caller-memory", () => ({
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
+const START_EVENT = buildStartEvent();
 
 function fakeWs() {
   return {
@@ -191,7 +130,7 @@ function fakeWs() {
 }
 
 async function callerSpeaks() {
-  lastOnTranscript?.({ text: "that is everything, thanks", isFinal: true, speechFinal: true });
+  stt.getLastOnTranscript()?.({ text: "that is everything, thanks", isFinal: true, speechFinal: true });
   await new Promise((resolve) => setTimeout(resolve, 2600));
 }
 
@@ -199,7 +138,6 @@ beforeEach(() => {
   scriptedToolCalls = [];
   dbUpdates = [];
   events = [];
-  lastOnTranscript = null;
 });
 
 describe("finalize writes happen after the WebSocket closes (Phase C4 step 3, 2026-08-24)", () => {

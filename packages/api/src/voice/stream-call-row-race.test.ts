@@ -1,4 +1,15 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  chain,
+  getTableName,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+} from "./test-helpers/stream-harness";
 
 /**
  * Production defect (found via live Supabase data, 2026-08-25, calls 9/11 on
@@ -38,19 +49,6 @@ const WINNING_CALL_ROW = {
   agentPersona: null,
   capturedState: {},
 };
-
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
 
 let callsSelectCount = 0;
 let callLatencyRows: { callId?: number; pickupToFirstAudioMs?: number }[] = [];
@@ -97,38 +95,8 @@ const dbLike = {
 
 mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
-mock.module("./stt", () => ({
-  connectStt: () => ({
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("./stt", createSttHarness().module);
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => ({
   composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
@@ -151,18 +119,9 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
@@ -176,12 +135,6 @@ const START_EVENT = JSON.stringify({
     customParameters: { from: "+14155551234", to: "+919999999999" },
   },
 });
-
-function fakeWs() {
-  return { send: () => {}, close: () => {} };
-}
-
-const settle = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
 
 beforeEach(() => {
   callsSelectCount = 0;

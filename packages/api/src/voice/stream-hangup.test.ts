@@ -1,4 +1,13 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  chain,
+  getTableName,
+  createSttHarness,
+  createTtsHarness,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Defect: "the call is not ending."
@@ -35,24 +44,6 @@ let orgRows: Record<string, unknown>[] = [];
 let twilioMode: "ok" | "update-rejects" | "client-throws" = "ok";
 let twilioUpdates: Record<string, unknown>[] = [];
 
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(rows: unknown[], onValues?: (values: Record<string, unknown>) => void): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate", "values"]) {
-    p[method] = () => chain(rows, onValues);
-  }
-  p.set = (values: Record<string, unknown>) => {
-    onValues?.(values);
-    return chain(rows, onValues);
-  };
-  return p;
-}
-
 const callRow = {
   id: 1,
   orgId: "org_test",
@@ -74,7 +65,7 @@ const dbLike = {
   insert: () => chain([]),
   update: (table: unknown) => {
     const name = getTableName(table);
-    return chain([], (values) => dbUpdates.push({ table: name, values }));
+    return chain([], { onSet: (values) => dbUpdates.push({ table: name, values }) });
   },
   execute: async () => [],
 };
@@ -83,44 +74,10 @@ const dbLike = {
 // imports both `db` and `dbBackground` — both must resolve here.
 mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
-let lastOnTranscript: ((p: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
+const stt = createSttHarness();
 
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => ({
-    __capture: (lastOnTranscript = onTranscript),
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
-  // through this instead of connectTts above. Not under test here, so it's
-  // a minimal always-succeeds session.
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => {
   const run = async ({
@@ -175,18 +132,12 @@ mock.module("./twilio-client", () => ({
   },
 }));
 
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
+const START_EVENT = buildStartEvent();
 
 function fakeWs() {
   let closeCount = 0;
@@ -205,7 +156,7 @@ function fakeWs() {
  * `onToolCall` (the greeting cannot end a call it just started), so the tool
  * calls under test have to arrive on a normal turn. */
 async function callerSpeaks() {
-  lastOnTranscript?.({ text: "that is everything, thanks", isFinal: true, speechFinal: true });
+  stt.getLastOnTranscript()?.({ text: "that is everything, thanks", isFinal: true, speechFinal: true });
   // The pending-hangup path waits for ttsDone plus an estimated playback tail.
   await new Promise((resolve) => setTimeout(resolve, 2600));
 }
@@ -219,7 +170,6 @@ beforeEach(() => {
   orgRows = [];
   twilioUpdates = [];
   twilioMode = "ok";
-  lastOnTranscript = null;
 });
 
 describe("an agent-requested hangup always ends the call", () => {

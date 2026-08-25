@@ -1,4 +1,13 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Phase C1 follow-up (2026-08-25, docs/plans/phase-c-latency.md) — a caller
@@ -21,26 +30,8 @@ let sessionOpens: SessionRecord[] = [];
  * handle — the barge-in cancel path, distinct from the session dying. */
 let turnCancelCalls = 0;
 
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
 /** Resolved by the test to let a deliberately-held-open turn finish. */
 let releaseTurn: (() => void) | null = null;
-
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
 
 const callRow = {
   id: 1,
@@ -53,22 +44,11 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({ from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []) }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
+const db = createDbHarness({ tables: { calls: [callRow] } });
+const stt = createSttHarness();
 
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return { sendAudio: () => {}, getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }), close: () => {} };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 mock.module("./tts", () => ({
   connectTtsSession: (
@@ -144,37 +124,19 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
+const START_EVENT = buildStartEvent();
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 beforeEach(() => {
   sessionOpens = [];
   turnCancelCalls = 0;
-  lastOnTranscript = null;
   releaseTurn = null;
 });
 
@@ -191,13 +153,13 @@ describe("Barge-in no longer force-closes the held TTS session (Phase C1 follow-
     // Caller speaks; the turn starts streaming text (sendText fires, so a
     // real per-turn TTS handle exists), then blocks mid-turn.
     releaseTurn = () => {};
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
     expect(sessionOpens.length).toBe(1); // still the same session, no reconnect yet
 
     // Caller barges in with deliberate speech (>= BARGE_IN_MIN_CHARS) while
     // the agent is mid-turn — decideBargeIn fires on the first hit.
-    lastOnTranscript?.({ text: "wait actually never mind", isFinal: false, speechFinal: false });
+    stt.getLastOnTranscript()?.({ text: "wait actually never mind", isFinal: false, speechFinal: false });
     await settle();
 
     // The interrupted turn's context was canceled...
@@ -207,7 +169,7 @@ describe("Barge-in no longer force-closes the held TTS session (Phase C1 follow-
     expect(sessionOpens[0]?.dead).toBe(false);
 
     // A fresh caller utterance now runs a whole new turn.
-    lastOnTranscript?.({ text: "actually tell me about pricing", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "actually tell me about pricing", isFinal: true, speechFinal: true });
     await settle();
 
     // Still exactly one socket for the entire call — the barge-in did not

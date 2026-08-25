@@ -1,4 +1,13 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Defect (ADR-083): "the agent's voice changed partway through the call, and
@@ -47,27 +56,9 @@ let failOnConnectProviders = new Set<string>();
  * fault, which must still fail over. */
 let failAfterTextProviders = new Set<string>();
 
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
 /** Resolved by the test to release a turn that is "waiting on a tool call",
  * reproducing the dead air the socket used to idle through. */
 let releaseTurn: (() => void) | null = null;
-
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
 
 const callRow = {
   id: 1,
@@ -80,30 +71,11 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
+const db = createDbHarness({ tables: { calls: [callRow] } });
+const stt = createSttHarness();
 
-// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
-// imports both `db` and `dbBackground` — both must resolve here.
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 mock.module("./tts", () => ({
   // Session-based reuse (Phase C1) — one call per actual new socket, not per
@@ -200,30 +172,13 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
+const START_EVENT = buildStartEvent();
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -231,7 +186,6 @@ beforeEach(() => {
   sessionOpens = [];
   failOnConnectProviders = new Set();
   failAfterTextProviders = new Set();
-  lastOnTranscript = null;
   releaseTurn = null;
 });
 
@@ -248,7 +202,7 @@ describe("TTS session reuse across turns (Phase C1) and the idle-close carve-out
 
     // Arm the "waiting on a tool" turn, then let the caller speak.
     releaseTurn = () => {};
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     await settle();
 
     // Still mid-tool-call, no text produced yet — no new socket, same as
@@ -316,7 +270,7 @@ describe("TTS session reuse across turns (Phase C1) and the idle-close carve-out
     // connection that was never created. It must release the ttsDone waiter
     // rather than leaving the turn to burn its full 8s timeout.
     const started = Date.now();
-    lastOnTranscript?.({ text: "hello", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "hello", isFinal: true, speechFinal: true });
     await settle();
 
     expect(Date.now() - started).toBeLessThan(2000);

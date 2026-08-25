@@ -1,4 +1,14 @@
 import { mock, describe, it, expect, beforeEach, afterEach, jest } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * A5 (phase-a-integrity.md) — stream.ts's wiring of the unsourced-claim
@@ -12,32 +22,6 @@ import { mock, describe, it, expect, beforeEach, afterEach, jest } from "bun:tes
 
 let dbInserts: { table: string | undefined; values: Record<string, unknown> }[] = [];
 
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(
-  rows: unknown[],
-  onValues?: (values: Record<string, unknown>) => void,
-  onInsert?: (values: Record<string, unknown>) => void,
-): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate"]) {
-    p[method] = () => chain(rows, onValues, onInsert);
-  }
-  p.values = (values: Record<string, unknown>) => {
-    onInsert?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  p.set = (values: Record<string, unknown>) => {
-    onValues?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  return p;
-}
-
 const callRow = {
   id: 1,
   orgId: "org_test",
@@ -49,55 +33,14 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([{ id: 1 }], undefined, (values) => dbInserts.push({ table: name, values }));
-  },
-  update: () => chain([]),
-  execute: async () => [],
-};
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onInsert: (table, values) => dbInserts.push({ table, values }),
+});
 
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-mock.module("./stt", () => ({
-  connectStt: () => ({
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: (text: string) => onAudioChunk(Buffer.from(text).toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
-  // through this instead of connectTts above. Not under test here, so it's
-  // a minimal always-succeeds session.
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: (text: string) => onAudioChunk(Buffer.from(text).toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", createSttHarness().module);
+mock.module("./tts", createTtsHarness().module);
 
 /** What the mocked greeting says — set per test. */
 let greetingText = "Sure, happy to help.";
@@ -123,33 +66,13 @@ mock.module("./agent", () => {
   };
 });
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({
-    calls: () => ({ update: async () => ({}) }),
-  }),
-}));
-
-mock.module("./org-queries", () => ({
-  getEffectiveFlags: async () => ({}),
-}));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  return { send: () => {}, close: () => {} };
-}
+const START_EVENT = buildStartEvent();
 
 async function flush(ticks = 100) {
   for (let i = 0; i < ticks; i++) await Promise.resolve();

@@ -1,4 +1,15 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Production defect (found via live Supabase data, 2026-08-25, call 6 on org
@@ -36,71 +47,12 @@ let capturedHistories: ModelMessage[][] = [];
 let turnCallCount = 0;
 let firstTurnAbortSignal: AbortSignal | null = null;
 
-const callRow = { id: 1, orgId: "org-1", direction: "inbound", status: "in-progress" };
+const db = createDbHarness({ tables: { calls: [{ id: 1, orgId: "org-1", direction: "inbound", status: "in-progress" }] } });
+const stt = createSttHarness();
 
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
-
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => ({
   composeSystemPrompt: (opts: { jobDescription: string }) => ({ text: opts.jobDescription, segments: [] }),
@@ -147,37 +99,18 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  return { send: () => {}, close: () => {} };
-}
-
-const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 beforeEach(() => {
   capturedHistories = [];
   turnCallCount = 0;
   firstTurnAbortSignal = null;
-  lastOnTranscript = null;
 });
 
 describe("a barge-in-aborted self-correction merges into one history entry (2026-08-25)", () => {
@@ -190,7 +123,7 @@ describe("a barge-in-aborted self-correction merges into one history entry (2026
     // Fragment 1 — a mid-word self-correction start. Fire-and-forget: its
     // turn hangs on the mocked runVoiceAgentTurn's pending promise until
     // fragment 2 barges in and aborts it.
-    void lastOnTranscript?.({ text: "No. I'm looking for funeral ex", isFinal: true, speechFinal: true });
+    void stt.getLastOnTranscript()?.({ text: "No. I'm looking for funeral ex", isFinal: true, speechFinal: true });
     await settle(20);
 
     // Turn 1 must actually be in flight (agentIsSpeaking, mock invoked,
@@ -201,7 +134,7 @@ describe("a barge-in-aborted self-correction merges into one history entry (2026
     // Fragment 2 — the caller continuing almost immediately. Long enough to
     // bypass the barge-in streak requirement (BARGE_IN_MIN_CHARS) and fire
     // on the first hit.
-    void lastOnTranscript?.({ text: "funeral expenses.", isFinal: true, speechFinal: true });
+    void stt.getLastOnTranscript()?.({ text: "funeral expenses.", isFinal: true, speechFinal: true });
     await settle(30);
 
     expect(firstTurnAbortSignal?.aborted).toBe(true);

@@ -1,4 +1,15 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * D3 (phase-d-conversation.md), trigger 1/2 — "ledger exhaustion" and
@@ -16,32 +27,6 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 let dbUpdates: { table: string | undefined; values: Record<string, unknown> }[] = [];
 let dbInserts: { table: string | undefined; values: Record<string, unknown> }[] = [];
 
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(
-  rows: unknown[],
-  onValues?: (values: Record<string, unknown>) => void,
-  onInsert?: (values: Record<string, unknown>) => void,
-): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate"]) {
-    p[method] = () => chain(rows, onValues, onInsert);
-  }
-  p.values = (values: Record<string, unknown>) => {
-    onInsert?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  p.set = (values: Record<string, unknown>) => {
-    onValues?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  return p;
-}
-
 const callRow = {
   id: 1,
   orgId: "org_test",
@@ -53,56 +38,16 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({ from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []) }),
-  insert: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([{ id: 1 }], undefined, (values) => dbInserts.push({ table: name, values }));
-  },
-  update: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([], (values) => dbUpdates.push({ table: name, values }));
-  },
-  execute: async () => [],
-};
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onInsert: (table, values) => dbInserts.push({ table, values }),
+  onUpdate: (table, values) => dbUpdates.push({ table, values }),
+});
+const stt = createSttHarness();
 
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript: ((p: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => ({
-    __capture: (lastOnTranscript = onTranscript),
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-    sendText: (text: string) => onAudioChunk(Buffer.from(text).toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (b: string) => void, onDone?: () => void) => ({
-          sendText: (text: string) => onAudioChunk(Buffer.from(text).toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 /** Fires on every regular turn, letting each test decide what tool call (if
  * any) the mocked model makes for that turn. */
@@ -143,37 +88,13 @@ mock.module("./agent", () => {
   };
 });
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  return { send: () => {}, close: () => {} };
-}
-
-// Real timers, not fake ones: logToolCall's markFieldUnanswered branch fires
-// mergeUnansweredField fire-and-forget (`void mergeUnansweredField(...)`),
-// so the persist-to-DB chain needs real event-loop turns to settle before
-// the assertions below read dbInserts — a pure microtask flush (or fake
-// timers, which don't advance it at all) isn't reliably enough. Same
-// technique stream-question-ledger.test.ts uses for the same reason.
-const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 function guardrailInserts() {
   return dbInserts.filter((i) => i.table === "guardrail_events");
@@ -183,7 +104,6 @@ beforeEach(() => {
   dbUpdates = [];
   dbInserts = [];
   onAgentTurn = null;
-  lastOnTranscript = null;
 });
 
 /** Marks "tobacco" unanswered, quoting real words the caller just said so
@@ -200,9 +120,9 @@ describe("D3 — an exhausted field with no delivered outcome is a recorded defe
     await settle(30);
 
     onAgentTurn = markTobaccoUnanswered;
-    lastOnTranscript?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
     await settle(30);
-    lastOnTranscript?.({ text: "I said I'd rather not say", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "I said I'd rather not say", isFinal: true, speechFinal: true });
     await settle(30);
 
     handlers.onClose();
@@ -220,9 +140,9 @@ describe("D3 — an exhausted field with no delivered outcome is a recorded defe
     await settle(30);
 
     onAgentTurn = markTobaccoUnanswered;
-    lastOnTranscript?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
     await settle(30);
-    lastOnTranscript?.({ text: "I said I'd rather not say", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "I said I'd rather not say", isFinal: true, speechFinal: true });
     await settle(30);
 
     onAgentTurn = (onToolCall) =>
@@ -231,7 +151,7 @@ describe("D3 — an exhausted field with no delivered outcome is a recorded defe
         { disposition: "not-interested" },
         { recorded: true, disposition: "not-interested", sentiment: null, notes: null },
       );
-    lastOnTranscript?.({ text: "not interested, thanks", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "not interested, thanks", isFinal: true, speechFinal: true });
     await settle(30);
 
     handlers.onClose();
@@ -247,7 +167,7 @@ describe("D3 — an exhausted field with no delivered outcome is a recorded defe
     await settle(30);
 
     onAgentTurn = markTobaccoUnanswered;
-    lastOnTranscript?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "I'd rather not say", isFinal: true, speechFinal: true });
     await settle(30);
 
     handlers.onClose();

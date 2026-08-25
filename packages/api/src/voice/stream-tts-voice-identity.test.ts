@@ -1,5 +1,14 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
 import { getCachedTtsAudio, clearTtsCacheForTests, HYBRID_AUDIO_CACHE_FLAG } from "./tts-cache";
+import {
+  createDbHarness,
+  createSttHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Defect: "the agent's voice changes during the call."
@@ -38,28 +47,7 @@ let sessionOpens: SessionOpen[] = [];
  * emits audio. */
 let failingTtsProviders = new Set<string>();
 
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
-let agentFlags: Record<string, boolean> = {};
 let literalGreetingTemplate: string | undefined;
-
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-/** Minimal drizzle query-builder stand-in: a resolved promise carrying every
- * chainable method stream.ts uses, so any select/insert/update shape works. */
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
 
 const callRow = {
   id: 1,
@@ -72,30 +60,12 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: () => chain([]),
-  update: () => chain([]),
-  execute: async () => [],
-};
+const db = createDbHarness({ tables: { calls: [callRow] } });
+const stt = createSttHarness();
+const orgQueries = createOrgQueriesHarness();
 
-// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
-// imports both `db` and `dbBackground` — both must resolve here.
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 mock.module("./tts", () => ({
   // Session-based reuse (Phase C1) — one call per actual new socket, not per
@@ -184,35 +154,16 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({
-  getEffectiveFlags: async () => agentFlags,
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", orgQueries.module);
 
 // Not under test here, and its real implementation throws on the stubbed DB at
 // call-finalize time — noise that would drown the assertions below.
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
+const START_EVENT = buildStartEvent();
 
 /** Lets queued microtasks/timers settle between steps. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -220,8 +171,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 beforeEach(() => {
   sessionOpens = [];
   failingTtsProviders = new Set();
-  lastOnTranscript = null;
-  agentFlags = {};
+  orgQueries.reset();
   literalGreetingTemplate = undefined;
   clearTtsCacheForTests();
 });
@@ -261,7 +211,7 @@ describe("TTS failover keeps one voice identity per call", () => {
     // all — the old per-turn-reconnect version of this guarantee was "the
     // new connection is elevenlabs, not cartesia"; the reuse version is
     // "nothing reconnects, because the held elevenlabs session is still open".
-    lastOnTranscript?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
     await settle();
 
     expect(sessionOpens.length).toBe(sessionsAfterGreeting);
@@ -273,7 +223,7 @@ describe("TTS failover keeps one voice identity per call", () => {
   });
 
   it("caches audio under the provider that actually produced it", async () => {
-    agentFlags = { [HYBRID_AUDIO_CACHE_FLAG]: true };
+    orgQueries.setFlags({ [HYBRID_AUDIO_CACHE_FLAG]: true });
     literalGreetingTemplate = "Hello there.";
     failingTtsProviders.add("cartesia");
 
@@ -297,7 +247,7 @@ describe("TTS failover keeps one voice identity per call", () => {
 
     await handlers.onMessage(START_EVENT, ws);
     await settle();
-    lastOnTranscript?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "yes that is correct", isFinal: true, speechFinal: true });
     await settle();
 
     // A healthy call opens exactly one session (the pre-warm) and reuses it

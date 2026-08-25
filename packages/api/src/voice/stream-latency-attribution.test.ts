@@ -1,4 +1,15 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Defect (ADR-107): "TTS is 93% of our turn latency" — it was not. The
@@ -47,90 +58,24 @@ let turnLatencyRows: TurnLatencyRow[] = [];
 
 const callRow = { id: 1, orgId: "org-1", direction: "inbound", status: "in-progress" };
 
-/** Same drizzle-chain stub shape as stream-tts-lazy-connect.test.ts: built on
- * a real Promise rather than a hand-rolled thenable, so `await`ing a query
- * behaves and lint's no-thenable rule stays satisfied. */
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  // Capture only turn_latency inserts; everything else behaves as before.
-  insert: (table: unknown) => {
-    const c = chain([]);
-    if (getTableName(table) === "turn_latency") {
-      c.values = (row: TurnLatencyRow) => {
-        turnLatencyRows.push(row);
-        return chain([]);
-      };
-    }
-    return c;
+// Capture only turn_latency inserts; everything else behaves as before.
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onInsert: (table, values) => {
+    if (table === "turn_latency") turnLatencyRows.push(values as TurnLatencyRow);
   },
-  update: () => chain([]),
-  execute: async () => [],
-};
+});
+const stt = createSttHarness();
 
-// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
-// imports both `db` and `dbBackground` — both must resolve here.
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript:
-  | ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void)
-  | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 // TTS answers immediately: first audio byte lands in the same tick the first
 // character reaches it. Any meaningful ttsFirstByteMs is therefore time the
-// measurement wrongly absorbed from somewhere else.
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
-  // through this instead of connectTts above. Not under test here, so it's
-  // a minimal always-succeeds session.
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+// measurement wrongly absorbed from somewhere else. The shared harness's TTS
+// mock already has this shape (its connectTts/connectTtsSession call back
+// synchronously) — no custom mock needed here.
+mock.module("./tts", createTtsHarness().module);
 
 mock.module("./agent", () => ({
   // ADR-115: stream.ts composes the call-control layer again when a call
@@ -172,40 +117,16 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: {
-    streamSid: "MZ-test",
-    callSid: "CA-test",
-    customParameters: { from: "+919999999999", to: "+911111111111" },
-  },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
-
-const settle = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 beforeEach(() => {
   turnLatencyRows = [];
-  lastOnTranscript = null;
   mockTurnUsage = undefined;
 });
 
@@ -217,7 +138,7 @@ async function captureCallerTurn(): Promise<TurnLatencyRow> {
   await settle();
 
   const beforeTurn = turnLatencyRows.length;
-  lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+  stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
   await settle(LLM_STALL_MS + 80);
 
   const row = turnLatencyRows[beforeTurn];
@@ -292,7 +213,7 @@ describe("turn token usage is persisted with each turn (observability-only, 2026
     await handlers.onMessage(START_EVENT, ws);
     await settle();
 
-    lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+    stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
     // Deliberately NOT awaiting the full LLM_STALL_MS window before this
     // check — persistTurnLatency's insert is fire-and-forget (see stream.ts's
     // "not blocked on ttsDone" comment), so the caller-facing send() calls

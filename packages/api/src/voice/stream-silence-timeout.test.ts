@@ -1,4 +1,12 @@
 import { mock, describe, it, expect, beforeEach, afterEach, jest } from "bun:test";
+import {
+  createDbHarness,
+  createSttHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Defect: the agent hangs up on a caller who is actively answering.
@@ -31,32 +39,6 @@ import { mock, describe, it, expect, beforeEach, afterEach, jest } from "bun:tes
 let dbUpdates: { table: string | undefined; values: Record<string, unknown> }[] = [];
 let dbInserts: { table: string | undefined; values: Record<string, unknown> }[] = [];
 
-function getTableName(table: unknown): string | undefined {
-  if (!table) return undefined;
-  const sym = Object.getOwnPropertySymbols(table).find((s) => s.toString() === "Symbol(drizzle:Name)");
-  return sym ? (table as Record<symbol, string>)[sym] : undefined;
-}
-
-function chain(
-  rows: unknown[],
-  onValues?: (values: Record<string, unknown>) => void,
-  onInsert?: (values: Record<string, unknown>) => void,
-): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "returning", "onConflictDoNothing", "onConflictDoUpdate"]) {
-    p[method] = () => chain(rows, onValues, onInsert);
-  }
-  p.values = (values: Record<string, unknown>) => {
-    onInsert?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  p.set = (values: Record<string, unknown>) => {
-    onValues?.(values);
-    return chain(rows, onValues, onInsert);
-  };
-  return p;
-}
-
 const callRow = {
   id: 1,
   orgId: "org_test",
@@ -68,36 +50,15 @@ const callRow = {
   capturedState: {},
 };
 
-const dbLike = {
-  select: () => ({
-    from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
-  }),
-  insert: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([{ id: 1 }], undefined, (values) => dbInserts.push({ table: name, values }));
-  },
-  update: (table: unknown) => {
-    const name = getTableName(table);
-    return chain([], (values) => dbUpdates.push({ table: name, values }));
-  },
-  execute: async () => [],
-};
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onInsert: (table, values) => dbInserts.push({ table, values }),
+  onUpdate: (table, values) => dbUpdates.push({ table, values }),
+});
+const stt = createSttHarness();
 
-// ADR-116 addendum: org-queries.ts (getEffectiveFlags, called from stream.ts)
-// imports both `db` and `dbBackground` — both must resolve here.
-mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
-
-let lastOnTranscript: ((p: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
-
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => ({
-    __capture: (lastOnTranscript = onTranscript),
-    sendAudio: () => {},
-    getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-    close: () => {},
-  }),
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
+mock.module("../database", db.module);
+mock.module("./stt", stt.module);
 
 /**
  * Test seam for the race (2026-08-20): fires with the text handed to TTS,
@@ -165,29 +126,13 @@ mock.module("./agent", () => {
   };
 });
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({
-    calls: () => ({ update: async () => ({}) }),
-  }),
-}));
-
-mock.module("./org-queries", () => ({
-  getEffectiveFlags: async () => ({}),
-}));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers, estimateRemainingPlaybackMs } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
+const START_EVENT = buildStartEvent();
 
 function fakeWs() {
   let closeCount = 0;
@@ -238,7 +183,6 @@ beforeEach(() => {
   jest.useFakeTimers();
   dbUpdates = [];
   dbInserts = [];
-  lastOnTranscript = null;
   onTtsSendText = null;
 });
 
@@ -283,7 +227,7 @@ describe("caller silence timeout", () => {
     onTtsSendText = (spoken) => {
       if (!spoken.includes("I haven't heard back")) return;
       onTtsSendText = null; // fire once
-      lastOnTranscript?.({ text: "yes I am still here", isFinal: true, speechFinal: true });
+      stt.getLastOnTranscript()?.({ text: "yes I am still here", isFinal: true, speechFinal: true });
     };
     jest.advanceTimersByTime(WARNING_PLAYBACK_MS + SILENCE_HANGUP_MS);
     await flush(200);

@@ -1,4 +1,16 @@
 import { mock, describe, it, expect, beforeEach } from "bun:test";
+import {
+  chain,
+  getTableName,
+  createSttHarness,
+  createTtsHarness,
+  twilioClientHarnessModule,
+  createOrgQueriesHarness,
+  leadsHarnessModule,
+  fakeWs,
+  settle,
+  buildStartEvent,
+} from "./test-helpers/stream-harness";
 
 /**
  * Tool execution latency telemetry (observability-only, 2026-08-20).
@@ -61,20 +73,6 @@ function toolCallLatencyInsert(row: ToolCallLatencyRow) {
 
 const callRow = { id: 1, orgId: "org_test", direction: "inbound", status: "in-progress" };
 
-/** Same drizzle-chain stub shape as the other stream-*.test.ts files. */
-function chain(rows: unknown[]): Promise<unknown[]> & Record<string, unknown> {
-  const p = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-  for (const method of ["where", "limit", "orderBy", "returning", "onConflictDoNothing", "onConflictDoUpdate", "set", "values", "from"]) {
-    p[method] = () => chain(rows);
-  }
-  return p;
-}
-
-function getTableName(table: unknown): string {
-  const sym = Object.getOwnPropertySymbols(table as object).find((s) => String(s).includes("Name"));
-  return sym ? String((table as Record<symbol, unknown>)[sym]) : "";
-}
-
 const dbLike = {
   select: () => ({
     from: (table: unknown) => chain(getTableName(table) === "calls" ? [callRow] : []),
@@ -93,46 +91,10 @@ const dbLike = {
 // imports both `db` and `dbBackground` — both must resolve here.
 mock.module("../database", () => ({ db: dbLike, dbBackground: dbLike }));
 
-let lastOnTranscript: ((params: { text: string; isFinal: boolean; speechFinal: boolean }) => void) | null = null;
+const stt = createSttHarness();
 
-mock.module("./stt", () => ({
-  connectStt: (onTranscript: NonNullable<typeof lastOnTranscript>) => {
-    lastOnTranscript = onTranscript;
-    return {
-      sendAudio: () => {},
-      getStats: () => ({ reconnectCount: 0, totalGapMs: 0 }),
-      close: () => {},
-    };
-  },
-  resolveSttProvider: (override?: string | null) => override ?? "deepgram",
-}));
-
-mock.module("./tts", () => ({
-  connectTts: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-    sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-    endTurn: () => onDone?.(),
-    close: () => {},
-  }),
-  // Session-based reuse (Phase C1) — stream.ts's main speak() path now goes
-  // through this instead of connectTts above. Not under test here, so it's
-  // a minimal always-succeeds session.
-  connectTtsSession: (providerOverride?: string | null, _voiceId?: string, _language?: string, onConnected?: (ms: number) => void) => {
-    onConnected?.(0);
-    return {
-      provider: providerOverride ?? "cartesia",
-      session: {
-        startTurn: (onAudioChunk: (base64Audio: string) => void, onDone?: () => void) => ({
-          sendText: () => onAudioChunk(Buffer.from("audio").toString("base64")),
-          endTurn: () => onDone?.(),
-          close: () => {},
-        }),
-        isOpen: () => true,
-        close: () => {},
-      },
-    };
-  },
-  resolveTtsProvider: (override?: string | null) => override ?? "cartesia",
-}));
+mock.module("./stt", stt.module);
+mock.module("./tts", createTtsHarness().module);
 
 type MockTelemetryEvent = {
   toolName: string;
@@ -179,36 +141,16 @@ mock.module("./agent", () => ({
   },
 }));
 
-mock.module("./twilio-client", () => ({
-  twilioClient: {},
-  getWsUrl: () => "wss://api.weeber.test",
-  getPublicUrl: () => "https://api.weeber.test",
-  getTwilioClientForOrg: async () => ({ calls: () => ({ update: async () => ({}) }) }),
-}));
-
-mock.module("./org-queries", () => ({ getEffectiveFlags: async () => ({}) }));
-mock.module("./leads/leads", () => ({
-  promoteLeadFromCall: async () => undefined,
-  getLeadGreetingContext: async () => ({}),
-}));
+mock.module("./twilio-client", twilioClientHarnessModule);
+mock.module("./org-queries", createOrgQueriesHarness().module);
+mock.module("./leads/leads", leadsHarnessModule);
 
 const { createVoiceStreamHandlers } = await import("./stream");
 
-const START_EVENT = JSON.stringify({
-  event: "start",
-  start: { streamSid: "MZ-test", callSid: "CA-test", customParameters: { from: "+919999999999", to: "+911111111111" } },
-});
-
-function fakeWs() {
-  const sent: string[] = [];
-  return { sent, send: (data: string) => sent.push(data), close: () => {} };
-}
-
-const settle = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+const START_EVENT = buildStartEvent();
 
 beforeEach(() => {
   toolCallLatencyRows = [];
-  lastOnTranscript = null;
   mockTelemetryEvents = [];
 });
 
@@ -218,7 +160,7 @@ async function driveCallerTurn() {
   const ws = fakeWs();
   await handlers.onMessage(START_EVENT, ws);
   await settle();
-  lastOnTranscript?.({ text: "what is my order status", isFinal: true, speechFinal: true });
+  stt.getLastOnTranscript()?.({ text: "what is my order status", isFinal: true, speechFinal: true });
   await settle();
   handlers.onClose();
   return ws;
