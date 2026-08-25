@@ -900,7 +900,15 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
   });
 });
 
-import { withFillerTimer, withToolTimeout, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools, voiceTools } from "./agent";
+import {
+  withFillerTimer,
+  withToolTimeout,
+  withPerTurnCap,
+  TOOL_CALL_FILLER_THRESHOLD_MS,
+  MAX_TOOL_CALLS_PER_TURN,
+  buildVoiceTools,
+  voiceTools,
+} from "./agent";
 
 describe("withFillerTimer — §3a tool-call filler audio", () => {
   it("does not fire onSlowToolCall for a tool that resolves well under the threshold", async () => {
@@ -1042,6 +1050,64 @@ describe("withToolTimeout — §4b bounding a single tool's network I/O (pilot l
   });
 });
 
+/**
+ * Phase C4 step 2 (phase-c-latency.md) — the 2026-08-25 ten-call review
+ * found the terminal-turn latency spike traced directly to `captureField`
+ * batching: old call 6 captured 4 fields on one turn, and a fresh
+ * post-deploy call captured 3 fields on one turn, still reproducing after
+ * A3's prompt-only "call this immediately" fix shipped. These tests cover
+ * the wrapper mechanism in isolation; the buildVoiceTools wiring tests below
+ * cover the shared-counter and exemption behavior.
+ */
+describe("withPerTurnCap — C4 step 2 per-turn tool-call budget", () => {
+  it("allows real execution while the counter is under the cap, incrementing it each time", async () => {
+    const counter = { count: 0 };
+    const wrapped = withPerTurnCap({ execute: async () => ({ captured: true }) }, "captureField", counter, 2);
+    expect(await wrapped.execute()).toEqual({ captured: true });
+    expect(counter.count).toBe(1);
+    expect(await wrapped.execute()).toEqual({ captured: true });
+    expect(counter.count).toBe(2);
+  });
+
+  it("refuses gracefully — not a thrown error — once the counter reaches the cap, and does not increment further", async () => {
+    const counter = { count: 2 };
+    let realCalls = 0;
+    const wrapped = withPerTurnCap(
+      { execute: async () => { realCalls += 1; return { captured: true }; } },
+      "captureField",
+      counter,
+      2,
+    );
+    const result = await wrapped.execute();
+    expect(result).toMatchObject({ deferred: true });
+    expect((result as { message: string }).message).toContain("captureField");
+    expect(realCalls).toBe(0);
+    expect(counter.count).toBe(2);
+  });
+
+  it("shares one counter across multiple distinct tool instances, so the cap is per turn, not per tool", async () => {
+    const counter = { count: 0 };
+    const capture = withPerTurnCap({ execute: async () => "a" }, "captureField", counter, 2);
+    const markUnanswered = withPerTurnCap({ execute: async () => "b" }, "markFieldUnanswered", counter, 2);
+    await capture.execute();
+    await markUnanswered.execute();
+    // Third call, on either tool, is beyond the shared budget.
+    const third = await capture.execute();
+    expect(third).toMatchObject({ deferred: true });
+  });
+
+  it("defaults to MAX_TOOL_CALLS_PER_TURN when no explicit cap is given", async () => {
+    const counter = { count: MAX_TOOL_CALLS_PER_TURN };
+    const wrapped = withPerTurnCap({ execute: async () => "x" }, "captureField", counter);
+    expect(await wrapped.execute()).toMatchObject({ deferred: true });
+  });
+
+  it("is a no-op passthrough when the tool has no execute", () => {
+    const toolDef: { execute?: (...args: never[]) => unknown; description: string } = { description: "none" };
+    expect(withPerTurnCap(toolDef, "anyTool", { count: 0 })).toBe(toolDef);
+  });
+});
+
 describe("buildVoiceTools — §3a wiring", () => {
   it("returns unwrapped tools when onSlowToolCall is omitted, unchanged from before §3a", () => {
     const tools = buildVoiceTools(undefined, undefined);
@@ -1087,6 +1153,72 @@ describe("buildVoiceTools — §3a wiring", () => {
     const tools = buildVoiceTools(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, () => true);
     expect(tools.markFieldUnanswered).toBeDefined();
     expect(tools.markFieldUnanswered!.execute).not.toBe(voiceTools.markFieldUnanswered.execute);
+  });
+});
+
+describe("buildVoiceTools — C4 step 2 per-turn tool-call cap wiring (phase-c-latency.md)", () => {
+  const build = (counter: { count: number }, isHeardInCall?: () => boolean) =>
+    buildVoiceTools(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      isHeardInCall,
+      undefined,
+      counter,
+    );
+
+  it("omitting the counter keeps every caller (text test-chat, synthetic-test) unbounded, unchanged from before C4", () => {
+    const tools = buildVoiceTools(undefined);
+    expect(tools.captureField!.execute).toBe(voiceTools.captureField.execute);
+  });
+
+  it("caps captureField once the shared counter reaches MAX_TOOL_CALLS_PER_TURN", async () => {
+    const counter = { count: 0 };
+    const tools = build(counter, () => true);
+    for (let i = 0; i < MAX_TOOL_CALLS_PER_TURN; i++) {
+      const r = await (tools.captureField!.execute as (...a: unknown[]) => Promise<unknown>)(
+        { field: `f${i}`, value: "v", heard: "v" },
+        { toolCallId: `t${i}`, messages: [] },
+      );
+      expect(r).not.toMatchObject({ deferred: true });
+    }
+    const deferred = await (tools.captureField!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { field: "one-too-many", value: "v", heard: "v" },
+      { toolCallId: "over", messages: [] },
+    );
+    expect(deferred).toMatchObject({ deferred: true });
+  });
+
+  it("the budget is shared across different tools within the same turn — captureField and markFieldUnanswered draw on one counter", async () => {
+    const counter = { count: 0 };
+    const tools = build(counter, () => true);
+    await (tools.captureField!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { field: "a", value: "v", heard: "v" },
+      { toolCallId: "t1", messages: [] },
+    );
+    await (tools.markFieldUnanswered!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { field: "b", heard: "v" },
+      { toolCallId: "t2", messages: [] },
+    );
+    expect(counter.count).toBe(MAX_TOOL_CALLS_PER_TURN);
+    const third = await (tools.captureField!.execute as (...a: unknown[]) => Promise<unknown>)(
+      { field: "c", value: "v", heard: "v" },
+      { toolCallId: "t3", messages: [] },
+    );
+    expect(third).toMatchObject({ deferred: true });
+  });
+
+  it("never caps hangUp, transferToHuman, or flagGuardrailEvent — even after the counter is maxed out", async () => {
+    const counter = { count: MAX_TOOL_CALLS_PER_TURN };
+    const tools = build(counter);
+    expect(tools.hangUp!.execute).toBe(voiceTools.hangUp.execute);
+    expect(tools.transferToHuman!.execute).toBe(voiceTools.transferToHuman.execute);
+    expect(tools.flagGuardrailEvent!.execute).toBe(voiceTools.flagGuardrailEvent.execute);
   });
 });
 

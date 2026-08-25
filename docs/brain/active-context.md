@@ -12,6 +12,82 @@ updated: 2026-08-25
 
 ## Current focus
 
+- **Phase C's two open regressions researched and, for C2, confirmed by construction — no code changed
+  this pass, doc-only (2026-08-25, `docs/plans/phase-c-latency.md`).** User asked to review the whole C
+  phase with internet/GitHub research before committing anything. Findings, both written into the plan
+  doc with sources:
+  **C1** — the "socket keeps reopening mid-call" regression (see the bullet below) is root-caused, not
+  diagnosed further this pass: `stream.ts:2637` closes the entire TTS socket on every barge-in, and current
+  Cartesia/ElevenLabs docs both support canceling just the interrupted context instead
+  (`{context_id, cancel: true}` / `{context_id, close_context: true}`) — the existing code comments
+  claiming no such feature exists are out of date. Sarvam's own docs still say full-close is correct there.
+  Not implemented — **held, per explicit instruction to review the whole phase as one batch before more
+  code changes.**
+  **C2** — chased to a real, confirmed answer instead of left as a guess. `stablePrefix` is proven
+  incapable of varying mid-call by construction (`buildTurnPromptParts` only ever feeds it `persona`, and
+  `stream.ts`'s `persona` variable is assigned exactly twice, both during one-time call setup, never per
+  turn) — so C2's original fix is correct and complete, and the mid-call cache-hit-to-0 drops are NOT that
+  bug recurring. Cross-referencing call 16's actual `tool_calls` rows (fetched fresh — the `captured_state`
+  summary alone wasn't enough) against `turn_latency` confirmed the real mechanism: `dynamicSuffix` (the
+  "Known facts" block, which grows on every capture) is concatenated into the same `system` string as
+  `stablePrefix`, so a provider caching on literal prefix bytes necessarily misses on any turn right after
+  a new capture — several zero-cache turns line up with a capture on the immediately preceding turn exactly
+  (turns 10, 19-20, 26 following captures on turns 9, 18, 25). Not every zero turn lines up this cleanly,
+  consistent with Gemini implicit caching's own documented best-effort nature on top. **Net conclusion:
+  exit-gate condition 4 as originally worded asks for something the current architecture cannot deliver
+  whenever a call captures a fact — proposed a rewritten condition** ("a drop only ever follows a new
+  capture; a call with no captures between two turns shows no drop between them") **in the plan doc,
+  not applied to the file yet.**
+  **Bonus, found via the same `tool_calls` cross-reference:** call 16's C4 batching defect was worse than
+  first reported — `captured_state`'s snapshot collapses repeated field writes, hiding that turns 30 AND
+  31 together fired 10 tool calls (including two duplicate `captureField banking_ready` calls and two
+  near-duplicate `crmSync` calls), not the 3 fields originally read. Strengthens, doesn't change, the
+  already-shipped C4 step 2 cap. Plan doc updated in place with all of this; nothing else changed.
+
+- **C4 step 2 shipped — a per-turn tool-call cap, built only after re-verifying against fresh post-deploy
+  production data (2026-08-25, `packages/api/src/voice/agent.ts`, `docs/plans/phase-c-latency.md`).** The
+  2026-08-25 ten-call review's C4 finding was itself stale by the time this session picked it back up — it
+  read the org "good insurance"'s first 8 calls (2026-08-24 11:39-12:49 UTC), but Railway's deploy log
+  showed `cfd7cf8` (everything through C1/C2/C3/C4-step3 and both defect fixes) went live at
+  **2026-08-24T20:18:04Z**, after those calls. User's instruction was explicit: verify the calls before
+  concluding anything. Querying Supabase fresh found **5 more calls (ids 13-17, 2026-08-25 09:02-10:04
+  UTC)** — genuinely placed after the full deploy, never read by any prior audit. Findings: (1) **C4's
+  batching pattern reproduced again, on fully-deployed code** — call 16 (33 turns) captured 3 fields
+  (`tobacco`, `health_flag`, `banking_ready`) in turn 30 alone, 3616-3624ms v2v, the worst of the call,
+  the same shape as the pre-deploy calls 6 and 8 the original audit found. That's 3 reproductions across
+  two independent samples, one of them post-fix — stronger evidence than the original "thin, n=2/6"
+  finding, since A3's prompt-only instruction demonstrably still doesn't hold under the fully-shipped code.
+  (2) **Two adjacent, NOT-yet-fixed regressions surfaced along the way, out of scope for this change**:
+  `tts_socket_open_ms` (C1) is non-null on many turns after the first across calls 13-16 (76-284ms), not
+  just turn 0 — the session reuse isn't holding for a full call in production; and `llm_cached_input_tokens`
+  (C2) drops to 0 mid-call repeatedly in call 16 (turns 10, 11, 19, 20, 26, 28, 31, 32) with only 5-30s
+  gaps between turns — too short for provider cache TTL to explain it, and the input-token count itself
+  swings inconsistently (20315 -> 6719 -> 13550 -> 6808), which doesn't match the pure-whitespace-scrub
+  mechanism C2's fix targeted. Neither chased down this session — flagged here for whoever picks up Phase
+  C's exit gate next. **User explicitly chose "build the cap now"** given the strengthened evidence, over
+  filing findings and holding, or chasing C1/C2 first.
+  Implementation: `MAX_TOOL_CALLS_PER_TURN = 2` (chosen from the evidence — permits the common two-facts-
+  in-one-utterance case, forces anything beyond that to spill to the next turn); `withPerTurnCap` wraps a
+  tool's `execute` to return a graceful `{ deferred: true, message }` result (never a thrown error) once a
+  shared per-turn counter hits the cap, mirroring `withToolTimeout`'s existing graceful-refusal shape;
+  `TOOL_CALL_CAP_EXEMPT` = `{hangUp, transferToHuman, flagGuardrailEvent}` — terminal/escalation/audit
+  actions that must never be deferred, the exact class of risk ADR-082/-105/-106/-115 already produced
+  from this same tool-calling machinery. The counter (`{ count: 0 }`) is created once per
+  `runVoiceAgentTurn` call and threaded into `buildVoiceTools`, so it survives a transport-failover retry
+  of the same turn (each retry re-calls `buildVoiceTools` but closes over the same counter reference) and
+  resets naturally on the next turn. Applied as the outermost tool wrap — a capped call returns instantly,
+  before the filler timer or timeout race would start. Every other `buildVoiceTools` caller (text
+  test-chat, synthetic harness, preview drawer) omits the counter and stays unbounded, unchanged from
+  before. New tests: `withPerTurnCap` unit tests plus `buildVoiceTools` wiring tests (shared-counter-
+  across-tools, exemption set never capped even when maxed out) in `agent.test.ts`. 1578/1578 api tests
+  pass via `bun run test` (the package's documented gate, already `--isolate`'d); a bare `bun test` with
+  no isolation shows ~151 unrelated failures across the full suite — confirmed pre-existing on unmodified
+  HEAD via `git stash` before assuming this change caused them, a cross-file `mock.module` pollution
+  artifact of running without isolation, not something this change caused or fixed. typecheck/lint/
+  knip:gate clean. **Not deployed, not measured against a real call yet** — same caveat as every other Phase C item: the actual
+  effect on the terminal-turn spike needs a `bun run latency:report` pass over calls placed after this
+  ships.
+
 - **Design audit Phase 1 shipped — the "looks poorly worked" complaint traced to broken tokens, not the
   shadcn conversion itself; monochrome direction confirmed, not revisited (2026-08-25, `.theme-weeber` in
   `packages/web/src/web/styles.css`).** User's own framing was exactly right: converting `<select>`/

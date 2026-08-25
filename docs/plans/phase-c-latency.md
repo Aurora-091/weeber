@@ -1,7 +1,8 @@
 # Phase C — Latency, in the order production says
 
-**Status:** In progress — C1/C2 shipped 2026-08-24, C3 shipped 2026-08-25, C4 partial (step 3 shipped
-2026-08-25; steps 1-2 blocked on real post-A3 production call data)
+**Status:** In progress — C1/C2 shipped 2026-08-24, C3 shipped 2026-08-25, C4 steps 1-3 shipped 2026-08-25
+(step 2 built after fresh post-deploy production data confirmed the batching pattern reproduces even on
+fully-shipped code). C1/C2 both have open regressions found while verifying C4 — see their status notes.
 **Blocks:** Phase D, Phase E
 **Preconditions:** Phase B's exit gate met — in particular `bun run latency:report` reproducing the
 audit's headline numbers. Without that command this phase has no acceptance test and must not start.
@@ -86,6 +87,45 @@ reconnects and the reconnect is recorded; voice identity is correct on turn 2.
 **Expected:** `tts_first_byte_ms` median from ≈ 412 ms toward ≈ 160 ms; ≈ 250 ms off v2v on every turn
 after the first.
 
+**Open regression, found 2026-08-25 while re-verifying C4 against fresh post-deploy data — root-caused,
+not yet fixed.** Exit gate condition 3 ("`tts_socket_open_ms` is absent or < 20 ms on every turn after the
+first") is not holding in production. Calls 13-16 (2026-08-25, post-deploy) show real non-null values
+(76-284 ms) on many turns after turn 0, not just the first.
+
+**Root cause, found by reading the code against fresh provider-docs research (2026-08-25), not a bug —
+Cartesia's documented idle-disconnect is 5 minutes ([Cartesia docs][cartesia-limits]), and every observed
+gap between turns in the fresh sample was 5-30 seconds, ruling that out.** `stream.ts:2637` calls
+`closeTtsSession()` on **every barge-in**, and both `tts/cartesia.ts`'s and `tts/elevenlabs.ts`'s
+`startTurn().close()` tear down the **entire WebSocket**, not just the interrupted turn's context — each
+file's own doc comment says this is deliberate, made because "Cartesia has no documented 'cancel just this
+context' message" (same claim for ElevenLabs). **That claim is now out of date.** Current provider docs
+disagree:
+
+- **Cartesia** supports a Cancel Context Request over the same socket: `{"context_id": "...", "cancel":
+  true}` — *"Use this to cancel a context, so that no more messages are generated for that context"*
+  ([Cartesia TTS WebSocket reference][cartesia-tts]). The socket itself stays open for the next turn's
+  context.
+- **ElevenLabs** supports the same shape: `{"context_id": "...", "close_context": true}` closes one
+  context "while the connection remains active"; only `{"close_socket": true}` tears down the whole thing
+  ([ElevenLabs multi-context WebSocket reference][elevenlabs-multi]).
+- **Sarvam** is the one provider where the existing full-close-on-barge-in behavior is still correct —
+  its own docs recommend exactly that (see `tts/sarvam.ts`'s doc comment, unchanged, not re-litigated
+  here).
+
+Real calls barge in often enough that this plausibly explains most of the observed reopens — every
+interruption currently pays a fresh ~80-280ms handshake before the next turn's audio can start, which is
+caller-perceived latency landing on exactly the turns where responsiveness matters most (right after the
+caller just interrupted). **Proposed follow-up (not built, not scoped into a step yet):** send Cartesia's
+`cancel` / ElevenLabs' `close_context` message on barge-in instead of closing the socket, keeping the
+session held exactly as C1 already does at call boundaries; keep Sarvam's existing socket-close-on-
+interrupt unchanged. Needs verifying the exact message shape against a live account before shipping (docs
+can lag or gate features by plan tier) and a test proving the socket survives a barge-in and the next
+turn's `tts_socket_open_ms` stays absent.
+
+[cartesia-limits]: https://docs.cartesia.ai/use-the-api/concurrency-limits-and-timeouts
+[cartesia-tts]: https://docs.cartesia.ai/api-reference/tts/tts
+[elevenlabs-multi]: https://elevenlabs.io/docs/api-reference/multi-context-text-to-speech/v-1-text-to-speech-voice-id-multi-stream-input
+
 ---
 
 ### C2. Stabilize the prompt prefix so the cache stops missing
@@ -139,6 +179,59 @@ that is C4.
 **Test:** `packages/api/src/voice/agent.test.ts` — prefix hash constant across a simulated multi-turn
 call including turns that add captured facts, workflow metadata and caller memory.
 
+**Open regression, found 2026-08-25 while re-verifying C4 against fresh post-deploy data — confirmed by
+construction, not a `stablePrefix` bug.** Exit gate condition 4 ("no call shows a mid-call cached-token
+drop to 0 after a non-zero turn") is not holding in production. Call 16 (2026-08-25, post-deploy, 33
+turns) shows `llm_cached_input_tokens` dropping to 0 repeatedly — turns 10, 11, 19, 20, 26, 28, 31, 32 —
+sandwiched between non-zero turns only 5-30s apart, too short for provider cache TTL (Gemini's default is
+1 hour) to be the explanation on its own.
+
+**Confirmed, without writing any new code: `stablePrefix` cannot vary mid-call, by construction.**
+`buildTurnPromptParts` (`agent.ts:1556`) sets `stablePrefix: input.persona ?? DEFAULT_PERSONA` — nothing
+else feeds it, `capturedState`/`workflowMetadata`/`callerMemory` only ever reach `dynamicSuffix`. `persona`
+itself is a `let` in `stream.ts` assigned exactly twice, both during one-time call setup (`:3071` at
+"start", `:3263` once transfer capability is known) — never inside the per-turn message loop. So this is
+not the same class of bug C2's original fix closed; that fix (scrubbing prefix/suffix separately) is
+correct and complete for what it targets.
+
+**The real mechanism, confirmed against call 16's actual `tool_calls` rows cross-referenced with
+`turn_latency`'s cache values: `dynamicSuffix` (the "Known facts" block, which grows on every
+`captureField`/`markFieldUnanswered`) is concatenated into the SAME `system` string as `stablePrefix`
+before being sent to the model.** Any provider caching on the literal prefix bytes of that combined
+`system` field necessarily misses on any turn immediately following one that wrote a new fact — the bytes
+genuinely changed, correctly. Several of the zero-cache turns line up with this exactly: turn 9 captured
+`coverage_purpose` right before turn 10 (0); turn 18 captured `budget_comfort` right before turns 19-20
+(0, 0); turn 25 captured `benefit_timing` right before turn 26 (0). **This is architecturally expected, not
+a defect** — condition 4 as originally worded asks for something the current architecture cannot deliver
+whenever a call captures a fact, independent of any caching provider's behavior.
+
+Not every zero turn lines up this cleanly (11, 14, 28 don't have an adjacent capture in this
+cross-reference), which is consistent with the residual, genuinely-best-effort nature of Gemini's
+*implicit* caching Google's own docs describe — *"[it] has no guarantee... depends on whether the system's
+background cache is currently holding your data,"* contrast **explicit** `cachedContent`, which Google
+positions as the option for when you need to be "100% sure" a request hits
+([Google AI: context caching][gemini-caching]; [Gemini 2.5 implicit-caching announcement][gemini-implicit]).
+So the honest picture is two effects layered together: a structural, expected miss right after a capture,
+plus a smaller residual layer of ordinary implicit-cache flakiness on top.
+
+**Bonus finding from the same cross-reference, directly relevant to C4: the terminal-turn batch was worse
+than the `captured_state` snapshot alone showed.** `captured_state` collapses repeated writes to the same
+field to their last value, which hid that turns 30 *and* 31 together fired **10 tool calls** — including
+`captureField banking_ready` called twice and `crmSync` called twice with near-duplicate notes — not the 3
+fields originally reported. Directly strengthens the case for the cap already shipped in C4 step 2.
+
+**Proposed fix for the exit gate itself, not built:** rewrite condition 4 from "no mid-call drop to 0" to
+"a drop to 0 only ever occurs on the turn immediately following a new capture; a call with no new captures
+between two turns shows no drop between them." That's testable against `capturedState`'s own turn stamps
+and doesn't ask the architecture for a guarantee it structurally cannot make. If deterministic caching
+turns out to matter for cost/latency reasons independent of this, Gemini's **explicit** `cachedContent` API
+(cache the constant persona/tool-definition text once per persona, decoupled from the per-turn-growing
+suffix) is the real lever — its own API round trip and per-hour storage cost mean it only pays off at
+enough call volume per persona to amortize, and needs its own latency measurement before committing to it.
+
+[gemini-caching]: https://ai.google.dev/gemini-api/docs/caching
+[gemini-implicit]: https://developers.googleblog.com/gemini-2-5-models-now-support-implicit-caching/
+
 ---
 
 ### C3. Get `stt_connect` off the pickup path
@@ -190,28 +283,70 @@ codebase does today. No evidence yet that it's worth building. 1553/1553 api tes
 
 ### C4. Kill the terminal tool batch — this is the p95
 
-**Status: partially shipped 2026-08-25 — step 3 verified and guarded; steps 1-2 blocked, not attempted.**
-Step 3 turned out already true, same shape as C3: `performHangUp` already calls `ws.close()` before
-`await finalizeCall(...)`, and `finalizeCall` is what runs the disposition write and
-`upsertCallerMemory` — the audio path was already closed before those writes, not something this session
-had to move. New `stream-hangup-write-ordering.test.ts` locks the ordering in. `crmSync` itself is
-**not** a finalizeCall concern — it's a model-invoked tool that necessarily runs mid-turn (it summarizes
-the whole call, so it can't fire until the call is substantially over), and its own description already
-says "use this once you have enough context — not on every turn," which is architecturally different
-from `captureField`'s "call this immediately" instruction, not a missing instance of it.
+**Status: steps 1-3 shipped 2026-08-25.** Step 3 turned out already true, same shape as C3:
+`performHangUp` already calls `ws.close()` before `await finalizeCall(...)`, and `finalizeCall` is what
+runs the disposition write and `upsertCallerMemory` — the audio path was already closed before those
+writes, not something this session had to move. New `stream-hangup-write-ordering.test.ts` locks the
+ordering in. `crmSync` itself is **not** a finalizeCall concern — it's a model-invoked tool that
+necessarily runs mid-turn (it summarizes the whole call, so it can't fire until the call is substantially
+over), and its own description already says "use this once you have enough context — not on every turn,"
+which is architecturally different from `captureField`'s "call this immediately" instruction, not a
+missing instance of it.
 
-**Steps 1 and 2 are genuinely blocked, not skipped by choice.** Step 1 requires running
-`bun run latency:report` against real post-A3 production calls to see whether the terminal-turn spike
-is actually gone — **no such calls exist yet** (production still holds only the same 2 pre-A3 calls the
-2026-08-21 audit read). Step 2 (cap tool calls per turn, spill the remainder to the next turn) is
-explicitly conditional on step 1's finding ("if the model still batches..."), and is also the highest-risk
-change available in this phase: it touches the exact tool-call-batching machinery that has produced four
-separate subtle production defects in this codebase's history (ADR-082's phantom turn, ADR-105's dropped
-warm lead, ADR-106's fabricated outbound text, ADR-115's narrated-but-unavailable tool) — building it
-against zero evidence of whether A3's prompt-only fix already solved the problem would be exactly the
-"latency work ahead of correctness, ahead of measurement" pattern this whole plan (and the audit's own
-"what this changes" section) argues against. Needs real calls placed and read with `latency:report`
-before either step is attempted. 1553/1553 api tests passing at ship time.
+**Step 1, re-answered 2026-08-25 with real data, not "blocked."** The first attempt this session read only
+8 calls from the org "good insurance" (2026-08-24 11:39-12:49 UTC) and found the pattern real but partial
+(2/6 calls) — thin enough that step 2 wasn't attempted. But those calls predated the actual production
+deploy of this session's own C1/C2/C3/A3-adjacent work (Railway shows `cfd7cf8` — everything through C4
+step 3 and both defect fixes — went live 2026-08-24T20:18:04Z). Per explicit instruction to verify before
+concluding, a fresh query found **5 more calls (ids 13-17, 2026-08-25 09:02-10:04 UTC)** placed genuinely
+after that deploy. Call 16 (33 turns) reproduced the pattern on fully-shipped code, and cross-referencing
+`tool_calls`' actual timestamps against `turn_latency` (done while confirming the C2 hypothesis below)
+showed it was **worse than the `captured_state` snapshot alone reported**: `captured_state` collapses
+repeated writes to the same field to their last value, hiding that turns 30 *and* 31 together fired **10
+tool calls** — `setIntent`, `setDisposition`, `captureField banking_ready` (twice), `crmSync` (twice, with
+near-duplicate notes), `captureField health_flag`, `captureField tobacco` — not the 3 fields originally
+read off `captured_state`. Turn 30 alone was 3616 ms v2v, turn 31 was 3624 ms, the two worst turns of the
+call, immediately followed by `hangUp` on turn 32. Same shape as the pre-deploy calls 6 and 8. That's **3
+reproductions across two independent samples, one of them confirmed post-fix, one of them more severe than
+first measured** — A3's prompt-only instruction demonstrably does not hold under the fully-shipped code,
+which clears the plan's own "if the model still batches" bar for step 2.
+
+**Step 2 — shipped 2026-08-25**, after that evidence. `MAX_TOOL_CALLS_PER_TURN = 2` in
+`packages/api/src/voice/agent.ts`: `withPerTurnCap` wraps a tool's `execute` to return a graceful
+`{ deferred: true, message }` result (never a thrown error, same shape as `withToolTimeout`'s own
+graceful refusal) once a shared per-turn counter reaches the cap, telling the model to finish speaking now
+and retry the call on its next turn. `TOOL_CALL_CAP_EXEMPT` = `{hangUp, transferToHuman,
+flagGuardrailEvent}` — terminal/escalation/audit actions that must never be deferred, deliberately kept
+out of the exact machinery behind ADR-082/-105/-106/-115's four prior subtle defects. The counter
+(`{ count: 0 }`) is created once per `runVoiceAgentTurn` call and threaded into `buildVoiceTools`, so it
+persists across a transport-failover retry of the same turn and resets naturally each new turn. Every
+other `buildVoiceTools` caller (text test-chat, synthetic harness, preview drawer) omits the counter and
+stays unbounded. New unit tests for `withPerTurnCap` and its `buildVoiceTools` wiring (shared-counter-
+across-tools, exemption set never capped). 1578/1578 api tests pass via `bun run test`
+(`--isolate`), typecheck/lint/knip:gate clean. **Not deployed, not measured against a real call yet** —
+needs a `bun run latency:report` pass over calls placed after this ships to confirm the cap actually moves
+the terminal-turn spike, and to check whether 2 is the right number rather than a first guess from this
+session's own read of the evidence.
+
+**Approach checked against the AI SDK's own feature set (2026-08-25 research) — no built-in alternative
+exists.** A per-turn tool-call cap has been requested of the AI SDK itself more than once and isn't
+shipped: `maxToolSteps` ([vercel/ai #5026][ai-5026]) and `singleToolPerStep`
+([vercel/ai #3854][ai-3854]) are both still open feature requests: `stopWhen` only gates whole *steps*
+(`isStepCount`/`hasToolCall`), not a running count of individual tool calls within/across steps, which is
+exactly why this needed a custom wrapper at the tool-`execute` level (`withPerTurnCap`) rather than an SDK
+option. Confirms this is the right layer to build it at, not a missed built-in.
+
+**Two open items surfaced while re-verifying, out of scope for this task, not fixed:** C1's
+`tts_socket_open_ms` is non-null on many mid-call turns in the fresh sample, not just the first — root-
+caused to barge-in closing the whole socket when Cartesia/ElevenLabs both support a cheaper per-context
+cancel (see C1's status note above; proposed fix not yet built, holding per explicit instruction to review
+the whole phase as one batch first). C2's cache-hit percentage still drops to 0 mid-call in call 16 —
+confirmed by construction to be structurally expected on any turn right after a new capture, not a
+`stablePrefix` bug, with a real (already-written) proposed fix for the exit-gate wording itself (see C2's
+status note above). Both need their own follow-up before this phase's exit gate can close.
+
+[ai-5026]: https://github.com/vercel/ai/issues/5026
+[ai-3854]: https://github.com/vercel/ai/issues/3854
 
 Phase A3 already moves the captures off the last turn for integrity reasons. This task **collects the
 latency benefit and verifies it**, and it is the only place the p95 target is achievable.

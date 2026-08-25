@@ -12,6 +12,21 @@ updated: 2026-08-25
 
 ## Done (works end-to-end, real-verified)
 
+- **C4 step 2 (per-turn tool-call cap) shipped, but only after re-verifying against fresh post-deploy
+  production data (2026-08-25).** The prior "C4 step 1 answered, thin evidence" read 8 calls that predated
+  the actual production deploy of this session's own work — Railway showed the real deploy landed
+  2026-08-24T20:18Z. Re-querying found 5 more calls placed after that deploy; one (33 turns) reproduced
+  the same captureField-batching spike on fully-shipped code — turns 30-31 together fired 10 tool calls
+  (including 2 duplicate captures and 2 near-duplicate `crmSync` calls), worse than the `captured_state`
+  snapshot alone showed, per a later `tool_calls`-level cross-reference the same session did while
+  confirming C2's mechanism — strong enough evidence to build `MAX_TOOL_CALLS_PER_TURN = 2`
+  (`agent.ts`'s `withPerTurnCap`, exempting
+  `hangUp`/`transferToHuman`/`flagGuardrailEvent`). 1578/1578 api tests pass (`bun run test`, `--isolate`),
+  typecheck/lint/knip:gate clean. Not deployed or measured live yet. Same verification pass also surfaced
+  two NOT-yet-fixed regressions in C1 (`tts_socket_open_ms` non-null on many mid-call turns) and C2
+  (cache-hit drops to 0 mid-call with too-short gaps for TTL) — flagged in `docs/plans/phase-c-latency.md`,
+  not chased down this session. See `active-context.md` for full detail.
+
 - **Design audit Phase 1 — broken contrast tokens fixed, Agent-page card/button migration finished
   (2026-08-25).** `--input` was aliased to the same soft `--weeber-border` used for decorative card edges
   (1.24-1.57:1 measured, need 3:1 for a form control per WCAG 1.4.11) — this, not the earlier shadcn
@@ -280,6 +295,19 @@ updated: 2026-08-25
 - Actually set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the project + env var).
 
 ## Known issues / debt (open)
+
+- **Phase C's exit gate conditions 3 and 4 are not holding in production — both now root-caused
+  (2026-08-25), neither fixed yet.** C1: `tts_socket_open_ms` is non-null (76-284ms) on many mid-call turns
+  across calls 13-16, not just the first. Root cause: `stream.ts` closes the whole TTS socket on every
+  barge-in, but current Cartesia/ElevenLabs docs both support canceling just the interrupted context
+  without tearing down the connection — a cheaper fix exists, not yet built (held pending a full-phase
+  review). C2: `llm_cached_input_tokens` drops to 0 mid-call repeatedly in one 33-turn call. Confirmed by
+  construction this is NOT a `stablePrefix` instability bug (proven incapable of varying mid-call) — it's
+  the "Known facts" block being concatenated into the same `system` string as the stable persona, so any
+  provider caching on literal prefix bytes structurally misses on the turn right after a new capture. Exit
+  gate condition 4 as worded asks for something the architecture cannot deliver; a rewritten condition is
+  proposed in the plan doc, not applied. See `docs/plans/phase-c-latency.md`'s C1/C2 status notes for full
+  detail and sources. Blocks Phase C's exit gate until acted on.
 
 - **The caller-silence race-condition test fails (2026-08-20, `stream-silence-timeout.test.ts`,
   found while landing `a6d2b87`, not fixed).** "does not hang up on a caller who answers while the

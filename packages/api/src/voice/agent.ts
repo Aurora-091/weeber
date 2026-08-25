@@ -1099,6 +1099,74 @@ export function withFillerTimer<T extends { execute?: (...args: never[]) => unkn
 }
 
 /**
+ * Phase C4 step 2 (phase-c-latency.md) — how many real tool calls one turn
+ * may make before the rest are deferred to the next turn. Chosen from the
+ * 2026-08-25 ten-call review's own evidence: the terminal-turn spike
+ * reproduced when the model batched 3-4 `captureField` calls into a single
+ * turn (old call 6: 4 fields on one turn; a fresh post-deploy call: 3 fields
+ * on one turn, still reproducing after A3's prompt-only fix shipped). 2
+ * permits the common, legitimate case (a caller states two facts in one
+ * utterance and the agent captures both), while forcing anything beyond
+ * that — the pathological batch — onto a later turn instead of paying its
+ * latency in one shot.
+ */
+export const MAX_TOOL_CALLS_PER_TURN = 2;
+
+/**
+ * Tools exempt from the per-turn cap — never worth deferring. `hangUp` and
+ * `transferToHuman` are terminal/escalation actions: delaying one because a
+ * turn already spent its budget on captured facts is exactly the class of
+ * subtle defect ADR-082/-105/-106/-115 have already produced from this same
+ * tool-calling machinery. `flagGuardrailEvent` is an audit signal, not a
+ * fact to spread across turns — refusing to log a guardrail firing because
+ * the cap was hit would make the audit trail miss the event it exists to
+ * catch.
+ */
+const TOOL_CALL_CAP_EXEMPT = new Set<AvailableToolName>(["hangUp", "transferToHuman", "flagGuardrailEvent"]);
+
+/**
+ * Wraps a tool's `execute` so it refuses once `counter.count` has already
+ * reached `cap`, returning a normal tool result (never a thrown error) that
+ * tells the model to finish speaking now and retry the call on its next
+ * turn — the same graceful-refusal shape `withToolTimeout` above uses, for
+ * the same reason: a result the model can read and act on beats an error
+ * that ends the step early with nothing to say.
+ *
+ * `counter` is shared across every wrapped tool for one turn — created once
+ * per `runVoiceAgentTurn` call (see there) and closed over by every tool
+ * `buildVoiceTools` wraps this way, so it counts real tool calls regardless
+ * of which tool makes them and survives a transport-failover retry of the
+ * same turn (each retry calls `buildVoiceTools` again, but with the same
+ * counter reference). Applied as the outermost wrap in `buildVoiceTools` —
+ * a capped call returns instantly, before the filler timer or the timeout
+ * race would otherwise start.
+ */
+export function withPerTurnCap<T extends { execute?: (...args: never[]) => unknown }>(
+  toolDef: T,
+  name: string,
+  counter: { count: number },
+  cap: number = MAX_TOOL_CALLS_PER_TURN,
+): T {
+  if (!toolDef.execute) return toolDef;
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    execute: async (...args: never[]) => {
+      if (counter.count >= cap) {
+        return {
+          deferred: true,
+          message:
+            `You've already made ${cap} tool calls this turn. Finish your spoken response now — call ` +
+            `"${name}" again on your next turn instead of doing it now.`,
+        };
+      }
+      counter.count += 1;
+      return await originalExecute(...args);
+    },
+  };
+}
+
+/**
  * Refuses a tool call whose model-authored free text fails the outbound-text
  * screen (ADR-106) — an unresolved bracket placeholder, leaked tool syntax,
  * or a phone number nobody gave the agent.
@@ -1253,6 +1321,15 @@ export function buildVoiceTools(
    * (record-only) behaviour.
    */
   dispositionScheduling?: DispositionSchedulingContext,
+  /**
+   * Phase C4 step 2 (phase-c-latency.md) — shared per-turn tool-call budget.
+   * Supplied only by `runVoiceAgentTurn`, which creates one fresh counter per
+   * turn; every other caller (text test-chat, synthetic harness, preview
+   * drawer) omits it and keeps the prior unbounded behaviour. See
+   * `withPerTurnCap`'s doc comment for why the counter is a mutable object
+   * rather than a plain number.
+   */
+  toolCallCounter?: { count: number },
 ) {
   const baseTools = {
     ...voiceTools,
@@ -1320,9 +1397,19 @@ export function buildVoiceTools(
         Object.entries(timeoutGated).map(([name, def]) => [name, withOutboundTextGuard(def, name, outboundText)]),
       )
     : timeoutGated;
-  if (!onSlowToolCall) return guarded;
+  const filled = onSlowToolCall
+    ? Object.fromEntries(
+        Object.entries(guarded).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
+      )
+    : guarded;
+  // Applied last (outermost) so a capped call returns instantly, before the
+  // filler timer or the timeout race would otherwise start — see
+  // withPerTurnCap's doc comment.
+  if (!toolCallCounter) return filled;
   return Object.fromEntries(
-    Object.entries(guarded).map(([name, def]) => [name, withFillerTimer(def, name, onSlowToolCall)]),
+    Object.entries(filled).map(([name, def]) =>
+      TOOL_CALL_CAP_EXEMPT.has(name as AvailableToolName) ? [name, def] : [name, withPerTurnCap(def, name, toolCallCounter)],
+    ),
   );
 }
 
@@ -1765,6 +1852,11 @@ export async function runVoiceAgentTurn({
 
   const turnStartedAt = Date.now();
   let firstTokenAt: number | null = null;
+  // Phase C4 step 2: one fresh budget per turn, shared by every tool
+  // buildVoiceTools wraps below — including across a transport-failover
+  // retry of this same turn, since `makeStream` closes over this same
+  // reference each time it re-calls buildVoiceTools. See withPerTurnCap.
+  const toolCallCounter = { count: 0 };
 
   // G1.3: composed and scrubbed once, here, then reused for both the model call
   // and the diagnostic below — a diagnostic that measures a different string
@@ -1842,6 +1934,7 @@ export async function runVoiceAgentTurn({
           onLateToolResult,
           isHeardInCall,
           dispositionScheduling,
+          toolCallCounter,
         ),
         stopWhen: stepCountIs(6),
         abortSignal: combinedSignal,
