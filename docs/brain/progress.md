@@ -12,6 +12,25 @@ updated: 2026-08-26
 
 ## Done (works end-to-end, real-verified)
 
+- **Full post-deploy call review (all 18 real calls, ids 1-9/11/13-17/19-21) + a live defect found and
+  fixed (2026-08-26).** `docs/audits/2026-08-26-post-deploy-call-review.md`: (1) **pickup-to-first-audio is
+  not a Phase C/D regression** — every call in history, including the first two ever made, sits in the
+  same 1400-10500ms range; the post-deploy calls (1992/2766/3052ms) show no before/after break. Root cause
+  (an un-instrumented gap in the "start" handler's own setup sequence, up to 8.5s unaccounted for on one
+  call) was already named on 2026-08-25 and confirmed again here — C1-C4 never targeted it.
+  `voice_to_voice_ms` (what C1/C2 actually target) looks healthier, ~1120ms p50 on 8 sampled real turns,
+  right at the exit-gate edge. (2) **New live defect, found and fixed same day**: call 19's model called
+  `hangUp` twice 487ms apart in one turn — before speak()'s closing-line wait tore the call down, a
+  trailing caller utterance ran a whole extra turn that called `hangUp` again and spoke a second, different
+  goodbye on top of the caller's own trailing sentence. Same shape as ADR-082's `transferLatched` fix for
+  production call 25, just never covered for `hangUp`. Fixed with `hangupLatched` — latched the instant
+  `hangUp` is first requested, checked at the same STT-handler gate `transferLatched` already uses. New
+  regression test reproduces call 19's exact timing. (3) A named-not-proven-harmful gap in D2/D3's
+  `askCount` ledger (re-asks that never call `markFieldUnanswered` are invisible to it). (4) D7's disclosure
+  confirmed completing cleanly on all 3 live post-deploy calls (not yet confirmed under a real barge-in
+  attempt — no caller in this sample tried). 1647/1647 api tests pass, typecheck/lint/knip:gate clean. The
+  `hangupLatched` fix is not deployed yet.
+
 - **Live provider testing attempted (2026-08-26) — found `CARTESIA_API_KEY` is invalid, everything else
   checked out.** Went to run the Sonic-3.6 filler-insertion test the 2026-08-25 provider-currency-deep-dive
   audit called for. Confirmed `sonic-3.6` isn't a real `model_id` (Cartesia's live docs: `sonic-3`/

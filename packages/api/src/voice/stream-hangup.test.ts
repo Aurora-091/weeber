@@ -43,6 +43,10 @@ let orgRows: Record<string, unknown>[] = [];
 /** How the Twilio client behaves: resolve, reject the update, or throw on construction. */
 let twilioMode: "ok" | "update-rejects" | "client-throws" = "ok";
 let twilioUpdates: Record<string, unknown>[] = [];
+/** How many times the mocked runVoiceAgentTurn/Greeting actually ran —
+ * `hangupLatched`'s regression test needs to prove a SECOND turn never
+ * started, not just that its tool calls didn't matter. */
+let turnCallCount = 0;
 
 const callRow = {
   id: 1,
@@ -87,6 +91,7 @@ mock.module("./agent", () => {
     onTextDelta?: (d: string) => void;
     onToolCall?: (name: string, input: unknown, output: unknown) => void;
   }) => {
+    turnCallCount += 1;
     for (const call of scriptedToolCalls) onToolCall?.(call.name, call.input, {});
     onTextDelta?.("Thanks for calling, goodbye.");
     return "Thanks for calling, goodbye.";
@@ -170,6 +175,7 @@ beforeEach(() => {
   orgRows = [];
   twilioUpdates = [];
   twilioMode = "ok";
+  turnCallCount = 0;
 });
 
 describe("an agent-requested hangup always ends the call", () => {
@@ -325,5 +331,51 @@ describe("a same-turn transfer + hangup resolves to the transfer", () => {
 
     expect(finalizedStatuses()).toContain("completed");
     expect(ws.closeCount).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Post-deploy call review (2026-08-26, docs/audits/2026-08-26-post-deploy-
+ * call-review.md) — call 19's live defect: the model called hangUp, and
+ * before speak()'s closing-line wait actually tore the call down, a trailing
+ * caller utterance ran a whole extra turn that called hangUp again with a
+ * different reason and spoke a second, different goodbye
+ * ("...This call is now closed.") on top of what the caller was still
+ * saying. The exact same shape as production call 25 (ADR-082,
+ * transferLatched, tested above) — just never covered for hangUp.
+ */
+describe("hangupLatched — a trailing caller utterance after hangUp is already latched runs no second turn", () => {
+  it("ignores a caller utterance that arrives while the closing-line wait is still in flight", async () => {
+    scriptedToolCalls = [{ name: "hangUp", input: { reason: "caller said goodbye" } }];
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+
+    await handlers.onMessage(START_EVENT, ws);
+    await new Promise((resolve) => setTimeout(resolve, 30)); // let the greeting settle
+    const turnsBeforeCallerSpeaks = turnCallCount;
+
+    // First utterance: the turn that actually calls hangUp.
+    stt.getLastOnTranscript()?.({ text: "that is everything, thanks", isFinal: true, speechFinal: true });
+    // A real gap, the same shape as production call 19's 487ms between its
+    // two hangUp tool calls — long enough for the mocked turn to run and
+    // hangupLatched to be set, short of the full closing-line wait.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(turnCallCount).toBe(turnsBeforeCallerSpeaks + 1);
+
+    // A trailing utterance arrives while speak()'s closing-line wait
+    // (Promise.race([ttsDone, sleep(8000)]) + the estimated playback tail)
+    // is still in flight — call 19's exact shape.
+    stt.getLastOnTranscript()?.({ text: "wait actually one more thing", isFinal: true, speechFinal: true });
+    await new Promise((resolve) => setTimeout(resolve, 2600));
+
+    // No second turn ran — hangupLatched refused it before runVoiceAgentTurn
+    // was ever called again.
+    expect(turnCallCount).toBe(turnsBeforeCallerSpeaks + 1);
+    // Exactly one hangup landed at the provider, not two.
+    expect(twilioUpdates).toEqual([{ status: "completed" }]);
+    // The socket was closed exactly once.
+    expect(ws.closeCount).toBe(1);
+
+    handlers.onClose();
   });
 });

@@ -660,6 +660,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * bridging. */
   let transferLatched = false;
 
+  /**
+   * Post-deploy call review (2026-08-26, docs/audits/2026-08-26-post-deploy-
+   * call-review.md) — the exact same defect ADR-082 already fixed for
+   * transferToHuman (production call 25: a caller's near-duplicate trailing
+   * utterance ran a whole extra turn, re-firing transferToHuman/crmSync and
+   * re-speaking the closing line word for word), just never covered for
+   * hangUp. Call 19 (2026-08-25) shows the hangUp version: the model called
+   * hangUp, and before the closing line's wait in speak() finished and
+   * performHangUp actually tore the call down, a second caller utterance ran
+   * a full extra turn that called hangUp again with a different reason and
+   * spoke a second, different goodbye ("...This call is now closed.")
+   * on top of the caller's own trailing sentence. `pendingHangUp` alone
+   * doesn't prevent this — it's read once at the end of speak(), and setting
+   * it a second time before that read just overwrites the reason; nothing
+   * stops a whole new turn from running in between. Latched the instant
+   * hangUp is first requested, same shape as transferLatched: once a hangup
+   * is in flight, no further caller turn may run, because the call is
+   * already ending. Never cleared, for the same reason transferLatched isn't
+   * — performHangUp's finalizeCall ends the call shortly after anyway.
+   */
+  let hangupLatched = false;
+
   /** D7 (phase-d-conversation.md): shared with agent.ts's `withNonInterruptible`
    * tool wrapper AND runGreeting's disclosure window below — a plain count
    * rather than a boolean because a tool call and the disclosure can't
@@ -999,6 +1021,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         console.warn("[voice] ignoring hangUp: a transferToHuman is already latched for this call");
       } else {
         pendingHangUp = { reason: toolCallReason(input, "hangUp called without a reason") };
+        // See hangupLatched's doc comment — the STT handler checks this to
+        // refuse any further caller turn once a hangup is in flight, closing
+        // the same gap ADR-082 already closed for transferToHuman.
+        hangupLatched = true;
       }
     }
     if (name === "transferToHuman") {
@@ -2809,6 +2835,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           if (transferLatched) {
             console.warn(
               `[voice] ignoring caller turn: a transferToHuman is already latched for this call${callSid ? ` (${callSid})` : ""}`,
+            );
+            logTranscript("caller", text);
+            return;
+          }
+
+          // See hangupLatched's doc comment (call 19, 2026-08-26 post-deploy
+          // call review): the exact same gap ADR-082 closed above for
+          // transferToHuman, just for hangUp — a hangup already in flight
+          // must not let a trailing caller utterance run a whole extra turn
+          // that re-fires hangUp and re-speaks a second, different goodbye
+          // on top of what the caller is still saying.
+          if (hangupLatched) {
+            console.warn(
+              `[voice] ignoring caller turn: a hangUp is already latched for this call${callSid ? ` (${callSid})` : ""}`,
             );
             logTranscript("caller", text);
             return;
