@@ -648,8 +648,34 @@ ends with the corrected value captured, not the original mis-hearing.
 **Added 2026-08-26** — `docs/audits/2026-08-26-silence-and-continue-pattern.md`, itself a follow-up to the
 same day's `docs/audits/2026-08-26-post-deploy-call-review.md` (which named the symptom — call 16's
 `coverage_purpose` question asked 4x — as a D2/D3 `askCount`-ledger blind spot without yet explaining
-*why* the caller's real answer never registered as one turn). This section is a **scoping pass only**:
-nothing here is implemented. Status: not started.
+*why* the caller's real answer never registered as one turn).
+
+**Status: option 3 (the recommendation) shipped 2026-08-26.** `agent.ts`'s new
+`TURN_ACCUMULATION_OVERRIDE_BY_TEMPLATE`/`resolveTurnAccumulation` mirrors D1's
+`SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE`/`resolveSilenceTimeouts` exactly — a per-template map, opted in only
+for `insurance-final-expense-qualifier` (1400ms, comfortably covering call 16's observed 1.1-2.0s
+inter-fragment gaps), wired into `ResolvedAgentConfig` at the same three `resolveAgentConfig` return
+branches those functions already share. `stream.ts` holds a new call-scoped `pendingTurnTimer`: when
+`turnAccumulationMs` is set (every other template stays `undefined`, byte-identical to before this
+existed), a caller turn that `turnDetector` judged complete is not fired immediately — instead the timer
+(re)arms for `turnAccumulationMs`, tracking the latest fragment's own `turnStartedAt`/`endpointSignal`/
+`endpointingDelayMs` for the eventual `runTurn` call's latency measurement. If another qualifying fragment
+arrives before the timer fires, the codebase's own pre-existing self-correction history-merge (the `history.
+at(-1)?.role === "user"` check, unchanged) already concatenates it into the same pending message — this
+only had to withhold the turn, not reimplement the merge. `finalizeCall` clears the timer, so a pending
+accumulated turn can never fire against a call that already ended. Options 1 (per-persona `endpointing`
+tune) and 2 (model self-correction from history) were **not built** — per the recommendation, option 3 was
+the one with no structural ceiling; 1 and 2 remain named, scoped candidates below for later, not built here.
+
+New `stream-turn-accumulation.test.ts` (shared harness) proves: 3 quick fragments merge into ONE real turn
+with the concatenated text (call 16's exact shape); a single fragment still fires after the window elapses
+with nothing more said; a pending accumulated turn never fires once the call has ended; and, as the
+regression control, every fragment fires its own immediate turn exactly as before when the override isn't
+set. New `resolveTurnAccumulation` unit tests mirror `resolveSilenceTimeouts`'s own test shape exactly.
+1654/1654 api tests pass, typecheck/lint/knip:gate/design:guard/contrast:gate all clean. **Not deployed,
+not measured live** — same standing status as every other D-item this session; the next real
+`insurance-final-expense-qualifier` call after deploy is what actually confirms this closes call 16's
+pattern rather than just passing its own synthetic reproduction.
 
 **The defect, confirmed against real production data.** Call 16's caller answered slowly: *"I'm going
 with... final... expense... coverage."* — one continuous sentence — but Deepgram's own endpointing cut it

@@ -716,6 +716,11 @@ export type ResolvedAgentConfig = {
    * global defaults, unchanged. See `resolveSilenceTimeouts`'s doc comment. */
   silenceWarningMs?: number;
   silenceHangupMs?: number;
+  /** D9 (phase-d-conversation.md) — per-template override enabling
+   * stream.ts's turn-accumulation window. Undefined = off, stream.ts fires a
+   * caller turn immediately on every `speech_final`, unchanged. See
+   * `resolveTurnAccumulation`'s doc comment. */
+  turnAccumulationMs?: number;
 };
 
 /**
@@ -790,6 +795,59 @@ const SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE: Record<string, { warningMs: number; 
 export function resolveSilenceTimeouts(templateKey: string | undefined): { warningMs?: number; hangupMs?: number } {
   if (!templateKey) return {};
   return SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE[templateKey] ?? {};
+}
+
+/**
+ * D9 (phase-d-conversation.md, 2026-08-26) — Deepgram's own endpointing
+ * (`stt/deepgram.ts`'s `endpointing: "300"`) fires `speech_final` on a
+ * silence gap as short as 300ms. That is fine for a caller who pauses
+ * between SENTENCES; it is not enough for a caller who pauses between
+ * WORDS. Call 16 (`docs/audits/2026-08-26-silence-and-continue-pattern.md`)
+ * is the confirmed live case: "I'm going with... final... expense...
+ * coverage." — one continuous answer — arrived as 4 separate `speech_final`
+ * events 1-2 seconds apart, and each one fired its own genuine, independent,
+ * context-blind agent turn (33 real `turn_latency` rows for that one call).
+ *
+ * Raising `endpointing` itself was considered and rejected as the primary
+ * fix: Deepgram's own team discourages pushing it much past ~500-700ms
+ * (background noise starts preventing `speech_final` from firing at all —
+ * see the D9 section's cited GitHub discussion), and even at that ceiling a
+ * caller pausing 1-2s between words — exactly what call 16 shows — still
+ * fragments. This is the mechanism D9 recommended building first instead: an
+ * app-level accumulation window, the same shape LiveKit Agents'
+ * `EndpointingOptions.min_delay`/`max_delay` uses — hold a finished-looking
+ * caller turn for a bounded window, and if more caller speech arrives inside
+ * it, treat it as a continuation instead of a fresh turn (stream.ts's own
+ * pre-existing self-correction history-merge already does the concatenation
+ * correctly whenever no assistant turn ran in between — this only has to
+ * withhold the assistant turn until the caller has genuinely stopped).
+ *
+ * Scoped identically to `SILENCE_TIMEOUT_OVERRIDE_BY_TEMPLATE` above and for
+ * the same reason: `insurance-final-expense-qualifier` is the one template
+ * with a documented, evidence-backed slower/more-paused caller demographic
+ * (D1's own elderly-skew citations), and call 16 — the one call this defect
+ * is confirmed against — is that exact template. Every other template pays
+ * zero added latency; this is a targeted fix for a demonstrated demographic,
+ * not a global slowdown. 1400ms comfortably covers call 16's observed
+ * 1.1-2.0s inter-fragment gaps without an unbounded wait, and composes with
+ * a modest `endpointing` raise later if one ever ships — this doesn't
+ * preclude that, it just doesn't depend on it.
+ */
+const TURN_ACCUMULATION_OVERRIDE_BY_TEMPLATE: Record<string, number> = {
+  "insurance-final-expense-qualifier": 1400,
+};
+
+/**
+ * Resolves this call's turn-accumulation window — the template override
+ * above if one exists for `templateKey`, otherwise `undefined` so
+ * stream.ts fires every caller turn immediately, exactly as before this
+ * existed. Exported standalone, same reason as `resolveSilenceTimeouts`:
+ * independently testable without a DB-backed config row.
+ */
+export function resolveTurnAccumulation(templateKey: string | undefined): { turnAccumulationMs?: number } {
+  if (!templateKey) return {};
+  const turnAccumulationMs = TURN_ACCUMULATION_OVERRIDE_BY_TEMPLATE[templateKey];
+  return turnAccumulationMs === undefined ? {} : { turnAccumulationMs };
 }
 
 /**
@@ -904,6 +962,7 @@ export async function resolveAgentConfig(opts: {
           ? undefined
           : resolveLocalizedGreeting(resolvedTemplateKey, config.language ?? undefined, tmpl?.literalGreetingTemplate ?? undefined),
         ...resolveSilenceTimeouts(resolvedTemplateKey),
+        ...resolveTurnAccumulation(resolvedTemplateKey),
       };
     }
   }
@@ -934,6 +993,7 @@ export async function resolveAgentConfig(opts: {
         disclosureText: disclosure.text,
         disclosureVersion: disclosure.version,
         ...resolveSilenceTimeouts(resolvedTemplateKey),
+        ...resolveTurnAccumulation(resolvedTemplateKey),
       };
     }
   }
@@ -953,6 +1013,7 @@ export async function resolveAgentConfig(opts: {
     disclosureText: disclosure.text,
     disclosureVersion: disclosure.version,
     ...resolveSilenceTimeouts(resolvedTemplateKey),
+    ...resolveTurnAccumulation(resolvedTemplateKey),
   };
 }
 

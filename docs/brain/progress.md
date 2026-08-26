@@ -12,6 +12,33 @@ updated: 2026-08-26
 
 ## Done (works end-to-end, real-verified)
 
+- **D9 shipped: turn-accumulation window for fragmented caller speech (2026-08-26).** Same-day scoping
+  doc's `docs/plans/phase-d-conversation.md` D9 section named the root cause — Deepgram's `endpointing:
+  "300"` fires `speech_final` on every ~300ms pause, so a slow caller's one continuous answer (call 16:
+  "I'm going with... final... expense... coverage.") arrives as 4 separate events, each running its own
+  genuine, context-blind agent turn. Rejected raising `endpointing` globally (Deepgram's own guidance
+  against pushing past ~500-700ms; noise-robustness risk) and rejected gating by utterance length (real
+  short complete answers like "Sure." are the same length as real fragments like "final"). Built option 3
+  (the scoping doc's recommendation): an app-level accumulation window, precedented by LiveKit Agents'
+  `EndpointingOptions.min_delay`/`max_delay`. `agent.ts` gets `resolveTurnAccumulation`/
+  `TURN_ACCUMULATION_OVERRIDE_BY_TEMPLATE`, mirroring D1's exact `resolveSilenceTimeouts` per-template
+  pattern — opted in only for `insurance-final-expense-qualifier` (1400ms), the one template with the
+  confirmed live defect. `stream.ts`'s STT handler holds a caller fragment behind a `setTimeout` instead of
+  running a turn immediately when `turnAccumulationMs` is set for the call; each new fragment within the
+  window resets the timer. The pre-existing self-correction history-merge (built for a different case — a
+  barge-in-interrupted turn) does the actual concatenation once the turn finally fires, so fragments land
+  as one merged caller message, not N separate ones — confirmed this merge could NOT have covered call
+  16's case on its own, since it only fires when no assistant turn ran between fragments, which was false
+  there (each fragment ran to completion). `finalizeCall` clears any still-pending timer so an accumulated
+  turn never fires after the call has already ended. Options 1 (compose with Deepgram `utterance_end_ms`
+  tuning) and 2 (have the model itself recognize an unanswered-question shape from history) were explicitly
+  **not built** — scoped out by the user in favor of option 3 alone. New
+  `stream-turn-accumulation.test.ts` (4 tests): fragments merge into one turn inside the window, a single
+  fragment still fires once the window elapses with nothing more said, a pending turn is cancelled by
+  `finalizeCall`, and a regression control proving every other template fires immediately, unchanged.
+  1654/1654 api tests pass, typecheck/lint/knip:gate/design:guard/contrast:gate all clean. **Not deployed,
+  not measured against a real call yet** — call 16 is the only live evidence this addresses.
+
 - **"start" handler setup sequence now instrumented (2026-08-26)** — closes the "still unmeasured" half
   of the pickup-to-first-audio finding from the same day's post-deploy call review. `stream.ts` times
   session lookup, the `calls` row select/insert, and the `Promise.all` config batch (callerMemory,

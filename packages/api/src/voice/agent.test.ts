@@ -12,6 +12,7 @@ import {
   isTimedOutToolResult,
   resolveAgentConfig,
   resolveSilenceTimeouts,
+  resolveTurnAccumulation,
   toTurnTokenUsage,
 } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
@@ -97,6 +98,24 @@ describe("resolveSilenceTimeouts (D1, phase-d-conversation.md)", () => {
   it("returns empty for an unknown or absent template key", () => {
     expect(resolveSilenceTimeouts(undefined)).toEqual({});
     expect(resolveSilenceTimeouts("not-a-real-template")).toEqual({});
+  });
+});
+
+describe("resolveTurnAccumulation (D9, phase-d-conversation.md)", () => {
+  it("returns the elderly-skewing insurance persona's accumulation window", () => {
+    expect(resolveTurnAccumulation("insurance-final-expense-qualifier")).toEqual({
+      turnAccumulationMs: 1400,
+    });
+  });
+
+  it("returns empty (stream.ts fires every turn immediately) for every other template", () => {
+    expect(resolveTurnAccumulation("shopify-cart-recovery")).toEqual({});
+    expect(resolveTurnAccumulation("insurance-lead-followup")).toEqual({});
+  });
+
+  it("returns empty for an unknown or absent template key", () => {
+    expect(resolveTurnAccumulation(undefined)).toEqual({});
+    expect(resolveTurnAccumulation("not-a-real-template")).toEqual({});
   });
 });
 

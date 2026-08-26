@@ -703,6 +703,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let silenceHangupMs: number = SILENCE_HANGUP_MS;
 
   /**
+   * D9 (phase-d-conversation.md, 2026-08-26) — per-template override, set
+   * once at "start" from resolveAgentConfig's turnAccumulationMs (see
+   * agent.ts's resolveTurnAccumulation). Undefined (every template except
+   * `insurance-final-expense-qualifier`) means every caller turn fires
+   * immediately on `speech_final`, byte-identical to before this existed.
+   *
+   * When set: instead of firing a caller turn the instant turnDetector calls
+   * it done, hold it for this many ms. If another qualifying caller fragment
+   * arrives before the timer fires, `history`'s own pre-existing
+   * self-correction merge (see below, "no assistant turn ran in between")
+   * already concatenates it into the SAME pending turn — this state only
+   * has to track which fragment's timing (`turnStartedAt`/`endpointSignal`/
+   * `endpointingDelayMs`) is current, and re-arm the timer, on every
+   * qualifying fragment. `pendingTurnTimer` is call-scoped, not turn-scoped,
+   * because it has to survive across the STT handler returning between
+   * fragments — there is no other "turn" object alive during the wait.
+   */
+  let turnAccumulationMs: number | undefined;
+  let pendingTurnTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingTurnStartedAt: number | undefined;
+  let pendingTurnEndpointSignal: "speech_final" | "utterance_end" | undefined;
+  let pendingTurnEndpointingDelayMs: number | undefined;
+
+  /**
    * Monotonic counter bumped at the one place a caller utterance is actually
    * consumed as an end-of-turn (the STT handler, right where the silence state
    * is reset). `handleSilenceTimeout` captures the value that was current when
@@ -1183,6 +1207,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     turnAbortController?.abort();
     if (maxDurationTimer) clearTimeout(maxDurationTimer);
     clearSilenceTimer();
+    // D9: a pending accumulated turn must never fire against a call that has
+    // already ended (a real hangup/transfer/max-duration teardown racing the
+    // accumulation window) — same defensive cleanup as maxDurationTimer above.
+    if (pendingTurnTimer) clearTimeout(pendingTurnTimer);
     // Transcript writes are no longer awaited on the hot path (see
     // logTranscript), so the last turn's rows can still be in flight when the
     // call ends. Drain the chain here — without this, a call that finalizes
@@ -2939,6 +2967,35 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // and sat directly inside the caller-perceived voice-to-voice gap. The
           // model reads `history`, not this table — see logTranscript.
           logTranscript("caller", text);
+
+          // D9 (phase-d-conversation.md, 2026-08-26): this template's caller
+          // demographic pauses mid-answer often enough that Deepgram's own
+          // endpointing fires speech_final between words, not just between
+          // sentences (docs/audits/2026-08-26-silence-and-continue-pattern.md).
+          // Hold this fragment instead of answering it in isolation — the
+          // history merge above already concatenated it into the right place
+          // if a fragment is still pending, since no assistant turn has run
+          // in between. Every other template has turnAccumulationMs
+          // undefined and falls straight through to the immediate call
+          // below, unchanged from before this existed.
+          if (turnAccumulationMs !== undefined) {
+            if (pendingTurnTimer) clearTimeout(pendingTurnTimer);
+            pendingTurnStartedAt = turnStartedAt;
+            pendingTurnEndpointSignal = endpointSignal;
+            pendingTurnEndpointingDelayMs = endpointingDelayMs;
+            pendingTurnTimer = setTimeout(() => {
+              pendingTurnTimer = null;
+              const startedAt = pendingTurnStartedAt;
+              const signal = pendingTurnEndpointSignal;
+              const delayMs = pendingTurnEndpointingDelayMs;
+              if (startedAt === undefined) return;
+              void runTurn(ws, startedAt, signal, delayMs).catch((err) => {
+                console.error("[voice] error running accumulated turn", err);
+              });
+            }, turnAccumulationMs);
+            return;
+          }
+
           await runTurn(ws, turnStartedAt, endpointSignal, endpointingDelayMs);
         } catch (err) {
           console.error("[voice] error handling transcript event", err);
@@ -3253,6 +3310,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // found one for this call's template — see resolveSilenceTimeouts.
             if (agentConfig.silenceWarningMs !== undefined) silenceWarningMs = agentConfig.silenceWarningMs;
             if (agentConfig.silenceHangupMs !== undefined) silenceHangupMs = agentConfig.silenceHangupMs;
+            // D9: see turnAccumulationMs's own doc comment.
+            turnAccumulationMs = agentConfig.turnAccumulationMs;
 
             // Global Compliance Engine Tier 0 (2026-07-16,
             // docs/global-compliance-engine-plan.md #2/#3): persist the exact
