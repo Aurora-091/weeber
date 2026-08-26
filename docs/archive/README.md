@@ -22,7 +22,7 @@ actual code, not these.
   re-planned elsewhere (see `AGENT-CONSOLE-UI-PLAN.md`, `UI-DESIGN-BRIEF.md`). Archived during the
   `docs/` reorg, 2026-07-17.
 - **`ui-implementation-plan.md`** — the phased execution plan companion to the 2026-08-03 UI/UX audit
-  (now `audit/2026-08-03-audit-ui-ux-full-surface.md`). Phase 0's guardrails shipped and are enforced in
+  (now `docs/audits/2026-08-03-audit-ui-ux-full-surface.md`). Phase 0's guardrails shipped and are enforced in
   CI (`tools/ui-guard/{contrast-gate.ts,design-guard.ts,design-budget.json,tokens.json}`,
   `packages/web/e2e-visual/{visual,a11y,font-provenance}.spec.ts`), so the plan's file paths and open
   questions no longer describe the repo. Kept as the reasoning record. Archived 2026-08-20.

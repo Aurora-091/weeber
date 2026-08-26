@@ -4,16 +4,13 @@ import { DictationSequenceDetector } from "./dictation";
 import { withLatencyBudget } from "./budgeted";
 import { createCompositeTurnDetector } from "./composite";
 
-export type { TurnEndInput, TurnEndDecision, TurnEndDetector } from "./types";
+export type { TurnEndDetector } from "./types";
 // D6 (2026-08-25): HeuristicTurnDetector/DictationSequenceDetector and their
 // pure-function/name-constant siblings are deliberately NOT re-exported here
 // — nothing consumes them through this barrel (stream.ts only ever needs
 // createTurnDetector/createBaseHeuristic below; every test imports the
 // individual detector files directly). Re-exporting them anyway is exactly
 // the kind of unused-export knip:gate's ratchet exists to catch.
-export { endsMidThought } from "./heuristic";
-export { withLatencyBudget } from "./budgeted";
-export { createCompositeTurnDetector } from "./composite";
 
 /**
  * D6 (phase-d-conversation.md, 2026-08-25) — the always-on base detector:

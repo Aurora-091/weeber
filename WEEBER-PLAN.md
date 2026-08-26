@@ -451,7 +451,7 @@ stay parked until volume/revenue actually demands them.**
 - **Staging Supabase project has a placeholder `DATABASE_URL` on Railway.** Not re-verified this
   session — flag as unconfirmed, not assumed fixed.
 - **Theme portal-scoping, agent full-window layout, 2 Dependabot vulns** — all fixed 2026-07-13, see
-  `audit/2026-07-13-audit-04-uiux.md` and the `docs/changelog/` entries for that date. Listed here only so
+  `docs/audits/2026-07-13-audit-04-uiux.md` and the `docs/changelog/` entries for that date. Listed here only so
   this file doesn't look like it's ignoring them; they're closed, not open.
 
 ---

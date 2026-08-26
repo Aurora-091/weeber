@@ -20,7 +20,7 @@ ADR-091 is involved. `insurance-final-expense-qualifier` is
 correctly visible to all three insurance orgs. Nothing to fix.
 
 Confirming that turned up two things that *are* defects (audit 12,
-`audit/2026-08-10-audit-12-agent-enablement-and-vertical-drift.md`). This ADR
+`docs/audits/2026-08-10-audit-12-agent-enablement-and-vertical-drift.md`). This ADR
 covers the first.
 
 `org_agent_configs.enabled` has existed since the agents UI shipped. It was read

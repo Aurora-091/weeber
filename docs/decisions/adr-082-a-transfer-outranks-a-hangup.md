@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-09
 - **Supersedes:** nothing
-- **Related:** ADR-062 (disclosure stamping), audit/2026-08-09-audit-10-outbound-hangup.md (the silence-timer half of the "calls drop" family)
+- **Related:** ADR-062 (disclosure stamping), docs/audits/2026-08-09-audit-10-outbound-hangup.md (the silence-timer half of the "calls drop" family)
 
 ## Context
 

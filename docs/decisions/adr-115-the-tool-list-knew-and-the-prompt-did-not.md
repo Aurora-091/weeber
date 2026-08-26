@@ -5,7 +5,7 @@
 
 ## Context
 
-Audit 17 (`audit/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`) F1: on production
+Audit 17 (`docs/audits/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`) F1: on production
 calls 1 and 9 the agent said it was connecting the caller to a licensed advisor, and `tool_calls`
 proves no transfer was attempted on either call. `orgs.human_transfer_number` is NULL on the only
 production org, so no transfer was possible in the first place.

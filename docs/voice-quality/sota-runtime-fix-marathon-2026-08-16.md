@@ -4,8 +4,8 @@
 **Status:** IN PROGRESS. It is a prioritized punch list, not an ADR — items get marked DONE in place as they ship.
 **Purpose:** Turn the architecture roadmap in `docs/audits/2026-08-16-manus-weeber-vs-sota-voice-architecture.md`
 (Phases 0–4) into concrete, file-level work items, cross-referenced against the two production audits it
-was itself grounded in (`audit/2026-08-10-audit-13-voice-pipeline-latency.md`,
-`audit/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md` + its two addenda), and checked
+was itself grounded in (`docs/audits/2026-08-10-audit-13-voice-pipeline-latency.md`,
+`docs/audits/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md` + its two addenda), and checked
 against what commit `1f06ebb` and ADR-115 already shipped on 2026-08-15 so this doesn't re-litigate solved
 problems.
 

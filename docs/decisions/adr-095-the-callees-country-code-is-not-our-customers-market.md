@@ -8,7 +8,7 @@
   default, mid-call switching rejected), ADR-072 (a provider contract is what
   the server accepts), ADR-086/ADR-091 (template visibility), ADR-093 (a
   vertical switch left the old vertical's agents live)
-- Source: `audit/2026-08-10-audit-15-the-market-is-a-column-nobody-reads.md`
+- Source: `docs/audits/2026-08-10-audit-15-the-market-is-a-column-nobody-reads.md`
   (F1, F2, F5, F9)
 
 ## Context

@@ -41,7 +41,7 @@ file rather than by editing the changelog entry that already shipped.
 
 2. **Dated point-in-time artifact — file it with its own class, never archive it for being old.**
    `ui-audit.md` was a measured, dated audit, the same species as everything in `audit/`. It moved to
-   `audit/2026-08-03-audit-ui-ux-full-surface.md` with an index row, **not** to `docs/archive/`. Archiving
+   `docs/audits/2026-08-03-audit-ui-ux-full-surface.md` with an index row, **not** to `docs/archive/`. Archiving
    would have asserted it was superseded; it is not superseded, it was merely in the wrong folder, and its
    findings are still cited by name from live gate code (`tools/ui-guard/tokens.json`,
    `tools/ui-guard/contrast-gate.ts`, `packages/web/e2e-visual/a11y.spec.ts`).

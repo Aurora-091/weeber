@@ -12,6 +12,27 @@ updated: 2026-08-26
 
 ## Done (works end-to-end, real-verified)
 
+- **Repo cleanup: dead-code deletions + audit-log merge (2026-08-26).** Two parallel fork audits (code
+  dead-code/bloat, doc staleness/duplication) came back mostly clean — this repo's doc hygiene and
+  `knip:gate` ratchet were already keeping most junk out. Two real findings acted on: (1) **two dead
+  barrel re-exports** (`voice/workflows/index.ts`, `voice/turn-detection/index.ts`) re-exporting
+  functions/types nothing imported through them — every real caller already imports the concrete
+  modules directly; deleting them plus four other already-baselined-dead exports
+  (`utils/errors.ts`'s 6 unused error classes, `database/credential-vault.ts`'s
+  `deleteOrgCredentials`/`readCredentials`/`CALENDAR_PROVIDERS`/`CRM_PROVIDERS`) shrank the
+  `knip:gate` baseline from 59 known findings to **29** (`tools/dead-code/knip-baseline.json`
+  regenerated via `--update`, all removed entries verified zero-caller with `git grep` before deletion,
+  not just knip's say-so). (2) **Merged the top-level `audit/` folder into `docs/audits/`** —
+  the two had run in parallel since 2026-07-19 with no doc linking them, and `AGENTS.md`/
+  `docs/brain/00-index.md` only ever pointed agents at `docs/audits/`, so `audit/`'s 18 files were
+  invisible to any agent following the canonical read path. Moved with `git mv` (history preserved),
+  merged both READMEs into one chronological `docs/audits/README.md`, and fixed ~30 stale
+  `audit/2026-...` path references across ADRs/changelog/brain docs to `docs/audits/2026-...`.
+  Everything else both audits checked (top-level `DECISIONS.md`/`changelog.md` stubs, `GEMINI.md`,
+  `docs/archive/`, `utils/errors.ts`'s `ErrorCode` union, feature-flag defaults) came back clean or
+  flagged as a human call, not a mechanical deletion — left alone. 1654/1654 api tests pass,
+  typecheck/lint/knip:gate (new baseline)/design:guard/contrast:gate all clean.
+
 - **D9 shipped: turn-accumulation window for fragmented caller speech (2026-08-26).** Same-day scoping
   doc's `docs/plans/phase-d-conversation.md` D9 section named the root cause — Deepgram's `endpointing:
   "300"` fires `speech_final` on every ~300ms pause, so a slow caller's one continuous answer (call 16:
@@ -586,7 +607,7 @@ updated: 2026-08-26
   suite** (1413/1414) — everything else is green.
 
 - **The activation boundary is unclear — draft/save/activate are one action, and dispatch reads a
-  different trigger than the editor shows (`audit/2026-08-16-audit-18-...md`, found 2026-08-16, filed
+  different trigger than the editor shows (`docs/audits/2026-08-16-audit-18-...md`, found 2026-08-16, filed
   and indexed 2026-08-20, not yet actioned).** Three P0s: saving a workflow (standard or canvas save)
   sends `enabled: true`, and recommended defaults are already provisioned as live at the Agents
   onboarding step — before the "Review & activate" screen a merchant would reasonably expect to be the

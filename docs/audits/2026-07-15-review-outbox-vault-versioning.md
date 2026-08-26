@@ -1,7 +1,7 @@
 # Review: reliability fixes shipped in `432c940` ("Added ...create_twilio_status_events.sql")
 
 Reviewing the change set that landed directly on `main` today, since it's substantial and touches
-exactly the P0/P1 findings from `audit/2026-07-15-audit-06-db-systems.md`. Good news first: this is
+exactly the P0/P1 findings from `docs/audits/2026-07-15-audit-06-db-systems.md`. Good news first: this is
 real, well-targeted engineering that closes four of that audit's top findings. Then the issues found
 while verifying it — one regression I already fixed, one open production-safety question I can't
 resolve from source alone, one design tradeoff worth a second look, and a testing gap.

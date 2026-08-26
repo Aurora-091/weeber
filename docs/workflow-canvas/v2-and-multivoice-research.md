@@ -5,13 +5,13 @@ proposed plan. **Part 3 (2026-07-16) is live-shipped**: the workflow analytics o
 Option A) is built, tested, and rendered on the canvas; a real, unrelated, zero-authentication
 security bug found while doing this work is also fixed. Options B/C (expression/LLM-condition
 edges) and multi-voice (Part 2) are still research-only, no design decision made — same "needs a
-design decision, don't silently default" discipline as `audit/2026-07-15-audit-05.md`, which this
+design decision, don't silently default" discipline as `docs/audits/2026-07-15-audit-05.md`, which this
 doc directly follows up on. Grounded in: (1) ElevenLabs Agents' public docs on Workflows and the
 Prompting Guide (user-provided reference material, 2026-07-15), (2) Bolna's own public graph-agent
 docs (`bolna.ai/docs/graph-agent/*`, researched 2026-07-16 — see Part 3.1), (3) this repo's actual
 current code (`components/canvas/*`, `voice/workflows/graph-engine.ts`,
 `voice/workflows/admin-routes.ts`, `voice/tts/{cartesia,elevenlabs}.ts`), (4) `docs/workflow-canvas/architecture.md` (the original spec
-this was built from) and `audit/2026-07-15-audit-05.md` (the gaps this plan addresses).
+this was built from) and `docs/audits/2026-07-15-audit-05.md` (the gaps this plan addresses).
 
 ---
 
@@ -127,7 +127,7 @@ and `call` node configs (`components/canvas/types.ts`'s `WebhookConfig`/`CallCon
 `onFailureNodeId` is set, route there instead of falling through to whatever the default outgoing edge
 was. Small, additive, no new node type, no new edge-condition machinery — directly closes the
 "dispatchWebhook has no outbox/retry, so a merchant should at least be able to branch on failure"
-gap noted in `audit/2026-07-15-audit-06-db-systems.md` §8.
+gap noted in `docs/audits/2026-07-15-audit-06-db-systems.md` §8.
 
 ---
 

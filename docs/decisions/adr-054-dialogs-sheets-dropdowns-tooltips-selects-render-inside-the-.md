@@ -7,7 +7,7 @@ status: Accepted
 
 ## ADR-054 — Dialogs/sheets/dropdowns/tooltips/selects render inside the themed shell via a portal-container context (2026-07-13)
 
-**Context:** Audit #04 (`audit/2026-07-13-audit-04-uiux.md`) reconfirmed a bug first documented in
+**Context:** Audit #04 (`docs/audits/2026-07-13-audit-04-uiux.md`) reconfirmed a bug first documented in
 `docs/UI-UX-AUDIT-CONTEXT.md` §1: every Radix Portal-based overlay (Dialog, Sheet, DropdownMenu, Tooltip)
 defaulted to portaling into `document.body`, outside the shell `<div>` carrying the
 `.theme-weeber`/`.dark` classes (`app-shell.tsx`). Overlays silently fell back to `:root`'s default

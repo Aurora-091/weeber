@@ -394,7 +394,7 @@ updated: 2026-08-25
   does not exist in this repo; `.env.example` — the env-var reference `AGENTS.md` sends you to — was
   missing 37 vars the code reads and still advertised two dead `*_VOICE_ID` overrides. CI's job count
   (twelve + `ci-success`, `persona-size` was the uncounted one) was wrong in four files. `ui-audit.md`
-  moved to `audit/2026-08-03-audit-ui-ux-full-surface.md` (its three code-side citations updated with
+  moved to `docs/audits/2026-08-03-audit-ui-ux-full-surface.md` (its three code-side citations updated with
   it); `ui-implementation-plan.md`, `ui-phase0-notes.md`, `UI-FIX-TASK.md` and `ci-triage-notes.md`
   moved to `docs/archive/`; `Untitled.md` deleted; `README.md` now indexes every root file. Immutable
   history (`docs/changelog/`, `docs/decisions/`, `docs/archive/`, `audit/`, `docs/audits/`,
@@ -448,7 +448,7 @@ updated: 2026-08-25
 
 - **Pilot-onboarding execution plan filed (2026-08-20, `6592597`).** A "Weeber Pilot-Onboarding
   Execution Plan" sat untracked at the repo root — the direct execution plan following audit-18's
-  findings (`audit/2026-08-16-audit-18-the-activation-boundary-is-unclear.md`, itself only filed and
+  findings (`docs/audits/2026-08-16-audit-18-the-activation-boundary-is-unclear.md`, itself only filed and
   indexed 2026-08-20 in `1b5390a` — that filing commit never got logged here or in the changelog either,
   noting it now). Spot-verified against the actual repo before filing (baseline commit, migration
   numbers, the insurance-has-agents-but-no-workflow-templates gap, the ingest route's unwired
@@ -639,7 +639,7 @@ updated: 2026-08-25
   **F4:** `bookAppointment` fabricated a callback confirmation with no calendar connected.
   **F5:** `FALLBACK_REPLY` blames the caller for a model failure and fired as the *opening* line twice.
   Latency from 72 turns: v2v p50 1591 ms overall, but **groq 1122 ms vs gateway 1793 ms** — a 672 ms
-  p50 gap that is an open provider decision. `audit/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`.
+  p50 gap that is an open provider decision. `docs/audits/2026-08-14-audit-17-the-agent-narrates-tools-it-does-not-have.md`.
   **Addendum 2026-08-15:** per-turn data breaks call 11 into a clean half (4 tool executions,
   0 leaks, TTFT 3194/3862 ms) and a broken half from 17:00:41 (9 turns, 9 leaks, 0 tools, TTFT
   ~650 ms). The persona and provider are constant across that boundary, so "defects track the
@@ -1359,7 +1359,7 @@ updated: 2026-08-25
   the canvas/Customize flow** (still the highest-value gap — instrument before further tuning).
 
 - **Workflow builder P0 UX fixes — persona dropdown + AI-draft front door (2026-07-30):** After a cold
-  UX audit of the merchant workflow builder (`audit/2026-07-30-audit-08-workflow-canvas-ux.md`) +
+  UX audit of the merchant workflow builder (`docs/audits/2026-07-30-audit-08-workflow-canvas-ux.md`) +
   competitor matrix. **Decision: keep the canvas** — it's *orchestration* (the Shopify-Flow pattern
   merchants know), not conversation-flow; the fix is to stop making raw wiring the front door.
   Shipped two P0s: (1) call-node `persona` is now a **dropdown** of the org's agents instead of raw

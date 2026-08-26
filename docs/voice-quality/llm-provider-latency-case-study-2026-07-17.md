@@ -1,7 +1,7 @@
 # LLM provider case study — reducing TTFT without changing model quality tier
 
 **Date:** 2026-07-17
-**Trigger:** pickup-to-first-word latency investigation (see `audit/2026-07-10-audit-01.md` D7, and this session's `pickupToFirstAudioMs` instrumentation). Real production data showed LLM time-to-first-token is the single biggest chunk of the pipeline — ~1000-1600ms out of a ~1.7-2.1s total. This doc is the "what are our actual options" study before touching the default model/provider.
+**Trigger:** pickup-to-first-word latency investigation (see `docs/audits/2026-07-10-audit-01.md` D7, and this session's `pickupToFirstAudioMs` instrumentation). Real production data showed LLM time-to-first-token is the single biggest chunk of the pipeline — ~1000-1600ms out of a ~1.7-2.1s total. This doc is the "what are our actual options" study before touching the default model/provider.
 
 ## Current setup, measured
 

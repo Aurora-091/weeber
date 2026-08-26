@@ -1,7 +1,7 @@
 # UI/UX — Audit Context & Checklist
 
 > **STATUS (2026-07-13, later same day): superseded for items 1, 2, 4, 5, 7 — see the checklist in
-> §6 below and `audit/2026-07-13-audit-04-uiux.md` for what actually got fixed/built afterward
+> §6 below and `docs/audits/2026-07-13-audit-04-uiux.md` for what actually got fixed/built afterward
 > (theme portal fix = ADR-054, agent full-window layout = ADR-055, Settings page shipped, nav-label
 > fixed, Workflow Canvas shipped with its own new bugs found+fixed). The narrative sections below
 > (§1-§5) describe the *original* bug reports and are kept for historical context/root-cause detail

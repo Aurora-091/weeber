@@ -1,7 +1,7 @@
 # Infra resources & capacity
 
 What this project actually runs on, the real numbers behind it, and the reasoning for how it
-scales from here — written after Audit #7 (`audit/2026-07-17-audit-07-live-infra.md`) gave this
+scales from here — written after Audit #7 (`docs/audits/2026-07-17-audit-07-live-infra.md`) gave this
 project its first real (not source-only) look at production. Pin-pointed facts below are cited
 against a source (an API query, a file, a doc) — nothing here is guessed.
 
@@ -181,7 +181,7 @@ actually verify session continuity holds under a real test call before going fur
 Supabase's compute tier is still sized for the target concurrency, then only consider multi-region.
 
 ## Sources
-- `audit/2026-07-17-audit-07-live-infra.md` — the original live-infra audit + same-day follow-ups
+- `docs/audits/2026-07-17-audit-07-live-infra.md` — the original live-infra audit + same-day follow-ups
   (env var actions, capacity/concurrency analysis).
 - `docs/voice-quality/india-telephony.md` — Plivo/Exotel provider status, what's confirmed vs. unconfirmed.
 - `docs/reference/configuration.md`'s "Scaling to multiple instances" section — the `REDIS_URL`/ADR-026
