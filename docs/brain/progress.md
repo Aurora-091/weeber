@@ -12,6 +12,17 @@ updated: 2026-08-26
 
 ## Done (works end-to-end, real-verified)
 
+- **"start" handler setup sequence now instrumented (2026-08-26)** — closes the "still unmeasured" half
+  of the pickup-to-first-audio finding from the same day's post-deploy call review. `stream.ts` times
+  session lookup, the `calls` row select/insert, and the `Promise.all` config batch (callerMemory,
+  `resolveAgentConfig`, `getEffectiveFlags`, org row, `getLeadGreetingContext`), logging one consolidated
+  breakdown line right before `connectSttForCall`/`runGreeting`. Console-log only, deliberately not
+  persisted to `call_latency` — a persisted column needs a schema migration against production, a separate
+  and more committal change not attempted here. Doesn't fix the latency itself; the next real call's
+  Railway logs will finally show WHICH of these three (or something earlier still) is the actual
+  bottleneck, instead of one opaque unexplained number. 1647/1647 api tests pass, typecheck/lint/knip:gate
+  clean. Not deployed.
+
 - **Full post-deploy call review (all 18 real calls, ids 1-9/11/13-17/19-21) + a live defect found and
   fixed (2026-08-26).** `docs/audits/2026-08-26-post-deploy-call-review.md`: (1) **pickup-to-first-audio is
   not a Phase C/D regression** — every call in history, including the first two ever made, sits in the

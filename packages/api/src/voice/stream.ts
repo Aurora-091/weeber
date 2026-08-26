@@ -3013,7 +3013,26 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           callAnsweredAt = Date.now();
           streamSid = event.streamId;
           callSid = event.callId;
+          // Post-deploy call review (2026-08-26, docs/audits/2026-08-26-
+          // post-deploy-call-review.md): pickupToFirstAudioMs minus
+          // (sttConnectMs + llmTtftMs + ttsFirstByteMs) left 1.6-8.5s
+          // unaccounted for on every call checked, named twice now (2026-08-25
+          // and again here) without ever being broken down — sttConnectMs and
+          // the greeting's own llmTtftMs/ttsFirstByteMs are the only stages
+          // with their own metric; everything in this handler BEFORE
+          // connectSttForCall/runGreeting (session lookup, the calls-row
+          // select/insert, and the Promise.all config batch below) has none.
+          // These four timings are console-logged as one breakdown line right
+          // before connectSttForCall below — deliberately not persisted to
+          // call_latency yet (that needs a schema migration against the
+          // production DB, a separate, more committal change) — so a human
+          // reading Railway logs can finally see which of these four is
+          // actually the bottleneck, instead of it being one opaque number.
+          const sessionLookupStartedAt = Date.now();
           const session = callSid ? await sessionStore.get(callSid) : undefined;
+          const sessionLookupMs = Date.now() - sessionLookupStartedAt;
+          let callRowLookupMs = 0;
+          let configBatchMs = 0;
 
           // G1.1: bind the merchant's discount for this call once, here.
           // Returns undefined unless this call carries a shop, a stable
@@ -3033,6 +3052,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           codOrderContext = resolveCodOrderContext({ metadata: session?.workflowMetadata });
 
           if (callSid) {
+            const callRowLookupStartedAt = Date.now();
             let [row] = await db
               .select()
               .from(calls)
@@ -3108,6 +3128,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               }
             }
 
+            callRowLookupMs = Date.now() - callRowLookupStartedAt;
+
             dbCallId = row?.id ?? null;
             toNumber = row?.toNumber;
             capturedState = { ...row?.capturedState, ...session?.capturedState };
@@ -3163,6 +3185,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                     .catch(() => [])
                 : undefined;
 
+            const configBatchStartedAt = Date.now();
             const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow, leadGreetingContext] = await Promise.all([
               row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
               // Misc-1: a "call my phone" test call carries the merchant's
@@ -3221,6 +3244,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // to the LLM path, exactly as it did before this existed.
               getLeadGreetingContext(humanNumberOrgId, humanNumber).catch(() => ({})),
             ]);
+            configBatchMs = Date.now() - configBatchStartedAt;
             callerMemoryFacts = callerMemoryResult;
             resolvedFlags = effectiveFlagsResult;
             resolvedFlagsReady = true;
@@ -3504,6 +3528,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               for (const line of TOOL_CALL_FILLER_LINES) void warmFillerCache(line);
             }
           }
+
+          // See sessionLookupMs's doc comment above — the breakdown of
+          // everything in this handler before the greeting starts. Logged
+          // unconditionally (not just when callSid is truthy) so a call that
+          // somehow has no callSid still reports its sessionLookupMs rather
+          // than silently skipping this line.
+          console.log(
+            `[voice] "start" handler setup breakdown — session lookup: ${sessionLookupMs}ms, ` +
+              `call row lookup: ${callRowLookupMs}ms, config batch: ${configBatchMs}ms, ` +
+              `total so far: ${Date.now() - callAnsweredAt}ms${callSid ? ` (${callSid})` : ""}`,
+          );
 
           // Phase C1: open the TTS socket now, in parallel with STT connect
           // below, so the greeting's first audio byte doesn't wait on a

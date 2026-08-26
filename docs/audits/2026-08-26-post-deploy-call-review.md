@@ -61,6 +61,17 @@ for.
 C1-C4-style per-stage optimization — the biggest lever left is a gap nothing currently measures, named
 twice now (2026-08-25 and here) and fixed neither time.
 
+**Done 2026-08-26**: `stream.ts`'s "start" handler now times its own setup sequence — session lookup, the
+`calls` row select/insert, and the `Promise.all` config batch (callerMemory, `resolveAgentConfig`,
+`getEffectiveFlags`, the org row, `getLeadGreetingContext`) — and logs one consolidated breakdown line
+right before `connectSttForCall`/`runGreeting`: `"start" handler setup breakdown — session lookup: Xms,
+call row lookup: Xms, config batch: Xms, total so far: Xms (callSid)`. Deliberately console-log only, not
+persisted to `call_latency` — a persisted column needs a schema migration against the production DB, which
+is a separate, more committal change than logging, and wasn't attempted here. This closes the "still
+unmeasured" half of the finding; the actual root cause (which of these three, or something even earlier,
+is the real bottleneck) is now answerable from Railway logs on the next real call, not yet answered by this
+change itself.
+
 ## New finding: `hangUp` called twice in the same turn produces a duplicated spoken goodbye and talks over the caller
 
 Call 19 (post-deploy, a CSAT follow-up call, ~55 seconds total) — `tool_calls`:
