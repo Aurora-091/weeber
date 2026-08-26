@@ -20,7 +20,10 @@ wiring tests are the right layer for that. D1's idle-prompt interruption stays c
 `stream-idle-prompt-bargein.test.ts` — composing it into the same call as D6/D7/D8 didn't add proportionate
 value over what's already proven in isolation. This closes the "never assembled" gap for the mechanisms
 that benefit most from proving they interact correctly; the *live-call* replay condition 1 still needs a
-real post-deploy call, same as conditions 5/6.
+real post-deploy call, same as conditions 5/6. **D9 added 2026-08-26** (a real defect the post-deploy call
+review surfaced — fragmented caller speech triggering repeated, context-blind re-asks) — **scoped, not
+started**; see its own section for the recommended fix (an app-level endpointing-delay window) and why the
+two originally-requested options don't fully solve it alone.
 **Blocks:** Phase E
 **Preconditions:** Phase C's exit gate met, with the achieved p95 recorded in that phase's closing
 commit. D changes turn structure and will move those numbers; there must be a recorded baseline to move
@@ -637,6 +640,133 @@ confirm rather than assuming a repeat-back was accurate.
 **Test:** `agent.test.ts` — a `critical`-classified field in the prompt's persona instructions triggers
 spell-back phrasing; a synthetic scenario where the caller corrects a misheard letter during spell-back
 ends with the corrected value captured, not the original mis-hearing.
+
+---
+
+### D9. Fragmented caller speech triggers repeated, context-blind re-asks
+
+**Added 2026-08-26** — `docs/audits/2026-08-26-silence-and-continue-pattern.md`, itself a follow-up to the
+same day's `docs/audits/2026-08-26-post-deploy-call-review.md` (which named the symptom — call 16's
+`coverage_purpose` question asked 4x — as a D2/D3 `askCount`-ledger blind spot without yet explaining
+*why* the caller's real answer never registered as one turn). This section is a **scoping pass only**:
+nothing here is implemented. Status: not started.
+
+**The defect, confirmed against real production data.** Call 16's caller answered slowly: *"I'm going
+with... final... expense... coverage."* — one continuous sentence — but Deepgram's own endpointing cut it
+into 4 separate `speech_final` events, 1-2 seconds apart. `turn_latency` confirms each fragment fired a
+genuine, independent, real `runVoiceAgentTurn` call (33 real turn rows for this one call, each with real
+LLM+TTS timing) — not a near-miss or a held turn. The model, with no memory that it's mid-answer, treats
+each fragment as a fresh non-answer and re-asks essentially the same question.
+
+**Confirmed this is not a text-heuristic gap.** Neither `endsMidThought` (`turn-detection/heuristic.ts`)
+nor D6's `endsWithIncompleteDictation` (`turn-detection/dictation.ts`) catches any of the actual fragments
+("your", "agent", "with", "final", "expense") — tested by hand against both regexes. Correctly so: the same
+two heuristics correctly leave alone genuinely-complete one-word answers elsewhere in the same calls
+("Traditional.", "Sure.", "No."), so a blunter text-side fix would trade this defect for a new one. A third
+candidate (widening the text heuristic further) was considered and set aside for this reason — it has a
+structural ceiling a regex over transcript text cannot cross, since "final" is genuinely ambiguous as text
+alone (a complete one-word answer in one context, the first word of a longer answer in another).
+
+**Root cause, confirmed against the actual parameter, not assumed:** `stt/deepgram.ts:98` sets
+`endpointing: "300"` — Deepgram's own VAD-driven "how long a silence gap must be before I call this
+`speech_final`" parameter. [Deepgram's endpointing docs](https://developers.deepgram.com/docs/endpointing)
+put their own recommended range for "conversations where speakers pause mid-thought" at 300-500ms, meaning
+this codebase's current value sits at the very bottom of Deepgram's own comfort range already — a slow
+speaker's natural inter-word pause can easily exceed 300ms. This is a **separate parameter** from
+`utterance_end_ms` (also set, at `1000` — Deepgram's own documented default), which the top-level plan
+(`docs/plans/README.md`, "Explicitly out of scope") already refused to *lower*, for an unrelated reason
+("worth 0 ms... `utterance_end` never fired once", closing a *different* problem — cutting off actively-
+speaking callers). That refusal doesn't block this section: nobody has explored *raising* either parameter
+for *this* problem (fragmentation of a slow speaker's pauses, the opposite failure mode) until now.
+
+**Why raising `endpointing` alone is not a clean fix, per Deepgram's own team**
+([GitHub discussion #177](https://github.com/orgs/deepgram/discussions/177)): endpointing is audio/VAD-
+based, and pushing it much past ~500-700ms risks the opposite problem — background noise or a stray sound
+during a genuine pause can itself prevent `speech_final` from firing at all. Deepgram's own guidance for
+slow speakers is to lean on `utterance_end_ms` instead (transcript/word-timing based, safe at much higher
+values, e.g. their own suggested `utterance_end_ms=2000`) — but in THIS codebase, `UtteranceEnd` is wired
+only as a fallback for when `speech_final` **never** fires (`deepgram.ts:144-155`, the A1b mechanism), not
+as a "wait this long before trusting `speech_final`" gate. Since `speech_final` already fires eagerly here,
+`UtteranceEnd`'s 1000ms safety net never gets a chance to matter — raising it wouldn't touch this defect at
+all without also changing how `stream.ts` decides when a caller turn is truly over.
+
+**Why the codebase's own existing self-correction merge (this session, `stream-caller-self-correction.
+test.ts`) does not cover this shape, confirmed by reading the exact condition:** `stream.ts:2932-2937`
+merges the current caller utterance into the previous `history` entry only when `history.at(-1)?.role ===
+"user"` — i.e. only when the PRIOR fragment's agent turn was barge-in-**aborted** before pushing any
+`{role: "assistant"}` entry. Call 16's fragments each ran a real, uninterrupted `runTurn` to completion (no
+barge-in occurred — the caller was simply quiet, then spoke again), so `history`'s last entry is always the
+assistant's own reply by the time the next fragment arrives, never `"user"`. The merge condition cannot
+fire for this shape by construction, not by oversight — it was built for a genuinely different race
+(barge-in-interrupted self-correction), not for "caller answered slowly across multiple complete turns."
+
+**Two options, as directed, plus a third the research surfaced as the stronger candidate:**
+
+1. **(Requested) Tune Deepgram's `endpointing` per-persona**, same pattern D1's `resolveSilenceTimeouts`
+   already uses for `insurance-final-expense-qualifier`'s elderly-skewing silence thresholds. `connectStt`/
+   `connectDeepgram` (`stt/deepgram.ts:52`) would need a new optional parameter threaded from
+   `agent.ts`'s `resolveAgentConfig` through `stream.ts`'s `connectSttForCall`, the same shape
+   `silenceWarningMs`/`silenceHangupMs` already travel. **Effort: low** (one new threaded parameter,
+   mirrors an existing pattern exactly). **Risk: low-to-medium** — per Deepgram's own team, a modest raise
+   (300ms → ~500-700ms, staying inside their stated comfort range) is safe; pushing toward 1000ms+ is not,
+   per the noise-robustness caveat above. **Ceiling: real** — even at 700ms, a caller pausing 1.5-2s
+   between words (plausible for a genuinely elderly/slow speaker) still fragments. **Test:** a
+   `deepgram.ts`-level unit test asserting the connection URL's `endpointing` param reflects a passed-in
+   override, plus a stream-level test using the harness's STT mock to confirm the override actually reaches
+   `connectStt`.
+
+2. **(Requested) Model recognizes from `history` that its last question went unanswered, and self-
+   corrects** — either treating a suspiciously short/fragment-shaped reply as possibly incomplete and
+   asking a light clarifying nudge instead of repeating the same question verbatim, or some other prompt-
+   level instruction. **Effort: low** (a persona instruction addition, `agent.ts`'s `buildCallControlBlock`
+   or `buildKnownFactsBlock`, no new mechanism). **Risk: medium** — this session's own established pattern
+   (A1-A5, D2/D3, D7/D8) has repeatedly chosen mechanical enforcement over trusting model judgment wherever
+   enforcement was possible, precisely because a prompt instruction is not guaranteed (A3's "call
+   captureField immediately" instruction shipped and production still batched calls at hangup). A prompt-
+   only fix here would reduce but not guarantee the repeated-re-ask pattern, and — unlike option 1 or 3 —
+   has no mechanical test that proves it holds, only a synthetic-scenario test that shows it *can* work.
+   **Test:** a `synthetic-test.ts` scenario scripting a caller who answers in two fragments across two
+   full turns (not one, since D8-style same-turn merging doesn't apply here), asserting the second agent
+   turn asks a clarifying nudge rather than repeating the identical question.
+
+3. **(Not requested, surfaced by research as the stronger candidate) An app-level endpointing-delay
+   window** — accumulate consecutive caller fragments for a short bounded window after each `speech_final`
+   before actually invoking `runVoiceAgentTurn`, resetting the window (not firing yet) if more caller
+   speech arrives inside it. This is a named, precedented pattern, not a novel idea: LiveKit Agents' own
+   turn-detection uses exactly this shape —
+   [`EndpointingOptions.min_delay`/`max_delay`](https://docs.livekit.io/agents/logic/turns/), a delay range
+   applied *after* VAD/endpointing detects silence and *before* committing to "the user's turn is over",
+   with an optional adaptive mode that learns per-session pause statistics — the closest existing prior art
+   to "extend the wait for this specific slow-speaking caller" without a static per-persona guess. Concretely
+   for this codebase: `stream.ts`'s STT handler (`:2895`, the `turnEnd = await turnDetector.decide(...)`
+   check) would hold a short-lived timer instead of proceeding straight to `runTurn` — same general shape
+   as D6's `armSilenceTimer(ws); return;` early-return, but re-arming a **turn-trigger** timer rather than
+   the silence-warning timer, and accumulating `text` across fragments that arrive inside the window rather
+   than treating each as independent. **Effort: medium** — new call-scoped timer + accumulation state,
+   interacting with the existing `turnDetector`/D6 composite and the barge-in/silence-timer machinery
+   already living in the same handler. **Risk: medium** — the most surface area of the three, in the exact
+   region (`stream.ts`'s STT handler) that ADR-082/-105/-115 and this session's D6/D7 have all already
+   found real defects in; needs careful interaction with barge-in (a genuinely urgent short interruption,
+   "Wait"/"Stop", must still cut in immediately — see `barge-in.ts`'s `BARGE_IN_MIN_CHARS` exemption —
+   the accumulation window must not delay that case). **Ceiling: lower than option 1** — this is a real
+   fix for the exact mechanism diagnosed, not a parameter tuned toward a guessed threshold. **Test:** a
+   stream-level test (shared harness) driving 3-4 short caller fragments in quick succession with no agent
+   turn in between, asserting exactly one `runVoiceAgentTurn` call with the fragments' text concatenated,
+   plus a negative-control test proving an urgent short barge-in during the window still fires immediately.
+
+**Recommendation:** build **option 3 first**, not option 1. Option 1 is cheaper to ship but has a real,
+Deepgram-acknowledged ceiling that option 3 doesn't share — a persona whose real speakers pause 1-2s
+between words will still fragment at any `endpointing` value safe enough to avoid the noise-robustness
+regression Deepgram's own team warns about. Option 3 is the actual fix for the mechanism this section
+diagnosed, is precedented by a production voice-AI framework solving the identical problem the identical
+way, and composes with option 1 rather than replacing it — a modest `endpointing` raise (option 1, e.g. to
+500ms) still reduces how often the accumulation window in option 3 has to do any work, so shipping both is
+reasonable once option 3 exists, in that order. **Do not build option 2 as the primary fix** — it is the
+weakest of the three by this codebase's own established standard (mechanical enforcement over model
+trust), though it may still be worth a small, cheap addition *alongside* option 3 as a second layer:
+even with accumulation fixed, a genuinely ambiguous one-word answer will still occasionally slip through,
+and a model that notices its own question went unanswered is a reasonable last line of defense — just not
+the thing to build first or rely on alone.
 
 ---
 
