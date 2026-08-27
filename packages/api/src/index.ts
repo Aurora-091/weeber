@@ -13,6 +13,7 @@ import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@weeber/comp
 import { requestLogger } from "./middleware/request-logger";
 import { errorHandler } from "./middleware/error-handler";
 import { assertCorsConfiguredForProduction, buildCorsOriginResolver } from "./middleware/cors-config";
+import { adminSessionAuth } from "./voice/middleware/admin-session";
 
 // Cross-origin policy for the split deploy (frontend on Vercel, API on
 // Railway — ADR-035). CORS_ALLOWED_ORIGINS: comma-separated origin allowlist
@@ -96,6 +97,22 @@ const app = new Hono()
       200,
     ),
   )
+  // Bug fix (2026-08-27): `voice/routes.ts` (the majority of admin functionality — /orgs,
+  // /calls, /orgs/:orgId/agent-configs, /dnc, /admin-keys, /voices, ...) gates every route with
+  // `requireAdminKey` alone, never wrapped with `adminSessionAuth` first — only `voice/admin-
+  // routes.ts`'s separate `admin` sub-app (mounted at the same '/voice' prefix below) ever ran
+  // adminSessionAuth. A session-authenticated admin (logged in via AdminLoginForm, not the
+  // legacy-key fallback form) could therefore never successfully call the routes that make up
+  // most of the actual admin dashboard, regardless of the frontend sending a valid Bearer token
+  // (packages/web/src/web/lib/admin-key.ts's adminHeaders() fix, same day) — /admin-me alone
+  // isn't representative of "the dashboard works." Applying adminSessionAuth once, globally, for
+  // the whole '/voice' prefix — instead of per-sub-app — fixes every current and future route
+  // under either `voice` or `admin` uniformly. Safe by construction: adminSessionAuth calls
+  // next() without setting adminActor when no Bearer token is present (see its own doc comment),
+  // so every existing X-Weeber-Admin-Key-only caller (scripts, CI, saved API-key sessions) is
+  // completely unaffected — requireAdminKey's own `if (c.get("adminActor")) return next()` check
+  // is what makes this a pure addition, not a behavior change for the key-auth path.
+  .use('/voice/*', adminSessionAuth)
   .route('/voice', voice)
   .route('/voice', admin)
   .route('/workflows', workflowAdminRoutes)
