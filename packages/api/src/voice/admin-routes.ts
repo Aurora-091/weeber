@@ -47,6 +47,7 @@ import {
   resetToPlatformDefault,
   syncNumberWebhooksForOrg,
 } from "./twilio-provisioning";
+import { assignPhoneNumberToAgent } from "./org-queries";
 
 async function validateGtmId(id: string): Promise<boolean> {
   try {
@@ -315,6 +316,61 @@ export const admin = new Hono<AdminEnv>()
     const orgId = c.req.param("orgId");
     const rows = await db.select().from(orgPhoneNumbers).where(eq(orgPhoneNumbers.orgId, orgId));
     return c.json({ numbers: rows }, 200);
+  })
+
+  // Admin mirror of GET /api/app/numbers/available — lets an operator see
+  // real candidate numbers and pick one, instead of POST /orgs/:orgId/twilio/number
+  // above (which blind-buys the first search result). Added for the real
+  // demo-call widget (2026-08-27): an operator provisioning the demo org's
+  // three dedicated numbers needs to choose which number goes to which
+  // agent, not accept whatever Twilio returns first.
+  .get("/orgs/:orgId/numbers/available", async (c) => {
+    const orgId = c.req.param("orgId");
+    const countryCode = c.req.query("countryCode");
+    const areaCode = c.req.query("areaCode");
+    if (!countryCode?.trim()) return c.json({ error: "`countryCode` query param is required, e.g. \"US\" or \"IN\"" }, 400);
+
+    const result = await listAvailableNumbers(orgId, countryCode.trim(), areaCode?.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ numbers: result.numbers }, 200);
+  })
+
+  // Admin mirror of POST /api/app/numbers — buys a SPECIFIC number (picked
+  // from the /available list above), unlike the existing blind-buy-first-result
+  // /orgs/:orgId/twilio/number route, which is left untouched for whatever
+  // already calls it.
+  .post("/orgs/:orgId/numbers", async (c) => {
+    const orgId = c.req.param("orgId");
+    const body = await c.req.json().catch(() => null);
+    const { phoneNumber } = (body ?? {}) as { phoneNumber?: string };
+    if (!phoneNumber?.trim()) return c.json({ error: "`phoneNumber` is required — pick one from GET /orgs/:orgId/numbers/available" }, 400);
+
+    const result = await buyNumberForOrg(orgId, phoneNumber.trim());
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await logAdminAction(c.get("adminActor"), "twilio.number.purchased", { orgId, phoneNumber: result.phoneNumber });
+    return c.json({ phoneNumber: result.phoneNumber }, 201);
+  })
+
+  // C2b — admin mirror of PUT /api/app/agent-configs/:templateKey/number.
+  // The only writer of orgAgentConfigs.phoneNumberId was previously reachable
+  // only via a merchant session, which the demo org (no real logged-in user)
+  // can never have — an operator needs an admin-key path to assign/swap which
+  // number each of the demo widget's three agents dials out from.
+  .put("/orgs/:orgId/agent-configs/:templateKey/number", async (c) => {
+    const orgId = c.req.param("orgId");
+    const body = await c.req.json().catch(() => null);
+    const { phoneNumberId } = (body ?? {}) as { phoneNumberId?: number | null };
+    if (phoneNumberId !== null && !Number.isInteger(phoneNumberId)) {
+      return c.json({ error: "`phoneNumberId` must be an integer or null (to unassign)" }, 400);
+    }
+    const result = await assignPhoneNumberToAgent(orgId, c.req.param("templateKey"), phoneNumberId ?? null);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await logAdminAction(c.get("adminActor"), "agent-config.number.assigned", {
+      orgId,
+      templateKey: c.req.param("templateKey"),
+      phoneNumberId: phoneNumberId ?? null,
+    });
+    return c.json({ ok: true }, 200);
   })
 
   // Agent template catalog (ADR-031's vertical-agnostic seam). Templates are

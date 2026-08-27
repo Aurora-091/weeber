@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,44 @@ updated: 2026-08-25
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Real demo-call widget — all three phases code-complete and behind a kill switch that defaults
+  OFF (2026-08-27, `docs/product-strategy/real-demo-call-widget-plan-2026-08-26.md`).** Full
+  implementation of the plan filed 2026-08-26: a public landing-page widget where a visitor picks
+  one of three demo agents, enters a phone number, and gets a real outbound call via the existing
+  `placeOutboundCall` (inherits DNC/TCPA/FTSA compliance for free, no changes to
+  `packages/weeber-compliance`). User locked in all four of the plan's open questions before build:
+  email-capture CTA on all three agents, three dedicated numbers (one per agent), build the
+  consent IP/UA migration now, rate limits 2/IP/day + 1/phone/day + 50/day global.
+  **Phase 1 (backend, internal only):** migration `0057_curly_warpath.sql` (additive —
+  `consentRecords.ipAddress`/`userAgent`, new `demoWidgetRateLimitWindows` table) generated but
+  **not yet applied** (`db:push` not run — needs the real `DATABASE_URL`, a shared-infra action
+  left for explicit confirmation); new `weeber-pitch-agent` template
+  (`docs/agent-prompts/10-weeber-pitch-agent.md`, freeform, `visibility: "private"`, scoped to a
+  new fixed-id demo org `weeber-live-demo` that `seedAgentTemplates` now creates idempotently at
+  boot); global kill switch `demo-widget-enabled` (`voice/demo-widget-flag.ts`, fails closed on a
+  missing row, seeded disabled) — reachable through the **existing** Flags admin page
+  (`dashboard/flags.tsx`, `/api/voice/flags`) with zero new UI needed; three rate-limit tiers
+  (`voice/fixed-window-limiter.ts` for per-IP, a new `checkAndIncrementKeyedRateLimit` in
+  `database/rate-limit-store.ts` for per-phone/global); first Turnstile CAPTCHA integration in this
+  codebase (`voice/turnstile.ts`, fails closed with no `TURNSTILE_SECRET_KEY`); new public endpoint
+  `POST /api/public/demo-call` (`app/demo-widget.ts` + `public-routes.ts`'s honeypot glue).
+  **Phase 2:** `voice/routes.ts`'s `.get("/calls")` gained an optional `?orgId=` filter; new admin
+  page `dashboard/demo-calls.tsx` (nav: "Demo Calls"). **Phase 3:** new
+  `components/marketing/LiveDemoCallWidget.tsx` wired into `landing.tsx` as its own section,
+  sitting beside (not replacing) the pre-existing `AgentDemoWidget` recorded-audio-playback demo —
+  user's explicit call, since the two are genuinely different features (recording vs. a real call)
+  that happen to share the word "demo". 1683/1683 api tests, typecheck/build clean on both
+  packages, all four repo-root gates (lint/knip:gate/design:guard/contrast:gate) clean —
+  design:guard needed real fixes, not exemptions, to land back at the exact pre-change baseline
+  (see the commit for the `rounded-*/border/bg-` ordering and hex-literal traps hit along the way).
+  **Not yet done, each needs an explicit go-ahead before this is live**: (1) `db:push` the
+  migration against the real database; (2) the one-off provisioning step — create the demo org's
+  Twilio sub-account and buy its three dedicated numbers (`voice/twilio-provisioning.ts`
+  primitives, real Twilio cost, not automated by this session); (3) bind each of the three
+  templates to one number via `orgAgentConfigs`; (4) get real `TURNSTILE_SECRET_KEY`/
+  `VITE_TURNSTILE_SITE_KEY` values and set them on Railway/Vercel; (5) flip
+  `demo-widget-enabled` to `true` only after (1)-(4) are confirmed working end to end.
 
 - **User reports the Railway deploy approval is done (2026-08-25); not yet independently confirmed by a
   live call.** As of the last Supabase check this session, the most recent row in `calls` still started

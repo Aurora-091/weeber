@@ -48,6 +48,7 @@ const DashboardShell = lazy(() =>
   import("./components/dashboard/dashboard-shell").then((m) => ({ default: m.DashboardShell })),
 );
 const CallsListPage = lazy(() => import("./pages/dashboard/calls-list").then((m) => ({ default: m.CallsListPage })));
+const DemoCallsPage = lazy(() => import("./pages/dashboard/demo-calls").then((m) => ({ default: m.DemoCallsPage })));
 const CallDetailPage = lazy(() => import("./pages/dashboard/call-detail").then((m) => ({ default: m.CallDetailPage })));
 const DncPage = lazy(() => import("./pages/dashboard/dnc").then((m) => ({ default: m.DncPage })));
 const AuditPage = lazy(() => import("./pages/dashboard/audit").then((m) => ({ default: m.AuditPage })));
@@ -152,6 +153,7 @@ registerPrefetch({
   [appPath("/settings")]: () => import("./pages/app/settings"),
   // Admin dashboard
   [adminPath()]: () => import("./pages/dashboard/calls-list"),
+  [adminPath("/demo-calls")]: () => import("./pages/dashboard/demo-calls"),
   [adminPath("/agents")]: () => import("./pages/dashboard/agents"),
   [adminPath("/analytics")]: () => import("./pages/dashboard/analytics"),
   [adminPath("/compliance")]: () => import("./pages/dashboard/compliance"),
@@ -241,6 +243,7 @@ function AdminAppRoutes() {
         <Suspense fallback={<PageFallback />}>
           <Switch>
             <Route path={adminPath()} component={CallsListPage} />
+            <Route path={adminPath("/demo-calls")} component={DemoCallsPage} />
             <Route path={adminPath("/calls/:id")} component={CallDetailPage} />
             <Route path={adminPath("/dnc")} component={DncPage} />
             <Route path={adminPath("/audit")} component={AuditPage} />

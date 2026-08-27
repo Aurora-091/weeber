@@ -21,6 +21,13 @@ const upsertCalls: Array<Record<string, unknown>> = [];
 
 mock.module("../voice/org-queries", () => ({
   getOrg: async () => org,
+  // Real demo-call widget (2026-08-27): public-routes.ts now also statically imports
+  // demo-widget.ts -> place-outbound-call.ts -> compliance/outbound-gate.ts ->
+  // number-series-gate.ts, which imports getEffectiveFlags from this same module — an unrelated
+  // export this file's tests never exercise, but Bun throws at import time if a mocked module is
+  // missing an export another file statically imports (same class of fix as the stream-*.test.ts
+  // ./tts mocks needing connectTtsSession added, per ADR-116's addendum).
+  getEffectiveFlags: async () => ({}),
 }));
 mock.module("../voice/leads/schema-store", () => ({
   resolveIntakeSchema: async (_orgId: string, vertical: string | null | undefined) => defaultIntakeSchema(vertical),

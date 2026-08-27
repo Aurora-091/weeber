@@ -55,9 +55,10 @@ setInterval(() => {
 void processWebhookOutbox().catch(() => {});
 
 // Seed default agent templates from prompt copy files
-import { seedAgentTemplates, seedWorkflowTemplates } from "./database/seed";
+import { seedAgentTemplates, seedWorkflowTemplates, seedDemoWidgetFlag } from "./database/seed";
 void seedAgentTemplates().catch((err) => console.error("[server] seeding templates failed:", err));
 void seedWorkflowTemplates().catch((err) => console.error("[server] seeding workflow templates failed:", err));
+void seedDemoWidgetFlag().catch((err) => console.error("[server] seeding demo-widget flag failed:", err));
 
 const port = Number(process.env.PORT ?? 3000);
 // Single-deploy mode: serve the frontend's built assets from the sibling

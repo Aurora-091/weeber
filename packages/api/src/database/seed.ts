@@ -1,10 +1,28 @@
 import { db } from "./index";
-import { agentTemplates, workflowTemplates } from "./schema";
+import { agentTemplates, workflowTemplates, orgs, featureFlags } from "./schema";
 import { eq } from "drizzle-orm";
 import { join } from "path";
 import { SHOPIFY_WORKFLOW_TEMPLATES } from "../voice/workflows/seed-graph";
 import { validateLockedNodesEnforced } from "../voice/workflows/scaffold";
 import { extractRuntimePersona } from "../voice/persona-source";
+import { DEMO_ORG_ID, DEMO_WIDGET_FLAG_KEY } from "../voice/demo-widget-constants";
+
+/** Optional `visibility`/`ownerOrgId` cover the real demo-call widget's `weeber-pitch-agent`
+ * (2026-08-27) — every catalog template omits both and keeps the schema's own public/null
+ * defaults; see schema.ts's `agentTemplates.visibility` doc comment for the bespoke-templates
+ * feature this reuses. */
+type AgentTemplateSeed = {
+  key: string;
+  name: string;
+  vertical: string;
+  description: string;
+  fileName: string;
+  literalGreetingTemplate?: string;
+  defaultTools: string[];
+  active: boolean;
+  visibility?: "public" | "private";
+  ownerOrgId?: string;
+};
 
 /**
  * Single source of truth for the seeded agent templates — exported (not
@@ -20,7 +38,7 @@ import { extractRuntimePersona } from "../voice/persona-source";
  * call's production log line by line, not by any test — this test exists so
  * the next tool addition fails CI instead of shipping silently broken.
  */
-export const AGENT_TEMPLATES = [
+export const AGENT_TEMPLATES: AgentTemplateSeed[] = [
     {
       key: "shopify-cart-recovery",
       name: "Shopify Cart Recovery",
@@ -161,6 +179,21 @@ export const AGENT_TEMPLATES = [
       defaultTools: ["captureField", "markFieldUnanswered", "sendSms", "transferToHuman", "bookAppointment", "flagGuardrailEvent", "setDisposition", "setIntent", "crmSync"],
       active: true,
     },
+    {
+      // Real demo-call widget (2026-08-27,
+      // docs/product-strategy/real-demo-call-widget-plan-2026-08-26.md) — freeform, no script,
+      // reachable only from the public demo widget via `ownerOrgId`. See
+      // docs/agent-prompts/10-weeber-pitch-agent.md for why it carries no appointment/CRM tools.
+      key: "weeber-pitch-agent",
+      name: "Weeber Pitch Agent (demo widget)",
+      vertical: "demo",
+      description: "Freeform agent that talks about the Weeber product itself and tries to capture an email for follow-up. Public demo-widget only — never offered in any merchant's catalog.",
+      fileName: "10-weeber-pitch-agent.md",
+      defaultTools: ["captureField", "markFieldUnanswered", "setDisposition", "setIntent"],
+      active: true,
+      visibility: "private",
+      ownerOrgId: DEMO_ORG_ID,
+    },
   ];
 
 export async function seedAgentTemplates() {
@@ -174,6 +207,23 @@ export async function seedAgentTemplates() {
   // at the end, regardless of whether anything was actually written.
   const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
   const templates = AGENT_TEMPLATES;
+
+  // A private template's `ownerOrgId` FK requires that org to already exist. Ensured here
+  // (idempotent, free — no Twilio/vendor calls) rather than in a separate one-off script, so
+  // `weeber-pitch-agent` seeds cleanly on any environment's very first boot. Note this only
+  // creates the org ROW; provisioning its dedicated phone numbers and binding them to the three
+  // demo templates via `orgAgentConfigs` is a deliberate separate step (real Twilio cost) — see
+  // the source plan's rollout sequencing.
+  const ownerOrgIds = [...new Set(templates.map((t) => t.ownerOrgId).filter((id): id is string => Boolean(id)))];
+  for (const orgId of ownerOrgIds) {
+    // vertical: "shopify" is deliberate, not a placeholder — this one org hosts demo calls for
+    // all three templates (insurance, Shopify, freeform), and `orgs.vertical === "insurance"`
+    // would turn on the insurance-only producer-licensing/1600-series gates
+    // (voice/compliance/insurance-gates.ts) for every one of this org's calls, not just the
+    // insurance demo. This org never actually underwrites or sells insurance, so those gates
+    // don't apply to it regardless of which template a given demo call used.
+    await db.insert(orgs).values({ id: orgId, name: "Weeber Live Demo", vertical: "shopify" }).onConflictDoNothing();
+  }
 
   let seededCount = 0;
   let skippedCount = 0;
@@ -216,6 +266,8 @@ export async function seedAgentTemplates() {
             literalGreetingTemplate: t.literalGreetingTemplate ?? null,
             defaultTools: t.defaultTools,
             active: t.active,
+            visibility: t.visibility ?? "public",
+            ownerOrgId: t.ownerOrgId ?? null,
           })
           .where(eq(agentTemplates.key, t.key));
       } else {
@@ -228,6 +280,8 @@ export async function seedAgentTemplates() {
           literalGreetingTemplate: t.literalGreetingTemplate ?? null,
           defaultTools: t.defaultTools,
           active: t.active,
+          visibility: t.visibility ?? "public",
+          ownerOrgId: t.ownerOrgId ?? null,
         });
       }
       seededCount++;
@@ -315,4 +369,23 @@ export async function seedWorkflowTemplates() {
   console.log(
     `[db-seed] Workflow templates: ${seededCount} seeded, ${migratedCount} migrated, ${skippedCount} skipped (of ${SHOPIFY_WORKFLOW_TEMPLATES.length}).`,
   );
+}
+
+/**
+ * Real demo-call widget (2026-08-27) — seeds the global kill switch row disabled-by-default.
+ * `feature_flags` has 0 production rows as of the 2026-08-25 audit, and `isGlobalFlagEnabled`
+ * (voice/demo-widget-flag.ts) already fails closed on a missing row — this just makes the row
+ * exist and explicit, rather than relying on "absent" to mean "off" forever. `onConflictDoNothing`
+ * so flipping it on in production is never overwritten back to disabled by the next boot's seed.
+ */
+export async function seedDemoWidgetFlag() {
+  await db
+    .insert(featureFlags)
+    .values({
+      key: DEMO_WIDGET_FLAG_KEY,
+      orgId: "",
+      enabled: false,
+      description: "Public landing-page live demo-call widget (POST /api/public/demo-call). Kill switch — flip only after Phase 1/2 verification per the source plan.",
+    })
+    .onConflictDoNothing();
 }

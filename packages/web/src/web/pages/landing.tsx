@@ -7,6 +7,7 @@ import { useReveal } from "../lib/useReveal";
 import { MarketingNav } from "../components/marketing/MarketingNav";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 import { AgentDemoWidget } from "../components/marketing/AgentDemoWidget";
+import { LiveDemoCallWidget } from "../components/marketing/LiveDemoCallWidget";
 import { BrandTile } from "../components/marketing/BrandLogos";
 import { WaitlistForm } from "../components/marketing/WaitlistForm";
 import { GrainOverlay } from "../components/marketing/GrainOverlay";
@@ -196,6 +197,27 @@ function LandingContent() {
             </div>
             <div data-reveal>
               <AgentDemoWidget />
+            </div>
+          </div>
+        </section>
+
+        {/* Live demo call */}
+        <section className="border-b border-[var(--m-border)] bg-[var(--m-bg)]">
+          <div className="max-w-2xl mx-auto px-6 py-24 md:py-28">
+            <div className="mb-10 text-center" data-reveal>
+              <span className="inline-flex items-center gap-2 font-mono text-xs tracking-[.16em] uppercase text-[var(--m-text-muted)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--m-text)] animate-pulse" />
+                Talk to it yourself
+              </span>
+              <h2 className="mt-4 font-display text-[clamp(28px,3.8vw,46px)] font-extrabold tracking-[-0.03em] leading-[1.04] text-[var(--m-text)]">
+                Get a real call, right now.
+              </h2>
+              <p className="mt-3 text-base text-[var(--m-text-secondary)]">
+                Pick an agent, enter your number, and Weeber calls you for a live conversation.
+              </p>
+            </div>
+            <div data-reveal>
+              <LiveDemoCallWidget />
             </div>
           </div>
         </section>

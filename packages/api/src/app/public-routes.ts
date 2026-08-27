@@ -19,6 +19,7 @@ import { validateFields } from "../voice/leads/intake-schema";
 import { upsertLead } from "../voice/leads/leads";
 import { normalizePhone } from "../voice/leads/csv-import";
 import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
+import { placeDemoCall } from "./demo-widget";
 
 // Per-(ip+org) submit limiter for the hosted intake form — a public,
 // unauthenticated surface, so it needs its own abuse gate independent of the
@@ -271,6 +272,28 @@ export const publicRoutes = new Hono()
     });
 
     return c.body(null, 202);
+  })
+
+  // Real demo-call widget (2026-08-27, docs/product-strategy/real-demo-call-widget-plan-2026-08-26.md).
+  // Honeypot handled here, not in demo-widget.ts, since a tripped honeypot must return the same
+  // disguised success shape a real submission gets — that's an HTTP-response-shaping concern, not
+  // business logic. `placeDemoCall` owns the kill switch, consent, Turnstile, rate limits, and the
+  // actual `placeOutboundCall` dial.
+  .post("/demo-call", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid or missing JSON request body" }, 400);
+    const { agentKey, phone, consent, turnstileToken, _website } = body as Record<string, unknown>;
+
+    if (typeof _website === "string" && _website.trim() !== "") {
+      return c.json({ ok: true, sessionKey: "demo", status: "queued" }, 201);
+    }
+
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    const userAgent = c.req.header("user-agent")?.slice(0, 500) ?? null;
+
+    const result = await placeDemoCall({ agentKey, phone, consent, turnstileToken, ip, userAgent });
+    if (!result.ok) return c.json({ error: result.error }, result.statusCode);
+    return c.json({ ok: true, sessionKey: result.sessionKey, status: result.status }, 201);
   })
 
   .get("/tracking-config", async (c) => {

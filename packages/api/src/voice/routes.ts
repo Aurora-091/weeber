@@ -437,8 +437,17 @@ export const voice = new Hono()
   })
 
   // Ops endpoints — no dashboard, just JSON for curl/Postman.
+  // `?orgId=` (2026-08-27, real demo-call widget) — optional, filters to one org's calls.
+  // Added for the demo-calls admin page (dashboard/demo-calls.tsx), which reuses this same
+  // endpoint rather than a bespoke one; every other admin caller omits the param and keeps
+  // today's unfiltered "every configured number" behavior unchanged.
   .get("/calls", requireAdminKey, async (c) => {
-    const rows = await db.select().from(calls).orderBy(calls.startedAt);
+    const orgId = c.req.query("orgId");
+    const rows = await db
+      .select()
+      .from(calls)
+      .where(orgId ? eq(calls.orgId, orgId) : undefined)
+      .orderBy(calls.startedAt);
     return c.json({ calls: rows }, 200);
   })
 

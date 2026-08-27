@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2, CircleAlert as AlertCircle, RefreshCw } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, Play, Loader as Loader2, Settings2, CircleAlert as AlertCircle, RefreshCw, Phone, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiFetch } from "../../lib/api";
 import { adminHeaders, getAdminKey } from "../../lib/admin-key";
@@ -9,6 +9,8 @@ import { Switch } from "../../components/ui/switch";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import {
   Select,
   SelectContent,
@@ -182,6 +184,39 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
       toast.success("Agent saved");
     },
     onError: (err: Error) => toast.error("Failed to save", { description: err.message }),
+  });
+
+  // C2b — which of this org's numbers this agent dials out from. Shares
+  // OrgNumbersPanel's query cache (same key), so expanding a card never
+  // triggers a second fetch of the same list.
+  const orgNumbers = useQuery({
+    queryKey: ["admin-org-numbers", orgId],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/numbers`, { headers: adminHeaders() });
+      if (!res.ok) throw new Error(`numbers failed (${res.status})`);
+      return (await res.json()) as { numbers: { id: number; phoneNumber: string; status: "active" | "released" }[] };
+    },
+  });
+
+  const assignNumber = useMutation({
+    mutationFn: async (phoneNumberId: number | null) => {
+      const res = await apiFetch(
+        `/api/voice/orgs/${encodeURIComponent(orgId)}/agent-configs/${encodeURIComponent(row.templateKey)}/number`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...adminHeaders() },
+          body: JSON.stringify({ phoneNumberId }),
+        },
+      );
+      const data = await res.json().catch(() => ({ error: "Failed to assign number" }));
+      if (!res.ok) throw new Error(data.error ?? "Failed to assign number");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Number assigned");
+      queryClient.invalidateQueries({ queryKey: ["agent-configs", orgId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   async function playPreview() {
@@ -428,6 +463,31 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
               </div>
             </div>
 
+            <SectionDivider>Phone number</SectionDivider>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor={`num-${row.templateKey}`} className={labelCls}>Dials out from</label>
+                <Select
+                  value={row.config?.phoneNumberId != null ? String(row.config.phoneNumberId) : "none"}
+                  onValueChange={(v) => assignNumber.mutate(v === "none" ? null : Number(v))}
+                  disabled={assignNumber.isPending}
+                >
+                  <SelectTrigger id={`num-${row.templateKey}`} className="w-full">
+                    <SelectValue placeholder="Org default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Org default</SelectItem>
+                    {(orgNumbers.data?.numbers ?? [])
+                      .filter((n) => n.status === "active")
+                      .map((n) => (
+                        <SelectItem key={n.id} value={String(n.id)}>{n.phoneNumber}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Manage the org's numbers above.</p>
+              </div>
+            </div>
+
             <SectionDivider>Language &amp; Model</SectionDivider>
             <div className="grid sm:grid-cols-3 gap-4">
               <div>
@@ -561,6 +621,186 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
   );
 }
 
+type OrgPhoneNumber = {
+  id: number;
+  orgId: string;
+  provider: "twilio" | "plivo" | "exotel";
+  phoneNumber: string;
+  status: "active" | "released";
+};
+type AvailableNumber = { phoneNumber: string; locality: string | null; region: string | null };
+
+/**
+ * Admin mirror of `pages/app/numbers.tsx`'s numbers picker — added for the real demo-call widget
+ * (2026-08-27), whose org has no real logged-in user, so the merchant-session numbers page can
+ * never manage it. Search real Twilio candidates -> buy a specific one (not a blind first-result
+ * buy) -> assign it to a template below. Shown once per selected org, above the per-template
+ * cards, since numbers are an org-level resource shared across all of an org's agents.
+ */
+function OrgNumbersPanel({ orgId }: { orgId: string }) {
+  const queryClient = useQueryClient();
+  const [countryCode, setCountryCode] = useState("US");
+  const [areaCode, setAreaCode] = useState("");
+  const [searched, setSearched] = useState(false);
+
+  const numbers = useQuery({
+    queryKey: ["admin-org-numbers", orgId],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/numbers`, { headers: adminHeaders() });
+      if (!res.ok) throw new Error(`numbers failed (${res.status})`);
+      return (await res.json()) as { numbers: OrgPhoneNumber[] };
+    },
+  });
+
+  const available = useQuery({
+    queryKey: ["admin-org-numbers-available", orgId, countryCode, areaCode],
+    queryFn: async () => {
+      const params = new URLSearchParams({ countryCode });
+      if (areaCode.trim()) params.set("areaCode", areaCode.trim());
+      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/numbers/available?${params.toString()}`, {
+        headers: adminHeaders(),
+      });
+      const data = await res.json().catch(() => ({ error: "Search failed" }));
+      if (!res.ok) throw new Error(data.error ?? "Search failed");
+      return data as { numbers: AvailableNumber[] };
+    },
+    enabled: false,
+  });
+
+  const buy = useMutation({
+    mutationFn: async (phoneNumber: string) => {
+      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/numbers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        body: JSON.stringify({ phoneNumber }),
+      });
+      const data = await res.json().catch(() => ({ error: "Purchase failed" }));
+      if (!res.ok) throw new Error(data.error ?? "Purchase failed");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Purchased ${data.phoneNumber}`);
+      setSearched(false);
+      queryClient.invalidateQueries({ queryKey: ["admin-org-numbers", orgId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const release = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiFetch(`/api/voice/orgs/${encodeURIComponent(orgId)}/twilio/numbers/${id}/release`, {
+        method: "POST",
+        headers: adminHeaders(),
+      });
+      const data = await res.json().catch(() => ({ error: "Release failed" }));
+      if (!res.ok) throw new Error(data.error ?? "Release failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Number released");
+      queryClient.invalidateQueries({ queryKey: ["admin-org-numbers", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["agent-configs", orgId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const activeRows = (numbers.data?.numbers ?? []).filter((r) => r.status === "active");
+
+  function handleSearch() {
+    setSearched(true);
+    void available.refetch();
+  }
+
+  return (
+    <div className="card-weeber p-6 space-y-5">
+      <h3 className="text-sm font-semibold">Phone numbers</h3>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Country</Label>
+          <Select value={countryCode} onValueChange={setCountryCode}>
+            <SelectTrigger className="w-44 h-9">
+              <SelectValue placeholder="Country" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="US">United States</SelectItem>
+              <SelectItem value="IN">India</SelectItem>
+              <SelectItem value="GB">United Kingdom</SelectItem>
+              <SelectItem value="CA">Canada</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Area code (optional)</Label>
+          <Input value={areaCode} onChange={(e) => setAreaCode(e.target.value)} placeholder="e.g. 415" className="w-32" />
+        </div>
+        <Button onClick={handleSearch} disabled={available.isFetching}>
+          {available.isFetching ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Search className="size-4" aria-hidden />}
+          Search available numbers
+        </Button>
+      </div>
+
+      {searched && (
+        <div>
+          {available.isFetching && <SkeletonCards count={3} />}
+          {available.isError && <p className="text-sm text-destructive">{(available.error as Error).message}</p>}
+          {available.data && available.data.numbers.length === 0 && (
+            <p className="text-sm text-muted-foreground">No available numbers found — try a different area code or country.</p>
+          )}
+          {available.data && available.data.numbers.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {available.data.numbers.map((n) => (
+                <div key={n.phoneNumber} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">{n.phoneNumber}</div>
+                    <div className="text-xs text-muted-foreground">{[n.locality, n.region].filter(Boolean).join(", ") || "—"}</div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => buy.mutate(n.phoneNumber)} disabled={buy.isPending}>
+                    Buy
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground mb-2">This org's numbers</h4>
+        {numbers.isLoading && <SkeletonCards count={2} />}
+        {!numbers.isLoading && activeRows.length === 0 && (
+          <EmptyState icon={Phone} title="No numbers yet" description="Search and buy a number above, then assign it to an agent below." />
+        )}
+        {!numbers.isLoading && activeRows.length > 0 && (
+          <div className="divide-y divide-border">
+            {activeRows.map((row) => (
+              <div key={row.id} className="flex items-center justify-between py-2.5">
+                <div>
+                  <div className="text-sm font-medium">{row.phoneNumber}</div>
+                  <div className="text-xs text-muted-foreground capitalize">{row.provider}</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => {
+                    if (confirm(`Release ${row.phoneNumber}? Any agent assigned to it will need a new number.`)) {
+                      release.mutate(row.id);
+                    }
+                  }}
+                  disabled={release.isPending}
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AgentsPage() {
   const [orgId, setOrgId] = useSelectedOrgId();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -630,6 +870,8 @@ export function AgentsPage() {
       {!orgId && (
         <EmptyState title="No org selected" description="Pick an org above to configure its agents." />
       )}
+
+      {orgId && <OrgNumbersPanel orgId={orgId} />}
 
       {orgId && configs.isLoading && <SkeletonCards count={3} lines={2} />}
 

@@ -28,7 +28,7 @@ mock.module("./index", () => ({
   },
 }));
 
-import { checkAndIncrementOutboundRateLimit } from "./rate-limit-store";
+import { checkAndIncrementOutboundRateLimit, checkAndIncrementKeyedRateLimit } from "./rate-limit-store";
 
 describe("checkAndIncrementOutboundRateLimit", () => {
   beforeEach(() => {
@@ -65,6 +65,41 @@ describe("checkAndIncrementOutboundRateLimit", () => {
   it("fails open (does not throw/block) if the query unexpectedly returns no row", async () => {
     mockReturnRow = null;
     const result = await checkAndIncrementOutboundRateLimit("org-a", 60_000, 30);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+/**
+ * Real demo-call widget (2026-08-27) — the per-phone-number/global-daily-cap sibling. Same
+ * atomic-UPSERT shape, keyed by `(scope, key)` instead of a bare org id.
+ */
+describe("checkAndIncrementKeyedRateLimit", () => {
+  beforeEach(() => {
+    lastExecuteArgs = null;
+    mockReturnRow = null;
+  });
+
+  it("allows the call when the returned count is at or under the limit", async () => {
+    mockReturnRow = { window_start: new Date(), call_count: 1 };
+    const result = await checkAndIncrementKeyedRateLimit("phone", "+14155551234", 86_400_000, 1);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("blocks the call when the returned count exceeds the limit", async () => {
+    mockReturnRow = { window_start: new Date(), call_count: 2 };
+    const result = await checkAndIncrementKeyedRateLimit("phone", "+14155551234", 86_400_000, 1);
+    expect(result.allowed).toBe(false);
+  });
+
+  it("works independently for the global scope", async () => {
+    mockReturnRow = { window_start: new Date(), call_count: 50 };
+    const result = await checkAndIncrementKeyedRateLimit("global", "all", 86_400_000, 50);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("fails open if the query unexpectedly returns no row", async () => {
+    mockReturnRow = null;
+    const result = await checkAndIncrementKeyedRateLimit("phone", "+14155551234", 86_400_000, 1);
     expect(result.allowed).toBe(true);
   });
 });

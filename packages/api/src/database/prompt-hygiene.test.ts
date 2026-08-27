@@ -132,11 +132,21 @@ describe("seeded agent prompts — no engineering metadata (G1.4)", () => {
   // this now runs against all nine.
   const allFileNames = AGENT_TEMPLATES.map((t) => t.fileName);
 
+  // Real demo-call widget (2026-08-27): every other template represents a merchant, so the
+  // platform's own name leaking into what it says would be a real branding/context leak — hence
+  // the blanket rule. `weeber-pitch-agent` is the one deliberate exception: its entire premise
+  // (docs/agent-prompts/10-weeber-pitch-agent.md's authoring note) is identifying itself AS
+  // Weeber to a visitor who explicitly requested a demo of Weeber's own tech. Scoped to exactly
+  // the "platform's own name" pattern — every other engineering-metadata pattern still applies to
+  // this file.
+  const PLATFORM_NAME_ALLOWED = new Set(["10-weeber-pitch-agent.md"]);
+
   for (const fileName of allFileNames) {
     it(`${fileName} reads as agent instruction, not as documentation`, async () => {
       const content = await readRuntimePersona(fileName);
       const offences: string[] = [];
       for (const { label, pattern } of ENGINEERING_METADATA_PATTERNS) {
+        if (label.startsWith("the platform's own name") && PLATFORM_NAME_ALLOWED.has(fileName)) continue;
         const match = content.match(pattern);
         if (match) {
           offences.push(`${label} — found ${JSON.stringify(match[0])}`);

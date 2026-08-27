@@ -472,6 +472,12 @@ export const consentRecords = pgTable("consent_records", {
   channel: text("channel", { enum: ["shopify", "ivr", "web", "import"] }).notNull(),
   source: text("source").notNull(),
   withdrawnAt: timestamp("withdrawn_at", { withTimezone: true, mode: "date" }),
+  /** Real demo-call widget (2026-08-27): the flow's actual audit trail, since consent there is
+   * checkbox-only with no number-ownership verification (accepted risk, see
+   * docs/product-strategy/real-demo-call-widget-plan-2026-08-26.md). Nullable — every other
+   * consent channel (shopify/ivr/import) has no request to capture these from. */
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
 }, (table) => [
   index("consent_records_org_principal_purpose_idx").on(table.orgId, table.dataPrincipal, table.purpose),
 ]);
@@ -1315,6 +1321,25 @@ export const outboundRateLimitWindows = pgTable("outbound_rate_limit_windows", {
   windowStart: timestamp("window_start", { withTimezone: true, mode: "date" }).notNull(),
   callCount: integer("call_count").notNull().default(0),
 });
+
+/**
+ * Real demo-call widget (2026-08-27) — the per-phone-number and global daily caps for the
+ * public, unauthenticated `/api/public/demo-call` endpoint. Same atomic-UPSERT fixed-window
+ * shape as `outboundRateLimitWindows` above (Postgres-backed so the limit survives restarts and
+ * holds across every API instance), keyed by `(scope, key)` instead of a bare org id since this
+ * endpoint has no org/session context: `scope: "phone"` rows are keyed by the normalized E.164
+ * number, `scope: "global"` uses one fixed key. Deliberately a new table rather than widening
+ * `outboundRateLimitWindows` — that table's whole shape (`orgId` as the primary key) assumes one
+ * row per org, which a per-phone-number key isn't.
+ */
+export const demoWidgetRateLimitWindows = pgTable("demo_widget_rate_limit_windows", {
+  scope: text("scope", { enum: ["phone", "global"] }).notNull(),
+  key: text("key").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true, mode: "date" }).notNull(),
+  callCount: integer("call_count").notNull().default(0),
+}, (table) => [
+  primaryKey({ columns: [table.scope, table.key] }),
+]);
 
 /**
  * First-party product-usage telemetry (2026-07-31). Append-only stream of

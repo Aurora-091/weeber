@@ -31,8 +31,13 @@ mock.module("./index", () => {
         }),
       }),
       insert: (_table: unknown) => ({
-        values: (data: { key: string; defaultPersonaPrompt: string }) => {
-          inserted.push(data);
+        values: (data: Record<string, unknown>) => {
+          // A plain org-row shape (from the `weeber-pitch-agent`'s ownerOrgId-ensure step, see
+          // 2026-08-27) has no `key` field — agentTemplates rows always do. Keep it out of
+          // `inserted` so the template-seeding assertions below aren't polluted, and give it the
+          // `onConflictDoNothing()` chain the real call makes.
+          if (!("key" in data)) return { onConflictDoNothing: () => Promise.resolve() };
+          inserted.push(data as { key: string; defaultPersonaPrompt: string });
           return Promise.resolve();
         },
       }),
@@ -109,13 +114,13 @@ describe("seedAgentTemplates", () => {
     const missingFileErrors = consoleErrors.filter((args) => String(args[0]).includes("Prompt file does not exist"));
     expect(missingFileErrors).toEqual([]);
 
-    // All 9 templates (3 Shopify + 6 Insurance) should have gone through
+    // All 10 templates (3 Shopify + 6 Insurance + 1 demo-widget) should have gone through
     // insert (since existingKeys is always empty in this mock) with real,
     // non-empty prompt content read off disk. Insurance set: 04/05 policy-
     // renewal + lead-followup, plus the appointment-setter, post-sale-welcome,
     // and feedback-nps agents (2026-07-16), plus the final-expense qualifier
-    // (09, added 2026-07-19).
-    expect(inserted.length).toBe(9);
+    // (09, added 2026-07-19). The demo set: weeber-pitch-agent (2026-08-27).
+    expect(inserted.length).toBe(10);
     for (const row of inserted) {
       expect(row.defaultPersonaPrompt.length).toBeGreaterThan(0);
     }

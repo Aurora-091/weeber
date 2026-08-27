@@ -58,3 +58,46 @@ export async function checkAndIncrementOutboundRateLimit(
     windowStart: new Date(row.window_start),
   };
 }
+
+/**
+ * Same atomic reset-if-expired-else-increment shape as
+ * `checkAndIncrementOutboundRateLimit`, but keyed by `(scope, key)` instead of a bare org id —
+ * for callers with no org/session context, like the public demo-call widget's per-phone-number
+ * and global daily caps (`demo_widget_rate_limit_windows`). `scope` namespaces the key so a
+ * phone number can never collide with the fixed global-cap key.
+ */
+export async function checkAndIncrementKeyedRateLimit(
+  scope: "phone" | "global",
+  key: string,
+  windowMs: number,
+  maxCallsPerWindow: number,
+): Promise<RateLimitResult> {
+  const result = await db.execute(sql`
+    INSERT INTO demo_widget_rate_limit_windows (scope, key, window_start, call_count)
+    VALUES (${scope}, ${key}, now(), 1)
+    ON CONFLICT (scope, key) DO UPDATE SET
+      window_start = CASE
+        WHEN extract(epoch FROM now() - demo_widget_rate_limit_windows.window_start) * 1000 >= ${windowMs}
+        THEN now()
+        ELSE demo_widget_rate_limit_windows.window_start
+      END,
+      call_count = CASE
+        WHEN extract(epoch FROM now() - demo_widget_rate_limit_windows.window_start) * 1000 >= ${windowMs}
+        THEN 1
+        ELSE demo_widget_rate_limit_windows.call_count + 1
+      END
+    RETURNING window_start, call_count
+  `);
+  const row = (result as unknown as Array<{ window_start: Date; call_count: number }>)[0];
+  // Defensive fallback — see checkAndIncrementOutboundRateLimit's identical comment. Failing
+  // open here means an edge-case driver quirk costs one unmetered demo call, not a refused one.
+  if (!row) {
+    console.error("[rate-limit-store] keyed INSERT ... RETURNING returned no row — failing open");
+    return { allowed: true, callCount: 1, windowStart: new Date() };
+  }
+  return {
+    allowed: row.call_count <= maxCallsPerWindow,
+    callCount: row.call_count,
+    windowStart: new Date(row.window_start),
+  };
+}

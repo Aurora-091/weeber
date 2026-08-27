@@ -1,4 +1,4 @@
-import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, Bot, ChartBar as BarChart3, Lock, Users, Building2, CreditCard, Shield, ScrollText, ListChecks, Send, LifeBuoy, History, TrendingUp, Megaphone, Workflow } from "lucide-react";
+import { PhoneCall, ShieldOff, ShieldCheck, KeyRound, Bot, ChartBar as BarChart3, Lock, Users, Building2, CreditCard, Shield, ScrollText, ListChecks, Send, LifeBuoy, History, TrendingUp, Megaphone, Workflow, Sparkles } from "lucide-react";
 import { clearAdminKey } from "../../lib/admin-key";
 import { adminPath } from "../../lib/route-base";
 import { AppShell, type NavItem } from "../shell/app-shell";
@@ -10,6 +10,7 @@ function navMatch(subpath: string, tail: string): RegExp {
 
 const NAV: NavItem[] = [
   { href: adminPath(), label: "Calls", icon: PhoneCall, match: navMatch("", "(/calls/.*)?") },
+  { href: adminPath("/demo-calls"), label: "Demo Calls", icon: Sparkles, match: navMatch("/demo-calls", "") },
   { href: adminPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
   { href: adminPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
   { href: adminPath("/compliance"), label: "Compliance", icon: ShieldCheck, match: navMatch("/compliance", "") },
