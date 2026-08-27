@@ -4,6 +4,7 @@ import { useCopy } from "../../lib/useCopy";
 import { apiFetch } from "../../lib/api";
 import { useWaitlistCount } from "../../lib/useWaitlistCount";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
+import { Button } from "../ui/button";
 
 /**
  * Shared waitlist join form — extracted from landing.tsx's original inline
@@ -47,14 +48,14 @@ function ReferralShare({ referralCode }: { referralCode: string }) {
       <p className="text-[12.5px] font-medium text-[var(--m-text-secondary)] mb-2">Your referral link</p>
       <div className="flex items-center gap-2 bg-[var(--m-bg-alt)] border border-[var(--m-border)] rounded-lg px-3.5 py-2.5">
         <span className="flex-1 text-[13px] font-mono text-[var(--m-text-muted)] truncate select-all">{referralUrl}</span>
-        <button
+        <Button
           type="button"
           onClick={() => copy(referralUrl)}
-          className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md bg-[var(--m-text)] text-[var(--m-bg)] hover:opacity-90 transition-opacity flex-shrink-0"
+          className="gap-1.5 text-[12px] font-semibold px-3 py-1.5 h-auto rounded-md hover:opacity-90 flex-shrink-0"
         >
           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
           {copied ? "Copied" : "Copy"}
-        </button>
+        </Button>
       </div>
       <div className="mt-2.5 flex items-center gap-2">
         <a
@@ -70,10 +71,15 @@ function ReferralShare({ referralCode }: { referralCode: string }) {
           WhatsApp
         </a>
         {canNativeShare && (
-          <button type="button" onClick={handleNativeShare} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md border border-[var(--m-border)] text-[var(--m-text)] hover:bg-[var(--m-surface)] transition-colors">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleNativeShare}
+            className="gap-1.5 text-[12px] font-semibold px-3 py-1.5 h-auto rounded-md"
+          >
             <Share2 className="w-3.5 h-3.5" />
             Share
-          </button>
+          </Button>
         )}
         <p className="text-[11.5px] text-[var(--m-text-muted)] flex items-center gap-1 ml-auto">
           <ArrowRight className="w-3 h-3" />
@@ -231,13 +237,13 @@ export function WaitlistForm({ source = "landing" }: { source?: string }) {
               </span>
             )}
           </div>
-          <button
+          <Button
             type="submit"
             disabled={state === "loading" || !canSubmit}
-            className="h-12 px-7 w-full sm:w-auto text-[1rem] font-semibold bg-[var(--m-accent-bg)] text-[var(--m-accent-fg)] border-none rounded-lg hover:opacity-[0.85] transition-opacity disabled:opacity-50 btn-press whitespace-nowrap cursor-pointer"
+            className="h-12 px-7 w-full sm:w-auto text-[1rem] font-semibold rounded-lg hover:opacity-[0.85] btn-press whitespace-nowrap"
           >
             {state === "loading" ? "Joining..." : "Get early access"}
-          </button>
+          </Button>
         </div>
         {touched.email && !emailValid && email.length >= 3 && (
           <p id="email-error" role="alert" aria-live="polite" className="text-[11.5px] text-red-500 font-medium -mt-1">
@@ -298,14 +304,14 @@ export function WaitlistForm({ source = "landing" }: { source?: string }) {
                       className="w-full h-10 pl-8 pr-3 text-[14px] bg-[var(--m-surface)] border-[1.5px] border-[var(--m-input-border)] text-[var(--m-text)] placeholder:text-[var(--m-text-muted)] focus:border-[var(--m-text)] focus:outline-none rounded-lg transition-all"
                     />
                   </div>
-                  <button
+                  <Button
                     type="button"
                     disabled={phoneSaving || !phone.trim() || !phoneValid}
                     onClick={handlePhoneSave}
-                    className="h-10 px-4 text-[13px] font-semibold bg-[var(--m-text)] text-[var(--m-bg)] rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 whitespace-nowrap cursor-pointer"
+                    className="h-10 px-4 text-[13px] font-semibold rounded-lg hover:opacity-80 whitespace-nowrap"
                   >
                     {phoneSaving ? "Saving..." : "Save"}
-                  </button>
+                  </Button>
                 </div>
                 {phoneTouched && phone.length >= 3 && !phoneValid && (
                   <p id="phone-error" role="alert" aria-live="polite" className="mt-1 text-[11px] text-red-500">

@@ -18,6 +18,12 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   match?: RegExp;
+  /** Optional section label (2026-08-27 design unification — UI-DESIGN-BRIEF.md had long named
+   * "group the flat 18-item admin nav into Ops/Compliance/Accounts/Config" as a pending
+   * recommendation). Items sharing the same `group`, adjacent in the array, render under one
+   * label. Ungrouped items (no `group` set) render with no header, same as before — this is
+   * additive, existing callers (UserShell's vertical-aware nav) are unaffected. */
+  group?: string;
 };
 
 type AppShellProps = {
@@ -144,9 +150,24 @@ function NavLinks({
       className={cn("flex flex-col gap-1.5 py-2", collapsed ? "px-1.5" : "px-2.5")}
       aria-label="Primary"
     >
-      {nav.map((item) => (
-        <NavLink key={item.href} {...item} collapsed={collapsed} onClick={onNavigate} />
-      ))}
+      {nav.map((item, i) => {
+        const showGroupLabel = !collapsed && item.group && item.group !== nav[i - 1]?.group;
+        return (
+          <div key={item.href}>
+            {showGroupLabel && (
+              <div
+                className={cn(
+                  "px-2.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50",
+                  i === 0 ? "mb-1.5" : "mb-1.5 mt-3",
+                )}
+              >
+                {item.group}
+              </div>
+            )}
+            <NavLink {...item} collapsed={collapsed} onClick={onNavigate} />
+          </div>
+        );
+      })}
     </nav>
   );
 }

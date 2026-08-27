@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Building2, CircleCheck, Mail } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
+import { Button } from "../ui/button";
 import {
   Select,
   SelectContent,
@@ -262,15 +263,20 @@ export function EnterpriseDialog({ open, onOpenChange, context = "enterprise" }:
 
             <div className="flex items-center gap-3 mt-8">
               {step > 0 && (
-                <button type="button" onClick={() => setStep((s) => s - 1)} className="px-4 py-2.5 text-sm font-medium text-[var(--m-text-secondary)] hover:text-[var(--m-text)] transition-colors">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setStep((s) => s - 1)}
+                  className="px-4 py-2.5 h-auto text-sm font-medium text-[var(--m-text-secondary)] hover:text-[var(--m-text)] hover:bg-transparent"
+                >
                   Back
-                </button>
+                </Button>
               )}
-              <button
+              <Button
                 type="button"
                 onClick={handleContinue}
                 disabled={!canContinue || submitting}
-                className="flex-1 flex items-center justify-center gap-2 bg-[var(--m-accent-bg)] text-[var(--m-accent-fg)] text-sm font-semibold py-3 px-5 rounded-lg transition-opacity disabled:opacity-40 hover:opacity-90 active:scale-[0.98]"
+                className="flex-1 gap-2 text-sm font-semibold py-3 px-5 h-auto rounded-lg hover:opacity-90 active:scale-[0.98]"
               >
                 {submitting ? (
                   <span className="flex items-center gap-2">
@@ -285,7 +291,7 @@ export function EnterpriseDialog({ open, onOpenChange, context = "enterprise" }:
                 ) : (
                   "Continue \u2192"
                 )}
-              </button>
+              </Button>
             </div>
           </div>
         )}

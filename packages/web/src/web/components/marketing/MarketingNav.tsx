@@ -4,6 +4,7 @@ import { Menu, X } from "lucide-react";
 import { NAV_LINKS } from "../../lib/marketing-config";
 import { WeeberLogo } from "../WeeberLogo";
 import { SkipToContent } from "./SkipToContent";
+import { Button } from "../ui/button";
 
 /** Marketing site nav — ported from Vocalist's MarketingNav.tsx, adapted
  * from react-router-dom (Link `to=`, object-returning useLocation) to
@@ -78,16 +79,18 @@ export function MarketingNav() {
           </a>
         </div>
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="md:hidden p-2 text-[var(--m-text)]"
+          className="md:hidden text-[var(--m-text)] hover:bg-transparent hover:opacity-70"
           aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={mobileOpen}
           aria-controls="mobile-nav"
         >
           {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+        </Button>
       </div>
 
       {mobileOpen && (

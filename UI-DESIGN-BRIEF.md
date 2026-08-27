@@ -1,18 +1,24 @@
 # UI-DESIGN-BRIEF.md — Weeber Product Design System
 
-> **Status: reconciled with code on 2026-07-30.** This document was previously a *fossil* — it
-> predated ADR-039/043/044 and the vertical decisions, and described a brand (indigo accent, 10px
-> radius, single identity, clinic/hotel verticals) that the shipped product no longer matches. It has
-> been rewritten directly from `packages/web/src/web/styles.css`, `styles-marketing.css`, and
-> `lib/verticals.ts`. **The code is the source of truth; if this doc and the code ever disagree again,
-> trust the code and fix this file.**
+> **Status: reconciled with code on 2026-08-27** (previous reconciliation: 2026-07-30). This
+> document is rewritten directly from `packages/web/src/web/styles.css`, `styles-marketing.css`,
+> and `lib/verticals.ts`. **The code is the source of truth; if this doc and the code ever
+> disagree again, trust the code and fix this file.**
 >
-> **What changed from the old brief (read this if you built anything off the old version):**
+> **2026-08-27 — design unification.** Marketing and the product (`/app` + `/dashboard`) were
+> both already monochrome (ADR-039) but disagreed on *how*: two different display fonts despite
+> this doc claiming one shared face, no shared radius scale on marketing, and any shadcn `ui/`
+> primitive rendered on a marketing page fell back to a leftover `:root` ember accent instead of
+> the actual brand color (confirmed live in the demo-call widget's CTA button, which rendered
+> orange instead of matching the rest of the page). Fixed at the token level — see "The one
+> shared display font," "Component shape & surfaces," and "Navigation" below for what changed.
+>
+> **What changed from the pre-ADR-039 fossil (2026-07-30 note, kept for history):**
 > | Was (fossil) | Now (code reality) |
 > |---|---|
 > | Accent = indigo/violet `oklch(0.53 0.19 275)` | Accent = **monochrome near-black** `oklch(0.14 0 0)` (light) / near-white `oklch(0.93 0 0)` (dark) — ADR-039 |
 > | Radius = 10px (`0.625rem`) | **12px** (`--radius: 0.75rem`) — ADR-043 |
-> | One design identity | **Three** separate identities (product / OSS landing / marketing) |
+> | One design identity | Two intentionally-scoped token sets (product `.theme-weeber`, marketing `.marketing`) sharing one design language and, as of 2026-08-27, one display font and one component-primitive contract |
 > | Verticals: clinic, hotel (implied) | **`shopify` + `insurance` only** — the two that exist in code |
 > | Background `oklch(0.98 0.012 85)` | `--weeber-paper: oklch(0.985 0.003 80)` (near-white, faint warm tint) |
 > | Light/dark parity (unspecified structure) | ADR-044: `.theme-weeber` = light-monochrome, `.theme-weeber.dark` = dark-monochrome (warm hue 80, not steel-blue) |
@@ -31,22 +37,35 @@ near-black/near-white accent so the only saturated colors on screen are semantic
 warning / error). This is closer to Linear's restraint than the old "playful indigo" direction — a
 deliberate reversal, documented here so nobody "restores" the indigo thinking it was lost by accident.
 
-## The three visual identities — do not mix them
+## The two visual identities — do not mix them
 
-The codebase ships **three distinct token sets**. Applying the wrong one to a surface is the single most
-common drift. They are:
+The codebase ships **two distinct surface-level token sets**, each scoped to its own root class.
+Applying the wrong one to a surface is the single most common drift. They are:
 
 1. **`.theme-weeber` (+ `.theme-weeber.dark`)** in `styles.css` — **the product.** Apply at the root
    layout element of every `/app` and `/dashboard` route. Monochrome, warm-paper, 12px radius. This is
    what 99% of feature work touches.
-2. **`:root` (+ `.dark`)** in `styles.css` — **the public marketing/waitlist landing page.** Editorial serif +
-   *ember* palette (`--ember: oklch(0.53 0.19 35)`, warm orange-red). A different, unrelated surface.
-   **Do not** touch or reuse these bare tokens inside product routes.
-3. **`--m-*`** in `styles-marketing.css` — **the marketing site.** Hex-based (`--m-bg: #FCFCFB`,
-   `--m-accent-bg: #0B0B0C`, plus a `--m-accent-blue: #4E9FE8`), its own light/dark. Scoped to marketing
-   pages only.
+2. **`.marketing`** in `styles-marketing.css` — **the marketing site** (`landing.tsx` and everything
+   under `MarketingPageShell`). Hex-based (`--m-bg: #FCFCFB`, `--m-accent-bg: #0B0B0C`, plus a
+   `--m-accent-blue: #4E9FE8` used sparingly for decorative accents only), its own light/dark. Scoped
+   to marketing pages only.
 
-If you're building a feature, you want **#1** and nothing else.
+Bare `:root` (+ `.dark`) in `styles.css` is **not a third surface** — despite older versions of this
+doc describing it as "the public marketing/waitlist landing page," nothing actually renders unscoped;
+it's shadcn's own fallback default (an old *ember* palette, `--ember: oklch(0.53 0.19 35)`, warm
+orange-red), read only by a `components/ui/*` primitive that ends up outside BOTH scoped classes
+above. That was a real, shipped bug (2026-08-27) — the demo-call widget's `Button` rendered ember-
+orange instead of the marketing page's actual black/white accent, because it was correct `.marketing`
+markup but the ember fallback still won for any *unstyled* shadcn variable it read. Fixed by giving
+`.marketing` its own scoped override of the same standard variable names (`--primary`, `--background`,
+`--border`, etc. — see `styles-marketing.css`) mirroring `.theme-weeber`'s pattern 1:1, so any `ui/`
+primitive is correct by construction on either surface now, no per-component color override needed.
+**Do not reintroduce a component that reads a bare `:root` value directly** — go through the
+standard variable names (`--primary`, `--background`, …), which resolve correctly inside whichever
+scope the component actually renders in.
+
+If you're building a feature, you want **#1** and nothing else. If you're building marketing-site
+work, you want **#2** — and any `ui/` primitive you use there now works without extra styling.
 
 ## Product theme tokens (`.theme-weeber`) — as implemented
 
@@ -85,17 +104,23 @@ dark-monochrome. Older docs/comments that describe this inverted are wrong — t
 
 ## Typography
 
-Fonts are loaded in `:root` and shared across surfaces:
+Fonts are loaded in `:root` and shared across surfaces — **one shared display font as of 2026-08-27**
+(previously Fraunces on the product vs. an unused-fallback mismatch with marketing's own override;
+see the reconciliation note at the top of this doc):
 
 - **Sans — Inter Tight** (`--font-sans`): all UI text — labels, body, buttons, table content.
-- **Serif — Fraunces** (`--font-display`): headings/section titles only — page titles, card section
-  headers, empty-state headlines. The one place the product echoes the landing page's editorial identity.
+- **Display — Bricolage Grotesque** (`--font-display`): headings/section titles only — page titles,
+  card section headers, empty-state headlines, marketing hero/section headlines. The one display
+  face across marketing, `/app`, and `/dashboard` — a confident grotesque-sans, not a serif; closer
+  to the Vercel/ElevenLabs reference point this unification pass was aiming for.
 - **Mono — JetBrains Mono** (`--font-mono`): technical strings — API keys, webhook URLs, org IDs,
   code/JSON previews. `.font-mono-label` utility exists for this.
 
 ## Component shape & surfaces
 
-- **12px rounding** (`--radius`) — modern SaaS, not stark/technical, not pill-shaped.
+- **12px rounding** (`--radius`) — modern SaaS, not stark/technical, not pill-shaped. Marketing
+  mirrors the same scale via `--m-radius-sm/md/lg` (`styles-marketing.css`, 2026-08-27 — was a
+  grab-bag of literal `rounded-[Npx]` values with no shared token before).
 - **Mixed surface treatment, not one rule everywhere:**
   - Inline content (table rows, list items, inline cards) — flat, thin 1px `--border`, no shadow.
   - Modals, popovers, dropdowns, command palette, toasts — soft elevation shadow (`--weeber-shadow-*`),
@@ -103,9 +128,14 @@ Fonts are loaded in `:root` and shared across surfaces:
 - Shared classes exist and should be reused rather than re-rolled: `.card-weeber` (base card,
   `--weeber-shadow-card` + hover lift), `.card-weeber--editor`, `.row-hover`, `.card-lift`,
   `.card-action`. shadcn `new-york` style (`components.json`) is the component baseline.
-- **Known debt (do not copy):** ~half of `/dashboard` pages hand-roll raw `<h1>` + `border/bg-card` +
-  raw `<button>` instead of `PageHeader` / `card-weeber` / `Button`. New work must use the shared
-  primitives so the system has one enforcement level, not two.
+- **Known debt (do not copy, being paid down):** `tools/ui-guard/design-budget.json`'s `rawButton`/
+  `inlineCardClone` ratchets track this precisely — ~half of `/dashboard` pages and most of the
+  marketing site hand-roll raw `<h1>` + `border/bg-card` + raw `<button>` instead of `PageHeader` /
+  `card-weeber` / `Button`. New work must use the shared primitives so the system has one
+  enforcement level, not two. The ratchet only ever moves down when a real migration lands
+  (`design:guard --update` after, never before) — see `WaitlistForm.tsx`, `MarketingNav.tsx`, and
+  `EnterpriseDialog.tsx` (2026-08-27) for the pattern: swap the tag, drop now-redundant color
+  overrides once the surface's tokens are unified, keep custom sizing via `className`.
 
 ## Density — different per audience, same component system
 
@@ -149,16 +179,20 @@ page-to-page navigation is **instant (no route transitions)**.
 
 - **Loading:** content-shaped skeletons (a table skeleton has the right columns/rows), not spinners, not
   blank screens.
-- **Empty/error:** minimal, text-only, no illustrations. Serif headline + one plain-language line + a
-  single clear action if one exists. `EmptyState` / `PageHeader` components exist for this.
+- **Empty/error:** minimal, text-only, no illustrations. `--font-display` headline + one plain-language
+  line + a single clear action if one exists. `EmptyState` / `PageHeader` components exist for this.
 
 ## Navigation
 
 **Left sidebar + command palette (Cmd+K), both together.** Sidebar for primary navigation; command
 palette for quick jump-to-page and quick actions. One shared command-palette component, reused in both
-dashboards. Note: the `/app` sidebar is vertical-aware (labels come from `verticals.ts`); the `/dashboard`
-admin nav is currently a flat 18-item list — grouping it (Ops / Compliance / Accounts / Config) is a
-pending recommendation, not yet done.
+dashboards. The `/app` sidebar is vertical-aware (labels come from `verticals.ts`). The `/dashboard`
+admin nav is **grouped** (2026-08-27 — was a flat 18-item list, long named as a pending
+recommendation): **Ops** (Calls, Demo Calls, Agents, Analytics, Workflows), **Compliance**
+(Compliance, Do Not Call), **Accounts** (Orgs, Users, Waitlist, Billing, Revenue, Marketing),
+**Config** (Templates, Flags, Broadcasts, Support, Logs, Keys) — `app-shell.tsx`'s `NavItem` gained
+an optional `group` field for this; items sharing an adjacent `group` value render under one label,
+ungrouped items (e.g. the `/app` sidebar) render exactly as before.
 
 - **Nav-intent chunk prefetch (why nav feels instant).** Every in-shell page is `lazy()`-loaded, so a
   first click used to blank the content area behind `PageFallback` while the chunk downloaded — read as a

@@ -26,8 +26,44 @@
    * monochrome off-white/near-black theme itself. */
   --m-accent-blue: #4E9FE8;
   --m-accent-blue-soft: rgba(78, 159, 232, 0.18);
+
+  /* Radius scale (2026-08-27 design unification) — mirrors .theme-weeber's disciplined
+   * single --radius token 1:1 instead of marketing's previous grab-bag (landing.tsx alone
+   * mixed rounded-xl/2xl/[16px]/[15px]/[8px] across cards on one page). New marketing work
+   * should reference these, not a literal rounded-[Npx]. */
+  --m-radius-sm: 0.5rem;
+  --m-radius-md: 0.625rem;
+  --m-radius-lg: 0.75rem;
+
   background-color: var(--m-bg);
   color: var(--m-text);
+
+  /* shadcn/ui primitive compatibility — any components/ui/* primitive rendered inside
+   * .marketing (e.g. LiveDemoCallWidget's Button/Select) reads these standard variable
+   * names, not --m-*. Without this override they fell back to bare :root's ember accent
+   * (a leftover token set unrelated to the marketing/product monochrome direction) —
+   * confirmed live in LiveDemoCallWidget.tsx's Button, which rendered ember-orange
+   * instead of matching WaitlistForm.tsx's black/white CTA on the same page. Mirrors
+   * --m-* 1:1 so any ui/ primitive used on a marketing page is correct by construction,
+   * no more per-component color overrides needed. */
+  --background: var(--m-bg);
+  --foreground: var(--m-text);
+  --card: var(--m-surface);
+  --card-foreground: var(--m-text);
+  --popover: var(--m-surface);
+  --popover-foreground: var(--m-text);
+  --primary: var(--m-accent-bg);
+  --primary-foreground: var(--m-accent-fg);
+  --secondary: var(--m-bg-alt);
+  --secondary-foreground: var(--m-text);
+  --muted: var(--m-bg-alt);
+  --muted-foreground: var(--m-text-muted);
+  --accent: var(--m-bg-alt);
+  --accent-foreground: var(--m-text);
+  --border: var(--m-border);
+  --input: var(--m-input-border);
+  --ring: var(--m-text);
+  --radius: var(--m-radius-lg);
 }
 
 :is(.dark) .marketing {
@@ -45,10 +81,25 @@
   --m-input-focus-ring: rgba(255, 255, 255, 0.14);
   --m-accent-blue: #6DB4F2;
   --m-accent-blue-soft: rgba(109, 180, 242, 0.16);
-}
 
-.marketing .font-display {
-  font-family: "Bricolage Grotesque Variable", "Fraunces Variable", "Inter Tight Variable", sans-serif;
+  /* shadcn/ui primitive compatibility, dark — see the light-mode block's comment. */
+  --background: var(--m-bg);
+  --foreground: var(--m-text);
+  --card: var(--m-surface);
+  --card-foreground: var(--m-text);
+  --popover: var(--m-surface);
+  --popover-foreground: var(--m-text);
+  --primary: var(--m-accent-bg);
+  --primary-foreground: var(--m-accent-fg);
+  --secondary: var(--m-bg-alt);
+  --secondary-foreground: var(--m-text);
+  --muted: var(--m-bg-alt);
+  --muted-foreground: var(--m-text-muted);
+  --accent: var(--m-bg-alt);
+  --accent-foreground: var(--m-text);
+  --border: var(--m-border);
+  --input: var(--m-input-border);
+  --ring: var(--m-text);
 }
 
 .marketing .grain-overlay {

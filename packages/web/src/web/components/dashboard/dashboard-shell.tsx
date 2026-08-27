@@ -8,26 +8,32 @@ function navMatch(subpath: string, tail: string): RegExp {
   return new RegExp("^" + base + tail + "$");
 }
 
+// Grouped 2026-08-27 (design unification) — UI-DESIGN-BRIEF.md had long named "group the flat
+// 18-item admin nav into Ops/Compliance/Accounts/Config" as a pending recommendation, never done.
+// Order within each group is unchanged from the old flat list; only the grouping is new.
 const NAV: NavItem[] = [
-  { href: adminPath(), label: "Calls", icon: PhoneCall, match: navMatch("", "(/calls/.*)?") },
-  { href: adminPath("/demo-calls"), label: "Demo Calls", icon: Sparkles, match: navMatch("/demo-calls", "") },
-  { href: adminPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", "") },
-  { href: adminPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", "") },
-  { href: adminPath("/compliance"), label: "Compliance", icon: ShieldCheck, match: navMatch("/compliance", "") },
-  { href: adminPath("/dnc"), label: "Do Not Call", icon: ShieldOff, match: navMatch("/dnc", "") },
-  { href: adminPath("/orgs"), label: "Orgs", icon: Building2, match: navMatch("/orgs", "") },
-  { href: adminPath("/users"), label: "Users", icon: Users, match: navMatch("/users", "") },
-  { href: adminPath("/waitlist"), label: "Waitlist", icon: ListChecks, match: navMatch("/waitlist", "") },
-  { href: adminPath("/broadcasts"), label: "Broadcasts", icon: Send, match: navMatch("/broadcasts", "") },
-  { href: adminPath("/templates"), label: "Templates", icon: ScrollText, match: navMatch("/templates", "") },
-  { href: adminPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", "") },
-  { href: adminPath("/revenue-analytics"), label: "Revenue", icon: TrendingUp, match: navMatch("/revenue-analytics", "") },
-  { href: adminPath("/marketing-analytics"), label: "Marketing", icon: Megaphone, match: navMatch("/marketing-analytics", "") },
-  { href: adminPath("/workflows"), label: "Workflows", icon: Workflow, match: navMatch("/workflows", "/workflow-runs") },
-  { href: adminPath("/flags"), label: "Flags", icon: Shield, match: navMatch("/flags", "") },
-  { href: adminPath("/support"), label: "Support", icon: LifeBuoy, match: navMatch("/support", "") },
-  { href: adminPath("/logs"), label: "Logs", icon: History, match: navMatch("/logs", "") },
-  { href: adminPath("/settings"), label: "Keys", icon: KeyRound, match: navMatch("/settings", "") },
+  { href: adminPath(), label: "Calls", icon: PhoneCall, match: navMatch("", "(/calls/.*)?"), group: "Ops" },
+  { href: adminPath("/demo-calls"), label: "Demo Calls", icon: Sparkles, match: navMatch("/demo-calls", ""), group: "Ops" },
+  { href: adminPath("/agents"), label: "Agents", icon: Bot, match: navMatch("/agents", ""), group: "Ops" },
+  { href: adminPath("/analytics"), label: "Analytics", icon: BarChart3, match: navMatch("/analytics", ""), group: "Ops" },
+  { href: adminPath("/workflows"), label: "Workflows", icon: Workflow, match: navMatch("/workflows", "/workflow-runs"), group: "Ops" },
+
+  { href: adminPath("/compliance"), label: "Compliance", icon: ShieldCheck, match: navMatch("/compliance", ""), group: "Compliance" },
+  { href: adminPath("/dnc"), label: "Do Not Call", icon: ShieldOff, match: navMatch("/dnc", ""), group: "Compliance" },
+
+  { href: adminPath("/orgs"), label: "Orgs", icon: Building2, match: navMatch("/orgs", ""), group: "Accounts" },
+  { href: adminPath("/users"), label: "Users", icon: Users, match: navMatch("/users", ""), group: "Accounts" },
+  { href: adminPath("/waitlist"), label: "Waitlist", icon: ListChecks, match: navMatch("/waitlist", ""), group: "Accounts" },
+  { href: adminPath("/billing"), label: "Billing", icon: CreditCard, match: navMatch("/billing", ""), group: "Accounts" },
+  { href: adminPath("/revenue-analytics"), label: "Revenue", icon: TrendingUp, match: navMatch("/revenue-analytics", ""), group: "Accounts" },
+  { href: adminPath("/marketing-analytics"), label: "Marketing", icon: Megaphone, match: navMatch("/marketing-analytics", ""), group: "Accounts" },
+
+  { href: adminPath("/templates"), label: "Templates", icon: ScrollText, match: navMatch("/templates", ""), group: "Config" },
+  { href: adminPath("/flags"), label: "Flags", icon: Shield, match: navMatch("/flags", ""), group: "Config" },
+  { href: adminPath("/broadcasts"), label: "Broadcasts", icon: Send, match: navMatch("/broadcasts", ""), group: "Config" },
+  { href: adminPath("/support"), label: "Support", icon: LifeBuoy, match: navMatch("/support", ""), group: "Config" },
+  { href: adminPath("/logs"), label: "Logs", icon: History, match: navMatch("/logs", ""), group: "Config" },
+  { href: adminPath("/settings"), label: "Keys", icon: KeyRound, match: navMatch("/settings", ""), group: "Config" },
 ];
 
 function Brand() {
@@ -35,10 +41,10 @@ function Brand() {
     <span className="flex items-baseline gap-1.5">
       {/* font-display, not font-serif. `font-serif` is Tailwind's STOCK stack
           (ui-serif, Georgia, Cambria, "Times New Roman", Times, serif) — no
-          webfont in it — so the admin wordmark was never rendered in the brand
-          typeface. Measured via CDP CSS.getPlatformFontsForNode: it rasterised
-          from Caladea, a Debian Cambria substitute. `font-display` is the theme
-          token for "Fraunces", ui-serif, serif (styles.css @theme). */}
+          webfont in it, so it never renders the brand typeface at all.
+          `font-display` is the theme token for "Bricolage Grotesque Variable"
+          (styles.css @theme) — the one shared display face across marketing,
+          /app, and /dashboard as of the 2026-08-27 design unification. */}
       <span className="font-display text-lg font-medium tracking-tight">Weeber</span>
       <span className="text-[10px] font-mono uppercase tracking-wider text-sidebar-foreground/60">admin</span>
     </span>

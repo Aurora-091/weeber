@@ -8,15 +8,15 @@
  * any file under packages/web, because upstream Fraunces moved.
  *
  * @fontsource-variable ships the same Google Fonts binaries from npm, pinned in
- * bun.lock, bundled by Vite and served same-origin. `standard` = the opsz + wght
- * axes, i.e. what the CSS2 endpoint returned by default; the italic sheet is
- * separate because Fraunces ships italics as a second file.
+ * bun.lock, bundled by Vite and served same-origin.
+ *
+ * Fraunces itself was dropped 2026-08-27 (design unification — Bricolage Grotesque
+ * is now the one shared --font-display everywhere, see the @theme block below) —
+ * removed here rather than left as dead-weight bytes nothing renders anymore.
  *
  * DO NOT REINTRODUCE A CDN @import. blockOffOrigin() in e2e-visual/_settle.ts now
  * aborts every off-origin request with no font exemption, so a CDN font would
  * fail the visual suite rather than quietly move the baselines again. */
-@import "@fontsource-variable/fraunces/standard.css";
-@import "@fontsource-variable/fraunces/standard-italic.css";
 @import "@fontsource-variable/inter-tight/index.css";
 @import "@fontsource-variable/jetbrains-mono/index.css";
 @import "@fontsource-variable/bricolage-grotesque/standard.css";
@@ -26,7 +26,14 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Fraunces Variable", "Fraunces", ui-serif, serif;
+  /* Design unification (2026-08-27, user decision): Bricolage Grotesque is now the ONE
+   * shared display face across marketing, /app, and /dashboard — was Fraunces (serif) here
+   * while marketing's own `.font-display` override (styles-marketing.css) already resolved
+   * to Bricolage Grotesque first, so the two surfaces' headings never actually matched
+   * despite UI-DESIGN-BRIEF.md documenting one shared font. This is the fix, at the token
+   * level — no page-by-page changes needed, every h1-h4 and .font-display usage picks it
+   * up automatically (styles.css's `h1, h2, h3, h4 { font-family: var(--font-display) }`). */
+  --font-display: "Bricolage Grotesque Variable", "Inter Tight Variable", ui-sans-serif, sans-serif;
   --font-sans: "Inter Tight Variable", "Inter Tight", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
