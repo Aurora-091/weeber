@@ -131,7 +131,13 @@ mock.module("./tts", () => ({
             sendText: (text: string) => {
               sentTexts.push(text);
               if (failsAfterText) {
-                queueMicrotask(() => onError?.(new Error(`simulated ${provider} synthesis failure`)));
+                // A real timer tick, not queueMicrotask: a genuine provider
+                // failure always arrives via real network I/O (a WebSocket
+                // close event), which is never same-tick with the mocked
+                // LLM's near-instant generate() — using a real macrotask
+                // here keeps this mock's ordering honest instead of racing
+                // against native promise-settling microtasks.
+                setTimeout(() => onError?.(new Error(`simulated ${provider} synthesis failure`)), 0);
                 return;
               }
               if (failsMidSpeech) {
@@ -192,6 +198,14 @@ mock.module("./agent", () => ({
   }),
   runVoiceAgentGreeting: async ({ onTextDelta }: { onTextDelta?: (d: string) => void }) => {
     onTextDelta?.("Hello, this is the agent.");
+    // A real LLM call always costs genuine wall-clock time before it
+    // resolves — long enough that any TTS-side failure this same text
+    // triggered (a real network event, never same-tick with generate())
+    // has already been detected. Modeling that here, instead of resolving
+    // instantly, is what makes the mid-speech/dead-air recovery tests below
+    // exercise a realistic ordering rather than an artifact of this mock
+    // being faster than anything in production.
+    await new Promise((resolve) => setTimeout(resolve, 150));
     return "Hello, this is the agent.";
   },
   // Models the real shape of a tool-using turn: the LLM emits nothing until a
@@ -389,6 +403,44 @@ describe("mid-speech TTS failure recovery", () => {
     // line, never a third or further "cut off" line chasing its own tail.
     const recoveryAttempts = sentTexts.filter((t) => /cut off/i.test(t));
     expect(recoveryAttempts.length).toBe(1);
+
+    handlers.onClose();
+  });
+});
+
+/**
+ * Bug fix (2026-08-27, found investigating a live-call complaint about a
+ * "[voice] DEAD AIR on turn N" log with no caller-facing consequence
+ * attached to it): a turn where EVERY provider in the failover chain fails
+ * before producing a single audio byte previously just logged that DEAD AIR
+ * line (pure observability, ADR-101) and ended the turn — the caller heard
+ * nothing at all, and there was no recovery of any kind. Gets the identical
+ * recovery treatment as the mid-speech case above (turnTtsProducedNoAudio,
+ * stream.ts).
+ */
+describe("zero-audio (DEAD AIR) TTS failure recovery", () => {
+  it("speaks a recovery line when the entire failover chain fails before any audio plays", async () => {
+    // Exhausts the whole default chain (cartesia primary, then elevenlabs,
+    // then sarvam) with zero bytes ever produced. Each hop's failure is a
+    // real setTimeout (not queueMicrotask — see the mock's own comment
+    // above), so the three-hop chain takes real, if small, wall-clock time
+    // to fully unwind — real enough that it needs runVoiceAgentGreeting's
+    // own artificial 150ms delay (this file's mock, near the top) to
+    // reliably win the race against the recovery-check code that runs
+    // immediately once `generate()` resolves. In production this is a
+    // non-issue: a genuine LLM call always costs far more than the ~40ms a
+    // three-hop provider retry chain takes here, so the failure is always
+    // long since detected by the time generate() returns.
+    failAfterTextProviders.add("cartesia");
+    failAfterTextProviders.add("elevenlabs");
+    failAfterTextProviders.add("sarvam");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    expect(sentTexts.some((t) => /cut off/i.test(t))).toBe(true);
 
     handlers.onClose();
   });

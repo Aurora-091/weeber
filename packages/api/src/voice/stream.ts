@@ -1785,7 +1785,20 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         (base64Audio) => chunks.push(base64Audio),
         () => resolve(),
         (err) => {
-          console.error("[voice] failed to warm filler-audio cache", err);
+          // Bug fix (2026-08-27): a close arriving right after this
+          // connection's single context finished (elevenlabs.ts/cartesia.ts
+          // both now log this at info level for code 1000, see their own
+          // doc comments) can still reach here as an onError, but by then
+          // real audio chunks have usually already arrived — this warm-up
+          // mostly or fully succeeded, it just didn't get a clean
+          // "isFinal" handshake before the socket went away. Logging that
+          // as an error every time trained this line to be noise instead of
+          // signal; only alarm when the warm-up produced nothing at all.
+          if (chunks.length > 0) {
+            console.log(`[voice] filler-audio warm-up for "${text}" got ${chunks.length} chunk(s) before the connection closed early — caching what arrived`, err);
+          } else {
+            console.error("[voice] failed to warm filler-audio cache", err);
+          }
           resolve();
         },
         provider,
@@ -2058,6 +2071,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // (same treatment barge-in already gets), and speaking a short recovery
     // line immediately instead of waiting on the silence timer.
     let turnTtsFailedMidSpeech = false;
+    // Bug fix (2026-08-27): the sibling of turnTtsFailedMidSpeech above, for
+    // the OTHER way this same "no failover option left" branch is reached —
+    // every provider in the chain (or the only one, if failover is off)
+    // failed before this turn ever produced a single audio byte. This is
+    // exactly the condition the pre-existing "DEAD AIR" detector further
+    // down (fullText && turnTtsFirstByteMs === undefined && !wasInterrupted)
+    // logs — that detector was pure observability with no recovery attached;
+    // this flag gets it the same treatment as turnTtsFailedMidSpeech (speak
+    // a short recovery line instead of leaving total silence). Never both
+    // true at once — they come from the same branch, gated on whether
+    // turnTtsFirstByteMs is defined.
+    let turnTtsProducedNoAudio = false;
     // Phase 0.3 (2026-08-16): this turn's TTS socket-open duration, isolated
     // from ttsFirstByteMs — see attemptTts's onConnected wiring below and
     // schema.ts's turnLatency.ttsSocketOpenMs doc comment.
@@ -2226,7 +2251,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                 turnTtsFailedMidSpeech = true;
                 console.error(`[voice] TTS turn failed mid-speech (${attemptProvider}) — caller heard a partial reply, recovering after this turn ends`, err);
               } else {
-                console.error("[voice] TTS turn failed", err);
+                // Bug fix (2026-08-27): every failover link (or the only
+                // provider, if none are configured) failed before producing
+                // a single audio byte for this whole turn — the exact
+                // condition the "DEAD AIR" detector further down logs after
+                // the fact. Previously that detector was the only trace this
+                // ever left: pure observability, no caller-facing recovery
+                // at all, on a turn where the caller heard *nothing* despite
+                // the transcript recording a full reply as spoken. Treated
+                // the same as the mid-speech case — see
+                // turnTtsProducedNoAudio's doc comment above.
+                turnTtsProducedNoAudio = true;
+                console.error(`[voice] TTS turn failed before any audio (${attemptProvider}) — caller heard nothing, recovering after this turn ends`, err);
               }
               agentIsSpeaking = false;
               resolveTtsDone?.();
@@ -2449,7 +2485,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // failure (turnTtsFailedMidSpeech) gets the identical treatment for the
     // identical reason — the caller heard a truncated reply either way, only
     // the cause differs (their own barge-in vs. the provider dying on us).
-    if ((wasInterrupted || turnTtsFailedMidSpeech) && spokenWords.length > 0) {
+    // turnTtsProducedNoAudio is listed too for symmetry, but is always a
+    // no-op here: spokenWords is necessarily empty when zero audio ever
+    // played, so the `.length > 0` guard already excludes it — fullText
+    // stays the untruncated LLM output. That's still wrong (the caller heard
+    // none of it), which is exactly what the DEAD AIR detector further down
+    // exists to flag — not something a text-only truncation can fix here.
+    if ((wasInterrupted || turnTtsFailedMidSpeech || turnTtsProducedNoAudio) && spokenWords.length > 0) {
       fullText = spokenWords.join(" ");
     }
 
@@ -2458,8 +2500,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       logTranscript("agent", fullText, agentTranscriptSequence);
     }
 
-    // Bug fix (2026-08-27): previously a mid-speech TTS failure just ended
-    // the turn — the caller sat in silence until the silence-timeout warning
+    // Bug fix (2026-08-27): previously a mid-speech TTS failure — or a total
+    // DEAD AIR turn (turnTtsProducedNoAudio, the case the pre-existing DEAD
+    // AIR log below used to just observe and do nothing about) — just ended
+    // the turn. The caller sat in silence until the silence-timeout warning
     // eventually fired (up to SILENCE_TIMEOUT_MS later, with no
     // acknowledgment of the drop). Speak a short recovery line right away
     // instead, through the same speakCannedLine path everything else uses
@@ -2472,7 +2516,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // from recursing if the recovery line itself hits the same dying
     // provider — one attempt, not a loop.
     if (
-      turnTtsFailedMidSpeech &&
+      (turnTtsFailedMidSpeech || turnTtsProducedNoAudio) &&
       !wasInterrupted &&
       !ended &&
       !pendingHangUp &&

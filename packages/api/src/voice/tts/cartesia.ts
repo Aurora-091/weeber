@@ -121,10 +121,22 @@ export const connectCartesiaSession: ConnectTtsSession = (voiceIdOverride, langu
   });
 
   ws.addEventListener("close", (evt) => {
-    if (current && !current.finished && !closedIntentionally) {
+    if (!current || current.finished || closedIntentionally) return;
+    // Bug fix (2026-08-27) — see elevenlabs.ts's identical close listener
+    // for the full reasoning: code 1000 is a normal closure, most often seen
+    // here on the one-shot warm-up connection (stream.ts's warmFillerCache)
+    // when the server tears the socket down right after its single context
+    // finishes, racing the client's own "isFinal"/`done` bookkeeping. Softer
+    // log only — `onError` still fires exactly as before, so a genuine
+    // code-1000 close mid-speech on a live call's session (rare, not
+    // provably impossible) still reaches the caller-recovery/failover logic
+    // downstream unchanged.
+    if (evt.code === 1000) {
+      console.log("[cartesia] socket closed normally (code 1000) before this turn's own completion signal arrived — likely a client/server bookkeeping race on a short-lived connection, not a provider failure", evt.reason);
+    } else {
       console.warn("[cartesia] connection closed before turn finished", evt.code, evt.reason);
-      current.onError?.(new Error(`Cartesia socket closed unexpectedly (code ${evt.code})`));
     }
+    current.onError?.(new Error(`Cartesia socket closed unexpectedly (code ${evt.code})`));
   });
 
   const session: TtsSession = {

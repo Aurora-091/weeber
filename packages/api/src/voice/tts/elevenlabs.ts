@@ -102,10 +102,26 @@ export const connectElevenLabsSession: ConnectTtsSession = (voiceIdOverride, lan
   });
 
   ws.addEventListener("close", (evt) => {
-    if (current && !current.finished && !closedIntentionally) {
+    if (!current || current.finished || closedIntentionally) return;
+    // Bug fix (2026-08-27): code 1000 is a NORMAL closure ("purpose of the
+    // connection fulfilled" — RFC 6455 §7.4.1). Seen in production
+    // specifically on the one-shot warm-up connection (stream.ts's
+    // warmFillerCache): this socket's single context finishes (close_context
+    // sent), and the server can tear the whole socket down in response
+    // before the client's own "isFinal" message — the thing that would have
+    // set `current.finished` — has necessarily been processed yet. That's a
+    // client-side bookkeeping race, not ElevenLabs failing, so it's logged
+    // quietly here instead of as a warning. `onError` still fires exactly as
+    // before either way — this only softens the log, it must not change
+    // behavior on a live call's session-based turn, where a code-1000 close
+    // genuinely mid-speech (rare, but not provably impossible) still needs
+    // the caller-recovery/failover machinery downstream to react.
+    if (evt.code === 1000) {
+      console.log("[elevenlabs] socket closed normally (code 1000) before this turn's own completion signal arrived — likely a client/server bookkeeping race on a short-lived connection, not a provider failure", evt.reason);
+    } else {
       console.warn("[elevenlabs] connection closed before turn finished", evt.code, evt.reason);
-      current.onError?.(new Error(`ElevenLabs socket closed unexpectedly (code ${evt.code})`));
     }
+    current.onError?.(new Error(`ElevenLabs socket closed unexpectedly (code ${evt.code})`));
   });
 
   const session: TtsSession = {
