@@ -235,6 +235,15 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   let ttsSession: { provider: TtsProvider; session: TtsSession } | undefined;
   /**
+   * Bug fix (2026-08-27): guards the mid-speech TTS-failure recovery line
+   * (see turnTtsFailedMidSpeech in speak() below) against recursing into
+   * itself. It's call-scoped, not turn-scoped, on purpose — the recovery
+   * line is spoken via a nested speak() call, which would otherwise see a
+   * second mid-speech failure (same broken provider, same call) as a brand
+   * new turn to recover from, and loop.
+   */
+  let recoveringFromMidTurnTtsFailure = false;
+  /**
    * Phase 0.1 (SOTA-fix-marathon, 2026-08-16) — same "what actually ran, not
    * what was configured" pattern as activeTtsProvider above, for the LLM.
    * Set from onLatency's `model` param (ADR-109's formatActiveModelLabel —
@@ -1750,6 +1759,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   const TOOL_CALL_FILLER_LINES = ["One moment.", "Just a second."];
 
+  /**
+   * Bug fix (2026-08-27): spoken once, immediately, when a turn's TTS
+   * connection dies for real mid-speech (turnTtsFailedMidSpeech in speak()
+   * below) — instead of leaving the caller in silence until the unrelated
+   * silence-timeout warning eventually fires. Deliberately generic: the
+   * agent doesn't know how much of its own reply the caller actually heard,
+   * so it asks rather than guessing or repeating verbatim (which risks
+   * repeating words the caller *did* hear).
+   */
+  const MID_TURN_TTS_FAILURE_RECOVERY_LINE = "Sorry, I think I got cut off there for a second — could you say that again?";
+
   async function warmFillerCache(text: string) {
     // Warm against the voice the caller is hearing right now (post-failover if
     // one already happened), not the primary this call started on — otherwise
@@ -2025,6 +2045,18 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let ttsTextFirstSentAt: number | undefined;
     let turnFirstAudioAt: number | undefined;
     let turnTtsFirstByteMs: number | undefined;
+    // Bug fix (2026-08-27): set when this turn's TTS connection dies for real
+    // (not an idle timeout — see ADR-083) *after* it had already produced at
+    // least one audio byte. The failover branch below only re-dials when NO
+    // audio has played yet, on purpose (retrying mid-utterance would restart
+    // the sentence from the top, possibly in a different voice) — but that
+    // means a genuine mid-speech provider failure previously just ended the
+    // turn in silence and left the caller to sit through the full
+    // silence-timeout window with no acknowledgment. See the two uses below:
+    // truncating `fullText`/history to what `spokenWords` actually captured
+    // (same treatment barge-in already gets), and speaking a short recovery
+    // line immediately instead of waiting on the silence timer.
+    let turnTtsFailedMidSpeech = false;
     // Phase 0.3 (2026-08-16): this turn's TTS socket-open duration, isolated
     // from ttsFirstByteMs — see attemptTts's onConnected wiring below and
     // schema.ts's turnLatency.ttsSocketOpenMs doc comment.
@@ -2184,7 +2216,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             }
             const next = turnTtsFirstByteMs === undefined ? ttsFailoverChain.shift() : undefined;
             if (!next) {
-              console.error("[voice] TTS turn failed", err);
+              if (turnTtsFirstByteMs !== undefined) {
+                // Died mid-speech, not before it started — see
+                // turnTtsFailedMidSpeech's doc comment above for why this
+                // doesn't retry inline and instead gets handled once the
+                // turn unwinds (truncate history to what was actually said,
+                // speak a short recovery line instead of dead air).
+                turnTtsFailedMidSpeech = true;
+                console.error(`[voice] TTS turn failed mid-speech (${attemptProvider}) — caller heard a partial reply, recovering after this turn ends`, err);
+              } else {
+                console.error("[voice] TTS turn failed", err);
+              }
               agentIsSpeaking = false;
               resolveTtsDone?.();
               return;
@@ -2402,14 +2444,46 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // speaks, so on interruption the full text is often already sitting in
     // `fullText` even though the caller only heard the first few words.
     // Pushing the untruncated text into history would make the agent "recall"
-    // saying things it never actually said out loud.
-    if (wasInterrupted && spokenWords.length > 0) {
+    // saying things it never actually said out loud. A mid-speech TTS
+    // failure (turnTtsFailedMidSpeech) gets the identical treatment for the
+    // identical reason — the caller heard a truncated reply either way, only
+    // the cause differs (their own barge-in vs. the provider dying on us).
+    if ((wasInterrupted || turnTtsFailedMidSpeech) && spokenWords.length > 0) {
       fullText = spokenWords.join(" ");
     }
 
     if (fullText) {
       history.push({ role: "assistant", content: fullText });
       logTranscript("agent", fullText, agentTranscriptSequence);
+    }
+
+    // Bug fix (2026-08-27): previously a mid-speech TTS failure just ended
+    // the turn — the caller sat in silence until the silence-timeout warning
+    // eventually fired (up to SILENCE_TIMEOUT_MS later, with no
+    // acknowledgment of the drop). Speak a short recovery line right away
+    // instead, through the same speakCannedLine path everything else uses
+    // (cache-aware, and reconnects the TTS session fresh via speak()'s own
+    // lazy-connect facade). Skipped when the call is already ending this
+    // turn for an unrelated reason (hangup/transfer/caller barge-in/call
+    // already over) — recovering into a call that's about to close or that
+    // the caller has already redirected would be talking over the outcome
+    // that actually matters. `recoveringFromMidTurnTtsFailure` stops this
+    // from recursing if the recovery line itself hits the same dying
+    // provider — one attempt, not a loop.
+    if (
+      turnTtsFailedMidSpeech &&
+      !wasInterrupted &&
+      !ended &&
+      !pendingHangUp &&
+      !pendingTransfer &&
+      !recoveringFromMidTurnTtsFailure
+    ) {
+      recoveringFromMidTurnTtsFailure = true;
+      try {
+        await speakCannedLine(ws, MID_TURN_TTS_FAILURE_RECOVERY_LINE);
+      } finally {
+        recoveringFromMidTurnTtsFailure = false;
+      }
     }
 
     // hangUp/transferToHuman requested this turn — let the closing/handoff

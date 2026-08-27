@@ -8,6 +8,7 @@ import {
   fakeWs,
   buildStartEvent,
 } from "./test-helpers/stream-harness";
+import { clearTtsCacheForTests } from "./tts-cache";
 
 /**
  * Defect (ADR-083): "the agent's voice changed partway through the call, and
@@ -55,6 +56,16 @@ let failOnConnectProviders = new Set<string>();
 /** Providers that fail only once a turn has sent text: a genuine synthesis
  * fault, which must still fail over. */
 let failAfterTextProviders = new Set<string>();
+/** Providers that deliver one real audio chunk and THEN die — models a
+ * genuine mid-speech provider failure (bug fix, 2026-08-27): unlike
+ * failAfterTextProviders (dies before any audio ever reached the caller),
+ * here turnTtsFirstByteMs is already set by the time onError fires, which is
+ * the branch that must NOT fail over and must instead recover with a short
+ * spoken line. */
+let failMidSpeechProviders = new Set<string>();
+/** Every string handed to a session's sendText, across all providers/turns —
+ * lets a test assert the recovery line actually got spoken. */
+let sentTexts: string[] = [];
 
 /** Resolved by the test to release a turn that is "waiting on a tool call",
  * reproducing the dead air the socket used to idle through. */
@@ -71,7 +82,14 @@ const callRow = {
   capturedState: {},
 };
 
-const db = createDbHarness({ tables: { calls: [callRow] } });
+let transcriptInserts: Record<string, unknown>[] = [];
+
+const db = createDbHarness({
+  tables: { calls: [callRow] },
+  onInsert: (table, values) => {
+    if (table === "transcripts") transcriptInserts.push(values);
+  },
+});
 const stt = createSttHarness();
 
 mock.module("../database", db.module);
@@ -92,10 +110,16 @@ mock.module("./tts", () => ({
     onConnected?.(0);
     const failsOnFirstUse = failOnConnectProviders.has(String(provider));
     const failsAfterText = failAfterTextProviders.has(String(provider));
+    const failsMidSpeech = failMidSpeechProviders.has(String(provider));
     return {
       provider,
       session: {
-        startTurn(onAudioChunk: (b: string) => void, onDone?: () => void, onError?: (e: unknown) => void) {
+        startTurn(
+          onAudioChunk: (b: string) => void,
+          onDone?: () => void,
+          onError?: (e: unknown) => void,
+          onWordTimestamp?: (word: string, startMs: number, endMs: number) => void,
+        ) {
           if (failsOnFirstUse) {
             // Synchronously, before startTurn has even returned — the
             // hostile ordering the TDZ guard in stream.ts exists for (a real
@@ -104,9 +128,20 @@ mock.module("./tts", () => ({
             onError?.(new Error(`simulated ${provider} idle close (code 1000)`));
           }
           return {
-            sendText: () => {
+            sendText: (text: string) => {
+              sentTexts.push(text);
               if (failsAfterText) {
                 queueMicrotask(() => onError?.(new Error(`simulated ${provider} synthesis failure`)));
+                return;
+              }
+              if (failsMidSpeech) {
+                // One real chunk (and one real word, so spokenWords-based
+                // history truncation has something to work with) reaches the
+                // caller first — turnTtsFirstByteMs is set by the time the
+                // connection dies, unlike failAfterTextProviders above.
+                onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
+                onWordTimestamp?.(text.split(" ")[0] ?? text, 0, 100);
+                queueMicrotask(() => onError?.(new Error(`simulated ${provider} mid-speech death`)));
                 return;
               }
               onAudioChunk(Buffer.from(`audio-from-${provider}`).toString("base64"));
@@ -186,7 +221,16 @@ beforeEach(() => {
   sessionOpens = [];
   failOnConnectProviders = new Set();
   failAfterTextProviders = new Set();
+  failMidSpeechProviders = new Set();
+  sentTexts = [];
+  transcriptInserts = [];
   releaseTurn = null;
+  // The hybrid-audio-cache Map (tts-cache.ts) is process-module-global, not
+  // per-call — without this, the mid-speech-recovery tests below would only
+  // ever exercise a real TTS attempt on whichever test happens to run
+  // first; every later test gets a cache hit for the recovery line's exact
+  // text and skips the mock provider (and its simulated failure) entirely.
+  clearTtsCacheForTests();
 });
 
 describe("TTS session reuse across turns (Phase C1) and the idle-close carve-out (ADR-083)", () => {
@@ -275,6 +319,76 @@ describe("TTS session reuse across turns (Phase C1) and the idle-close carve-out
 
     expect(Date.now() - started).toBeLessThan(2000);
     expect(sessionOpens.length).toBeGreaterThanOrEqual(afterGreeting);
+
+    handlers.onClose();
+  });
+});
+
+/**
+ * Bug fix (2026-08-27): a TTS connection dying *after* it had already
+ * produced audio this turn used to just end the turn in silence — no
+ * failover (correct, avoiding a mid-sentence voice switch), but also no
+ * recovery and no correction to what got recorded as "said". The caller sat
+ * through the full silence-timeout window with zero acknowledgment, and the
+ * transcript/history recorded the LLM's full intended reply as spoken even
+ * though playback was cut off partway through.
+ */
+describe("mid-speech TTS failure recovery", () => {
+  it("does not fail over (same provider, same voice) but speaks a short recovery line instead of leaving dead air", async () => {
+    failMidSpeechProviders.add("cartesia");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    // No failover: every session opened this call is still cartesia. A
+    // mid-speech death is deliberately not a chain-burning event.
+    expect(sessionOpens.length).toBeGreaterThan(0);
+    for (const s of sessionOpens) expect(s.provider).toBe("cartesia");
+
+    // The recovery line was actually sent to TTS, not just logged.
+    expect(sentTexts.some((t) => /cut off/i.test(t))).toBe(true);
+
+    handlers.onClose();
+  });
+
+  it("truncates the transcript to what was actually spoken, for both the interrupted turn and the recovery line itself", async () => {
+    failMidSpeechProviders.add("cartesia");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    const agentRows = transcriptInserts.filter((r) => r.role === "agent");
+    expect(agentRows.length).toBeGreaterThanOrEqual(2);
+
+    // The greeting's row is not the full untruncated text — it lost its TTS
+    // connection mid-speech, and spokenWords (the mock delivers exactly one
+    // word before dying) is what the caller genuinely heard.
+    expect(agentRows[0]?.text).toBe("Hello,");
+
+    // The recovery line dies mid-speech too in this scenario (same broken
+    // provider, still failing) — its own transcript row is truncated the
+    // same way, to its first spoken word, not the full "...cut off..." line.
+    expect(agentRows[1]?.text).toBe("Sorry,");
+
+    handlers.onClose();
+  });
+
+  it("does not loop when the recovery line itself dies mid-speech — recovers once, not recursively", async () => {
+    failMidSpeechProviders.add("cartesia");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    // Exactly one recovery attempt: the greeting's turn plus one recovery
+    // line, never a third or further "cut off" line chasing its own tail.
+    const recoveryAttempts = sentTexts.filter((t) => /cut off/i.test(t));
+    expect(recoveryAttempts.length).toBe(1);
 
     handlers.onClose();
   });
