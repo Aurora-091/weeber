@@ -1,8 +1,12 @@
 import { createGroq } from "@ai-sdk/groq";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { gateway, VOICE_AGENT_MODEL as GATEWAY_MODEL } from "../gateway";
 import type { LlmTransportLink } from "./transport-chain";
 
-export type LlmProvider = "gateway" | "groq";
+export type LlmProvider = "gateway" | "groq" | "openai" | "anthropic" | "openrouter";
+
+const ALL_LLM_PROVIDERS: readonly LlmProvider[] = ["gateway", "groq", "openai", "anthropic", "openrouter"];
 
 /**
  * LLM provider registry, mirroring the TTS provider split (see ../tts/).
@@ -21,19 +25,99 @@ export type LlmProvider = "gateway" | "groq";
  * multi-model failover path exists. (Measured from a dev sandbox, not from
  * Railway Singapore, so treat the ranking as sound and the absolute numbers
  * as indicative.)
+ *
+ * `openai`/`anthropic`/`openrouter` (2026-08-27) — direct SDK transports, the
+ * same shape as `groq`: no gateway hop, no gateway-native failover, and (like
+ * every provider here) the resolver never checks whether the corresponding
+ * API key is actually set. An org can still be configured to use one with no
+ * key present; the request just fails at call time with that provider's own
+ * auth error, same as pointing an agent at Sarvam TTS with no SARVAM_API_KEY.
+ * `isLlmProviderConfigured`/`getConfiguredLlmProviders` below exist for the
+ * *other* half of that — deciding what to OFFER as a choice in the first
+ * place (the admin dashboard's LLM-provider dropdown, `/api/health`'s
+ * `keysConfigured`) — so an unconfigured provider simply never gets selected
+ * by anyone, rather than needing to be rejected after the fact.
  */
 export function resolveLlmProvider(override?: LlmProvider): LlmProvider {
   const configured = (override ?? process.env.LLM_PROVIDER ?? "gateway").toLowerCase();
-  if (configured === "gateway" || configured === "groq") return configured;
+  if ((ALL_LLM_PROVIDERS as readonly string[]).includes(configured)) return configured as LlmProvider;
   console.warn(`[llm] Unknown LLM provider "${configured}" — falling back to "gateway"`);
   return "gateway";
 }
 
+/** Whether this provider's own API key is present — see resolveLlmProvider's
+ * doc comment for why this is deliberately separate from resolution/dialing.
+ * `gateway` checks AI_GATEWAY_API_KEY (config-check.ts already treats an
+ * unset gateway key as a boot-time misconfiguration for the same reason). */
+export function isLlmProviderConfigured(provider: LlmProvider): boolean {
+  switch (provider) {
+    case "gateway":
+      return Boolean(process.env.AI_GATEWAY_API_KEY);
+    case "groq":
+      return Boolean(process.env.GROQ_API_KEY);
+    case "openai":
+      return Boolean(process.env.OPENAI_API_KEY);
+    case "anthropic":
+      return Boolean(process.env.ANTHROPIC_API_KEY);
+    case "openrouter":
+      return Boolean(process.env.OPENROUTER_API_KEY);
+  }
+}
+
+/** Every provider whose API key is currently set — what a provider picker
+ * (dashboard dropdown, `/api/health`) should actually offer. */
+export function getConfiguredLlmProviders(): LlmProvider[] {
+  return ALL_LLM_PROVIDERS.filter(isLlmProviderConfigured);
+}
+
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// OpenRouter speaks the OpenAI chat-completions wire format, so it needs no
+// dedicated SDK package — the same createOpenAI factory pointed at
+// OpenRouter's base URL is OpenRouter's own documented Vercel AI SDK
+// integration path, not a hack.
+const openrouter = createOpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: "https://openrouter.ai/api/v1" });
 
 // Llama 3.3 70B is the commonly recommended Groq model for real-time voice
 // agents — strong quality/latency tradeoff and native tool-calling support.
 export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+export const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.4-mini";
+export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
+// Provider-prefixed per OpenRouter's own model-id convention (its catalog
+// spans many upstream vendors on one endpoint) — unlike the other four
+// constants here, this id is meaningless without the vendor prefix.
+export const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-5.4-mini";
+
+function modelIdFor(provider: LlmProvider): string {
+  switch (provider) {
+    case "groq":
+      return GROQ_MODEL;
+    case "openai":
+      return OPENAI_MODEL;
+    case "anthropic":
+      return ANTHROPIC_MODEL;
+    case "openrouter":
+      return OPENROUTER_MODEL;
+    case "gateway":
+      return GATEWAY_MODEL;
+  }
+}
+
+function providerInstanceFor(provider: LlmProvider) {
+  switch (provider) {
+    case "groq":
+      return groq;
+    case "openai":
+      return openai;
+    case "anthropic":
+      return anthropic;
+    case "openrouter":
+      return openrouter;
+    case "gateway":
+      return gateway;
+  }
+}
 
 /** Returns the active model instance to pass to `streamText`. `modelOverride`
  * (agent-frame.ts's llmModel) bypasses the env-configured default model id
@@ -41,8 +125,7 @@ export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
  * on the gateway while every other agent still defaults to the mini model. */
 export function resolveVoiceModel(override?: LlmProvider, modelOverride?: string) {
   const provider = resolveLlmProvider(override);
-  if (provider === "groq") return groq(modelOverride || GROQ_MODEL);
-  return gateway(modelOverride || GATEWAY_MODEL);
+  return providerInstanceFor(provider)(modelOverride || modelIdFor(provider));
 }
 
 /**
@@ -92,7 +175,7 @@ export function resolvePrimaryTransportLink(
   const provider = resolveLlmProvider(override);
   return {
     transport: provider,
-    model: modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL),
+    model: modelOverride || modelIdFor(provider),
   };
 }
 
@@ -100,7 +183,7 @@ export function resolvePrimaryTransportLink(
  * here — it must NOT be re-resolved from env, or a fallback link would be
  * silently served by the primary's transport. */
 export function modelForTransportLink(link: LlmTransportLink) {
-  return link.transport === "groq" ? groq(link.model) : gateway(link.model);
+  return providerInstanceFor(link.transport)(link.model);
 }
 
 /**
@@ -115,7 +198,7 @@ export function formatActiveModelLabel(link: LlmTransportLink): string {
 
 export function getActiveModelLabel(override?: LlmProvider, modelOverride?: string): string {
   const provider = resolveLlmProvider(override);
-  const model = modelOverride || (provider === "groq" ? GROQ_MODEL : GATEWAY_MODEL);
+  const model = modelOverride || modelIdFor(provider);
   return `${provider}/${model}`;
 }
 
@@ -129,11 +212,17 @@ export function getActiveModelLabel(override?: LlmProvider, modelOverride?: stri
  * (llama-3.3-70b-versatile, groq.com/pricing as of mid-2026); gateway rate
  * is a rough gpt-4o-mini-class placeholder since AI_GATEWAY_MODEL can be
  * swapped to anything — update both if pricing drifts or the gateway
- * default model changes.
+ * default model changes. `openai`/`anthropic`/`openrouter` (2026-08-27) are
+ * the same kind of rough placeholder, priced to each provider's own
+ * mini/haiku-class default model — update alongside OPENAI_MODEL/
+ * ANTHROPIC_MODEL/OPENROUTER_MODEL if those defaults change.
  */
 const LLM_PRICE_PER_MILLION_TOKENS: Record<LlmProvider, { input: number; output: number }> = {
   groq: { input: 0.59, output: 0.79 },
   gateway: { input: 0.15, output: 0.6 },
+  openai: { input: 0.15, output: 0.6 },
+  anthropic: { input: 0.8, output: 4.0 },
+  openrouter: { input: 0.15, output: 0.6 },
 };
 
 export function estimateLlmCost(provider: LlmProvider, inputTokens: number, outputTokens: number): number {

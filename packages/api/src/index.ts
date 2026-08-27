@@ -8,7 +8,7 @@ import { publicRoutes } from "./app/public-routes";
 import { leadsIngest } from "./voice/leads/ingest";
 import { shopify } from "./integrations/shopify/routes";
 import { resolveTtsProvider } from "./voice/tts";
-import { resolveLlmProvider, getActiveModelLabel } from "./voice/llm";
+import { resolveLlmProvider, getActiveModelLabel, getConfiguredLlmProviders } from "./voice/llm";
 import { isHipaaMode, getRetentionDays, isDisclosureEnabled } from "@weeber/compliance";
 import { requestLogger } from "./middleware/request-logger";
 import { errorHandler } from "./middleware/error-handler";
@@ -84,7 +84,18 @@ const app = new Hono()
           publicUrl: Boolean(process.env.PUBLIC_APP_URL),
           aiGateway: Boolean(process.env.AI_GATEWAY_API_KEY),
           webhookUrl: Boolean(process.env.WEBHOOK_URL),
+          // 2026-08-27 — direct LLM transports (llm/index.ts): reported the same
+          // way as every other provider key here, plus configuredLlmProviders
+          // below (same data, pre-filtered) so a picker UI doesn't need to know
+          // the env-var name for each one.
+          openai: Boolean(process.env.OPENAI_API_KEY),
+          anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+          openrouter: Boolean(process.env.OPENROUTER_API_KEY),
         },
+        // Which LLM providers are actually usable right now — an org can only
+        // meaningfully be pointed at one of these; see isLlmProviderConfigured's
+        // doc comment for why resolution itself doesn't enforce this.
+        configuredLlmProviders: getConfiguredLlmProviders(),
         activeTtsProvider: resolveTtsProvider(),
         activeLlmProvider: resolveLlmProvider(),
         activeModel: getActiveModelLabel(),

@@ -17,6 +17,7 @@ import {
   type ToolExecutionTelemetry,
 } from "./agent";
 import { getActiveModelLabel } from "./llm";
+import type { LlmProvider } from "./llm";
 import {
   resolveCartRecoveryContext,
   type CartRecoveryDiscountContext,
@@ -170,7 +171,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let webhookUrl: string | null = null;
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | "fish" | undefined;
-  let llmProviderOverride: "gateway" | "groq" | undefined;
+  let llmProviderOverride: LlmProvider | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
   /** Cross-provider failover (2026-07-17) — per-agent override of the fallback

@@ -15,6 +15,7 @@
  */
 import type { ResolvedAgentConfig } from "./agent";
 import type { CapturedField } from "../database/schema";
+import type { LlmProvider } from "./llm";
 
 export type CallSession = {
   callSid: string;
@@ -25,7 +26,7 @@ export type CallSession = {
   createdAt: number;
   /** Per-call overrides — let a single call use a different provider than the global default. */
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: LlmProvider;
   /** STT provider + language override for this call — see agent-frame.ts. */
   sttProvider?: "deepgram" | "sarvam";
   language?: string;

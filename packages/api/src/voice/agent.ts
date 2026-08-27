@@ -26,6 +26,7 @@ import {
   formatActiveModelLabel,
 } from "./llm";
 import { resolveLlmTransportChain } from "./llm/transport-chain";
+import type { LlmProvider } from "./llm";
 import { streamWithTransportFailover } from "./llm/transport-stream";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs, type CapturedField } from "../database/schema";
@@ -661,7 +662,7 @@ export type ResolvedAgentConfig = {
   promptInputs?: ComposeSystemPromptOptions;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam" | "fish";
   voiceId?: string;
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: LlmProvider;
   llmModel?: string;
   /** Undefined = every tool enabled. Only reaches `undefined` now when no template
    * resolved at all (self-hosted/no-tenant call, or an unrecognized persona key) — an
@@ -933,7 +934,7 @@ export async function resolveAgentConfig(opts: {
         promptSegments: composed.segments,
         ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | "fish" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
-        llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
+        llmProvider: (config.llmProvider as LlmProvider | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? defaultToolsFallback(tmpl?.defaultTools),
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
@@ -2082,7 +2083,7 @@ export async function runVoiceAgentTurn({
    */
   onUsage?: (usage: TurnTokenUsage) => void;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: LlmProvider;
   /** Per-agent explicit model id override (agent-frame.ts's llmModel) — bypasses
    * the env-configured default for this provider while keeping the provider choice. */
   llmModel?: string;
@@ -2458,7 +2459,7 @@ export function runVoiceAgentGreeting({
   /** Rolling facts from previous calls with this same number (ADR-023). */
   callerMemory?: Record<string, CapturedField>;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: LlmProvider;
   /** Per-agent explicit model id override (agent-frame.ts's llmModel). */
   llmModel?: string;
   /** Cross-provider failover (2026-07-17) — see runVoiceAgentTurn's doc comment. */

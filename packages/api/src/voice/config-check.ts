@@ -49,6 +49,15 @@ export function assertVoiceConfig(): void {
   if (llmProvider === "gateway" && !process.env.AI_GATEWAY_API_KEY) {
     problems.push("LLM_PROVIDER=gateway (default) requires AI_GATEWAY_API_KEY");
   }
+  if (llmProvider === "openai" && !process.env.OPENAI_API_KEY) {
+    problems.push("LLM_PROVIDER=openai requires OPENAI_API_KEY");
+  }
+  if (llmProvider === "anthropic" && !process.env.ANTHROPIC_API_KEY) {
+    problems.push("LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY");
+  }
+  if (llmProvider === "openrouter" && !process.env.OPENROUTER_API_KEY) {
+    problems.push("LLM_PROVIDER=openrouter requires OPENROUTER_API_KEY");
+  }
 
   if (sttProvider === "deepgram" && !process.env.DEEPGRAM_API_KEY) {
     problems.push("STT_PROVIDER=deepgram (default) requires DEEPGRAM_API_KEY");

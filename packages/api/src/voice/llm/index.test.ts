@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { resolveLlmProvider, getActiveModelLabel, GROQ_MODEL, buildGatewayProviderOptions } from "./index";
+import {
+  resolveLlmProvider,
+  getActiveModelLabel,
+  GROQ_MODEL,
+  OPENAI_MODEL,
+  ANTHROPIC_MODEL,
+  OPENROUTER_MODEL,
+  buildGatewayProviderOptions,
+  isLlmProviderConfigured,
+  getConfiguredLlmProviders,
+  estimateLlmCost,
+} from "./index";
 import { VOICE_AGENT_MODEL as GATEWAY_MODEL } from "../gateway";
 
 describe("resolveLlmProvider", () => {
@@ -10,6 +21,47 @@ describe("resolveLlmProvider", () => {
   it("respects an explicit override", () => {
     expect(resolveLlmProvider("groq")).toBe("groq");
     expect(resolveLlmProvider("gateway")).toBe("gateway");
+  });
+
+  it("respects the three direct-transport providers added 2026-08-27 (openai/anthropic/openrouter)", () => {
+    expect(resolveLlmProvider("openai")).toBe("openai");
+    expect(resolveLlmProvider("anthropic")).toBe("anthropic");
+    expect(resolveLlmProvider("openrouter")).toBe("openrouter");
+  });
+});
+
+describe("isLlmProviderConfigured / getConfiguredLlmProviders", () => {
+  const ORIGINAL_ENV = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("is false for a direct provider with no API key set, without touching resolution", () => {
+    expect(isLlmProviderConfigured("openai")).toBe(false);
+    // Unconfigured doesn't stop resolveLlmProvider from returning it — that's
+    // the "picker offers it or not" concern, not a resolution-time gate; see
+    // llm/index.ts's own doc comment on resolveLlmProvider for why.
+    expect(resolveLlmProvider("openai")).toBe("openai");
+  });
+
+  it("flips true the moment the env var is set — no code change needed", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    expect(isLlmProviderConfigured("anthropic")).toBe(true);
+  });
+
+  it("getConfiguredLlmProviders lists exactly the providers whose keys are set", () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    const configured = getConfiguredLlmProviders();
+    expect(configured).toContain("openai");
+    expect(configured).toContain("openrouter");
+    expect(configured).not.toContain("anthropic");
   });
 });
 
@@ -27,6 +79,22 @@ describe("getActiveModelLabel", () => {
   it("uses the modelOverride when one is given, per-agent (agent-frame.ts's llmModel)", () => {
     expect(getActiveModelLabel("gateway", "openai/gpt-5.4")).toBe("gateway/openai/gpt-5.4");
     expect(getActiveModelLabel("groq", "some-other-groq-model")).toBe("groq/some-other-groq-model");
+  });
+
+  it("resolves each direct transport added 2026-08-27 to its own env-overridable default model", () => {
+    expect(getActiveModelLabel("openai")).toBe(`openai/${OPENAI_MODEL}`);
+    expect(getActiveModelLabel("anthropic")).toBe(`anthropic/${ANTHROPIC_MODEL}`);
+    expect(getActiveModelLabel("openrouter")).toBe(`openrouter/${OPENROUTER_MODEL}`);
+  });
+});
+
+describe("estimateLlmCost", () => {
+  it("has a real (non-zero, finite) rate for every provider, including the three added 2026-08-27", () => {
+    for (const provider of ["gateway", "groq", "openai", "anthropic", "openrouter"] as const) {
+      const cost = estimateLlmCost(provider, 1_000_000, 1_000_000);
+      expect(Number.isFinite(cost)).toBe(true);
+      expect(cost).toBeGreaterThan(0);
+    }
   });
 });
 

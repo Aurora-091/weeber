@@ -23,7 +23,7 @@ import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
-  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
+  RECOMMENDED_LLM_MODELS, LLM_PROVIDER_OPTIONS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   TTS_COST_TIERS, STT_COST_TIERS,
   STT_PROVIDERS, TTS_PROVIDERS, STT_PROVIDER_LABELS, TTS_PROVIDER_LABELS,
   DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
@@ -804,6 +804,22 @@ export function ToolsGuardrailsTab({ row, form, set, orgTransferNumber }: TabPro
 }
 
 function CallingModelTab({ row, form, set }: TabProps) {
+  // Which LLM providers actually have an API key set on the backend —
+  // react-query dedupes this across every open tab/card, so it's one real
+  // request. Public endpoint. Undefined while loading/on error reads as
+  // "show every provider" below, so the dropdown never flashes empty or
+  // drops this agent's already-saved provider out from under it.
+  const health = useQuery({
+    queryKey: ["health"],
+    queryFn: async () => {
+      const res = await appFetch("/api/health");
+      if (!res.ok) throw new Error(`${res.status}`);
+      return (await res.json()) as { configuredLlmProviders?: string[] };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const configuredLlmProviders = health.data?.configuredLlmProviders;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground/80 mb-2">
@@ -844,8 +860,11 @@ function CallingModelTab({ row, form, set }: TabProps) {
                 <SelectValue placeholder="LLM provider" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gateway">AI Gateway</SelectItem>
-                <SelectItem value="groq">Groq</SelectItem>
+                {LLM_PROVIDER_OPTIONS.filter(
+                  (p) => configuredLlmProviders === undefined || configuredLlmProviders.includes(p.key) || p.key === form.llmProvider,
+                ).map((p) => (
+                  <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

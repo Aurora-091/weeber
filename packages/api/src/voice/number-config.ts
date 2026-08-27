@@ -7,10 +7,12 @@
  * Falls back to global env defaults when a number has no entry or a field
  * is omitted.
  */
+import type { LlmProvider } from "./llm";
+
 export type NumberConfig = {
   persona?: string;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: LlmProvider;
   maxDurationSeconds?: number;
   webhookUrl?: string;
   /** STT provider + language override — see agent-frame.ts. */

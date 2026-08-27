@@ -48,6 +48,7 @@ import { runVoiceAgentTurn, runVoiceAgentGreeting, resolveAgentConfig, buildPrev
 import type { TestCallTokenPayload } from "./test-call-tokens";
 import { resolveSttFailoverChain, resolveTtsFailoverChain } from "./failover";
 import { decideBargeIn } from "./barge-in";
+import type { LlmProvider } from "./llm";
 
 type Sendable = { send: (data: string) => void; close?: (code?: number, reason?: string) => void };
 
@@ -73,7 +74,7 @@ export function createTestCallStreamHandlers(payload: TestCallTokenPayload) {
 
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | "fish" | undefined;
-  let llmProviderOverride: "gateway" | "groq" | undefined;
+  let llmProviderOverride: LlmProvider | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
   let ttsVoiceIdOverride: string | undefined;

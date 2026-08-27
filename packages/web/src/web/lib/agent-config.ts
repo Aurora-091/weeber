@@ -228,6 +228,30 @@ export const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },
   { provider: "gateway", model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
   { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (fastest overall, Groq)" },
+  // Direct transports (2026-08-27) — only offered in the provider dropdown once that
+  // provider's own API key is configured, see LLM_PROVIDER_OPTIONS below.
+  { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini (direct OpenAI)" },
+  { provider: "anthropic", model: "claude-sonnet-5", label: "Claude Sonnet 5 (direct Anthropic)" },
+  { provider: "openrouter", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (via OpenRouter)" },
+] as const;
+
+/**
+ * Every LLM transport the platform knows how to speak to, for the admin
+ * dashboard's provider dropdown. Not all of them are necessarily usable —
+ * "gateway" and "groq" work out of the box on a configured deployment, but
+ * "openai"/"anthropic"/"openrouter" each need their own API key set on the
+ * backend first (see the LLM_PROVIDER_OPTIONS-consuming Select in
+ * dashboard/agents.tsx, which filters this list against GET /api/health's
+ * `configuredLlmProviders` so an org can only pick a provider that's
+ * actually configured — "once the API key is set they should be visible,
+ * else no problem").
+ */
+export const LLM_PROVIDER_OPTIONS = [
+  { key: "gateway", label: "AI Gateway" },
+  { key: "groq", label: "Groq" },
+  { key: "openai", label: "OpenAI" },
+  { key: "anthropic", label: "Anthropic" },
+  { key: "openrouter", label: "OpenRouter" },
 ] as const;
 export const RECOMMENDED_LANGUAGES = [
   { code: "en", label: "English" },

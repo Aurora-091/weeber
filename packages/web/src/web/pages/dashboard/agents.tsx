@@ -27,7 +27,7 @@ import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
 import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
-  RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
+  RECOMMENDED_LLM_MODELS, LLM_PROVIDER_OPTIONS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
   TTS_COST_TIERS, STT_COST_TIERS,
   STT_PROVIDERS, TTS_PROVIDERS, STT_PROVIDER_LABELS, TTS_PROVIDER_LABELS,
   DEFAULT_STT_FALLBACK_ORDER, DEFAULT_TTS_FALLBACK_ORDER,
@@ -162,6 +162,22 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
     setForm(toFormState(row));
     setAdvancedOpen(false);
   }, [row]);
+
+  // Which LLM providers actually have an API key set (react-query dedupes
+  // this across every row's AgentEditForm — one real request, not one per
+  // agent). Public endpoint, no adminHeaders needed. Undefined while loading
+  // or on error reads as "show every provider" below, so the dropdown never
+  // flashes empty or drops the org's already-saved provider out from under it.
+  const health = useQuery({
+    queryKey: ["health"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/health");
+      if (!res.ok) throw new Error(`${res.status}`);
+      return (await res.json()) as { configuredLlmProviders?: string[] };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const configuredLlmProviders = health.data?.configuredLlmProviders;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -516,8 +532,11 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                     <SelectValue placeholder="LLM Provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gateway">AI Gateway</SelectItem>
-                    <SelectItem value="groq">Groq</SelectItem>
+                    {LLM_PROVIDER_OPTIONS.filter(
+                      (p) => configuredLlmProviders === undefined || configuredLlmProviders.includes(p.key) || p.key === form.llmProvider,
+                    ).map((p) => (
+                      <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
