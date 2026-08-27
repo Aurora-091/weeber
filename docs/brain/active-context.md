@@ -12,6 +12,45 @@ updated: 2026-08-27
 
 ## Current focus
 
+- **Design system reinnovation Phase 1 shipped and deployed (2026-08-27).** User request: unify
+  the marketing site's aesthetic with `/app` + `/dashboard` (Vercel/ElevenLabs-caliber, "scrap the
+  old design docs"). Root cause wasn't colorful-vs-monochrome — both surfaces were already
+  monochrome (ADR-039) — they were two separately-evolved token systems that never reconciled,
+  despite `UI-DESIGN-BRIEF.md` documenting them as unified (it claimed one shared display font;
+  the code shipped two). Fixed at the token level: **one shared display font** (Bricolage
+  Grotesque replaces Fraunces everywhere, user decision; Fraunces package dropped entirely, zero
+  remaining references); **one accent system** (`.marketing` now scopes its own override of the
+  standard shadcn variable names — `--primary`, `--background`, `--border`, etc. — mirroring
+  `.theme-weeber`'s pattern; fixes a real shipped bug where any `ui/` primitive on a marketing
+  page fell back to a leftover `:root` ember accent instead of the page's actual black/white CTA,
+  confirmed live in the demo-call widget's button and verified fixed via Playwright screenshots in
+  both light and dark mode); **one radius scale** (`--m-radius-sm/md/lg` added to
+  `styles-marketing.css`, mirroring product's `--radius-sm/md/lg` — was a grab-bag of literal
+  `rounded-[Npx]` values before). Raw-button debt genuinely paid down, not just held:
+  `WaitlistForm.tsx`/`MarketingNav.tsx`/`EnterpriseDialog.tsx` migrated off raw `<button>` to the
+  shared `Button` primitive, `design:guard`'s `rawButton` ratchet 84 → 77, baseline updated.
+  **Admin nav grouped** (`app-shell.tsx`'s `NavItem` gained an optional `group` field, additive;
+  `dashboard-shell.tsx`'s flat 18-item list is now Ops/Compliance/Accounts/Config — a
+  `UI-DESIGN-BRIEF.md` recommendation that had sat undone). `UI-DESIGN-BRIEF.md` rewritten in the
+  same change (ADR-118 doc-retirement convention: rewrite evergreen docs in place, don't leave a
+  gap) — its own "three visual identities" section was itself stale (bare `:root` was never a real
+  third surface, just an unscoped fallback trap; corrected to "two identities"). Two unrelated real
+  bugs found and fixed alongside while investigating the user's "navigation/buttons feel broken"
+  report (separate commit, `efc207f`): `app.tsx`'s `UserAppRoutes`/`AdminAppRoutes` each had two
+  `<Route>` elements for the same component (bare path + `/*` glob), and React remounted the whole
+  shell (sidebar included) whenever navigation flipped which one matched — fixed with hoisted
+  element references + matching `key`; `styles.css`'s `.theme-weeber > *` reset only ever restored
+  `position` for portalled Radix overlays, never `z-index` — sonner's Toaster survived by accident
+  (inline style), every other overlay (`[data-radix-popper-content-wrapper]` — Select,
+  DropdownMenu, Tooltip, Popover — plus dialog/sheet) stayed pinned at `z-index:1`. Both commits
+  (`efc207f`, `8ec7f7f`) pushed and deployed — Railway required a second manual dashboard approval
+  (the project's `NEEDS_APPROVAL` gate has no working MCP/API path, confirmed twice this session;
+  `mcp__railway__accept-deploy` targets staged env-var changes, not deployment approval, despite
+  its "triggered" response — a real footgun worth remembering). **Phases 2 (page-by-page
+  migration) and 3 (empty/stale dashboard content audit) deliberately not attempted** — each needs
+  its own plan once this foundation is reviewed; `docs/product-strategy/` has no filed doc for
+  this yet, only the (ephemeral, per-session) plan-mode file.
+
 - **Real demo-call widget — all three phases code-complete and behind a kill switch that defaults
   OFF (2026-08-27, `docs/product-strategy/real-demo-call-widget-plan-2026-08-26.md`).** Full
   implementation of the plan filed 2026-08-26: a public landing-page widget where a visitor picks
