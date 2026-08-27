@@ -39,7 +39,6 @@ const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
 const MERGE_TAG_MIGRATION_BACKLOG = new Set([
   "04-insurance-policy-renewal-agent.md",
   "05-insurance-lead-followup-agent.md",
-  "06-insurance-appointment-setter-agent.md",
   "07-insurance-post-sale-welcome-agent.md",
   "08-insurance-feedback-nps-agent.md",
   // A5 (phase-a-integrity.md, 2026-08-24): repointed from
@@ -121,7 +120,7 @@ describe("seeded agent prompts — merge-tag hygiene (G1.3)", () => {
   it("the migration backlog only ever shrinks", () => {
     // Guards the guard: a new prompt file must not be added to the backlog to
     // dodge the rule above.
-    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBeLessThanOrEqual(6);
+    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBeLessThanOrEqual(5);
   });
 });
 
