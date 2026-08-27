@@ -41,11 +41,6 @@ const MERGE_TAG_MIGRATION_BACKLOG = new Set([
   "05-insurance-lead-followup-agent.md",
   "07-insurance-post-sale-welcome-agent.md",
   "08-insurance-feedback-nps-agent.md",
-  // A5 (phase-a-integrity.md, 2026-08-24): repointed from
-  // "09-insurance-final-expense-qualifier-agent.md" to the v2 file that
-  // superseded it as the seeded source (seed.ts) — same un-migrated merge
-  // tags, new filename.
-  "09-insurance-final-expense-qualifier-agent-v2.md",
 ]);
 
 /**
@@ -120,7 +115,7 @@ describe("seeded agent prompts — merge-tag hygiene (G1.3)", () => {
   it("the migration backlog only ever shrinks", () => {
     // Guards the guard: a new prompt file must not be added to the backlog to
     // dodge the rule above.
-    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBeLessThanOrEqual(5);
+    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBeLessThanOrEqual(4);
   });
 });
 
