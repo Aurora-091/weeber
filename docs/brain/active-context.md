@@ -12,6 +12,33 @@ updated: 2026-08-27
 
 ## Current focus
 
+- **Demo-call widget: live and in an active testing window, one manual step away from a real
+  end-to-end call (2026-08-27, continues the entry below).** Since Phase 1-3 shipped: found and
+  fixed a second real bug (`packages/web/src/web/lib/admin-key.ts`) — `adminHeaders()`, called
+  synchronously by nearly every admin-dashboard page, only ever read the legacy stored
+  `X-Weeber-Admin-Key`, never the Supabase session; a session-authenticated admin (logged in via
+  `AdminLoginForm`, not the key-fallback form) passed `AdminKeyGate`'s own `/admin-me` check but
+  then got silent empty auth headers on every real page request, 401ing everywhere. This was
+  pre-existing, not introduced this session — the user hit it live while trying to use the Agents
+  page to assign the demo org's numbers. Fixed by caching the session token, refreshed via
+  `onAuthStateChange`; deployed (`6b5230f`, Vercel `dpl_4VVxmfEYWhRYLqnrXjAxCDMvw6Zx`, confirmed
+  READY). **At the user's explicit request, for the current testing phase only**: the three
+  rate-limit tiers were made env-var-configurable (`DEMO_WIDGET_MAX_PER_IP_PER_DAY` /
+  `_PER_PHONE_PER_DAY` / `_GLOBAL_PER_DAY`, `voice/demo-widget-constants.ts`, commit `5e88565`)
+  and set to `9999` on Railway production directly via MCP (effectively unlimited — **remember to
+  lower or unset these before real public traffic**, they don't reset on their own); the
+  `demo-widget-enabled` kill switch was flipped to `true` directly in the production DB (was
+  seeded disabled) — **the widget is live on weeber.ai right now, not just code-complete**.
+  **The one remaining blocker, confirmed via direct query**: `org_agent_configs` and
+  `org_phone_numbers` for `weeber-live-demo` are both still empty — no numbers have been bought,
+  none of the three templates has a `phoneNumberId`. A real submitted call will fail at
+  `resolveOutboundRouting` until the user buys 3 numbers and assigns them via
+  Agents → "Weeber Live Demo" org → the Phone Numbers panel (built this session, now unblocked by
+  the auth fix above). **Next session: check whether numbers got assigned** (`select template_key,
+  phone_number_id from org_agent_configs where org_id = 'weeber-live-demo'`) before assuming the
+  widget is fully testable, and ask the user whether the rate limits should be lowered back down
+  now that testing is further along.
+
 - **Design system reinnovation Phase 1 shipped and deployed (2026-08-27).** User request: unify
   the marketing site's aesthetic with `/app` + `/dashboard` (Vercel/ElevenLabs-caliber, "scrap the
   old design docs"). Root cause wasn't colorful-vs-monochrome — both surfaces were already
