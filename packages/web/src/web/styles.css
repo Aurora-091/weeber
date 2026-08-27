@@ -566,14 +566,36 @@
  * of floating fixed at the viewport corner, every toast laid out in normal
  * document flow — pushed down below the sidebar/content, appearing well
  * below the fold ("toasts load below the cards and frame"). */
+/* z-index gap found 2026-08-27: the fix above only ever restored `position`,
+ * never `z-index`. `.theme-weeber > *` sets z-index:1 via a descendant+class
+ * selector ((0,1,1) specificity), which beats a plain single-class Tailwind
+ * utility like `z-50` on the SAME element ((0,1,0)) — [data-sonner-toaster]
+ * only survived that because sonner sets its z-index via an inline `style`
+ * prop (always wins regardless of selector specificity); every other entry
+ * here had no such escape hatch. So [data-radix-popper-content-wrapper]
+ * (Select/DropdownMenu/Tooltip/Popover's shared Radix positioning wrapper)
+ * was trapped at z-index:1 as a direct child of .theme-weeber, capping every
+ * popper-based overlay's real stacking context regardless of its own inner
+ * `z-50` class — "dropdowns/menus render behind other page content" is
+ * this, not a Toaster-specific bug. Explicit z-index here closes the same
+ * gap the inline-style toaster case closed by accident. */
 .theme-weeber > [role="dialog"],
 .theme-weeber > [role="alertdialog"],
 .theme-weeber > [data-radix-popper-content-wrapper],
 .theme-weeber > [data-slot="dialog-overlay"],
 .theme-weeber > [data-slot="sheet-overlay"],
-.theme-weeber > [data-slot="sheet-content"],
-.theme-weeber > [data-sonner-toaster] {
+.theme-weeber > [data-slot="sheet-content"] {
   position: fixed;
+  z-index: 50;
+}
+
+.theme-weeber > [data-sonner-toaster] {
+  /* Stays above every other overlay above (dialogs, sheets, popper content)
+   * — a toast is a global, transient notification and must never be
+   * occluded by page-level UI, matching sonner's own inline zIndex:99999
+   * intent (components/ui/sonner.tsx) now enforced at this level too. */
+  position: fixed;
+  z-index: 100;
 }
 
 /* ─── Card elevation system ─────────────────────────────────────────────── */

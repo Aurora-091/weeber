@@ -275,6 +275,12 @@ function AdminAppRoutes() {
   );
 }
 
+// Hoisted once so both of the two Route branches that can render them (see the appPath("/*")
+// vs appPath() split above) pass React the identical element — see the comment at their usage
+// site for why that's what actually keeps UserShell/DashboardShell mounted across navigation.
+const userAppRoutesElement = <UserAppRoutes />;
+const adminAppRoutesElement = <AdminAppRoutes />;
+
 function App() {
   return (
     <ErrorBoundary>
@@ -311,13 +317,20 @@ function App() {
           {showUser && <Route path={appPath("/auth/callback")} component={UserAuthCallbackPage} />}
           {showUser && <Route path={appPath("/auth/reset-password")} component={ResetPasswordPage} />}
 
-          {/* User app — persistent shell wraps all authenticated pages */}
-          {showUser && <Route path={appPath("/*")}>{() => <UserAppRoutes />}</Route>}
-          {showUser && <Route path={appPath()}>{() => <UserAppRoutes />}</Route>}
+          {/* User app — persistent shell wraps all authenticated pages.
+              Two Route elements exist only because wouter's "/*" glob doesn't match the bare
+              zero-segment parent path, so the exact path needs its own Route too. Both share one
+              `key` and one hoisted element (userAppRoutesElement) so React reconciles them as the
+              SAME subtree regardless of which Route wouter's Switch picks — without this, flipping
+              between the two Route elements on navigation (e.g. landing on/leaving the bare /app
+              root) read as a different element to React and force-remounted UserShell/the sidebar,
+              even though both branches render the identical component (bug found 2026-08-27). */}
+          {showUser && <Route path={appPath("/*")} key="user-app-shell">{() => userAppRoutesElement}</Route>}
+          {showUser && <Route path={appPath()} key="user-app-shell">{() => userAppRoutesElement}</Route>}
 
-          {/* Admin dashboard — persistent shell wraps all admin pages */}
-          {showAdmin && <Route path={adminPath("/*")}>{() => <AdminAppRoutes />}</Route>}
-          {showAdmin && <Route path={adminPath()}>{() => <AdminAppRoutes />}</Route>}
+          {/* Admin dashboard — persistent shell wraps all admin pages. Same fix as above. */}
+          {showAdmin && <Route path={adminPath("/*")} key="admin-app-shell">{() => adminAppRoutesElement}</Route>}
+          {showAdmin && <Route path={adminPath()} key="admin-app-shell">{() => adminAppRoutesElement}</Route>}
 
           {/* Legacy redirects */}
           <Route path="/dashboard/*">
