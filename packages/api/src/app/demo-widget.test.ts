@@ -16,6 +16,7 @@ import { mock, describe, it, expect, beforeEach } from "bun:test";
 
 let flagEnabled = true;
 let turnstileOk = true;
+let turnstileConfigured = true;
 let phoneLimitResult = { allowed: true, callCount: 1, windowStart: new Date() };
 let globalLimitResult = { allowed: true, callCount: 1, windowStart: new Date() };
 let lastKeyedLimitCalls: Array<{ scope: string; key: string }> = [];
@@ -29,6 +30,7 @@ mock.module("../voice/demo-widget-flag", () => ({
 
 mock.module("../voice/turnstile", () => ({
   verifyTurnstileToken: async () => turnstileOk,
+  isTurnstileConfigured: () => turnstileConfigured,
 }));
 
 mock.module("../database/rate-limit-store", () => ({
@@ -70,6 +72,7 @@ describe("placeDemoCall", () => {
   beforeEach(() => {
     flagEnabled = true;
     turnstileOk = true;
+    turnstileConfigured = true;
     phoneLimitResult = { allowed: true, callCount: 1, windowStart: new Date() };
     globalLimitResult = { allowed: true, callCount: 1, windowStart: new Date() };
     lastKeyedLimitCalls = [];
@@ -102,6 +105,13 @@ describe("placeDemoCall", () => {
     const result = await placeDemoCall({ ...baseInput, ip: "ip-turnstile" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.statusCode).toBe(400);
+  });
+
+  it("skips Turnstile entirely while unconfigured (no Cloudflare keys set up) — a missing/empty token doesn't block the call", async () => {
+    turnstileConfigured = false;
+    turnstileOk = false; // proves the skip, not a lucky mock — verification would fail if it ran
+    const result = await placeDemoCall({ ...baseInput, turnstileToken: "", ip: "ip-turnstile-unconfigured" });
+    expect(result.ok).toBe(true);
   });
 
   it("rejects an unparseable phone number (400)", async () => {

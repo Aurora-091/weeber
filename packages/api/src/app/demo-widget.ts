@@ -12,7 +12,8 @@
  *   1. Kill switch (`demo-widget-flag.ts`) — fails closed.
  *   2. `agentKey` is one of the three seeded demo templates.
  *   3. Explicit consent.
- *   4. Turnstile verification — fails closed.
+ *   4. Turnstile verification — fails closed, but skipped entirely while unconfigured (no
+ *      Cloudflare keys yet, 2026-08-27 — see isTurnstileConfigured's doc comment).
  *   5. Phone normalization.
  *   6-8. Per-IP / per-phone / global daily rate limits.
  *   9. Consent record (with IP/UA — the flow's actual audit trail, since consent here is
@@ -30,7 +31,7 @@ import { placeOutboundCall } from "../voice/place-outbound-call";
 import { normalizePhone } from "../voice/leads/csv-import";
 import { makeFixedWindowLimiter } from "../voice/fixed-window-limiter";
 import { checkAndIncrementKeyedRateLimit } from "../database/rate-limit-store";
-import { verifyTurnstileToken } from "../voice/turnstile";
+import { verifyTurnstileToken, isTurnstileConfigured } from "../voice/turnstile";
 import { isGlobalFlagEnabled } from "../voice/demo-widget-flag";
 import {
   DEMO_AGENT_KEYS,
@@ -80,12 +81,19 @@ export async function placeDemoCall(input: DemoCallInput): Promise<DemoCallResul
     return { ok: false, error: "Consent is required before we can place the call.", statusCode: 400 };
   }
 
-  if (typeof turnstileToken !== "string" || !turnstileToken) {
-    return { ok: false, error: "Verification failed. Please try again.", statusCode: 400 };
-  }
-  const verified = await verifyTurnstileToken(turnstileToken, ip);
-  if (!verified) {
-    return { ok: false, error: "Verification failed. Please try again.", statusCode: 400 };
+  // 2026-08-27: no Cloudflare Turnstile site/secret key pair exists yet — skip verification
+  // entirely rather than fail-closed-forever on an unconfigured feature (that fail-closed
+  // behavior is for a configured secret whose verify call goes wrong, not for "never set up").
+  // Re-enable by setting TURNSTILE_SECRET_KEY (and the frontend's VITE_TURNSTILE_SITE_KEY) —
+  // no code change needed, this gate flips on by itself once both keys exist.
+  if (isTurnstileConfigured()) {
+    if (typeof turnstileToken !== "string" || !turnstileToken) {
+      return { ok: false, error: "Verification failed. Please try again.", statusCode: 400 };
+    }
+    const verified = await verifyTurnstileToken(turnstileToken, ip);
+    if (!verified) {
+      return { ok: false, error: "Verification failed. Please try again.", statusCode: 400 };
+    }
   }
 
   if (typeof phone !== "string" || !phone.trim()) {

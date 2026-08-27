@@ -9,6 +9,18 @@
  */
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
+/**
+ * Whether a Cloudflare Turnstile secret is actually configured. Callers that gate the whole
+ * verification step on this (demo-widget.ts, 2026-08-27 — no Cloudflare site/secret key pair
+ * exists yet) should check this FIRST and skip straight past verification when it's false,
+ * rather than calling `verifyTurnstileToken` and relying on its fail-closed behavior — that
+ * fail-closed path is for a secret that's configured but the verify call itself goes wrong, not
+ * for "this feature was never set up," which should behave as if it doesn't exist.
+ */
+export function isTurnstileConfigured(): boolean {
+  return Boolean(process.env.TURNSTILE_SECRET_KEY);
+}
+
 export async function verifyTurnstileToken(token: string, remoteIp: string | undefined): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {

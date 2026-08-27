@@ -55,12 +55,12 @@ declare global {
   }
 }
 
-function useTurnstileToken(): { containerRef: React.RefObject<HTMLDivElement | null>; token: string } {
+function useTurnstileToken(): { containerRef: React.RefObject<HTMLDivElement | null>; token: string; configured: boolean } {
   const containerRef = useRef<HTMLDivElement>(null);
   const [token, setToken] = useState("");
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
   useEffect(() => {
-    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
     if (!siteKey) return;
 
     function renderWidget() {
@@ -84,9 +84,9 @@ function useTurnstileToken(): { containerRef: React.RefObject<HTMLDivElement | n
     script.defer = true;
     script.onload = renderWidget;
     document.body.appendChild(script);
-  }, []);
+  }, [siteKey]);
 
-  return { containerRef, token };
+  return { containerRef, token, configured: Boolean(siteKey) };
 }
 
 export function LiveDemoCallWidget() {
@@ -96,7 +96,7 @@ export function LiveDemoCallWidget() {
   const [consent, setConsent] = useState(false);
   const [state, setState] = useState<SubmitState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const { containerRef: turnstileRef, token: turnstileToken } = useTurnstileToken();
+  const { containerRef: turnstileRef, token: turnstileToken, configured: turnstileConfigured } = useTurnstileToken();
 
   const canSubmit = phone.trim().length > 0 && consent && state !== "submitting";
 
@@ -202,7 +202,7 @@ export function LiveDemoCallWidget() {
         </span>
       </label>
 
-      <div ref={turnstileRef} className="mb-4" />
+      {turnstileConfigured && <div ref={turnstileRef} className="mb-4" />}
 
       {state === "error" && (
         <p role="alert" aria-live="polite" className="mb-4 text-sm text-red-600">
