@@ -1758,8 +1758,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     const { provider, voiceId } = currentTtsVoice();
     if (getCachedTtsAudio(provider, voiceId, languageOverride, text)) return;
     const chunks: string[] = [];
+    let warmupTts: TtsConnection | undefined;
     await new Promise<void>((resolve) => {
-      const warmupTts = connectTts(
+      warmupTts = connectTts(
         (base64Audio) => chunks.push(base64Audio),
         () => resolve(),
         (err) => {
@@ -1773,6 +1774,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       warmupTts.sendText(text);
       warmupTts.endTurn();
     });
+    // Bug fix (2026-08-27): endTurn() only tells the provider to flush and
+    // close *that context* — the raw one-shot WebSocket connectTts opened for
+    // this warm-up call is never closed by it (unlike the persistent
+    // per-call session, which getOrOpenTtsSession explicitly manages). Left
+    // open, it lingers until the provider's own idle timeout kills it, which
+    // then fires this connection's "close" listener with no turn in flight —
+    // read as an unexpected failure (ElevenLabs/Cartesia "connection closed
+    // before turn finished") and logged as an error for a warm-up that had
+    // already succeeded. Closing it explicitly here — after the promise
+    // above has already settled via onDone/onError — makes this one-shot
+    // call tear down its socket the same way tts-preview.ts's single-clip
+    // callers do.
+    warmupTts?.close();
     setCachedTtsAudio(provider, voiceId, languageOverride, text, chunks);
   }
 
