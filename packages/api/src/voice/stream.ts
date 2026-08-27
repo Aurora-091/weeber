@@ -3067,7 +3067,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // in between. Every other template has turnAccumulationMs
           // undefined and falls straight through to the immediate call
           // below, unchanged from before this existed.
-          if (turnAccumulationMs !== undefined) {
+          //
+          // Bug fix (2026-08-27): `bargeIn.fire` was not excluded here, so a
+          // caller interrupting the agent mid-speech got the SAME 1400ms hold
+          // as a genuine fragmented-answer pause — meaning every barge-in on
+          // this template produced a mandatory 1.4s+ dead silence right after
+          // the agent had just been cut off (`ws.send(transport.buildClear)`
+          // above already stopped its audio), before it responded to what the
+          // caller actually interrupted to say. That's a materially different
+          // situation from "the caller paused mid-sentence": the caller
+          // deliberately spoke over the agent, which is exactly the case
+          // decideBargeIn/barge-in.ts already exists to detect and respond to
+          // immediately — the accumulation window's whole premise (nothing
+          // else is happening, so waiting to see if more speech follows is
+          // free) doesn't hold when the agent has just gone silent mid-turn
+          // and the caller is waiting on a reply.
+          if (turnAccumulationMs !== undefined && !bargeIn.fire) {
             if (pendingTurnTimer) clearTimeout(pendingTurnTimer);
             pendingTurnStartedAt = turnStartedAt;
             pendingTurnEndpointSignal = endpointSignal;
