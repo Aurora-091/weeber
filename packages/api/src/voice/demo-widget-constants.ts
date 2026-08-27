@@ -26,11 +26,23 @@ export const DEMO_AGENT_KEYS: readonly DemoAgentKey[] = [
  * changes in a way that would matter for an audit of past consents. */
 export const DEMO_WIDGET_CONSENT_VERSION = "demo-widget-v1";
 
-/** Rate-limit tiers (user-confirmed values, 2026-08-27 planning session). */
+/** Reads a positive integer from an env var, falling back when unset/invalid — lets the rate-limit
+ * tiers below be tuned per-environment (e.g. raised for a testing pass) via a Railway env var
+ * change + restart, with no code deploy needed. */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Rate-limit tiers (user-confirmed defaults, 2026-08-27 planning session) — each independently
+ * overridable via env var for a testing pass without touching code. Unset = the conservative
+ * launch defaults below. */
 export const DEMO_WIDGET_RATE_LIMITS = {
-  perIpPerDay: 2,
-  perPhonePerDay: 1,
-  globalPerDay: 50,
+  perIpPerDay: envInt("DEMO_WIDGET_MAX_PER_IP_PER_DAY", 2),
+  perPhonePerDay: envInt("DEMO_WIDGET_MAX_PER_PHONE_PER_DAY", 1),
+  globalPerDay: envInt("DEMO_WIDGET_MAX_GLOBAL_PER_DAY", 50),
 } as const;
 
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
