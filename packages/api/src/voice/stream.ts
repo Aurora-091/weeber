@@ -317,6 +317,14 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let disclosureConfigured = false;
   /** ADR-062: set once, so a greeting that runs more than once (rare re-prompt path) doesn't re-stamp disclosureFiredAt. */
   let disclosureFiredStamped = false;
+  /**
+   * Bug fix (2026-08-27, latency): the actual resolved disclosure line text
+   * (same value persisted as `calls.disclosure_text`), captured here so
+   * runGreeting can speak it directly as its own canned line, first — see
+   * that function's own doc comment for why this replaced baking the
+   * disclosure into the LLM's system prompt.
+   */
+  let disclosureText: string | undefined;
   let history: ModelMessage[] = [];
   /**
    * §3b: adaptive noise filter — created once per call, only when the
@@ -2766,17 +2774,37 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
 
   async function runGreeting(ws: Sendable) {
     // D7 (phase-d-conversation.md): the recording-consent disclosure is
-    // prepended to this exact turn (see stampDisclosureFired's doc comment),
-    // so for as long as this function is running, a barge-in must not be
-    // allowed to cut it short and have stampDisclosureFired() below wrongly
-    // treat a partial read as delivered. Shares `nonInterruptibleCounter`
-    // with agent.ts's tool-call protection (D7 item 1) rather than a
-    // dedicated flag, since decideBargeIn only ever needs to know "is
-    // *something* non-interruptible in flight right now" — never gated on
+    // spoken at the very start of this function (see below), so for as long
+    // as this function is running, a barge-in must not be allowed to cut it
+    // short and have stampDisclosureFired() below wrongly treat a partial
+    // read as delivered. Shares `nonInterruptibleCounter` with agent.ts's
+    // tool-call protection (D7 item 1) rather than a dedicated flag, since
+    // decideBargeIn only ever needs to know "is *something*
+    // non-interruptible in flight right now" — never gated on
     // `disclosureConfigured`, so a call with no disclosure configured simply
     // never increments it here and behaves exactly as before.
     if (disclosureConfigured) nonInterruptibleCounter.count += 1;
     try {
+      // Bug fix (2026-08-27, latency): the disclosure used to be baked into
+      // the LLM's own system prompt ("at the very start of the call, say
+      // this near-verbatim...") — see agent.ts's composeSystemPrompt for
+      // the full reasoning — which meant a legally-required line couldn't
+      // reach the caller until the greeting turn's LLM call had a first
+      // token (700ms-9s+ measured in production; see docs/audits/
+      // 2026-08-26-post-deploy-call-review.md). Speaking it explicitly,
+      // first, through the same cache-aware speakCannedLine path the
+      // silence-timeout/goodbye lines already use, removes the LLM entirely
+      // from the disclosure's own critical path — once cached, it's
+      // near-instant — and gives the caller *something* legitimate to hear
+      // while the config batch/LLM work for the real greeting is still in
+      // flight behind it, masking most of that latency instead of leaving
+      // dead air. More reliable than an LLM instruction too: deterministic
+      // delivery instead of relying on the model to say it, say it
+      // verbatim, and say it only once.
+      if (disclosureConfigured && disclosureText) {
+        await speakCannedLine(ws, disclosureText);
+      }
+
       // Latency fix (2026-07-16): a fully-resolved literal greeting was
       // rendered in the "start" handler — speak it directly via the same
       // canned-line path as the silence re-prompt/goodbye (no LLM call, and
@@ -3471,6 +3499,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // means this one call's audit record is incomplete.
             if (callSid && (agentConfig.disclosureText || agentConfig.disclosureVersion)) {
               disclosureConfigured = true;
+              disclosureText = agentConfig.disclosureText ?? undefined;
               void withRetry(
                 () =>
                   db

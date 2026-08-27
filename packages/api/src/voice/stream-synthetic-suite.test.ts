@@ -9,6 +9,7 @@ import {
   settle,
   buildStartEvent,
 } from "./test-helpers/stream-harness";
+import { clearTtsCacheForTests } from "./tts-cache";
 
 /**
  * The assembled synthetic suite `phase-d-conversation.md`'s exit gate keeps
@@ -127,10 +128,16 @@ mock.module("./agent", () => ({
     language: "en",
     disclosureText: disclosureEnabled ? "This call may be recorded for quality and training purposes." : undefined,
   }),
-  // The greeting IS the disclosure-bearing turn (withDisclosure prepends it
-  // in the real prompt) — this mock just needs to speak something long
-  // enough to give the injected barge-in attempt a real window to land in.
-  // Text mirrors `disclosureEnabled` for the negative-control test's clarity
+  // Stale as of 2026-08-27: stream.ts's runGreeting now speaks disclosureText
+  // as its own explicit canned line, first, before this greeting turn runs
+  // at all — no longer baked into the model's own prompt (composeSystemPrompt
+  // no longer calls withDisclosure). The `nonInterruptibleCounter` window D7
+  // item 2 protects still spans both (incremented before either speaks,
+  // decremented only after this turn completes), so this mock greeting still
+  // includes the disclosure sentence for a real, if now redundant, one-mock-
+  // does-both-jobs simplicity: it still gives the injected barge-in a text
+  // string to match on and a long enough turn for the timing to land. Text
+  // mirrors `disclosureEnabled` for the negative-control test's clarity
   // (disclosureConfigured is a separate DB-config flag stream.ts reads off
   // resolveAgentConfig, not derived from what text is actually spoken — but
   // an ordinary non-disclosure greeting realistically wouldn't say this).
@@ -181,6 +188,13 @@ beforeEach(() => {
   turnCancelCalls = 0;
   onTtsSendText = null;
   disclosureEnabled = true;
+  // The hybrid-audio-cache Map (tts-cache.ts) is process-module-global —
+  // without this, whichever test runs first caches the disclosure/greeting
+  // line's audio, and every later test in this file gets a cache hit
+  // (speak()'s `cachedAudioBase64` branch, which never calls tts.sendText
+  // at all) instead of exercising the real synth path this suite means to
+  // test.
+  clearTtsCacheForTests();
 });
 
 describe("assembled synthetic suite — D6 + D7(item 2) + D8 compose correctly in one call", () => {
@@ -237,6 +251,31 @@ describe("assembled synthetic suite — D6 + D7(item 2) + D8 compose correctly i
     // an ordinary greeting with nothing to protect is still interruptible,
     // exactly like every other turn.
     expect(turnCancelCalls).toBeGreaterThan(0);
+
+    handlers.onClose();
+  });
+
+  it("speaks the disclosure as its own line, before the greeting turn even starts (bug fix, 2026-08-27)", async () => {
+    const sentTexts: string[] = [];
+    onTtsSendText = (spoken) => {
+      sentTexts.push(spoken);
+    };
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle(30);
+
+    // The disclosure line was sent to TTS on its own — not glued onto the
+    // greeting's own text (this mock's runVoiceAgentGreeting still includes
+    // the sentence too, for D7's own barge-in-timing test above, but that's
+    // a second, separate send).
+    expect(sentTexts.some((t) => t === "This call may be recorded for quality and training purposes.")).toBe(true);
+    // And it was sent BEFORE anything from the greeting turn itself.
+    const disclosureIndex = sentTexts.findIndex((t) => t === "This call may be recorded for quality and training purposes.");
+    const greetingIndex = sentTexts.findIndex((t) => t.includes("how can I help"));
+    expect(disclosureIndex).toBeGreaterThanOrEqual(0);
+    expect(greetingIndex).toBeGreaterThan(disclosureIndex);
 
     handlers.onClose();
   });

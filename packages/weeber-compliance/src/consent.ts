@@ -35,10 +35,18 @@ export type ConsentOptions = {
  * says exactly which version of the disclosure was spoken on a given call, not
  * just "some disclosure was spoken." Independent per explicit-override text
  * (an override has no version of its own — see resolveDisclosure below). */
-export const DISCLOSURE_VERSION = "v2-2026-07-19";
+export const DISCLOSURE_VERSION = "v3-2026-08-27";
 
+// 2026-08-27 (user decision — reword, keep both the recording and AI
+// disclosures; see the v2 comment on this constant's history): shorter and
+// less clinical than "Quick heads up before we start", and names "quality
+// and training" as the recording purpose (a common, caller-familiar framing)
+// instead of a bare "may be recorded". Still satisfies the same two legal
+// bases the v2 line did — GDPR Art. 6 consent/recording notice and EU AI Act
+// Art. 50's AI-interaction disclosure — neither requirement was dropped,
+// only the phrasing changed.
 const DEFAULT_DISCLOSURE_TEXT =
-  "Quick heads up before we start — this call may be recorded, and you're speaking with an AI assistant.";
+  "Quick note before we get started — this call may be recorded for quality and training, and I'm an AI assistant.";
 
 /**
  * Localized disclosure lines, keyed by a normalized language tag (lowercased,
@@ -57,9 +65,9 @@ const DEFAULT_DISCLOSURE_TEXT =
  */
 const DISCLOSURE_TEXT_BY_LANGUAGE: Record<string, string> = {
   en: DEFAULT_DISCLOSURE_TEXT,
-  hi: "शुरू करने से पहले एक छोटी सी बात — यह call record हो सकती है, और आप एक AI assistant से बात कर रहे हैं।",
+  hi: "शुरू करने से पहले एक छोटी सी बात — यह call quality और training के लिए record हो सकती है, और मैं एक AI assistant हूँ।",
   hinglish:
-    "Shuru karne se pehle ek chhoti si baat — yeh call record ho sakti hai, aur aap ek AI assistant se baat kar rahe hain.",
+    "Shuru karne se pehle ek chhoti si baat — yeh call quality aur training ke liye record ho sakti hai, aur main ek AI assistant hoon.",
 };
 
 function normalizeLanguageTag(language: string): string {

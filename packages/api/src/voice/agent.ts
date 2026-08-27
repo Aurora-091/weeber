@@ -18,7 +18,7 @@ import {
   createOfferCartRecoveryDiscountTool,
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
-import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
+import { resolveDisclosure } from "@weeber/compliance";
 import {
   buildGatewayProviderOptions,
   resolvePrimaryTransportLink,
@@ -432,19 +432,33 @@ function buildIdentityBlock(frame?: {
    * don't have. */
   merchantName?: string | null;
 }): string {
-  if (!frame) return "";
   const lines: string[] = [];
-  if (frame.name) lines.push(`Your name is ${frame.name}.`);
-  if (frame.merchantName) {
+  // Date/day awareness (2026-08-27, every agent — not template-specific, so
+  // this renders even when `frame` itself is otherwise empty/absent):
+  // previously no persona had any notion of what day it is, so a caller
+  // saying "can you call me back Monday" or an agent trying to say
+  // "we're open until Friday" had nothing to reason from. Computed once
+  // here, at DAY granularity (not time-of-day) deliberately — this value
+  // becomes part of the compiled prompt's stable prefix (Phase C2,
+  // onStablePrefixHash), which composeSystemPrompt re-derives on a mid-call
+  // recomposition (ADR-115, when transfer capability becomes known) and
+  // must stay byte-identical or that check fires a false "prompt changed
+  // mid-call" warning. Rounding to the day makes that safe in practice: a
+  // recomposition happens moments after the initial one, not across an
+  // actual midnight boundary.
+  const now = new Date();
+  const dayAndDate = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  lines.push(`Today is ${dayAndDate}. Use this only if it's naturally relevant (e.g. the caller asks, or you need to reason about "tomorrow"/"next Monday"/a callback day) — never volunteer the date unprompted.`);
+  if (frame?.name) lines.push(`Your name is ${frame.name}.`);
+  if (frame?.merchantName) {
     lines.push(
       `You are calling on behalf of ${frame.merchantName}. That is the business you represent — ` +
         `use that name whenever you refer to "us", "we", or the store, and never name any other company.`,
     );
   }
-  if (frame.toneStyle) lines.push(`Speak in a ${frame.toneStyle} tone throughout the call.`);
-  if (frame.greetingLine) lines.push(`Open the call with a line like this (adapt naturally, don't recite it robotically): "${frame.greetingLine}"`);
-  if (frame.closingLine) lines.push(`When wrapping up, close with a line like this (adapt naturally): "${frame.closingLine}"`);
-  if (lines.length === 0) return "";
+  if (frame?.toneStyle) lines.push(`Speak in a ${frame.toneStyle} tone throughout the call.`);
+  if (frame?.greetingLine) lines.push(`Open the call with a line like this (adapt naturally, don't recite it robotically): "${frame.greetingLine}"`);
+  if (frame?.closingLine) lines.push(`When wrapping up, close with a line like this (adapt naturally): "${frame.closingLine}"`);
   return lines.join("\n") + "\n\n";
 }
 
@@ -507,12 +521,30 @@ export function composeSystemPrompt(opts: ComposeSystemPromptOptions): ComposedS
 
   const languageBody = buildLanguageInstructionBlock(language);
   const identityBody = buildIdentityBlock(identity);
-  // withDisclosure appends to what it's given, so the disclosure layer is
-  // exactly the tail it added — "" when disclosure is switched off. Derived by
-  // slicing rather than re-rendering the line, so this can never disagree with
-  // what @weeber/compliance actually produced.
-  const withDisc = withDisclosure(jobDescription, { language });
-  const disclosureBody = withDisc.slice(jobDescription.length);
+  // Bug fix (2026-08-27, latency): this used to bake "at the very start of
+  // the call, say this near-verbatim: <disclosure>" into the LLM's own
+  // system prompt via withDisclosure(jobDescription, ...) — meaning the
+  // disclosure could only ever be spoken as part of the greeting turn's own
+  // LLM generation, paying that turn's full time-to-first-token (measured
+  // 700ms-9s in production) before the caller heard anything at all, legally
+  // required disclosure included. stream.ts's runGreeting now speaks the
+  // disclosure itself, first, as an explicit cached canned line — see
+  // MID_TURN_TTS_FAILURE_RECOVERY_LINE's neighbors in stream.ts for the same
+  // speakCannedLine pattern — using resolveAgentConfig's own
+  // disclosureText/disclosureVersion (already resolved independently via
+  // resolveDisclosure, not derived from this function). That is strictly
+  // MORE reliable than an LLM instruction the model could paraphrase, skip,
+  // or (per the "at the very start" wording relying on the model to
+  // self-limit to turn one) repeat on a later turn — not just faster.
+  // The segment stays in the array (see the "keeps layers that resolved to
+  // nothing" test/convention below) so the compiled-prompt panel can still
+  // say "disclosure: spoken automatically, not part of what the model
+  // reads" — but its body is always empty now: nothing about the
+  // disclosure is part of the string actually sent to the model.
+  // resolveDisclosure/isDisclosureEnabled (@weeber/compliance) still exist
+  // for resolveAgentConfig to know WHETHER and WHAT to speak (populating
+  // disclosureText/disclosureVersion below); they just don't feed `text`.
+  const disclosureBody = "";
   const callControlBody = "\n\n" + buildCallControlBlock(guardrails, toolsEnabled, direction);
 
   const segments: PromptSegment[] = [
@@ -540,7 +572,10 @@ export function composeSystemPrompt(opts: ComposeSystemPromptOptions): ComposedS
     {
       id: "disclosure",
       label: "Recording disclosure",
-      source: "Compliance requirement — spoken at the very start of every call.",
+      source:
+        "Compliance requirement — spoken automatically before the greeting starts, as its own line " +
+        "(2026-08-27: no longer part of what the model reads, so it's not delayed by the model's own " +
+        "response time). Wording lives in packages/weeber-compliance's consent.ts.",
       body: disclosureBody,
       editable: false,
     },
@@ -564,7 +599,22 @@ export async function resolvePersona(opts: {
   templateKey?: string;
   direction?: "inbound" | "outbound";
 }): Promise<string> {
-  return withCallControl(withDisclosure(await resolvePersonaBody(opts)), undefined, undefined, opts.direction);
+  // Date/day awareness (2026-08-27): this fallback path (no org/template
+  // config row — resolveAgentConfig's own composeSystemPrompt-based path is
+  // preferred whenever one exists) has no identity fields at all, but the
+  // caller on the other end of it still benefits from the agent knowing
+  // what day it is — buildIdentityBlock() with no frame still resolves to
+  // just that one line, same as it does for composeSystemPrompt's identity
+  // segment.
+  //
+  // Bug fix (2026-08-27, latency): no longer runs the body through
+  // withDisclosure — see composeSystemPrompt's identical change for the
+  // full reasoning (the disclosure is spoken explicitly by stream.ts now,
+  // never baked into the model's own system prompt). This function's own
+  // test (agent.test.ts) asserts it stays byte-identical to
+  // composeSystemPrompt's output for the same inputs, so it has to keep
+  // matching that function's behavior, not just its shape.
+  return withCallControl(buildIdentityBlock() + (await resolvePersonaBody(opts)), undefined, undefined, opts.direction);
 }
 
 /**

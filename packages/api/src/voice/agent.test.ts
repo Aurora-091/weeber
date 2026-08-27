@@ -1660,14 +1660,21 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(composed.segments.map((s) => s.body).join("")).toBe(composed.text);
   });
 
-  it("keeps layers that resolved to nothing in the array with an empty body, instead of dropping them", () => {
-    // An English agent with no identity fields adds neither block — the panel
-    // still needs to be able to say "not applied" rather than hide a layer.
+  it("keeps a layer that resolved to nothing (language) in the array with an empty body, instead of dropping it", () => {
+    // An English agent with no identity fields adds no language block — the
+    // panel still needs to be able to say "not applied" rather than hide a
+    // layer. Identity is the one layer that's never actually empty (below):
+    // it always carries the date/day line (2026-08-27, every agent).
     const composed = composeSystemPrompt({ ...base, language: "en" });
     const ids = composed.segments.map((s) => s.id);
     expect(ids).toEqual(["language", "identity", "persona", "disclosure", "call-control"]);
     expect(composed.segments.find((s) => s.id === "language")!.body).toBe("");
-    expect(composed.segments.find((s) => s.id === "identity")!.body).toBe("");
+  });
+
+  it("identity always carries the date/day line, even with no other identity fields set (2026-08-27)", () => {
+    const composed = composeSystemPrompt(base);
+    const identity = composed.segments.find((s) => s.id === "identity")!;
+    expect(identity.body).toMatch(/^Today is \w+, \w+ \d{1,2}, \d{4}\./);
   });
 
   it("marks exactly one segment editable — the merchant's own prompt — and that segment is their text verbatim", () => {
@@ -1678,12 +1685,21 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(editable[0]!.body).toBe(base.jobDescription);
   });
 
-  it("isolates the disclosure into its own segment rather than blending it into the merchant's prompt", () => {
+  it("keeps the disclosure out of both the merchant's prompt AND the model's own system prompt (2026-08-27)", () => {
+    // The disclosure used to be blended into the persona/system prompt as an
+    // LLM instruction ("At the very start of the call, say this near-
+    // verbatim..."); it's now spoken explicitly by stream.ts, first, never
+    // fed to the model at all — see composeSystemPrompt's own doc comment.
     const composed = composeSystemPrompt(base);
     const persona = composed.segments.find((s) => s.id === "persona")!;
     const disclosure = composed.segments.find((s) => s.id === "disclosure")!;
     expect(persona.body).not.toContain("At the very start of the call");
-    expect(disclosure.body).toContain("At the very start of the call");
+    expect(disclosure.body).toBe("");
+    expect(composed.text).not.toContain("At the very start of the call");
+    // The segment stays in the array — the compiled-prompt panel still
+    // needs to explain the mechanism even though nothing is spoken *by the
+    // model* for it.
+    expect(disclosure.source).toContain("spoken automatically");
   });
 
   it("produces the same string the previous hand-rolled composition did (regression guard on the refactor)", () => {
@@ -1692,7 +1708,10 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
       identity: { name: "Aria" },
       guardrails: { topicBoundaryStrictness: "medium" },
     });
-    expect(composed.text.startsWith("Your name is Aria.")).toBe(true);
+    // Starts with the date/day line (2026-08-27, every agent) now, not the
+    // name — "Your name is Aria." is still the very next line, right after it.
+    expect(composed.text.startsWith("Today is ")).toBe(true);
+    expect(composed.text).toContain("Your name is Aria.");
     expect(composed.text).toContain("You help customers with their orders.");
     expect(composed.text).toContain("Call control:");
     expect(composed.text).toContain(TOPIC_BOUNDARY_LINES.medium);

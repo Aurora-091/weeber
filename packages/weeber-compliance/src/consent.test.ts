@@ -16,14 +16,14 @@ describe("resolveDisclosure — Global Compliance Engine Tier 0 (#2/#3)", () => 
 
   it("resolves a Hindi/Hinglish line for language 'hi'", () => {
     const result = resolveDisclosure({ language: "hi" });
-    expect(result.text).toContain("call record");
+    expect(result.text).toContain("record");
     expect(result.text).toContain("AI assistant");
     expect(result.version).toBe(DISCLOSURE_VERSION);
   });
 
   it("resolves a distinct romanized Hinglish line for language 'hinglish'", () => {
     const result = resolveDisclosure({ language: "hinglish" });
-    expect(result.text).toContain("call record");
+    expect(result.text).toContain("record");
     expect(result.text).toContain("AI assistant");
     // romanized, not the Devanagari 'hi' line and not the English fallback
     expect(result.text).toContain("Shuru karne se pehle");
@@ -65,7 +65,7 @@ describe("resolveDisclosure — Global Compliance Engine Tier 0 (#2/#3)", () => 
   it("withDisclosure embeds the language-matched line when disclosure is enabled", () => {
     const prompt = withDisclosure("Base persona.", { language: "hi" });
     expect(prompt).toContain("Base persona.");
-    expect(prompt).toContain("call record");
+    expect(prompt).toContain("record");
   });
 
   it("withDisclosure is a no-op when disclosure is disabled", () => {
