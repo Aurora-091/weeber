@@ -7,7 +7,7 @@ import {
   resolveLlmTransportChain,
   type LlmTransportLink,
 } from "./transport-chain";
-import { streamWithTransportFailover } from "./transport-stream";
+import { streamWithTransportFailover, TransportChainExhaustedError } from "./transport-stream";
 
 const GATEWAY_PRIMARY: LlmTransportLink = { transport: "gateway", model: "google/gemini-3.1-flash-lite" };
 
@@ -149,6 +149,12 @@ async function* emitsThenFails(chunk: string, message: string): AsyncGenerator<s
   yield chunk;
   throw new Error(message);
 }
+// A link that never errors, just takes its time — the shape the error-only
+// chain could not catch (2026-08-27 gateway spike: slow, not failing).
+async function* slow(ms: number, ...chunks: string[]): AsyncGenerator<string> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  for (const c of chunks) yield c;
+}
 
 describe("streamWithTransportFailover — the retry window closes at the first token", () => {
   const links: LlmTransportLink[] = [
@@ -219,7 +225,7 @@ describe("streamWithTransportFailover — the retry window closes at the first t
     expect((thrown as Error).message).toBe("aborted");
   });
 
-  it("rethrows the LAST error when every link fails, rather than swallowing the turn", async () => {
+  it("wraps the LAST error in TransportChainExhaustedError when every link fails, rather than swallowing the turn", async () => {
     let thrown: unknown;
     try {
       for await (const _chunk of streamWithTransportFailover<string>({
@@ -231,7 +237,77 @@ describe("streamWithTransportFailover — the retry window closes at the first t
     } catch (error) {
       thrown = error;
     }
-    expect((thrown as Error).message).toBe("gateway down");
+    expect(thrown).toBeInstanceOf(TransportChainExhaustedError);
+    expect((thrown as TransportChainExhaustedError).lastLink).toEqual(links[1]);
+    expect(((thrown as Error).cause as Error).message).toBe("gateway down");
+  });
+
+  // 2026-09-02 latency fix: a link that never errors, just sits there, was
+  // invisible to the original error-only chain — this is the actual shape the
+  // 2026-08-27 production spike had (llm_ttft_ms up to 9990ms on a link that
+  // eventually succeeded). firstTokenTimeoutMs closes that gap.
+  describe("firstTokenTimeoutMs — bounding a link that is slow, not dead", () => {
+    it("fails over to the next link when the primary times out before producing anything", async () => {
+      const tried: string[] = [];
+      const out: string[] = [];
+      for await (const chunk of streamWithTransportFailover<string>({
+        links,
+        open: (link) => {
+          tried.push(formatTransportLink(link));
+          return link.transport === "groq" ? slow(50, "too", "slow") : emits("fast", "enough");
+        },
+        firstTokenTimeoutMs: 10,
+      })) {
+        out.push(chunk);
+      }
+      expect(tried).toEqual(["direct:groq/llama-3.3-70b-versatile", "openai/gpt-5.4-mini"]);
+      expect(out.join("")).toBe("fastenough");
+    });
+
+    it("surfaces TransportChainExhaustedError when every link times out", async () => {
+      let thrown: unknown;
+      try {
+        for await (const _chunk of streamWithTransportFailover<string>({
+          links,
+          open: () => slow(50, "never gets here"),
+          firstTokenTimeoutMs: 10,
+        })) {
+          // no-op
+        }
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(TransportChainExhaustedError);
+      expect(((thrown as Error).cause as Error).message).toContain("produced no output within 10ms");
+    });
+
+    it("does not time out mid-stream once the first chunk has already arrived", async () => {
+      async function* fastStartSlowFinish(): AsyncGenerator<string> {
+        yield "fast start, ";
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        yield "slow finish";
+      }
+      const out: string[] = [];
+      for await (const chunk of streamWithTransportFailover<string>({
+        links: [links[0]!],
+        open: () => fastStartSlowFinish(),
+        firstTokenTimeoutMs: 10,
+      })) {
+        out.push(chunk);
+      }
+      expect(out.join("")).toBe("fast start, slow finish");
+    });
+
+    it("has no effect when omitted — a single slow link is awaited to completion, unchanged", async () => {
+      const out: string[] = [];
+      for await (const chunk of streamWithTransportFailover<string>({
+        links: [links[0]!],
+        open: () => slow(20, "eventually"),
+      })) {
+        out.push(chunk);
+      }
+      expect(out.join("")).toBe("eventually");
+    });
   });
 
   it("reports which link actually produced the output, for per-transport latency attribution", async () => {

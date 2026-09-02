@@ -25,7 +25,7 @@ import {
   formatActiveModelLabel,
 } from "./llm";
 import { resolveLlmTransportChain } from "./llm/transport-chain";
-import { streamWithTransportFailover } from "./llm/transport-stream";
+import { streamWithTransportFailover, TransportChainExhaustedError } from "./llm/transport-stream";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs, type CapturedField } from "../database/schema";
 import { visibleTemplatesForOrg, loadVisibleTemplate } from "./template-visibility";
@@ -1493,6 +1493,14 @@ export const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you sa
 // call anyway, but we want to recover gracefully well before that happens.
 const TURN_TIMEOUT_MS = 12_000;
 
+// 2026-09-02 latency fix — ceiling on waiting for a transport-chain link's
+// first token (see transport-stream.ts's doc comment for the incident this
+// closes). Matches call-health.ts's LLM_TTFT_DEGRADED_MS: reusing the number
+// the codebase already calls "too slow" rather than inventing a second
+// threshold for the same judgment. Only takes effect when the chain is
+// non-empty (LLM_TRANSPORT_FAILOVER on) — see the call site below.
+const FIRST_TOKEN_FAILOVER_TIMEOUT_MS = 2_500;
+
 /** One turn's token accounting, normalized across whatever subset of fields
  * the active provider actually reports — every field is best-effort. */
 export interface TurnTokenUsage {
@@ -1756,7 +1764,7 @@ export async function runVoiceAgentTurn({
     // `ReturnType<typeof streamText>`: that bare form resolves its ToolSet
     // parameter to the empty default, which is not assignable from the concrete
     // tool set `buildVoiceTools` returns. Inferring keeps the tool types.
-    const makeStream = (link: typeof primaryLink) =>
+    const makeStream = (link: typeof primaryLink, linkSignal: AbortSignal) =>
       streamText({
         model: modelForTransportLink(link),
         providerOptions:
@@ -1776,7 +1784,7 @@ export async function runVoiceAgentTurn({
           dispositionScheduling,
         ),
         stopWhen: stepCountIs(6),
-        abortSignal: combinedSignal,
+        abortSignal: linkSignal,
         onStepFinish: (step) => {
           for (const call of step.toolCalls ?? []) {
             const toolResult = step.toolResults?.find((r) => r.toolCallId === call.toolCallId);
@@ -1814,8 +1822,8 @@ export async function runVoiceAgentTurn({
       });
     let result: ReturnType<typeof makeStream> | undefined;
     let activeLink = primaryLink;
-    const openLink = (link: typeof primaryLink) => {
-      result = makeStream(link);
+    const openLink = (link: typeof primaryLink, linkSignal: AbortSignal) => {
+      result = makeStream(link, linkSignal);
       return result.textStream;
     };
     const textStream = streamWithTransportFailover<string>({
@@ -1825,6 +1833,11 @@ export async function runVoiceAgentTurn({
         activeLink = link;
       },
       isAborted: () => combinedSignal.aborted,
+      signal: combinedSignal,
+      // Only bites when there's actually a chain to fail over across — with
+      // the flag off (chain.length === 0) this stays undefined and the single
+      // link waits exactly as long as it always has (up to TURN_TIMEOUT_MS).
+      firstTokenTimeoutMs: chain.length > 0 ? FIRST_TOKEN_FAILOVER_TIMEOUT_MS : undefined,
     });
 
     let full = "";
@@ -1926,6 +1939,16 @@ export async function runVoiceAgentTurn({
     // still give the caller something to hear instead of dead air.
     if (timeoutController.signal.aborted && !signal?.aborted) {
       console.warn("[voice-agent] turn exceeded timeout — using fallback reply");
+      onTextDelta(FALLBACK_REPLY);
+      return FALLBACK_REPLY;
+    }
+    // 2026-09-02 latency fix: every link in the transport chain failed (or
+    // timed out) before a first token. This is now a routine outcome of a
+    // bounded-latency design, not a bug — give the caller a fallback reply
+    // instead of an unhandled error killing the turn, but log loudly, since
+    // "every configured LLM link is unreachable" is still worth knowing about.
+    if (err instanceof TransportChainExhaustedError) {
+      console.error("[voice-agent] transport chain exhausted — using fallback reply", err);
       onTextDelta(FALLBACK_REPLY);
       return FALLBACK_REPLY;
     }
