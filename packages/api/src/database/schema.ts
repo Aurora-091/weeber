@@ -626,7 +626,7 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   // directly, bypassing the gateway"; `gateway:<id>` is accepted and
   // redundant; an UNQUALIFIED id keeps its exact current meaning, a gateway
   // model id. The colon scheme exists precisely so nothing already stored here
-  // changes meaning — `groq/llama-3.3-70b-versatile` is a valid *gateway* id
+  // changes meaning — `groq/llama-3.1-70b-versatile` is a valid *gateway* id
   // (gateway routing to groq compute) and is production's current value, so
   // reading a bare `groq/` prefix as direct-Groq would have been a silent
   // redefinition. No migration: same column, same jsonb string[], additive

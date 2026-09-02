@@ -16,23 +16,23 @@ describe("parseTransportId — the redefinition must not change any existing val
     // This is the exact value set on Railway production. `groq/...` here means
     // "gateway, routing to groq compute" and MUST keep meaning that — reading it
     // as direct-Groq would silently repoint production with no migration.
-    const parsed = "openai/gpt-5.4-mini,groq/llama-3.3-70b-versatile"
+    const parsed = "openai/gpt-5.4-mini,groq/llama-3.1-70b-versatile"
       .split(",")
       .map((s) => parseTransportId(s));
     expect(parsed).toEqual([
       { transport: "gateway", model: "openai/gpt-5.4-mini" },
-      { transport: "gateway", model: "groq/llama-3.3-70b-versatile" },
+      { transport: "gateway", model: "groq/llama-3.1-70b-versatile" },
     ]);
   });
 
   it("only a direct: scheme opts into the new transport", () => {
-    expect(parseTransportId("direct:groq/llama-3.3-70b-versatile")).toEqual({
+    expect(parseTransportId("direct:groq/llama-3.1-70b-versatile")).toEqual({
       transport: "groq",
-      model: "llama-3.3-70b-versatile",
+      model: "llama-3.1-70b-versatile",
     });
-    expect(parseTransportId("direct:llama-3.3-70b-versatile")).toEqual({
+    expect(parseTransportId("direct:llama-3.1-70b-versatile")).toEqual({
       transport: "groq",
-      model: "llama-3.3-70b-versatile",
+      model: "llama-3.1-70b-versatile",
     });
   });
 
@@ -60,7 +60,7 @@ describe("resolveLlmTransportChain", () => {
     expect(
       resolveLlmTransportChain({
         primary: GATEWAY_PRIMARY,
-        envValue: "openai/gpt-5.4-mini,direct:groq/llama-3.3-70b-versatile",
+        envValue: "openai/gpt-5.4-mini,direct:groq/llama-3.1-70b-versatile",
         enabled: false,
       }),
     ).toEqual([]);
@@ -69,7 +69,7 @@ describe("resolveLlmTransportChain", () => {
   it("builds the cross-transport chain in order when enabled", () => {
     expect(
       resolveLlmTransportChain({
-        primary: { transport: "groq", model: "llama-3.3-70b-versatile" },
+        primary: { transport: "groq", model: "llama-3.1-70b-versatile" },
         envValue: "openai/gpt-5.4-mini,google/gemini-3.1-flash-lite",
         enabled: true,
       }),
@@ -81,8 +81,8 @@ describe("resolveLlmTransportChain", () => {
 
   it("filters the primary out even when a caller lists it, and collapses duplicates", () => {
     const chain = resolveLlmTransportChain({
-      primary: { transport: "groq", model: "llama-3.3-70b-versatile" },
-      envValue: "direct:groq/llama-3.3-70b-versatile,openai/gpt-5.4-mini,openai/gpt-5.4-mini",
+      primary: { transport: "groq", model: "llama-3.1-70b-versatile" },
+      envValue: "direct:groq/llama-3.1-70b-versatile,openai/gpt-5.4-mini,openai/gpt-5.4-mini",
       enabled: true,
     });
     expect(chain).toEqual([{ transport: "gateway", model: "openai/gpt-5.4-mini" }]);
@@ -90,23 +90,23 @@ describe("resolveLlmTransportChain", () => {
 
   it("distinguishes the same model on two transports — they are different links", () => {
     const chain = resolveLlmTransportChain({
-      primary: { transport: "groq", model: "llama-3.3-70b-versatile" },
-      envValue: "groq/llama-3.3-70b-versatile",
+      primary: { transport: "groq", model: "llama-3.1-70b-versatile" },
+      envValue: "groq/llama-3.1-70b-versatile",
       enabled: true,
     });
     // The gateway-routed copy is NOT the primary and must survive: it is a
     // different failure domain, which is the entire point of the topology.
-    expect(chain).toEqual([{ transport: "gateway", model: "groq/llama-3.3-70b-versatile" }]);
+    expect(chain).toEqual([{ transport: "gateway", model: "groq/llama-3.1-70b-versatile" }]);
   });
 
   it("per-agent override wins over the env default", () => {
     const chain = resolveLlmTransportChain({
       primary: GATEWAY_PRIMARY,
-      override: ["direct:groq/llama-3.3-70b-versatile"],
+      override: ["direct:groq/llama-3.1-70b-versatile"],
       envValue: "openai/gpt-5.4-mini",
       enabled: true,
     });
-    expect(chain).toEqual([{ transport: "groq", model: "llama-3.3-70b-versatile" }]);
+    expect(chain).toEqual([{ transport: "groq", model: "llama-3.1-70b-versatile" }]);
   });
 
   it("fails open on garbage rather than throwing", () => {
@@ -124,7 +124,7 @@ describe("resolveLlmTransportChain", () => {
     // trigger a second layer of gateway-native failover.
     const chain = resolveLlmTransportChain({
       primary: GATEWAY_PRIMARY,
-      envValue: "openai/gpt-5.4-mini,direct:groq/llama-3.3-70b-versatile",
+      envValue: "openai/gpt-5.4-mini,direct:groq/llama-3.1-70b-versatile",
       enabled: true,
     });
     expect(chain.length).toBeGreaterThan(0);
@@ -158,7 +158,7 @@ async function* slow(ms: number, ...chunks: string[]): AsyncGenerator<string> {
 
 describe("streamWithTransportFailover — the retry window closes at the first token", () => {
   const links: LlmTransportLink[] = [
-    { transport: "groq", model: "llama-3.3-70b-versatile" },
+    { transport: "groq", model: "llama-3.1-70b-versatile" },
     { transport: "gateway", model: "openai/gpt-5.4-mini" },
   ];
 
@@ -174,7 +174,7 @@ describe("streamWithTransportFailover — the retry window closes at the first t
     })) {
       out.push(chunk);
     }
-    expect(tried).toEqual(["direct:groq/llama-3.3-70b-versatile", "openai/gpt-5.4-mini"]);
+    expect(tried).toEqual(["direct:groq/llama-3.1-70b-versatile", "openai/gpt-5.4-mini"]);
     expect(out.join("")).toBe("hello");
   });
 
@@ -199,7 +199,7 @@ describe("streamWithTransportFailover — the retry window closes at the first t
     }
     // The second link must never have been opened: speaking it would have made
     // the agent say two different things in one turn.
-    expect(tried).toEqual(["direct:groq/llama-3.3-70b-versatile"]);
+    expect(tried).toEqual(["direct:groq/llama-3.1-70b-versatile"]);
     expect(out.join("")).toBe("Sure, one ");
     expect((thrown as Error).message).toBe("connection reset");
   });
@@ -221,7 +221,7 @@ describe("streamWithTransportFailover — the retry window closes at the first t
     } catch (error) {
       thrown = error;
     }
-    expect(tried).toEqual(["direct:groq/llama-3.3-70b-versatile"]);
+    expect(tried).toEqual(["direct:groq/llama-3.1-70b-versatile"]);
     expect((thrown as Error).message).toBe("aborted");
   });
 
@@ -260,7 +260,7 @@ describe("streamWithTransportFailover — the retry window closes at the first t
       })) {
         out.push(chunk);
       }
-      expect(tried).toEqual(["direct:groq/llama-3.3-70b-versatile", "openai/gpt-5.4-mini"]);
+      expect(tried).toEqual(["direct:groq/llama-3.1-70b-versatile", "openai/gpt-5.4-mini"]);
       expect(out.join("")).toBe("fastenough");
     });
 

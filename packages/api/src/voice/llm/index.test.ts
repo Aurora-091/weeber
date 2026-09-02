@@ -55,9 +55,9 @@ describe("buildGatewayProviderOptions — cross-provider LLM failover (recommend
   });
 
   it("falls back to the AI_GATEWAY_FALLBACK_MODELS env var (comma-separated) when no per-agent override is set", () => {
-    process.env.AI_GATEWAY_FALLBACK_MODELS = "openai/gpt-5.4-mini, groq/llama-3.3-70b-versatile";
+    process.env.AI_GATEWAY_FALLBACK_MODELS = "openai/gpt-5.4-mini, groq/llama-3.1-70b-versatile";
     expect(buildGatewayProviderOptions("gateway")).toEqual({
-      gateway: { models: ["openai/gpt-5.4-mini", "groq/llama-3.3-70b-versatile"] },
+      gateway: { models: ["openai/gpt-5.4-mini", "groq/llama-3.1-70b-versatile"] },
     });
   });
 

@@ -9,7 +9,7 @@ import type { LlmProvider } from "./index";
  * broke is a different one.
  *
  * What broke: production's `AI_GATEWAY_FALLBACK_MODELS` ends in
- * `groq/llama-3.3-70b-versatile`, and that link failed 4 of 10 identical
+ * `groq/llama-3.1-70b-versatile`, and that link failed 4 of 10 identical
  * streaming-tool requests (measured 2026-08-12) because gateway routing attempts
  * **bedrock first** (400, "doesn't support tool use in streaming mode") before
  * groq (503). The tail of the declared failover chain is ~40% broken for this
@@ -42,7 +42,7 @@ export type LlmTransportLink = { transport: LlmProvider; model: string };
  * gateway".
  *
  * This is the whole reason the syntax is `direct:groq/<model>` and not the
- * more obvious `groq/<model>`: **`groq/llama-3.3-70b-versatile` is already a
+ * more obvious `groq/<model>`: **`groq/llama-3.1-70b-versatile` is already a
  * valid *gateway* model id today**, and it is literally the current value of
  * production's `AI_GATEWAY_FALLBACK_MODELS`, where it means "gateway, routing
  * to groq compute". Reading a bare `groq/` prefix as direct-Groq would
@@ -74,7 +74,7 @@ export function parseTransportId(raw: string): LlmTransportLink | null {
   if (id.startsWith(DIRECT_PREFIX)) {
     const rest = id.slice(DIRECT_PREFIX.length).trim();
     if (!rest) return null;
-    // `direct:groq/llama-3.3-70b-versatile` and `direct:llama-3.3-70b-versatile`
+    // `direct:groq/llama-3.1-70b-versatile` and `direct:llama-3.1-70b-versatile`
     // both mean the same thing: Groq is the only transport with a direct path
     // wired today (createGroq in ./index), so the provider segment is optional
     // and, when present, must be groq — a `direct:openai/...` would otherwise

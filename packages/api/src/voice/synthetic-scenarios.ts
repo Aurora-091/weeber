@@ -107,7 +107,7 @@ export type SyntheticScenario = {
  * failover is not a production risk. GROQ_API_KEY is present in every
  * environment this runs in.
  */
-const BOUNDARY_CALLER_MODEL = { provider: "groq" as const, model: "llama-3.3-70b-versatile" };
+const BOUNDARY_CALLER_MODEL = { provider: "groq" as const, model: "llama-3.1-70b-versatile" };
 
 export const SYNTHETIC_SCENARIOS: SyntheticScenario[] = [
   {

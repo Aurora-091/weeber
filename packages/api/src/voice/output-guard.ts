@@ -50,8 +50,8 @@
  * unicode-triangle siblings), Mistral (`[TOOL_CALLS]`), plus the generic
  * `<|...|>` special-token shape used across all of them.
  *
- * Three more shapes below, all measured 2026-08-13 on `groq/llama-3.3-70b-versatile`
- * and `gateway/llama-3.3-70b-versatile` running the insurance-final-expense-qualifier
+ * Three more shapes below, all measured 2026-08-13 on `groq/llama-3.1-70b-versatile`
+ * and `gateway/llama-3.1-70b-versatile` running the insurance-final-expense-qualifier
  * persona (calls 8 and 9). Root cause traced upstream: that persona's default
  * prompt teaches every tool with an inline call-syntax example —
  * `` `captureField({ field: "x", value })` `` — instead of describing it in

@@ -63,6 +63,8 @@ export function buildWorkflowFactsBlock(
 ): string {
   const lines: string[] = [];
   if (context.customer_name) lines.push(`Customer: ${context.customer_name}.`);
+  if (context.company_name) lines.push(`Company Name: ${context.company_name}.`);
+  if (context.agent_name) lines.push(`Agent Name: ${context.agent_name}.`);
   // Producers are inconsistent: the Shopify COD and feedback contexts write
   // camelCase `orderId` (read by workflows/engine.ts for the post-call
   // annotate), templates and docs use `order_id`. Accept both — an agent that
@@ -94,5 +96,14 @@ export function buildWorkflowFactsBlock(
   if (context.cart_recovery_url) {
     lines.push(`Cart recovery link (with discount): ${context.cart_recovery_url}.`);
   }
+  
+  // Insurance / Services variables
+  if (context.interaction_type) lines.push(`Interaction Type: ${context.interaction_type}.`);
+  if (context.policy_type) lines.push(`Policy Type: ${context.policy_type}.`);
+  if (context.due_date) lines.push(`Due Date: ${context.due_date}.`);
+  if (context.payment_link) lines.push(`Payment Link: ${context.payment_link}.`);
+  if (context.reschedule_date) lines.push(`Reschedule Date: ${context.reschedule_date}.`);
+  if (context.reschedule_time) lines.push(`Reschedule Time: ${context.reschedule_time}.`);
+
   return lines.length > 0 ? lines.join(" ") : "";
 }

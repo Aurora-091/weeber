@@ -14,7 +14,7 @@ export type LlmProvider = "gateway" | "groq";
  * "gateway" routes through Vercel AI Gateway (which can itself forward to Groq
  * compute via a groq/* model id) and "groq" talks to Groq directly. Measured
  * 2026-08-12, median time-to-first-content-delta, same model both ways:
- * gateway -> groq/llama-3.3-70b-versatile 334ms vs groq direct 206ms, so the
+ * gateway -> groq/llama-3.1-70b-versatile 334ms vs groq direct 206ms, so the
  * Vercel hop costs ~130ms. Direct is faster, but buildGatewayProviderOptions
  * below returns empty providerOptions for "groq" — going direct trades that
  * 130ms for having NO LLM failover at all. Default to "gateway" until a Groq
@@ -33,7 +33,7 @@ const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 
 // Llama 3.3 70B is the commonly recommended Groq model for real-time voice
 // agents — strong quality/latency tradeoff and native tool-calling support.
-export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-70b-versatile";
 
 /** Returns the active model instance to pass to `streamText`. `modelOverride`
  * (agent-frame.ts's llmModel) bypasses the env-configured default model id
@@ -126,7 +126,7 @@ export function getActiveModelLabel(override?: LlmProvider, modelOverride?: stri
  * message. Previously hardcoded to a single OpenAI-mini-ish rate regardless
  * of which provider/model was actually active, which was flat wrong for
  * Groq. Groq rate is real
- * (llama-3.3-70b-versatile, groq.com/pricing as of mid-2026); gateway rate
+ * (llama-3.1-70b-versatile, groq.com/pricing as of mid-2026); gateway rate
  * is a rough gpt-4o-mini-class placeholder since AI_GATEWAY_MODEL can be
  * swapped to anything — update both if pricing drifts or the gateway
  * default model changes.
