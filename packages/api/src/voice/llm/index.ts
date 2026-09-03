@@ -31,7 +31,7 @@ export function resolveLlmProvider(override?: LlmProvider): LlmProvider {
 
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 
-// Llama 3.3 70B is the commonly recommended Groq model for real-time voice
+// Llama 3.1 70B is the commonly recommended Groq model for real-time voice
 // agents — strong quality/latency tradeoff and native tool-calling support.
 export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-70b-versatile";
 

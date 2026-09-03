@@ -227,7 +227,7 @@ export const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway", model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
   { provider: "gateway", model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },
   { provider: "gateway", model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
-  { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (fastest overall, Groq)" },
+  { provider: "groq", model: "llama-3.1-70b-versatile", label: "Llama 3.1 70B (fastest overall, Groq)" },
 ] as const;
 export const RECOMMENDED_LANGUAGES = [
   { code: "en", label: "English" },

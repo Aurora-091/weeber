@@ -8,4 +8,4 @@ export const gateway = createGateway({
 // Model for the voice agent — low latency matters most (real-time voice
 // turn-taking). Overridable per deployment via AI_GATEWAY_MODEL; any model
 // the gateway serves works.
-export const VOICE_AGENT_MODEL = process.env.AI_GATEWAY_MODEL || "openai/gpt-5.4-mini";
+export const VOICE_AGENT_MODEL = process.env.AI_GATEWAY_MODEL || "google/gemini-3.1-flash-lite";
