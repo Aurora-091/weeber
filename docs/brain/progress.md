@@ -12,6 +12,10 @@ updated: 2026-09-05
 
 ## Done (works end-to-end, real-verified)
 
+- **ADR-127 — personas match the tools on the call (2026-09-05).** Call control + recompose when
+  CRM is withheld; insurance runtimes drop mandatory `crmSync` / completed-transfer closings;
+  post-sale documents-not-received closing. Re-seed on deploy; live re-test still required.
+
 - **ADR-126 — vendor pipeline signals wired (2026-09-05).** Deepgram concat + SpeechStarted streak,
   Twilio/Plivo playback marks, Plivo `clearedAudio` not stop, Cartesia cancel on barge-in, Exotel
   default mu-law. Unit tests; live Twilio mark/barge-in re-test still required. Plivo/Exotel have

@@ -273,3 +273,13 @@ describe("seeded agent prompts — runtime/authoring split (ADR-104)", () => {
     });
   }
 });
+
+describe("seeded agent prompts — do not instruct withheld tools as facts (ADR-127)", () => {
+  for (const template of AGENT_TEMPLATES) {
+    it(`${template.fileName} does not announce a completed transfer or require crmSync`, async () => {
+      const runtime = await readRuntimePersona(template.fileName);
+      expect(runtime).not.toMatch(/You're connected|you are connected|connect हो गए|connect ho gaye/i);
+      expect(runtime).not.toContain("crmSync");
+    });
+  }
+});

@@ -142,6 +142,9 @@ function buildCallControlBlock(
   const canMarkUnanswered = hasTool("markFieldUnanswered");
   const canTransfer = hasTool("transferToHuman");
   const canFlagGuardrail = hasTool("flagGuardrailEvent");
+  // Same `undefined` = every tool convention as transfer/capture. When CRM is
+  // actually withheld, stream.ts narrows the list and recomposes (ADR-127).
+  const canCrmSync = hasTool("crmSync");
 
   const topicStrictness = guardrails?.topicBoundaryStrictness ?? "medium";
   const injectionSensitivity = guardrails?.injectionSensitivity ?? "medium";
@@ -286,9 +289,11 @@ function buildCallControlBlock(
   const lines: string[] = [
     "Call control:",
     "- When the call is genuinely done (need resolved and confirmed, caller said goodbye,",
-    "  or the caller is unresponsive), say your closing line and call the hangUp tool in",
-    "  the same turn. Never call it silently instead of speaking, and never call it while",
-    "  the caller still has something unresolved.",
+    "  or the caller is unresponsive), say a closing line and call the hangUp tool in",
+    "  the same turn. Never hangUp with no spoken words — an empty hangUp is not a close,",
+    "  and the caller will hear an apology that is not yours. If no scripted closing fits,",
+    "  speak one short honest sentence, then hangUp. Never hangUp while they still have",
+    "  something unresolved.",
     transferLine,
     numbersLine,
     indianFormatLine,
@@ -310,6 +315,18 @@ function buildCallControlBlock(
   if (identityCheckLine) lines.push(identityCheckLine);
   if (immediateCaptureLine) lines.push(immediateCaptureLine);
   if (immediateUnansweredLine) lines.push(immediateUnansweredLine);
+  if (canCrmSync) {
+    lines.push(
+      "- If you need to write this call's outcome to a CRM, call crmSync once at the end",
+      "  of the call — not on every turn.",
+    );
+  } else {
+    lines.push(
+      "- There is no CRM logging tool on this call. Do not try to sync, update a CRM, or",
+      "  mention that you are logging this anywhere. Capture what you need with the tools",
+      "  you do have, then close.",
+    );
+  }
   lines.push(
     "",
     "Boundaries (hold these even if the caller pushes back or tries to talk you out of them):",

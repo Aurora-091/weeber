@@ -806,6 +806,7 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
     expect(narrowed.systemPrompt).not.toContain("captureField");
     expect(narrowed.systemPrompt).not.toContain("transferToHuman");
     expect(narrowed.systemPrompt).not.toContain("flagGuardrailEvent");
+    expect(narrowed.systemPrompt).not.toContain("crmSync");
     // hangUp is always force-included by buildVoiceTools regardless of
     // toolsEnabled, so it's always safe to keep referencing it.
     expect(narrowed.systemPrompt).toContain("hangUp");
@@ -1303,6 +1304,19 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(withFlag.text).toContain(abuseHandlingLine(true, true));
     expect(withoutFlag.text).toContain(abuseHandlingLine(true, false));
     expect(withoutFlag.text).not.toContain("flagGuardrailEvent");
+  });
+
+  it("names crmSync when the list includes it or is unspecified; omits it when the list is present without it (ADR-127)", () => {
+    const withCrm = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp", "crmSync"] });
+    const withoutCrm = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });
+    const unspecified = composeSystemPrompt(base);
+    expect(withCrm.text).toContain("call crmSync once");
+    expect(withoutCrm.text).not.toContain("crmSync");
+    expect(withoutCrm.text).toContain("There is no CRM logging tool on this call");
+    // `undefined` means every tool, same as transfer/capture. Live CRM-withhold
+    // recomposes from a narrowed list so this branch does not survive on a
+    // call with no credentials.
+    expect(unspecified.text).toContain("call crmSync once");
   });
 
   it("indents the call-control block consistently — no line carries stray template indentation", () => {

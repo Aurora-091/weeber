@@ -6,6 +6,7 @@ import { syncToHubspot } from "../integrations/hubspot";
 import { getOrgCrmCredentials } from "../integrations/resolve-crm";
 import { db } from "../../database";
 import { guardrailEvents } from "../../database/schema";
+import { AVAILABLE_TOOL_NAMES, type AvailableToolName } from "../agent-frame";
 
 /**
  * Whose CRM record this call writes to — bound server-side at session
@@ -227,4 +228,20 @@ export async function resolveLiveCrmSyncContext(input: {
     console.warn("[voice] crmSync withheld — credential lookup failed", { orgId: ctx.orgId, err });
     return undefined;
   }
+}
+
+/**
+ * ADR-127: dropping `crmSync` from the request is not enough — the persona
+ * still says "call crmSync" unless call-control is recomposed from this list.
+ * Same freeze-the-catalog shape as `narrowToolsForTransferCapability` when
+ * the saved list is undefined.
+ */
+export function narrowToolsForCrmAvailability(
+  enabledTools: AvailableToolName[] | undefined,
+  hasCrm: boolean,
+): AvailableToolName[] | undefined {
+  if (hasCrm) return enabledTools;
+  const base = enabledTools ?? [...AVAILABLE_TOOL_NAMES];
+  if (!base.includes("crmSync")) return enabledTools;
+  return base.filter((name) => name !== "crmSync");
 }
