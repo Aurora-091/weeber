@@ -1,7 +1,7 @@
 ---
 doc: progress
 status: LIVE — keep current
-updated: 2026-08-20
+updated: 2026-09-05
 ---
 
 # Progress — done / in-progress / next / known issues
@@ -11,6 +11,11 @@ updated: 2026-08-20
 > summary that saves an agent from reading all three.
 
 ## Done (works end-to-end, real-verified)
+
+- **ADR-122 — first-token timeout vs tools (2026-09-05).** The live "I didn't catch that" loop was the
+  2.5s LLM first-token abort killing an in-flight `crmSync` on orgs with no CRM, not STT. Deferred
+  abort when a tool started this turn; `resolveLiveCrmSyncContext` withholds the tool without
+  credentials; insurance runtime personas are tag-free. See `docs/decisions/adr-122-*.md`.
 
 - **Voice "start" handler: duplicate `orgs` query removed + every seeded greeting made resolvable
   (2026-08-20, `a6d2b87`/`a7b63b6`).** Two pieces. (1) `resolveAgentConfig` no longer fires its own

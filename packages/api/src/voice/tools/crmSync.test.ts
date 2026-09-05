@@ -1,4 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * §P0 fix (audit #06): crmSync used to read a single global env var
@@ -73,7 +75,7 @@ mock.module("../integrations/hubspot", () => ({
   },
 }));
 
-import { createCrmSyncTool, resolveCrmSyncContext } from "./crmSync";
+import { createCrmSyncTool, resolveCrmSyncContext, resolveLiveCrmSyncContext } from "./crmSync";
 
 function callTool(orgId: string, phoneNumber = "+15551234567", callId = 1) {
   const tool = createCrmSyncTool({ orgId, phoneNumber, callId });
@@ -259,5 +261,42 @@ describe("resolveCrmSyncContext — non-registration is the gate (ADR-069)", () 
     expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567" })).toBeUndefined();
     expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: null })).toBeUndefined();
     expect(resolveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: 0 })).toBeUndefined();
+  });
+});
+
+describe("resolveLiveCrmSyncContext — withhold when no CRM is connected (ADR-122)", () => {
+  beforeEach(() => {
+    orgIntegrationRows = [];
+    queryCallIndex = 0;
+  });
+
+  it("returns undefined when the org has no CRM credentials — the tool must not be registered", async () => {
+    orgIntegrationRows = [];
+    expect(
+      await resolveLiveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: 1 }),
+    ).toBeUndefined();
+  });
+
+  it("returns the bound context when a CRM is connected", async () => {
+    orgIntegrationRows = [{ provider: "hubspot", credentials: { api_key: "k" }, enabled: true }];
+    expect(await resolveLiveCrmSyncContext({ orgId: "org-a", humanNumber: "+15551234567", callId: 1 })).toEqual({
+      orgId: "org-a",
+      phoneNumber: "+15551234567",
+      callId: 1,
+    });
+  });
+
+  it("still returns undefined when the number itself is unusable, even if a CRM is connected", async () => {
+    orgIntegrationRows = [{ provider: "hubspot", credentials: { api_key: "k" }, enabled: true }];
+    expect(await resolveLiveCrmSyncContext({ orgId: "org-a", humanNumber: "anonymous", callId: 1 })).toBeUndefined();
+  });
+});
+
+describe("stream.ts registers crmSync only through resolveLiveCrmSyncContext (ADR-122)", () => {
+  const streamSource = readFileSync(join(import.meta.dir, "../stream.ts"), "utf8");
+
+  it("the start handler awaits the credential-aware resolver in the pickup batch", () => {
+    expect(streamSource).toContain("resolveLiveCrmSyncContext({");
+    expect(streamSource).not.toContain("crmSyncContext = resolveCrmSyncContext(");
   });
 });

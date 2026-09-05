@@ -31,7 +31,8 @@ describe("the LLM call site keeps its post-ADR-121 shape", () => {
 
   test("the first chunk is raced against FIRST_TOKEN_TIMEOUT_MS before the normal drain loop runs", () => {
     expect(agentSource).toContain("const firstTokenAbort = new AbortController();");
-    expect(agentSource).toContain("Promise.race([firstChunk, timeout])");
+    expect(agentSource).toContain("wrapToolsWithInFlightCounter(");
+    expect(agentSource).toContain("shouldAbortOnFirstTokenTimeout(toolsInFlight.started)");
     expect(agentSource).toContain("firstTokenAbort.abort();");
   });
 
