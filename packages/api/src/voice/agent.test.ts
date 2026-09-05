@@ -10,6 +10,7 @@ import {
   toTurnTokenUsage,
   wrapToolsWithInFlightCounter,
   shouldAbortOnFirstTokenTimeout,
+  shouldSpeakEmptyTurnFallback,
 } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
 import { renderTemplate } from "./workflows/variables";
@@ -837,7 +838,7 @@ describe("first-token timeout vs tools (ADR-122)", () => {
   });
 
   it("counts execute() start/end so a pending tool is visible to the race", async () => {
-    const inFlight = { started: 0, count: 0 };
+    const inFlight = { started: 0, count: 0, names: [] as string[] };
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -860,6 +861,19 @@ describe("first-token timeout vs tools (ADR-122)", () => {
     await running;
     expect(inFlight.started).toBe(1);
     expect(inFlight.count).toBe(0);
+    expect(inFlight.names).toEqual(["slow"]);
+  });
+});
+
+describe("empty-turn fallback vs hangUp (ADR-124)", () => {
+  it("still speaks the hearing apology when the model produced neither text nor a terminal tool", () => {
+    expect(shouldSpeakEmptyTurnFallback([])).toBe(true);
+    expect(shouldSpeakEmptyTurnFallback(["setDisposition", "crmSync"])).toBe(true);
+  });
+
+  it("does not speak the hearing apology after hangUp or transferToHuman", () => {
+    expect(shouldSpeakEmptyTurnFallback(["setDisposition", "hangUp"])).toBe(false);
+    expect(shouldSpeakEmptyTurnFallback(["transferToHuman"])).toBe(false);
   });
 });
 

@@ -33,6 +33,7 @@ describe("the LLM call site keeps its post-ADR-121 shape", () => {
     expect(agentSource).toContain("const firstTokenAbort = new AbortController();");
     expect(agentSource).toContain("wrapToolsWithInFlightCounter(");
     expect(agentSource).toContain("shouldAbortOnFirstTokenTimeout(toolsInFlight.started)");
+    expect(agentSource).toContain("shouldSpeakEmptyTurnFallback(toolCallsThisTurn)");
     expect(agentSource).toContain("firstTokenAbort.abort();");
   });
 

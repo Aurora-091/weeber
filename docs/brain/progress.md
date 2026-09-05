@@ -12,6 +12,11 @@ updated: 2026-09-05
 
 ## Done (works end-to-end, real-verified)
 
+- **ADR-124 — empty hangUp is not a hearing problem (2026-09-05).** Post-sale welcome called
+  hangUp with no closing line; skip `FALLBACK_REPLY` when hangUp/transfer already ran. Unit +
+  wiring tests; needs a live post-sale re-test after deploy. Appointment-setter TTS dead air
+  is a separate open issue.
+
 - **ADR-123 — Twilio AMD must not steal a live conversation (2026-09-05).** After ADR-122 a live
   India test call conversed two turns, then Twilio AMD redirected to a default-voice "sorry we
   missed you" hangup. AMD now defaults on for NANP only; test-call-phone sets `amd: false`; a
@@ -213,6 +218,16 @@ updated: 2026-09-05
 - Actually set `SENTRY_DSN` on Railway (Sentry itself is wired, just needs the project + env var).
 
 ## Known issues / debt (open)
+
+- **TTS dead air with spoken transcript (2026-09-05, appointment-setter).** Live log:
+  `DEAD AIR on turn 5: the LLM produced 59 chars but TTS never emitted a single audio byte`.
+  ADR-101 class. Not ADR-124. Reproduce on appointment-setter, not post-sale.
+
+- **No `humanTransferNumber` on the demo org** (`org_a21984fe-…`). Every insurance test call
+  logs `transferToHuman withheld`. Ops: set it on the agent or in Settings. Not a code bug.
+
+- **`setDisposition` routinely exceeds the 400ms filler** on live insurance closes (A4
+  scheduled_calls insert). Honest filler; still adds "one moment" at hangup.
 
 - **The caller-silence race-condition test fails (2026-08-20, `stream-silence-timeout.test.ts`,
   found while landing `a6d2b87`, not fixed).** "does not hang up on a caller who answers while the
