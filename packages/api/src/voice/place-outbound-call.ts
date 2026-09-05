@@ -6,6 +6,7 @@ import { createPlivoOutboundCall } from "./plivo-client";
 import { createExotelOutboundCall } from "./exotel-client";
 import { bumpOrgActivity } from "../app/org-activity";
 import { assertOutboundCallAllowed } from "./compliance/outbound-gate";
+import { shouldRequestTwilioAmd } from "./amd";
 
 export type TelephonyProvider = "twilio" | "plivo" | "exotel";
 
@@ -115,11 +116,13 @@ export async function placeOutboundCall(input: {
    * one is set. Optional: callers that don't know/have an agent (e.g. the
    * scheduler sweep) just fall back to the org-level number. */
   agentKey?: string | null;
-  /** Enable Twilio async answering-machine detection. No-op for Plivo/Exotel,
-   * which don't expose AMD on our current integration. */
+  /** Enable Twilio async answering-machine detection. Default: on for NANP
+   * (`+1` + 10 digits) only — see `shouldRequestTwilioAmd`. Explicit `false`
+   * is required for dashboard test calls (ADR-123). No-op for Plivo/Exotel. */
   amd?: boolean;
 }): Promise<PlaceOutboundResult> {
-  const { orgId, to, agentKey, amd = true } = input;
+  const { orgId, to, agentKey } = input;
+  const amd = input.amd ?? shouldRequestTwilioAmd(to);
 
   // ADR-096: the chokepoint. Runs before routing resolution and before any
   // provider is touched, so a refused call costs nothing and cannot leak a

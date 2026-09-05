@@ -642,7 +642,7 @@ export const userApp = new Hono<UserEnv>()
 
     const { buildPreviewAgentConfig } = await import("../voice/agent");
     const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride, orgId);
-    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
+    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey, amd: false });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
     await sessionStore.set(placed.sessionKey, {

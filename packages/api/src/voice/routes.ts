@@ -20,12 +20,13 @@ const { VoiceResponse } = twilioPkg.twiml;
 import { getTwilioClientForOrg, getWsUrl } from "./twilio-client";
 import { buildPlivoStreamXml, buildPlivoTransferXml } from "./plivo-client";
 import { placeOutboundCall } from "./place-outbound-call";
+import { AMD_MACHINE_ANSWERS, AMD_VOICEMAIL_LINE, shouldHijackLiveCallForAmd } from "./amd";
 import { requirePlivoSignature } from "./middleware/plivo-signature";
 import { sessionStore } from "./session-store";
 import { dispatchWebhook, resolveWebhookUrl } from "./webhooks";
 import { db } from "../database";
-import { calls, callLatency, orgs, twilioStatusEvents } from "../database/schema";
-import { asc, eq } from "drizzle-orm";
+import { calls, callLatency, orgs, twilioStatusEvents, transcripts } from "../database/schema";
+import { and, asc, eq } from "drizzle-orm";
 import { AgentFrameSchema } from "./agent-frame";
 import { makeFixedWindowLimiter } from "./fixed-window-limiter";
 import { issueTestCallToken } from "./test-call-tokens";
@@ -385,23 +386,43 @@ export const voice = new Hono()
 
   // Twilio async answering-machine-detection webhook — fires once Twilio has
   // determined AnsweredBy, independently of (and not blocking) the live
-  // Media Stream the agent is already talking over. If a machine answered,
-  // we redirect the live call out of the stream to leave a short, honest
-  // voicemail and hang up, rather than letting the agent run a live
-  // conversation into an answering machine's beep and silence.
+  // Media Stream. A genuine machine (US campaign, greeting-only) is
+  // redirected to a short voicemail `<Say>` and hangup. A machine_* label
+  // after the caller has already spoken is a false positive (ADR-123) —
+  // never steal a live conversation. `<Say>` is Twilio's default voice, not
+  // Cartesia, which is why a false positive is heard as a *different person*.
   .post("/amd-status-callback", requireTwilioSignature, async (c) => {
     const body = c.get("twilioBody");
     const callSid = String(body.CallSid ?? "");
     const answeredBy = String(body.AnsweredBy ?? "");
+    console.log(`[voice] AMD AnsweredBy=${answeredBy || "(empty)"}${callSid ? ` (${callSid})` : ""}`);
 
-    const machineAnswers = new Set(["machine_start", "machine_end_beep", "machine_end_silence", "machine_end_other"]);
-    if (callSid && machineAnswers.has(answeredBy)) {
+    if (callSid && AMD_MACHINE_ANSWERS.has(answeredBy)) {
+      const [callRow] = await db
+        .select({ id: calls.id, orgId: calls.orgId })
+        .from(calls)
+        .where(eq(calls.twilioCallSid, callSid))
+        .limit(1);
+      let callerHasSpoken = false;
+      if (callRow) {
+        const [callerLine] = await db
+          .select({ id: transcripts.id })
+          .from(transcripts)
+          .where(and(eq(transcripts.callId, callRow.id), eq(transcripts.role, "caller")))
+          .limit(1);
+        callerHasSpoken = Boolean(callerLine);
+      }
+      if (!shouldHijackLiveCallForAmd({ answeredBy, callerHasSpoken })) {
+        console.warn(
+          `[voice] AMD machine classification ignored — caller already spoke${callSid ? ` (${callSid})` : ""}`,
+          { answeredBy },
+        );
+        return c.text("", 200);
+      }
+
       const twiml = new VoiceResponse();
-      twiml.say(
-        "Hi, this is an automated call — sorry to have missed you. We'll try again, or feel free to call us back. Have a good day.",
-      );
+      twiml.say(AMD_VOICEMAIL_LINE);
       twiml.hangup();
-      const [callRow] = await db.select({ orgId: calls.orgId }).from(calls).where(eq(calls.twilioCallSid, callSid)).limit(1);
       await (await getTwilioClientForOrg(callRow?.orgId))
         .calls(callSid)
         .update({ twiml: twiml.toString() })
@@ -818,7 +839,7 @@ export const voice = new Hono()
 
     const { buildPreviewAgentConfig } = await import("./agent");
     const resolvedConfigOverride = await buildPreviewAgentConfig(templateKey, configOverride, orgId);
-    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey });
+    const placed = await placeOutboundCall({ orgId, to: phone, agentKey: templateKey, amd: false });
     if (!placed.ok) return c.json({ error: placed.error }, placed.statusCode);
 
     await sessionStore.set(placed.sessionKey, {
