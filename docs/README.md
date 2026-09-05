@@ -68,6 +68,7 @@ explicitly marked "not a public/decision doc" in their own header; treat them as
 reasoning, not a source of current truth (check [`decisions/`](./decisions/README.md) for what actually got decided).
 - `strategy-2026-07.md` — strategy synthesis after real Reddit/LinkedIn feedback rounds
 - `competitor-changelog-scan-2026-07-17.md` — what Bolna/Retell/Bland actually shipped in 2026
+- `competitor-agent-prompting-2026-09-05.md` — how Vapi/Retell/Bland/Bolna/ElevenLabs/Pipecat tell you to prompt (not a changelog; not an ADR)
 - `product-infra-and-gtm-report.md` — one-time recap report (shipped work + infra + GTM)
 - `weeber-status-qa-2026-07-17.md` — due-diligence-style Q&A on stack/agents/compliance
 - `agents-ux-audit-and-cogs-2026-07-17.md` — Agents UI framework audit + COGS/unit-economics

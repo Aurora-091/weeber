@@ -12,6 +12,12 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **Competitor prompting note filed (2026-09-05).** Public-docs comparison lives at
+  `docs/product-strategy/competitor-agent-prompting-2026-09-05.md`. Steal sectional hygiene
+  and load-bearing tool descriptions; do not copy numbered scripts or keyword compliance.
+  Gaps (per-state tools, hang-up module, capability language) are observations — not a build
+  order. No persona or compliance-package change in that note.
+
 - **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** After ADR-123, two India
   test calls both conversed. Post-sale welcome closed with `setDisposition`+`hangUp` and no
   spoken line; the empty-turn path still said "didn't catch that" then dropped. Appointment

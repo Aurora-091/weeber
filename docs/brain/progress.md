@@ -12,6 +12,9 @@ updated: 2026-09-05
 
 ## Done (works end-to-end, real-verified)
 
+- **Competitor agent-prompting comparison filed (2026-09-05).** Dated strategy note, not an
+  ADR. See `docs/product-strategy/competitor-agent-prompting-2026-09-05.md`.
+
 - **ADR-124 — empty hangUp is not a hearing problem (2026-09-05).** Post-sale welcome called
   hangUp with no closing line; skip `FALLBACK_REPLY` when hangUp/transfer already ran. Unit +
   wiring tests; needs a live post-sale re-test after deploy. Appointment-setter TTS dead air
