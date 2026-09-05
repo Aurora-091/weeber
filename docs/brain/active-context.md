@@ -12,18 +12,20 @@ updated: 2026-09-05
 
 ## Current focus
 
-- **ADR-123: the "different voice said sorry and hung up" was Twilio AMD (2026-09-05).**
-  ADR-122 worked (crmSync withheld, two real turns). Then async answering-machine detection
-  labelled a live India caller as a machine and Twilio `<Say>` stole the stream. Fix on
-  `cursor/amd-live-hijack-4d7f`. Next: deploy and re-run the same test-call-phone — AMD must not
-  fire.
+- **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** After ADR-123, two India
+  test calls both conversed. Post-sale welcome closed with `setDisposition`+`hangUp` and no
+  spoken line; the empty-turn path still said "didn't catch that" then dropped. Appointment
+  setter failed later with TTS dead air (59 chars, 0 audio bytes) — a different defect.
+  **Do not judge the product from one agent.** Next after deploy: re-run *both* personas
+  (documents-never-arrived close on post-sale; a full appointment-setter conversation). Confirm
+  the close is silent hangup, not the apology. Dead air is still open.
 
-- **ADR-122: the "didn't catch that" loop was a first-token abort during `crmSync` (2026-09-05).**
-  Railway logs: STT/TTS healthy; every user turn logged filler for `crmSync` and, in the same ms,
-  `LLM produced no output within 2500ms`. No CRM connected → tool still registered → credential
-  lookup exceeded 2.5s → abort spoke a fake hearing apology. Fix on `cursor/first-token-crm-seed-4d7f`.
-  Insurance runtime personas also migrated off unrendered merge tags. Next: deploy, re-seed templates,
-  place one English Deepgram+Cartesia call and confirm the fallback line is gone.
+- **ADR-123 shipped:** AMD no longer hijacks live India/test calls (`6e0094c`). Confirmed in
+  the 13:14–13:23Z logs: no `amd-status-callback`.
+
+- **ADR-122 shipped:** `crmSync` withheld without credentials; first-token abort deferred
+  when a tool started (`37dbd7e`). Confirmed: withheld log on both calls; appointment-setter
+  deferred then spoke at 2797ms.
 
 - **Stale FE/BE audit landed (2026-09-05).** Knip baseline 60 → 2 (harness duplicates only).
   Leads page now exposes hosted form URL + ingest API keys. See `docs/changelog/2026-09.md`.

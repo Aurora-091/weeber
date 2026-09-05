@@ -1065,7 +1065,7 @@ export function withToolTimeout<T extends { execute?: (...args: never[]) => unkn
  * trip is charged against FIRST_TOKEN_TIMEOUT_MS even though the model is
  * working. `started` only ever increases; `count` is the in-flight number.
  */
-export type ToolInFlightCounter = { started: number; count: number };
+export type ToolInFlightCounter = { started: number; count: number; names: string[] };
 
 export function wrapToolsWithInFlightCounter<T extends Record<string, { execute?: (...args: never[]) => unknown }>>(
   tools: T,
@@ -1081,6 +1081,7 @@ export function wrapToolsWithInFlightCounter<T extends Record<string, { execute?
           ...def,
           execute: async (...args: never[]) => {
             inFlight.started += 1;
+            inFlight.names.push(name);
             inFlight.count += 1;
             try {
               return await originalExecute(...args);
@@ -1097,6 +1098,17 @@ export function wrapToolsWithInFlightCounter<T extends Record<string, { execute?
 /** Abort the 2.5s first-token bound only when the model produced neither text nor a tool call. */
 export function shouldAbortOnFirstTokenTimeout(toolsStartedThisTurn: number): boolean {
   return toolsStartedThisTurn === 0;
+}
+
+/**
+ * ADR-124: an empty spoken turn is dead air, so we usually speak FALLBACK_REPLY.
+ * That line is a lie when the model already called hangUp or transferToHuman —
+ * the call is ending on purpose (post-sale "documents never arrived, close the
+ * loop"), not because we failed to hear the caller. Stream.ts still hangs up /
+ * transfers from the tool latch even if this function returns false.
+ */
+export function shouldSpeakEmptyTurnFallback(toolNames: readonly string[]): boolean {
+  return !toolNames.some((name) => name === "hangUp" || name === "transferToHuman");
 }
 
 /**
@@ -1527,9 +1539,11 @@ export function buildTurnPromptParts(input: {
 // diagnosed 2026-08-13 (calls 4-7), not a caller who is hard to hear.
 export const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you say that again?";
 // That line is a lie when the failure was "the model was busy in a tool"
-// rather than "we didn't hear you" (ADR-122, 2026-09-05 logs). Keep the
+// rather than "we didn't hear you" (ADR-122, 2026-09-05 logs). It is also a
+// lie after hangUp/transferToHuman with no closing line (ADR-124). Keep the
 // wording for transcript detection in call-quality.ts; do not fire it
-// while a tool is still the reason nothing has been spoken yet.
+// while a tool is still the reason nothing has been spoken yet, or when the
+// turn already ended the call.
 
 // Hard ceiling per turn so a stuck generation can never hang the call
 // indefinitely. Twilio's own low-level timeouts would eventually kill the
@@ -1791,7 +1805,7 @@ export async function runVoiceAgentTurn({
   const firstTokenAbort = new AbortController();
   const modelSignal = AbortSignal.any([combinedSignal, firstTokenAbort.signal]);
 
-  const toolsInFlight: ToolInFlightCounter = { started: 0, count: 0 };
+  const toolsInFlight: ToolInFlightCounter = { started: 0, count: 0, names: [] };
 
   try {
     const result = streamText({
@@ -1951,7 +1965,8 @@ export async function runVoiceAgentTurn({
     }
 
     // The model ran (possibly called tools) but produced no spoken text —
-    // say something rather than leaving the caller in silence.
+    // say something rather than leaving the caller in silence, unless a
+    // terminal tool already ended the turn (ADR-124).
     if (!full.trim() && !signal?.aborted) {
       // Diagnostic logging (audit follow-up, 2026-07-10): this is the exact
       // "sorry, I didn't catch that" path a live test call kept hitting.
@@ -1960,30 +1975,50 @@ export async function runVoiceAgentTurn({
       // in a tool-only loop with no final text, or hit a finish reason like
       // "length"/"content-filter". Log everything needed to tell those apart
       // without needing to reproduce the call.
+      let finishReason: unknown = "unknown";
+      let stepCount = 0;
       try {
         const opened = result;
-        const [finishReason, steps] = await Promise.all([
+        const [reason, steps] = await Promise.all([
           Promise.resolve(opened?.finishReason).catch(() => "unknown"),
           Promise.resolve(opened?.steps ?? []).catch(() => []),
         ]);
+        finishReason = reason;
+        stepCount = (steps as unknown[]).length;
         for (const step of steps as Array<{ toolCalls?: Array<{ toolName: string }> }>) {
           for (const call of step.toolCalls ?? []) calledToolNames.push(call.toolName);
         }
+      } catch (diagErr) {
+        console.error("[voice-agent] failed to gather empty-turn diagnostics", diagErr);
+      }
+      const toolCallsThisTurn = [...new Set([...toolsInFlight.names, ...calledToolNames])];
+      if (!shouldSpeakEmptyTurnFallback(toolCallsThisTurn)) {
         console.warn(
-          "[voice-agent] turn produced no spoken text — falling back",
+          "[voice-agent] turn produced no spoken text — hangUp/transfer already ran; skipping hearing fallback",
           {
             model: activeModelLabel,
             finishReason,
             usage: rawUsage,
-            stepCount: (steps as unknown[]).length,
-            toolCallsThisTurn: calledToolNames,
+            stepCount,
+            toolCallsThisTurn,
             historyLength: history.length,
             systemPromptLength: systemPrompt.length,
           },
         );
-      } catch (diagErr) {
-        console.error("[voice-agent] failed to gather empty-turn diagnostics", diagErr);
+        return "";
       }
+      console.warn(
+        "[voice-agent] turn produced no spoken text — falling back",
+        {
+          model: activeModelLabel,
+          finishReason,
+          usage: rawUsage,
+          stepCount,
+          toolCallsThisTurn,
+          historyLength: history.length,
+          systemPromptLength: systemPrompt.length,
+        },
+      );
       onTextDelta(FALLBACK_REPLY);
       return FALLBACK_REPLY;
     }
