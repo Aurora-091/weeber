@@ -214,7 +214,7 @@ describe("connectCartesiaTts — setTone (Expressive delivery, Tier 1, 2026-07-1
 
     const firstPayload = JSON.parse(ws.sent[ws.sent.length - 2]);
     const secondPayload = JSON.parse(ws.sent[ws.sent.length - 1]);
-    expect(payload.generation_config).toEqual({ emotion: "calm" });
+    expect(firstPayload.generation_config).toEqual({ emotion: "calm" });
     expect(secondPayload.generation_config).toEqual({ emotion: "calm" });
   });
 });
