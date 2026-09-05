@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { mulawToPcm16, pcm16ToMulaw } from "./audio-codec";
-import { getTelephonyTransport } from "./telephony-transport";
+import { getTelephonyTransport, resolveTelephonyCodec } from "./telephony-transport";
 
 describe("audio-codec: mulaw <-> PCM16 round trip", () => {
   it("recovers a sine-ish PCM16 signal within mu-law's expected quantization error", () => {
@@ -54,6 +54,13 @@ describe("telephony-transport: per-provider wire format parsing", () => {
 
     const clear = JSON.parse(t.buildClear("MZ1"));
     expect(clear).toEqual({ event: "clear", streamSid: "MZ1" });
+
+    const mark = JSON.parse(t.buildMark!("MZ1", "turn-3"));
+    expect(mark).toEqual({ event: "mark", streamSid: "MZ1", mark: { name: "turn-3" } });
+    expect(t.parseInbound(JSON.stringify({ event: "mark", mark: { name: "turn-3" } }))).toEqual({
+      type: "mark",
+      name: "turn-3",
+    });
   });
 
   // Twilio's start event has no From/To of its own, so /incoming passes them
@@ -97,19 +104,56 @@ describe("telephony-transport: per-provider wire format parsing", () => {
 
     const clear = JSON.parse(t.buildClear("SID1"));
     expect(clear).toEqual({ event: "clearAudio", streamId: "SID1" });
+
+    const checkpoint = JSON.parse(t.buildMark!("SID1", "turn-3"));
+    expect(checkpoint).toEqual({ event: "checkpoint", streamId: "SID1", name: "turn-3" });
+    expect(t.parseInbound(JSON.stringify({ event: "playedStream", streamId: "SID1", name: "turn-3" }))).toEqual({
+      type: "mark",
+      name: "turn-3",
+    });
+    expect(t.parseInbound(JSON.stringify({ event: "clearedAudio", streamId: "SID1" }))).toEqual({ type: "cleared" });
   });
 
-  it("exotel: uses snake_case stream_sid/call_sid, transcodes PCM16<->mulaw at the boundary", () => {
+  it("exotel: defaults to mu-law pass-through (Voicebot applet default), transcodes only when start says L16", () => {
     const t = getTelephonyTransport("exotel");
     const start = t.parseInbound(
       JSON.stringify({ event: "start", start: { stream_sid: "MZ1", call_sid: "CA1", from: "+91900000", to: "+91800000" } }),
     );
     expect(start).toEqual({ type: "start", streamId: "MZ1", callId: "CA1", from: "+91900000", to: "+91800000" });
 
-    // Build a tiny known PCM16 buffer, base64 it as if Exotel sent it, and
-    // confirm the parsed mulawBase64 decodes back close to the original —
-    // this is the one provider that actually transcodes, so it's worth
-    // covering the full loop, not just the JSON shape.
+    const mulawB64 = Buffer.from([0xff, 0x7f]).toString("base64");
+    const media = t.parseInbound(JSON.stringify({ event: "media", media: { payload: mulawB64 } }));
+    expect(media).toEqual({ type: "media", mulawBase64: mulawB64 });
+
+    const stop = t.parseInbound(JSON.stringify({ event: "stop", stop: { call_sid: "CA1", reason: "callended" } }));
+    expect(stop).toEqual({ type: "stop" });
+
+    const outFrame = JSON.parse(t.buildOutboundMedia("MZ1", Buffer.from([0xff]).toString("base64")));
+    expect(outFrame.event).toBe("media");
+    expect(outFrame.stream_sid).toBe("MZ1");
+    expect(typeof outFrame.media.payload).toBe("string");
+    // Default mu-law path does not advertise a mark/checkpoint.
+    expect(t.buildMark).toBeUndefined();
+
+    const clear = JSON.parse(t.buildClear("MZ1"));
+    expect(clear).toEqual({ event: "clear", stream_sid: "MZ1" });
+  });
+
+  it("exotel: transcodes PCM16 <-> mulaw when start.media_format is L16", () => {
+    const t = getTelephonyTransport("exotel");
+    t.parseInbound(
+      JSON.stringify({
+        event: "start",
+        start: {
+          stream_sid: "MZ1",
+          call_sid: "CA1",
+          from: "+91900000",
+          to: "+91800000",
+          media_format: "audio/L16;rate=8000",
+        },
+      }),
+    );
+
     const pcm16 = new Uint8Array(8);
     new DataView(pcm16.buffer).setInt16(0, 1000, true);
     const inputB64 = Buffer.from(pcm16).toString("base64");
@@ -120,23 +164,42 @@ describe("telephony-transport: per-provider wire format parsing", () => {
       const decodedPcm16 = mulawToPcm16(decodedMulaw);
       expect(Math.abs(new DataView(decodedPcm16.buffer).getInt16(0, true) - 1000)).toBeLessThan(200);
     }
-
-    const stop = t.parseInbound(JSON.stringify({ event: "stop", stop: { call_sid: "CA1", reason: "callended" } }));
-    expect(stop).toEqual({ type: "stop" });
-
-    // Outbound: our mulaw -> Exotel's expected linear16 PCM, snake_case frame.
-    const outFrame = JSON.parse(t.buildOutboundMedia("MZ1", Buffer.from([0xff]).toString("base64")));
-    expect(outFrame.event).toBe("media");
-    expect(outFrame.stream_sid).toBe("MZ1");
-    expect(typeof outFrame.media.payload).toBe("string");
-
-    const clear = JSON.parse(t.buildClear("MZ1"));
-    expect(clear).toEqual({ event: "clear", stream_sid: "MZ1" });
   });
 
   it("returns unknown for unparseable/unrecognized frames instead of throwing", () => {
     const t = getTelephonyTransport("twilio");
     expect(t.parseInbound("not json")).toEqual({ type: "unknown" });
     expect(t.parseInbound(JSON.stringify({ event: "dtmf" }))).toEqual({ type: "unknown" });
+  });
+});
+
+describe("resolveTelephonyCodec", () => {
+  it("defaults to mulaw when encoding is missing", () => {
+    expect(resolveTelephonyCodec(undefined)).toBe("mulaw");
+    expect(resolveTelephonyCodec("audio/x-mulaw;rate=8000")).toBe("mulaw");
+  });
+
+  it("detects linear PCM / L16 as pcm16", () => {
+    expect(resolveTelephonyCodec("audio/L16;rate=8000")).toBe("pcm16");
+    expect(resolveTelephonyCodec("audio/x-l16;rate=16000")).toBe("pcm16");
+    expect(resolveTelephonyCodec("linear16")).toBe("pcm16");
+  });
+});
+
+describe("getTelephonyTransport factory isolation", () => {
+  it("does not share Exotel codec state across calls", () => {
+    const l16 = getTelephonyTransport("exotel");
+    l16.parseInbound(
+      JSON.stringify({
+        event: "start",
+        start: { stream_sid: "A", call_sid: "CA-A", media_format: "audio/L16;rate=8000" },
+      }),
+    );
+    const mulawCall = getTelephonyTransport("exotel");
+    mulawCall.parseInbound(JSON.stringify({ event: "start", start: { stream_sid: "B", call_sid: "CA-B" } }));
+
+    const mulawB64 = Buffer.from([0xff, 0x7f]).toString("base64");
+    const media = mulawCall.parseInbound(JSON.stringify({ event: "media", media: { payload: mulawB64 } }));
+    expect(media).toEqual({ type: "media", mulawBase64: mulawB64 });
   });
 });

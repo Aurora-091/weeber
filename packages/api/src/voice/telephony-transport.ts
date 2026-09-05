@@ -7,36 +7,64 @@
  * to/from whatever a given provider's wire protocol actually is.
  *
  * Protocol details below were pulled from each provider's own current docs
- * (2026-07-12), not assumed — see docs/india-telephony.md's status update
- * for citations. In particular: Exotel's AgentStream (VoiceBot Applet) is a
- * real bidirectional WebSocket now, structurally close to Twilio/Plivo, NOT
- * the SIP-trunk-only path this doc originally assumed — that assumption is
- * now corrected.
+ * (2026-07-12, re-checked 2026-09-05) — see docs/india-telephony.md's status
+ * update for citations. In particular: Exotel's AgentStream (VoiceBot Applet)
+ * is a real bidirectional WebSocket now, structurally close to Twilio/Plivo,
+ * NOT the SIP-trunk-only path this doc originally assumed.
  *
- * | Provider | Audio format          | start/media/stop field naming        | clear (barge-in) |
- * |----------|------------------------|---------------------------------------|-------------------|
- * | Twilio   | mu-law 8kHz            | streamSid / callSid                   | {event:"clear", streamSid} |
- * | Plivo    | mu-law 8kHz            | streamId / callId                     | {event:"clearAudio", streamId} |
- * | Exotel   | linear16 PCM 8kHz      | stream_sid (snake_case), nested       | {event:"clear", stream_sid} |
+ * | Provider | Audio format          | start/media/stop field naming        | clear (barge-in) | playback clock |
+ * |----------|------------------------|---------------------------------------|-------------------|----------------|
+ * | Twilio   | mu-law 8kHz            | streamSid / callSid                   | {event:"clear", streamSid} | mark |
+ * | Plivo    | mu-law 8kHz            | streamId / callId                     | {event:"clearAudio", streamId} | checkpoint → playedStream |
+ * | Exotel   | mu-law 8kHz default; L16 opt-in | stream_sid (snake_case)     | {event:"clear", stream_sid} | none |
  *
- * Only Exotel needs actual transcoding (PCM16 <-> mu-law, see audio-codec.ts)
- * — Twilio and Plivo already speak the same mu-law wire format our STT/TTS
- * pipeline is built around.
+ * `getTelephonyTransport` returns a **fresh** adapter per call so Exotel can
+ * pin the codec from that call's `start` event without racing other calls.
  */
+
 import { mulawToPcm16, pcm16ToMulaw } from "./audio-codec";
 
-/** One 20ms frame of 8kHz/16-bit mono PCM = 160 samples * 2 bytes. Exotel's
- * VoiceBot applet requires outbound media packets to be a multiple of this. */
-const EXOTEL_FRAME_BYTES = 320;
+/** One 20ms frame of 8kHz/16-bit mono PCM = 160 samples * 2 bytes. */
+const EXOTEL_PCM16_FRAME_BYTES = 320;
+/** One 20ms frame of 8kHz mu-law = 160 bytes. */
+const EXOTEL_MULAW_FRAME_BYTES = 160;
 
-/** Right-pads `pcm` with PCM silence (zero bytes) up to the next multiple of
- * `frameBytes`. A no-op when already frame-aligned. */
-function padToFrameMultiple(pcm: Uint8Array, frameBytes: number): Uint8Array {
-  const remainder = pcm.length % frameBytes;
-  if (remainder === 0) return pcm;
-  const padded = new Uint8Array(pcm.length + (frameBytes - remainder));
-  padded.set(pcm, 0); // trailing bytes stay zero-initialized = silence
+function padToFrameMultiple(bytes: Uint8Array, frameBytes: number): Uint8Array {
+  const remainder = bytes.length % frameBytes;
+  if (remainder === 0) return bytes;
+  const padded = new Uint8Array(bytes.length + (frameBytes - remainder));
+  padded.set(bytes, 0);
   return padded;
+}
+
+/**
+ * Map a provider `encoding` / `contentType` / `MediaFormat` string to the
+ * codec we should assume on the wire. Default is mu-law: Twilio and Plivo
+ * are always μ-law, and Exotel's Voicebot applet defaults to
+ * `audio/x-mulaw;rate=8000` (ADR-126). Linear PCM is opt-in (`L16`,
+ * `linear16`, `pcm_s16`).
+ */
+export function resolveTelephonyCodec(encoding?: string | null): "mulaw" | "pcm16" {
+  if (!encoding) return "mulaw";
+  const e = encoding.toLowerCase();
+  if (e.includes("l16") || e.includes("linear") || e.includes("pcm_s16") || e.includes("pcm16")) {
+    return "pcm16";
+  }
+  return "mulaw";
+}
+
+function encodingFromStart(start: Record<string, unknown> | undefined): string | undefined {
+  if (!start) return undefined;
+  const direct =
+    start.mediaFormat ?? start.media_format ?? start.MediaFormat ?? start.contentType ?? start.content_type;
+  if (typeof direct === "string") return direct;
+  if (direct && typeof direct === "object") {
+    const obj = direct as Record<string, unknown>;
+    if (typeof obj.encoding === "string") return obj.encoding;
+    if (typeof obj.contentType === "string") return obj.contentType;
+  }
+  if (typeof start.encoding === "string") return start.encoding;
+  return undefined;
 }
 
 export type TelephonyProvider = "twilio" | "plivo" | "exotel";
@@ -45,6 +73,8 @@ export type NormalizedInboundEvent =
   | { type: "start"; streamId: string; callId: string; from?: string; to?: string }
   | { type: "media"; mulawBase64: string }
   | { type: "stop" }
+  | { type: "mark"; name: string }
+  | { type: "cleared" }
   | { type: "unknown" };
 
 export interface TelephonyTransport {
@@ -53,135 +83,155 @@ export interface TelephonyTransport {
   buildOutboundMedia(streamId: string, mulawBase64: string): string;
   /** Build the outbound frame that flushes any queued/playing audio — used for barge-in. */
   buildClear(streamId: string): string;
+  /**
+   * Playback-completion marker (Twilio `mark`, Plivo `checkpoint`). Undefined
+   * when the provider has no such event (Exotel). stream.ts falls back to
+   * `estimateRemainingPlaybackMs` when this is missing or the ack never arrives.
+   */
+  buildMark?(streamId: string, name: string): string;
 }
 
-const twilioTransport: TelephonyTransport = {
-  parseInbound(raw) {
-    let msg: any;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
+function createTwilioTransport(): TelephonyTransport {
+  return {
+    parseInbound(raw) {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return { type: "unknown" };
+      }
+      if (msg.event === "start") {
+        const start = (msg.start ?? {}) as Record<string, unknown>;
+        const custom = (start.customParameters ?? {}) as Record<string, unknown>;
+        return {
+          type: "start",
+          streamId: String(start.streamSid ?? ""),
+          callId: String(start.callSid ?? ""),
+          from: custom.from ? String(custom.from) : undefined,
+          to: custom.to ? String(custom.to) : undefined,
+        };
+      }
+      if (msg.event === "media") {
+        const media = (msg.media ?? {}) as Record<string, unknown>;
+        return { type: "media", mulawBase64: String(media.payload ?? "") };
+      }
+      if (msg.event === "stop") return { type: "stop" };
+      if (msg.event === "mark") {
+        const mark = (msg.mark ?? {}) as Record<string, unknown>;
+        return { type: "mark", name: String(mark.name ?? "") };
+      }
       return { type: "unknown" };
-    }
-    if (msg.event === "start") {
-      // from/to ride along as <Parameter> children of <Stream> (see
-      // voice/routes.ts's /incoming TwiML). Twilio's start event carries no
-      // From/To of its own — which is why stream.ts's
-      // fallback-insert-if-missing branch (`!row && event.from && event.to`)
-      // was unreachable for Twilio, so a call whose media stream connected
-      // before the fire-and-forget webhook insert landed got no `calls` row
-      // at all: no dbCallId, no transcripts, no org, generic persona.
-      const custom = msg.start.customParameters ?? {};
-      return {
-        type: "start",
-        streamId: msg.start.streamSid,
-        callId: msg.start.callSid,
-        from: custom.from ? String(custom.from) : undefined,
-        to: custom.to ? String(custom.to) : undefined,
-      };
-    }
-    if (msg.event === "media") return { type: "media", mulawBase64: msg.media.payload };
-    if (msg.event === "stop") return { type: "stop" };
-    return { type: "unknown" };
-  },
-  buildOutboundMedia(streamId, mulawBase64) {
-    return JSON.stringify({ event: "media", streamSid: streamId, media: { payload: mulawBase64 } });
-  },
-  buildClear(streamId) {
-    return JSON.stringify({ event: "clear", streamSid: streamId });
-  },
-};
+    },
+    buildOutboundMedia(streamId, mulawBase64) {
+      return JSON.stringify({ event: "media", streamSid: streamId, media: { payload: mulawBase64 } });
+    },
+    buildClear(streamId) {
+      return JSON.stringify({ event: "clear", streamSid: streamId });
+    },
+    buildMark(streamId, name) {
+      return JSON.stringify({ event: "mark", streamSid: streamId, mark: { name } });
+    },
+  };
+}
 
-const plivoTransport: TelephonyTransport = {
-  parseInbound(raw) {
-    let msg: any;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
+function createPlivoTransport(): TelephonyTransport {
+  return {
+    parseInbound(raw) {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return { type: "unknown" };
+      }
+      if (msg.event === "start") {
+        const start = (msg.start ?? {}) as Record<string, unknown>;
+        return { type: "start", streamId: String(start.streamId ?? ""), callId: String(start.callId ?? "") };
+      }
+      if (msg.event === "media") {
+        const media = (msg.media ?? {}) as Record<string, unknown>;
+        return { type: "media", mulawBase64: String(media.payload ?? "") };
+      }
+      if (msg.event === "stop") return { type: "stop" };
+      // Barge-in ack — MUST NOT be treated as stream end (ADR-126).
+      if (msg.event === "clearedAudio") return { type: "cleared" };
+      if (msg.event === "playedStream") return { type: "mark", name: String(msg.name ?? "") };
       return { type: "unknown" };
-    }
-    if (msg.event === "start") return { type: "start", streamId: msg.start.streamId, callId: msg.start.callId };
-    if (msg.event === "media") return { type: "media", mulawBase64: msg.media.payload };
-    if (msg.event === "stop" || msg.event === "clearedAudio") return { type: "stop" };
-    return { type: "unknown" };
-  },
-  buildOutboundMedia(_streamId, mulawBase64) {
-    // Plivo's playAudio frame carries no stream id — it applies to whichever
-    // stream this socket belongs to (one stream per socket).
-    return JSON.stringify({
-      event: "playAudio",
-      media: { contentType: "audio/x-mulaw", sampleRate: 8000, payload: mulawBase64 },
-    });
-  },
-  buildClear(streamId) {
-    return JSON.stringify({ event: "clearAudio", streamId });
-  },
-};
+    },
+    buildOutboundMedia(_streamId, mulawBase64) {
+      return JSON.stringify({
+        event: "playAudio",
+        media: { contentType: "audio/x-mulaw", sampleRate: 8000, payload: mulawBase64 },
+      });
+    },
+    buildClear(streamId) {
+      return JSON.stringify({ event: "clearAudio", streamId });
+    },
+    buildMark(streamId, name) {
+      return JSON.stringify({ event: "checkpoint", streamId, name });
+    },
+  };
+}
 
-const exotelTransport: TelephonyTransport = {
-  parseInbound(raw) {
-    let msg: any;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
+function createExotelTransport(): TelephonyTransport {
+  // Exotel Voicebot default is mu-law 8 kHz. Linear16 is opt-in via MediaFormat.
+  let wire: "mulaw" | "pcm16" = "mulaw";
+  return {
+    parseInbound(raw) {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return { type: "unknown" };
+      }
+      if (msg.event === "start") {
+        const start = (msg.start ?? {}) as Record<string, unknown>;
+        wire = resolveTelephonyCodec(encodingFromStart(start));
+        return {
+          type: "start",
+          streamId: String(start.stream_sid ?? ""),
+          callId: String(start.call_sid ?? ""),
+          from: start.from ? String(start.from) : undefined,
+          to: start.to ? String(start.to) : undefined,
+        };
+      }
+      if (msg.event === "media") {
+        const media = (msg.media ?? {}) as Record<string, unknown>;
+        const payload = String(media.payload ?? "");
+        if (wire === "mulaw") return { type: "media", mulawBase64: payload };
+        const pcm16 = Buffer.from(payload, "base64");
+        const mulaw = pcm16ToMulaw(pcm16);
+        return { type: "media", mulawBase64: Buffer.from(mulaw).toString("base64") };
+      }
+      if (msg.event === "stop") return { type: "stop" };
       return { type: "unknown" };
-    }
-    if (msg.event === "start") {
-      // Unlike Twilio/Plivo, Exotel has no separate inbound webhook step
-      // that pre-creates our `calls` row before the WS opens (see
-      // voice/routes.ts's doc comment on why) — from/to ride along on the
-      // start event itself so stream.ts can lazily insert the row here
-      // instead of assuming one always already exists.
-      return {
-        type: "start",
-        streamId: msg.start.stream_sid,
-        callId: msg.start.call_sid,
-        from: msg.start.from,
-        to: msg.start.to,
-      };
-    }
-    if (msg.event === "media") {
-      // Exotel sends raw PCM16 — transcode to mu-law so downstream (STT)
-      // never has to know this call came from a non-mulaw provider.
-      const pcm16 = Buffer.from(msg.media.payload, "base64");
-      const mulaw = pcm16ToMulaw(pcm16);
-      return { type: "media", mulawBase64: Buffer.from(mulaw).toString("base64") };
-    }
-    if (msg.event === "stop") return { type: "stop" };
-    return { type: "unknown" };
-  },
-  buildOutboundMedia(streamId, mulawBase64) {
-    // Reverse transcode: our TTS pipeline only ever produces mu-law —
-    // convert back to the linear16 PCM Exotel expects on the way out.
-    const mulaw = Buffer.from(mulawBase64, "base64");
-    const pcm16 = mulawToPcm16(mulaw);
-
-    // Exotel's VoiceBot applet requires every outbound media packet to be a
-    // whole number of 20ms 8kHz/16-bit frames — i.e. a multiple of 320 bytes
-    // (160 samples). Our upstream TTS chunks are byte-streamed and NOT frame
-    // aligned, so a raw chunk whose length isn't a 320-byte multiple gets
-    // rejected/misaligned by Exotel. Pad the tail up to the next frame
-    // boundary with PCM silence (0x0000) so every packet is always valid.
-    // (A stateful re-framer that carries the <320-byte remainder into the
-    // next packet would avoid the sub-20ms silence gap entirely, but needs
-    // per-stream state the shared transport singleton can't safely hold;
-    // deferred until a live Exotel call validates this path — see
-    // docs/india-telephony.md.)
-    const framed = padToFrameMultiple(pcm16, EXOTEL_FRAME_BYTES);
-
-    return JSON.stringify({
-      event: "media",
-      stream_sid: streamId,
-      media: { payload: Buffer.from(framed).toString("base64") },
-    });
-  },
-  buildClear(streamId) {
-    return JSON.stringify({ event: "clear", stream_sid: streamId });
-  },
-};
+    },
+    buildOutboundMedia(streamId, mulawBase64) {
+      if (wire === "mulaw") {
+        const mulaw = Buffer.from(mulawBase64, "base64");
+        const framed = padToFrameMultiple(mulaw, EXOTEL_MULAW_FRAME_BYTES);
+        return JSON.stringify({
+          event: "media",
+          stream_sid: streamId,
+          media: { payload: Buffer.from(framed).toString("base64") },
+        });
+      }
+      const mulaw = Buffer.from(mulawBase64, "base64");
+      const pcm16 = mulawToPcm16(mulaw);
+      const framed = padToFrameMultiple(pcm16, EXOTEL_PCM16_FRAME_BYTES);
+      return JSON.stringify({
+        event: "media",
+        stream_sid: streamId,
+        media: { payload: Buffer.from(framed).toString("base64") },
+      });
+    },
+    buildClear(streamId) {
+      return JSON.stringify({ event: "clear", stream_sid: streamId });
+    },
+  };
+}
 
 export function getTelephonyTransport(provider: TelephonyProvider): TelephonyTransport {
-  if (provider === "plivo") return plivoTransport;
-  if (provider === "exotel") return exotelTransport;
-  return twilioTransport;
+  if (provider === "plivo") return createPlivoTransport();
+  if (provider === "exotel") return createExotelTransport();
+  return createTwilioTransport();
 }

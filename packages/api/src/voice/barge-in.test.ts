@@ -60,4 +60,26 @@ describe("decideBargeIn", () => {
     expect(d.fire).toBe(true);
     expect(d.nextStreak).toBe(0);
   });
+
+  test("SpeechStarted alone does not barge in — a cough still trips VAD", () => {
+    const d = decideBargeIn({
+      agentIsSpeaking: true,
+      text: "",
+      priorStreak: 0,
+      vad: "speech_started",
+    });
+    expect(d.fire).toBe(false);
+    expect(d.nextStreak).toBe(1);
+  });
+
+  test("SpeechStarted plus one short interim reaches the streak and fires", () => {
+    const vad = decideBargeIn({
+      agentIsSpeaking: true,
+      text: "",
+      priorStreak: 0,
+      vad: "speech_started",
+    });
+    const text = decideBargeIn({ agentIsSpeaking: true, text: "uh", priorStreak: vad.nextStreak });
+    expect(text.fire).toBe(true);
+  });
 });

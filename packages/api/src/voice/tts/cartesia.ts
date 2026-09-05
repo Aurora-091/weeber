@@ -2,14 +2,34 @@ import type { ConnectTts } from "./types";
 import { resolveVoiceId } from "./default-voices";
 
 /**
- * Thin wrapper around Cartesia's streaming TTS WebSocket (Sonic model),
- * configured to output mu-law 8kHz audio directly — same zero-re-encoding
- * path as ElevenLabs, so it drops straight into a Twilio Media Stream.
+ * Managed Cartesia buffering for LLM token streaming (ADR-125).
+ * Must be sent on every generation message on a context — Cartesia
+ * requires all fields except `transcript` / `continue` / `duration` to
+ * stay identical across continuations.
+ */
+export const CARTESIA_MAX_BUFFER_DELAY_MS = 180;
+
+/**
+ * Sonic-3 streams LLM tokens as they arrive. Cartesia's websocket API
+ * defaults `max_buffer_delay_ms` to 3000 when the field is omitted — the
+ * server holds those tokens until it likes the prosody or the delay
+ * elapses. That is the wrong default for a phone agent: a short reply
+ * (the 2026-09-05 appointment-setter dead-air turn was 59 chars) can sit
+ * in the buffer until the context dies with zero audio bytes, while the
+ * transcript still records the line as spoken (ADR-101 / ADR-125).
+ *
+ * Token streaming is Cartesia's *managed* buffering mode, so we set the
+ * delay explicitly and short. 0 would be *custom* buffering, which they
+ * tell you to use only when you already aggregate sentences yourself —
+ * we do not; we forward LLM deltas. 180ms is enough to gather a word or
+ * two for prosody and well under the ~1s context-idle window.
+ *
+ * `continue: false` on an empty transcript plus `flush: true` is the
+ * documented end-of-turn signal when the last token is not known in
+ * advance. Both go on `endTurn()`.
  *
  * Uses Cartesia's "continuation" flow: all text chunks for one agent turn
- * share a single `context_id`, sent with `continue: true` until the turn
- * ends, at which point a final empty-transcript message with
- * `continue: false` flushes and closes out that context.
+ * share a single `context_id`.
  *
  * Hindi/Hinglish research (2026-07-16, docs/hindi-hinglish-voice-support.md):
  * Cartesia's Generation Request schema (docs.cartesia.ai/api-reference/tts/
@@ -48,6 +68,22 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
     } else {
       pendingSends.push(json);
     }
+  }
+
+  function generationMessage(transcript: string, continueFlag: boolean, flush: boolean) {
+    return {
+      context_id: contextId,
+      model_id: "sonic-3",
+      transcript,
+      voice: { mode: "id", id: voiceId },
+      ...(cartesiaLanguage ? { language: cartesiaLanguage } : {}),
+      output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
+      continue: continueFlag,
+      max_buffer_delay_ms: CARTESIA_MAX_BUFFER_DELAY_MS,
+      add_timestamps: true,
+      ...(flush ? { flush: true } : {}),
+      ...(currentEmotion ? { generation_config: { emotion: currentEmotion } } : {}),
+    };
   }
 
   ws.addEventListener("open", () => {
@@ -97,30 +133,13 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
 
   return {
     sendText(text: string) {
-      send({
-        context_id: contextId,
-        model_id: "sonic-3",
-        transcript: text,
-        voice: { mode: "id", id: voiceId },
-        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {}),
-        output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
-        continue: true,
-        add_timestamps: true,
-        ...(currentEmotion ? { generation_config: { emotion: currentEmotion } } : {}),
-      });
+      send(generationMessage(text, true, false));
     },
     endTurn() {
-      send({
-        context_id: contextId,
-        model_id: "sonic-3",
-        transcript: "",
-        voice: { mode: "id", id: voiceId },
-        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {}),
-        output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
-        continue: false,
-        add_timestamps: true,
-        ...(currentEmotion ? { generation_config: { emotion: currentEmotion } } : {}),
-      });
+      send(generationMessage("", false, true));
+    },
+    cancel() {
+      send({ context_id: contextId, cancel: true });
     },
     close() {
       closedIntentionally = true;

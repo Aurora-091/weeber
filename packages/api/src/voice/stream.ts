@@ -106,11 +106,9 @@ function sleep(ms: number): Promise<void> {
  * bound against a pathological multi-thousand-character turn wedging a call
  * open, not a model of speech.
  *
- * This is still an ESTIMATE and should be replaced by Twilio `mark` events
- * (ground truth for playback completion) — see audit 10's P0. The 55 ms/char
- * constant is uncalibrated against real Cartesia/Sarvam output and will be
- * wrong per-voice; it is deliberately conservative (slow) so the error costs
- * a slightly late timer rather than another self-terminated call.
+ * This is still an ESTIMATE used as the timeout cap and as the silence-timer
+ * unplayed allowance until Twilio `mark` / Plivo `playedStream` acks (ADR-126).
+ * When that ack arrives, stream.ts re-arms the silence window from now.
  */
 const MAX_PLAYBACK_ESTIMATE_MS = 60_000;
 
@@ -367,6 +365,13 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * shouldn't be able to cut the agent off on its own. Reset to 0 whenever a
    * barge-in fires or the streak breaks (empty text / agent stops speaking). */
   let bargeInStreak = 0;
+  /**
+   * Twilio `mark` / Plivo `checkpoint` name waiting for playback ack
+   * (ADR-126). Cleared on barge-in so a `clear` echoing leftover marks does
+   * not re-arm the silence timer for a turn the caller already interrupted.
+   */
+  let pendingPlaybackMark: string | undefined;
+  const playbackMarkWaiters = new Map<string, () => void>();
   /**
    * Phase V (2026-07-31): the pluggable end-of-turn detector, built once per
    * call from SEMANTIC_TURN_DETECTION_FLAG. Default is the plain heuristic
@@ -2083,6 +2088,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           // which is why no test caught it either. Forwarded conditionally so a
           // provider that genuinely lacks setTone still no-ops.
           setTone: real.setTone ? (tone: string) => real.setTone?.(tone) : undefined,
+          cancel: real.cancel ? () => real.cancel?.() : undefined,
         };
         return wrapper;
       };
@@ -2135,6 +2141,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           }
           agentIsSpeaking = false;
           resolveTtsDone?.();
+        },
+        cancel() {
+          realTts?.cancel?.();
         },
         setTone(tone: string) {
           if (realTts) realTts.setTone?.(tone);
@@ -2281,10 +2290,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     // helpers above for why this can only ever be an estimate.
     if (pendingHangUp || pendingTransfer) {
       await Promise.race([ttsDone, sleep(8000)]);
-      // Bounded separately from the silence timer: waiting for playback here
-      // holds the PSTN leg (and its per-minute cost) open, and a runaway LLM
-      // closing line should not be able to stall teardown for a full minute.
-      await sleep(Math.min(estimateRemainingPlaybackMs(fullText), CLOSING_LINE_MAX_WAIT_MS));
+      const markName = wasInterrupted ? undefined : sendPlaybackMark(ws, epoch);
+      await waitForPlaybackMark(
+        markName,
+        Math.min(estimateRemainingPlaybackMs(fullText), CLOSING_LINE_MAX_WAIT_MS),
+      );
 
       // Transfer takes precedence over hang-up when the model requested both
       // in the same turn (ADR-082). This branch used to be the other way
@@ -2331,6 +2341,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       // rest of this turn's audio was discarded, so there is nothing left in
       // flight to wait for; anything else is still playing out.
       armSilenceTimer(ws, wasInterrupted ? 0 : estimateRemainingPlaybackMs(fullText));
+      if (!wasInterrupted && fullText) sendPlaybackMark(ws, epoch);
     }
   }
 
@@ -2595,6 +2606,68 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   }
 
   /**
+   * Barge-in teardown (ADR-126): bump turn epoch first, flush the carrier
+   * buffer, cancel Cartesia's unstarted context, then close the TTS socket.
+   */
+  function cutAgentForBargeIn(ws: Sendable) {
+    turnEpoch++;
+    pendingPlaybackMark = undefined;
+    if (streamSid) {
+      try {
+        ws.send(transport.buildClear(streamSid));
+      } catch {
+        // socket may already be closed
+      }
+    }
+    tts?.cancel?.();
+    tts?.close();
+    tts = null;
+    agentIsSpeaking = false;
+    turnAbortController?.abort();
+  }
+
+  function sendPlaybackMark(ws: Sendable, epoch: number): string | undefined {
+    if (!streamSid || !transport.buildMark) return undefined;
+    const name = `turn-${epoch}`;
+    pendingPlaybackMark = name;
+    try {
+      ws.send(transport.buildMark(streamSid, name));
+    } catch (err) {
+      console.error(`[voice] failed to send playback mark to ${provider}`, err);
+      pendingPlaybackMark = undefined;
+      return undefined;
+    }
+    return name;
+  }
+
+  function waitForPlaybackMark(name: string | undefined, capMs: number): Promise<void> {
+    if (!name) return sleep(capMs);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        playbackMarkWaiters.delete(name);
+        resolve();
+      }, capMs);
+      playbackMarkWaiters.set(name, () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  function onPlaybackMarkAck(name: string, ws: Sendable) {
+    if (!name || name !== pendingPlaybackMark) return;
+    pendingPlaybackMark = undefined;
+    const waiter = playbackMarkWaiters.get(name);
+    if (waiter) {
+      playbackMarkWaiters.delete(name);
+      waiter();
+    }
+    if (!ended && !agentIsSpeaking && !pendingHangUp && !pendingTransfer) {
+      armSilenceTimer(ws, 0);
+    }
+  }
+
+  /**
    * Connects the STT provider for this call. Deliberately called from the
    * "start" handler (after `sttProviderOverride`/`languageOverride` are
    * resolved off the agent config), not eagerly in `onOpen` — the language
@@ -2608,8 +2681,22 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   function connectSttForCall(ws: Sendable, failoverProvider?: "deepgram" | "sarvam" | "elevenlabs") {
     stt = connectStt(
-      async ({ text, isFinal, speechFinal, endpointSignal }) => {
+      async ({ text, isFinal, speechFinal, endpointSignal, vad }) => {
         try {
+          if (vad === "speech_started") {
+            const bargeIn = decideBargeIn({
+              agentIsSpeaking,
+              text: "",
+              priorStreak: bargeInStreak,
+              vad: "speech_started",
+            });
+            bargeInStreak = bargeIn.nextStreak;
+            if (bargeIn.fire) {
+              cutAgentForBargeIn(ws);
+              callerUtteranceStartedAt = null;
+            }
+            return;
+          }
           // Barge-in: if the agent is mid-response and the caller starts
           // talking again, cut the agent off — gated through decideBargeIn
           // (barge-in.ts) rather than firing on any non-empty interim text.
@@ -2623,18 +2710,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           const bargeIn = decideBargeIn({ agentIsSpeaking, text, priorStreak: bargeInStreak });
           bargeInStreak = bargeIn.nextStreak;
           if (bargeIn.fire) {
-            // Increment FIRST, before anything async — see turnEpoch's doc
-            // comment. This is what makes the interrupted turn's already-
-            // in-flight chunks stale immediately, rather than racing the
-            // abort/close calls below to see which one "wins."
-            turnEpoch++;
-            if (streamSid) ws.send(transport.buildClear(streamSid));
-            turnAbortController?.abort();
-            tts?.close();
-            tts = null;
-            agentIsSpeaking = false;
-            // Caller cut in — a fresh utterance begins; restart the timer so a
-            // backchannel is measured against THIS utterance, not the prior one.
+            cutAgentForBargeIn(ws);
             callerUtteranceStartedAt = null;
           }
 
@@ -3292,6 +3368,16 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           connectSttForCall(ws);
           history = [];
           await runGreeting(ws);
+          return;
+        }
+
+        if (event.type === "cleared") {
+          // Plivo barge-in ack. Not a stream end.
+          return;
+        }
+
+        if (event.type === "mark") {
+          onPlaybackMarkAck(event.name, ws);
           return;
         }
 

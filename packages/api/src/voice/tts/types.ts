@@ -11,6 +11,13 @@ export type TtsConnection = {
   endTurn(): void;
   /** Hard-abort — used on barge-in to stop audio generation immediately. */
   close(): void;
+  /**
+   * Cartesia context cancel (ADR-126). Optional: send `{ cancel: true }`
+   * for this turn's context_id so Sonic drops unstarted generation before
+   * `close()` tears the socket down. Providers without a cancel message omit
+   * this; callers use `tts?.cancel?.()` then `close()`.
+   */
+  cancel?(): void;
   /** Expressive delivery, Tier 1 (2026-07-17, see tone-tags.ts) — sets the
    * delivery/emotion for this turn's *remaining* generation, called once
    * per turn as soon as stream.ts has parsed the LLM's leading tone tag out
