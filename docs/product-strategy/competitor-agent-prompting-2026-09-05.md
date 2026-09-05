@@ -122,5 +122,8 @@ changes authoring or runtime semantics.
   analogue is per-state tools / opt-in `end_call`, not a prompt paragraph.
 - **Product changelog vs prompting** → the July scan for *what they shipped*; this file for
   *how they tell you to prompt*. Do not merge the two artifacts.
+- **How does Weeber itself score?** →
+  [`competitor-agent-prompting-weeber-scorecard-2026-09-05.md`](./competitor-agent-prompting-weeber-scorecard-2026-09-05.md)
+  (nine seeded runtimes + call-control + tool descriptions, same date).
 
 No code, schema, or `packages/weeber-compliance` change ships with this note.

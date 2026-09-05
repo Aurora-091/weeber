@@ -12,11 +12,14 @@ updated: 2026-09-05
 
 ## Current focus
 
-- **Competitor prompting note filed (2026-09-05).** Public-docs comparison lives at
-  `docs/product-strategy/competitor-agent-prompting-2026-09-05.md`. Steal sectional hygiene
-  and load-bearing tool descriptions; do not copy numbered scripts or keyword compliance.
-  Gaps (per-state tools, hang-up module, capability language) are observations — not a build
-  order. No persona or compliance-package change in that note.
+- **Competitor prompting note + Weeber scorecard (2026-09-05).** Vendor docs:
+  `docs/product-strategy/competitor-agent-prompting-2026-09-05.md`. Run against
+  our nine seeded runtimes:
+  `docs/product-strategy/competitor-agent-prompting-weeber-scorecard-2026-09-05.md`.
+  Hygiene matches; worst files are appointment-setter (`You're connected`) and
+  post-sale (`crmSync` + missing documents-not-received close). Cart-recovery and
+  policy-renewal are the internal gold standards. Persona edits not in that note
+  (STOP-AND-ASK).
 
 - **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** After ADR-123, two India
   test calls both conversed. Post-sale welcome closed with `setDisposition`+`hangUp` and no
