@@ -191,7 +191,7 @@ function AgentsGridProbe() {
     });
     const base = {
       name: null, greetingLine: null, closingLine: null, toneStyle: null, personaPrompt: null,
-      voiceProvider: null, voiceId: null, language: null, sttProvider: null, llmProvider: null,
+      voiceProvider: null, voiceId: null, voiceIdsByProvider: null, language: null, sttProvider: null, llmProvider: null,
       llmModel: null, sttFallbackOrder: null, ttsFallbackOrder: null, llmFallbackModels: null,
       toolsEnabled: null, guardrails: null, enabled: true,
       firstCallDelayMinutes: null, retryDelayMinutes: null, maxAttempts: null, phoneNumberId: null,

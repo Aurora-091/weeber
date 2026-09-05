@@ -373,6 +373,12 @@ export async function upsertAgentConfig(
     toneStyle: frame.toneStyle,
     voiceProvider: frame.voiceProvider,
     voiceId: frame.voiceId,
+    // Voice-pipeline hardening plan, Stage 5 (2026-09-05) — added straight into
+    // this explicit mapping from the start, unlike sttFallbackOrder/
+    // ttsFallbackOrder/llmFallbackModels above, which shipped in the schema
+    // and AgentFrameSchema but were missing here for a while and silently
+    // dropped on every save. Not repeating that.
+    voiceIdsByProvider: frame.voiceIdsByProvider,
     language: frame.language,
     sttProvider: frame.sttProvider,
     llmProvider: frame.llmProvider,

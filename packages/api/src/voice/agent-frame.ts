@@ -115,8 +115,21 @@ export const AgentFrameSchema = z.object({
    * a TTS failover keeps the caller hearing the same person instead of that
    * provider's platform-default voice — see tts-voice-identity.ts's doc
    * comment. Every key optional; an agent that only sets `voiceId`/
-   * `voiceProvider` above keeps exactly today's fail-open behavior. */
-  voiceIdsByProvider: z.record(z.enum(["elevenlabs", "cartesia", "sarvam"]), z.string().min(1).max(200)).optional(),
+   * `voiceProvider` above keeps exactly today's fail-open behavior.
+   *
+   * A fixed-shape `z.object(...)` rather than `z.record(...)` on purpose:
+   * this repo's zod version infers `z.record`'s value type as a full
+   * `Record<K, V>` (every key required) even when every value is marked
+   * optional at the schema level, which doesn't match "any subset of these
+   * three providers" — an object with three independently-optional fields
+   * infers the `Partial<Record<...>>` this field actually means. */
+  voiceIdsByProvider: z
+    .object({
+      elevenlabs: z.string().min(1).max(200).optional(),
+      cartesia: z.string().min(1).max(200).optional(),
+      sarvam: z.string().min(1).max(200).optional(),
+    })
+    .optional(),
   /** Free text (see RECOMMENDED_LANGUAGES above for curated options) — one
    * language drives both STT and TTS for the call. India has many more
    * languages than any single provider covers well, so this deliberately

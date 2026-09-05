@@ -310,6 +310,9 @@ export type AgentConfigRow = {
     personaPrompt: string | null;
     voiceProvider: string | null;
     voiceId: string | null;
+    /** Voice-pipeline hardening plan, Stage 5 — opt-in per-provider voice IDs
+     * so a TTS failover keeps the caller hearing the same person. */
+    voiceIdsByProvider: Record<string, string> | null;
     language: string | null;
     sttProvider: string | null;
     llmProvider: string | null;
@@ -344,6 +347,10 @@ export type FormState = {
   personaPrompt: string;
   voiceProvider: string;
   voiceId: string;
+  /** Voice-pipeline hardening plan, Stage 5 — one entry per TTS provider,
+   * empty string means "not set for that provider" (same convention as
+   * `voiceId` above). Only providers with a non-empty value are sent. */
+  voiceIdsByProvider: { elevenlabs: string; cartesia: string; sarvam: string };
   language: string;
   sttProvider: string;
   llmProvider: string;
@@ -374,6 +381,11 @@ export function toFormState(row: AgentConfigRow): FormState {
     personaPrompt: c?.personaPrompt ?? "",
     voiceProvider: c?.voiceProvider ?? "cartesia",
     voiceId: c?.voiceId ?? "",
+    voiceIdsByProvider: {
+      elevenlabs: c?.voiceIdsByProvider?.elevenlabs ?? "",
+      cartesia: c?.voiceIdsByProvider?.cartesia ?? "",
+      sarvam: c?.voiceIdsByProvider?.sarvam ?? "",
+    },
     language: c?.language ?? "",
     sttProvider: c?.sttProvider ?? "deepgram",
     llmProvider: c?.llmProvider ?? "gateway",
@@ -402,6 +414,14 @@ export function formToAgentFrame(form: FormState) {
     personaPrompt: form.personaPrompt || undefined,
     voiceProvider: form.voiceProvider,
     voiceId: form.voiceId || undefined,
+    // Voice-pipeline hardening plan, Stage 5 — only providers with a
+    // non-empty ID are sent; an all-empty map sends `undefined` so this
+    // never fabricates an empty-object override where none was intended
+    // (same reasoning as ttsFallbackOrder's empty-array-is-undefined below).
+    voiceIdsByProvider: (() => {
+      const entries = Object.entries(form.voiceIdsByProvider).filter(([, v]) => v.trim());
+      return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+    })(),
     language: form.language || undefined,
     sttProvider: form.sttProvider,
     llmProvider: form.llmProvider,

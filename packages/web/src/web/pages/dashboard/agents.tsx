@@ -14,7 +14,7 @@ import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonCards } from "../../components/shell/skeletons";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
-import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
+import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner, VoiceIdentityMap } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
@@ -458,6 +458,10 @@ function AgentEditForm({ orgId, row }: { orgId: string; row: AgentConfigRow }) {
                   suggestions={RECOMMENDED_LLM_MODELS.map((m) => m.model)}
                 />
               </div>
+            </div>
+            <div>
+              <span className={labelCls}>Voice identity across TTS failover</span>
+              <VoiceIdentityMap value={form.voiceIdsByProvider} onChange={(next) => set("voiceIdsByProvider", next)} />
             </div>
             {(() => {
               const recommended = getRecommendedVoiceStack(form.language);

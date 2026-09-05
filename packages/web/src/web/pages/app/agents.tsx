@@ -19,7 +19,7 @@ import { Breadcrumbs } from "../../components/shell/breadcrumbs";
 import { PageHeader } from "../../components/shell/page-header";
 import { PreviewButton } from "../../components/agent-preview/PreviewButton";
 import { PreviewDrawer } from "../../components/agent-preview/PreviewDrawer";
-import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner } from "../../components/agent-config/FallbackControls";
+import { ProviderFallbackOrder, ModelFallbackList, FailoverGuidanceBanner, VoiceIdentityMap } from "../../components/agent-config/FallbackControls";
 import {
   TONE_STYLES, STRICTNESS_LEVELS, AVAILABLE_TOOL_NAMES,
   RECOMMENDED_LLM_MODELS, RECOMMENDED_LANGUAGES, getRecommendedVoiceStack,
@@ -502,6 +502,10 @@ function VoiceTab({ row, form, set }: TabProps) {
           onChange={(next) => set("ttsFallbackOrder", next)}
           defaultOrder={DEFAULT_TTS_FALLBACK_ORDER}
         />
+      </div>
+      <div>
+        <span className={labelCls}>Voice identity across failover</span>
+        <VoiceIdentityMap value={form.voiceIdsByProvider} onChange={(next) => set("voiceIdsByProvider", next)} />
       </div>
       {recommended && !matchesRecommended && (
         <div className="rounded-lg border border-primary/20 border-l-2 border-l-primary bg-primary/5 px-4 py-3 text-xs">

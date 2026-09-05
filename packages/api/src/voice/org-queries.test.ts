@@ -443,6 +443,30 @@ describe("upsertAgentConfig", () => {
     expect(lastInsertValues?.ttsFallbackOrder).toBeUndefined();
     expect(lastInsertValues?.llmFallbackModels).toBeUndefined();
   });
+
+  // Voice-pipeline hardening plan, Stage 5 (2026-09-05) — same regression
+  // class as the test above, written the same way on purpose: this field
+  // shipped in the schema and AgentFrameSchema together with this explicit
+  // mapping in the same change, but sttFallbackOrder/ttsFallbackOrder/
+  // llmFallbackModels prove that "added to the schema" and "actually saved"
+  // are two different claims in this codebase, and only one of them was true
+  // for those three the first time around.
+  it("regression: voiceIdsByProvider must reach the insert values, not be silently dropped", async () => {
+    await upsertAgentConfig("org-1", "template-a", {
+      personaPrompt: "You are a helpful agent.",
+      voiceIdsByProvider: { cartesia: "cartesia-id", elevenlabs: "el-id" },
+    });
+
+    expect(lastInsertValues).toBeDefined();
+    expect(lastInsertValues?.voiceIdsByProvider).toEqual({ cartesia: "cartesia-id", elevenlabs: "el-id" });
+  });
+
+  it("passes through undefined for voiceIdsByProvider when a frame omits it", async () => {
+    await upsertAgentConfig("org-1", "template-a", { personaPrompt: "Hello." });
+
+    expect(lastInsertValues).toBeDefined();
+    expect(lastInsertValues?.voiceIdsByProvider).toBeUndefined();
+  });
 });
 
 /**

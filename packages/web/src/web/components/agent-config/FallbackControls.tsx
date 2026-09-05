@@ -138,6 +138,53 @@ export function ProviderFallbackOrder({
 }
 
 /**
+ * Voice-pipeline hardening plan, Stage 5 (2026-09-05) — opt-in per-provider voice IDs so a TTS
+ * failover keeps the caller hearing the same person, instead of the fail-open default (see
+ * voice/tts-voice-identity.ts): a fallback provider with no mapped ID uses ITS OWN platform-default
+ * voice rather than a foreign/nonsense ID, which is safe but still a different person to the
+ * caller. All three fields are optional and independent of the primary "Voice" picker above —
+ * an agent that leaves this whole section blank keeps exactly that fail-open behavior.
+ */
+export function VoiceIdentityMap({
+  value,
+  onChange,
+}: {
+  value: { elevenlabs: string; cartesia: string; sarvam: string };
+  onChange: (next: { elevenlabs: string; cartesia: string; sarvam: string }) => void;
+}) {
+  const providers = [
+    { key: "elevenlabs" as const, label: "ElevenLabs" },
+    { key: "cartesia" as const, label: "Cartesia" },
+    { key: "sarvam" as const, label: "Sarvam" },
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Optional — give this agent the same voice on every provider, so a failover mid-call keeps the
+        caller hearing the same person instead of that provider's own default voice. Leave any field
+        blank to keep today's behavior for that provider.
+      </p>
+      <div className="grid sm:grid-cols-3 gap-2">
+        {providers.map(({ key, label }) => (
+          <div key={key}>
+            <label htmlFor={`voice-identity-${key}`} className="text-xs text-muted-foreground">
+              {label} voice ID
+            </label>
+            <Input
+              id={`voice-identity-${key}`}
+              value={value[key]}
+              onChange={(e) => onChange({ ...value, [key]: e.target.value })}
+              placeholder={`${label} voice ID`}
+              className="font-mono text-xs"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * LLM fallback models — free-text AI Gateway model ids (no fixed enum on the backend, unlike
  * STT/TTS), so this is add/remove/reorder rather than include/exclude from a known list.
  */

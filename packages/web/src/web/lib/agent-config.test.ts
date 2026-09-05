@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { AVAILABLE_TOOL_NAMES, TOOL_LABELS } from "./agent-config";
+import { AVAILABLE_TOOL_NAMES, TOOL_LABELS, toFormState, formToAgentFrame } from "./agent-config";
 // Deliberate cross-package relative import: packages/web already depends on
 // @weeber/api, but the api package only exports its Hono AppType from its
 // "." entry, so there is no published path for this constants module. The
@@ -165,5 +165,66 @@ describe("guardrail consequence copy parity (web <-> api)", () => {
       expect(GUARDRAIL_TOPIC_LINES[level], `topic line for ${level}`).toBeTruthy();
       expect(GUARDRAIL_INJECTION_LINES[level], `injection line for ${level}`).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Voice-pipeline hardening plan, Stage 5 (2026-09-05) — the exact bug class
+ * org-queries.test.ts guards on the backend (sttFallbackOrder/
+ * ttsFallbackOrder/llmFallbackModels shipped in the schema without ever
+ * reaching the write path) has a frontend-side twin: a field present in
+ * `AgentConfigRow` that `formToAgentFrame` never actually reads back out of
+ * `FormState` would silently never save either, no backend bug required.
+ */
+describe("voiceIdsByProvider form round-trip (Stage 5)", () => {
+  function rowWith(voiceIdsByProvider: Record<string, string> | null) {
+    return {
+      templateKey: "template-a",
+      templateName: "Template A",
+      templateDescription: null,
+      defaultPersonaPrompt: null,
+      config: {
+        name: null,
+        greetingLine: null,
+        closingLine: null,
+        toneStyle: null,
+        personaPrompt: null,
+        voiceProvider: "cartesia",
+        voiceId: "cartesia-id",
+        voiceIdsByProvider,
+        language: null,
+        sttProvider: null,
+        llmProvider: null,
+        llmModel: null,
+        sttFallbackOrder: null,
+        ttsFallbackOrder: null,
+        llmFallbackModels: null,
+        toolsEnabled: null,
+        guardrails: null,
+        enabled: true,
+        firstCallDelayMinutes: null,
+        retryDelayMinutes: null,
+        maxAttempts: null,
+        phoneNumberId: null,
+        humanTransferNumber: null,
+      },
+    };
+  }
+
+  it("loads a saved map into the form, one field per provider", () => {
+    const form = toFormState(rowWith({ cartesia: "cartesia-id", elevenlabs: "el-id" }));
+    expect(form.voiceIdsByProvider).toEqual({ elevenlabs: "el-id", cartesia: "cartesia-id", sarvam: "" });
+  });
+
+  it("sends only the providers with a non-empty value, as a plain object", () => {
+    const form = toFormState(rowWith(null));
+    form.voiceIdsByProvider.cartesia = "cartesia-id";
+    form.voiceIdsByProvider.sarvam = "  "; // whitespace-only counts as unset
+    expect(formToAgentFrame(form).voiceIdsByProvider).toEqual({ cartesia: "cartesia-id" });
+  });
+
+  it("sends undefined, not an empty object, when no provider has a value", () => {
+    const form = toFormState(rowWith(null));
+    expect(formToAgentFrame(form).voiceIdsByProvider).toBeUndefined();
   });
 });
