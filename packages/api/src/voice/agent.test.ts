@@ -8,6 +8,8 @@ import {
   isTimedOutToolResult,
   resolveAgentConfig,
   toTurnTokenUsage,
+  wrapToolsWithInFlightCounter,
+  shouldAbortOnFirstTokenTimeout,
 } from "./agent";
 import { INSURANCE_GREETINGS } from "./insurance-greetings";
 import { renderTemplate } from "./workflows/variables";
@@ -827,6 +829,39 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
 });
 
 import { withFillerTimer, withToolTimeout, TOOL_CALL_FILLER_THRESHOLD_MS, buildVoiceTools, voiceTools } from "./agent";
+
+describe("first-token timeout vs tools (ADR-122)", () => {
+  it("does not abort the 2.5s bound once a tool has started this turn", () => {
+    expect(shouldAbortOnFirstTokenTimeout(0)).toBe(true);
+    expect(shouldAbortOnFirstTokenTimeout(1)).toBe(false);
+  });
+
+  it("counts execute() start/end so a pending tool is visible to the race", async () => {
+    const inFlight = { started: 0, count: 0 };
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tools = wrapToolsWithInFlightCounter(
+      {
+        slow: {
+          execute: async () => {
+            await gate;
+            return "ok";
+          },
+        },
+      },
+      inFlight,
+    );
+    const running = tools.slow.execute();
+    expect(inFlight.started).toBe(1);
+    expect(inFlight.count).toBe(1);
+    release();
+    await running;
+    expect(inFlight.started).toBe(1);
+    expect(inFlight.count).toBe(0);
+  });
+});
 
 describe("withFillerTimer — §3a tool-call filler audio", () => {
   it("does not fire onSlowToolCall for a tool that resolves well under the threshold", async () => {

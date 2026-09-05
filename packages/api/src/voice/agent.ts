@@ -1060,6 +1060,46 @@ export function withToolTimeout<T extends { execute?: (...args: never[]) => unkn
 }
 
 /**
+ * Counts tool executions for the first-token race (ADR-122). `textStream`
+ * does not emit until the model produces spoken text, so a legal tool round-
+ * trip is charged against FIRST_TOKEN_TIMEOUT_MS even though the model is
+ * working. `started` only ever increases; `count` is the in-flight number.
+ */
+export type ToolInFlightCounter = { started: number; count: number };
+
+export function wrapToolsWithInFlightCounter<T extends Record<string, { execute?: (...args: never[]) => unknown }>>(
+  tools: T,
+  inFlight: ToolInFlightCounter,
+): T {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, def]) => {
+      if (!def?.execute) return [name, def];
+      const originalExecute = def.execute;
+      return [
+        name,
+        {
+          ...def,
+          execute: async (...args: never[]) => {
+            inFlight.started += 1;
+            inFlight.count += 1;
+            try {
+              return await originalExecute(...args);
+            } finally {
+              inFlight.count -= 1;
+            }
+          },
+        },
+      ];
+    }),
+  ) as T;
+}
+
+/** Abort the 2.5s first-token bound only when the model produced neither text nor a tool call. */
+export function shouldAbortOnFirstTokenTimeout(toolsStartedThisTurn: number): boolean {
+  return toolsStartedThisTurn === 0;
+}
+
+/**
  * §3a: wraps a single AI-SDK tool's `execute` with a threshold timer —
  * fires `onSlowToolCall(name)` once if `execute` is still running after
  * `TOOL_CALL_FILLER_THRESHOLD_MS`, then lets the real execution finish and
@@ -1199,10 +1239,10 @@ export type OutboundTextContext = {
  * writes. The caller's phone number is the CRM upsert key; it is now bound
  * from the telephony provider's own call record via `resolveCrmSyncContext`,
  * not from a model-supplied string the model had no reliable source for.
- * Omitted entirely when there's no org or no resolvable human number — which
- * is exactly the text test-chat, the synthetic harness and the preview
- * drawer, none of which should be writing contacts into a merchant's live
- * CRM.
+ * Omitted entirely when there's no org, no resolvable human number, **or no
+ * connected CRM** (`resolveLiveCrmSyncContext`, ADR-122) — which is the
+ * text test-chat, the synthetic harness, the preview drawer, and a live
+ * call whose org never connected HubSpot/GHL/Salesforce.
  */
 /** The tools that do awaited external network I/O and are therefore worth
  * bounding independently of the whole-turn timeout — see withToolTimeout.
@@ -1486,6 +1526,10 @@ export function buildTurnPromptParts(input: {
 // transcript — two or more of these in one call is the fallback-loop shape
 // diagnosed 2026-08-13 (calls 4-7), not a caller who is hard to hear.
 export const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you say that again?";
+// That line is a lie when the failure was "the model was busy in a tool"
+// rather than "we didn't hear you" (ADR-122, 2026-09-05 logs). Keep the
+// wording for transcript detection in call-quality.ts; do not fire it
+// while a tool is still the reason nothing has been spoken yet.
 
 // Hard ceiling per turn so a stuck generation can never hang the call
 // indefinitely. Twilio's own low-level timeouts would eventually kill the
@@ -1747,23 +1791,28 @@ export async function runVoiceAgentTurn({
   const firstTokenAbort = new AbortController();
   const modelSignal = AbortSignal.any([combinedSignal, firstTokenAbort.signal]);
 
+  const toolsInFlight: ToolInFlightCounter = { started: 0, count: 0 };
+
   try {
     const result = streamText({
       model: resolveVoiceModel(llmProvider, llmModel),
       providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
       system: systemPrompt,
       messages: history,
-      tools: buildVoiceTools(
-        orgId,
-        enabledTools,
-        onSlowToolCall,
-        cartRecovery,
-        codOrder,
-        crmSync,
-        outboundText,
-        onLateToolResult,
-        isHeardInCall,
-        dispositionScheduling,
+      tools: wrapToolsWithInFlightCounter(
+        buildVoiceTools(
+          orgId,
+          enabledTools,
+          onSlowToolCall,
+          cartRecovery,
+          codOrder,
+          crmSync,
+          outboundText,
+          onLateToolResult,
+          isHeardInCall,
+          dispositionScheduling,
+        ),
+        toolsInFlight,
       ),
       stopWhen: stepCountIs(6),
       abortSignal: modelSignal,
@@ -1838,14 +1887,31 @@ export async function runVoiceAgentTurn({
       const timeout = new Promise<"timeout">((resolve) => {
         timer = setTimeout(() => resolve("timeout"), FIRST_TOKEN_TIMEOUT_MS);
       });
-      const raced = await Promise.race([firstChunk, timeout]);
+      let raced = await Promise.race([firstChunk, timeout]);
       clearTimeout(timer);
+      // ADR-122: the first-token bound measures silence from the caller,
+      // not tool-round-trip time. A crmSync/lookup that is still running
+      // (or already ran this turn) is the model working, not a stalled
+      // generation — aborting here spoke FALLBACK_REPLY while STT had
+      // heard the caller clearly.
+      if (raced === "timeout" && !shouldAbortOnFirstTokenTimeout(toolsInFlight.started)) {
+        console.warn(
+          `[voice-agent] first-token bound deferred — a tool ran this turn; waiting for first chunk or turn ceiling`,
+          {
+            model: activeModelLabel,
+            toolsStartedThisTurn: toolsInFlight.started,
+            toolsInFlight: toolsInFlight.count,
+            firstTokenTimeoutMs: FIRST_TOKEN_TIMEOUT_MS,
+          },
+        );
+        raced = await firstChunk;
+      }
       if (raced === "timeout") {
         firstTokenAbort.abort();
         void iterator.return?.().catch(() => {});
         console.warn(
           `[voice-agent] LLM produced no output within ${FIRST_TOKEN_TIMEOUT_MS}ms — using fallback reply`,
-          { model: activeModelLabel },
+          { model: activeModelLabel, toolsStartedThisTurn: toolsInFlight.started },
         );
         onTextDelta(FALLBACK_REPLY);
         return FALLBACK_REPLY;

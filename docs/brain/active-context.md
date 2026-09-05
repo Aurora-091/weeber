@@ -12,6 +12,13 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **ADR-122: the "didn't catch that" loop was a first-token abort during `crmSync` (2026-09-05).**
+  Railway logs: STT/TTS healthy; every user turn logged filler for `crmSync` and, in the same ms,
+  `LLM produced no output within 2500ms`. No CRM connected → tool still registered → credential
+  lookup exceeded 2.5s → abort spoke a fake hearing apology. Fix on `cursor/first-token-crm-seed-4d7f`.
+  Insurance runtime personas also migrated off unrendered merge tags. Next: deploy, re-seed templates,
+  place one English Deepgram+Cartesia call and confirm the fallback line is gone.
+
 - **Stale FE/BE audit landed (2026-09-05).** Knip baseline 60 → 2 (harness duplicates only).
   Leads page now exposes hosted form URL + ingest API keys. See `docs/changelog/2026-09.md`.
 

@@ -73,9 +73,10 @@ export type CrmSyncContext = {
  * author of: the name it heard, and a summary of what the call was about.
  *
  * The gate is **non-registration**, not validation — same contract as
- * `confirmCodOrder` (ADR-064/066): `resolveCrmSyncContext` returns `undefined`
- * when there's no org or no resolvable human number, and `buildVoiceTools`
- * then omits the tool entirely for that call. A tool that isn't in the request
+        * `confirmCodOrder` (ADR-064/066): `resolveCrmSyncContext` returns `undefined`
+ * when there's no org or no resolvable human number, and `resolveLiveCrmSyncContext`
+ * additionally withholds the tool when the org has no connected CRM (ADR-122).
+ * `buildVoiceTools` then omits the tool entirely for that call. A tool that isn't in the request
  * cannot be called with a guessed argument.
  *
  * Deliberate consequence: the text test-chat, the synthetic AI-to-AI harness,
@@ -195,4 +196,35 @@ export function resolveCrmSyncContext(input: {
   if (!input.callId) return undefined;
 
   return { orgId, phoneNumber: raw, callId: input.callId };
+}
+
+/**
+ * ADR-122: the live-call gate is "can this write actually land", not only
+ * "do we know whose record it would be". `resolveCrmSyncContext` still
+ * binds org + carrier number + callId; this second check withholds the
+ * tool when the org has no connected CRM, so the model cannot spend a
+ * turn (and the 2.5s first-token budget) on a guaranteed `synced: false`.
+ *
+ * Same non-registration contract as `confirmCodOrder` (ADR-064). Credential
+ * lookup is best-effort — a vault/DB failure omits the tool rather than
+ * offering a write that will fail mid-turn.
+ */
+export async function resolveLiveCrmSyncContext(input: {
+  orgId?: string;
+  humanNumber?: string;
+  callId?: number | null;
+}): Promise<CrmSyncContext | undefined> {
+  const ctx = resolveCrmSyncContext(input);
+  if (!ctx) return undefined;
+  try {
+    const creds = await getOrgCrmCredentials(ctx.orgId);
+    if (!creds) {
+      console.log(`[voice] crmSync withheld — no CRM credentials for org ${ctx.orgId}`);
+      return undefined;
+    }
+    return ctx;
+  } catch (err) {
+    console.warn("[voice] crmSync withheld — credential lookup failed", { orgId: ctx.orgId, err });
+    return undefined;
+  }
 }

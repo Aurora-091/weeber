@@ -36,18 +36,14 @@ const promptsDir = join(import.meta.dir, "../../../../docs/agent-prompts");
  * **This list may only shrink.** Removing the last entry should delete the
  * allowlist along with it.
  */
-const MERGE_TAG_MIGRATION_BACKLOG = new Set([
-  "04-insurance-policy-renewal-agent.md",
-  "05-insurance-lead-followup-agent.md",
-  "06-insurance-appointment-setter-agent.md",
-  "07-insurance-post-sale-welcome-agent.md",
-  "08-insurance-feedback-nps-agent.md",
-  // A5 (phase-a-integrity.md, 2026-08-24): repointed from
-  // "09-insurance-final-expense-qualifier-agent.md" to the v2 file that
-  // superseded it as the seeded source (seed.ts) — same un-migrated merge
-  // tags, new filename.
-  "09-insurance-final-expense-qualifier-agent-v2.md",
-]);
+/**
+ * Merge-tag hygiene used to carry a shrinking allowlist for the six insurance
+ * personas. Those runtime regions were migrated tag-free (ADR-065 pattern,
+ * 2026-09-05) — values arrive via identity/facts blocks; survivors are still
+ * scrubbed at `streamText`. A new template that reintroduces `{{tags}}` fails
+ * the per-file test below. Do not revive an allowlist to dodge it.
+ */
+const MERGE_TAG_MIGRATION_BACKLOG = new Set();
 
 /**
  * Substrings that have no business being spoken-agent instruction. Each one is
@@ -121,7 +117,7 @@ describe("seeded agent prompts — merge-tag hygiene (G1.3)", () => {
   it("the migration backlog only ever shrinks", () => {
     // Guards the guard: a new prompt file must not be added to the backlog to
     // dodge the rule above.
-    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBeLessThanOrEqual(6);
+    expect(MERGE_TAG_MIGRATION_BACKLOG.size).toBe(0);
   });
 });
 

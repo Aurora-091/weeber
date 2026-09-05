@@ -21,7 +21,7 @@ import {
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
 import { resolveCodOrderContext, type CodOrderContext } from "./tools/confirmCodOrder";
-import { resolveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
+import { resolveLiveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
 import { screenCapture, redactCaptureValue } from "./prohibited-capture";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
@@ -587,9 +587,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * `humanNumber`/`humanNumberOrgId` once at "start" and then fixed for the
    * life of the call, for the same reason `cartRecoveryContext` is: the
    * identity of the record being written must not shift mid-conversation.
-   * Stays `undefined` when caller ID was withheld or the call has no org, and
-   * `buildVoiceTools` then omits `crmSync` entirely rather than letting the
-   * model name a contact.
+   * Stays `undefined` when caller ID was withheld, the call has no org, or
+   * the org has no connected CRM (ADR-122), and `buildVoiceTools` then omits
+   * `crmSync` entirely rather than spending a turn on a guaranteed miss.
    */
   let crmSyncContext: CrmSyncContext | undefined;
   /**
@@ -2914,10 +2914,6 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             if (row) {
               humanNumber = resolveHumanNumber(row.direction, row.fromNumber, row.toNumber);
               humanNumberOrgId = row.orgId ?? undefined;
-              // G1.4 (ADR-069): bound here, from the same carrier-reported
-              // numbers cross-call memory already trusts — not from anything
-              // the model says.
-              crmSyncContext = resolveCrmSyncContext({ orgId: humanNumberOrgId, humanNumber, callId: dbCallId });
             }
 
             // Per-number config (see number-config.ts) applies to every call
@@ -2959,7 +2955,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
                     .catch(() => [])
                 : undefined;
 
-            const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow, leadGreetingContext] = await Promise.all([
+            const [callerMemoryResult, agentConfig, effectiveFlagsResult, orgRow, leadGreetingContext, resolvedCrmSync] = await Promise.all([
               row ? getCallerMemory(humanNumberOrgId, humanNumber!).catch(() => ({})) : Promise.resolve({}),
               // Misc-1: a "call my phone" test call carries the merchant's
               // exact in-progress form state — use it directly and skip the
@@ -3016,8 +3012,19 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               // Best-effort: a lookup failure just means the greeting falls back
               // to the LLM path, exactly as it did before this existed.
               getLeadGreetingContext(humanNumberOrgId, humanNumber).catch(() => ({})),
+              // ADR-122: withhold crmSync when no CRM is connected. Folded
+              // into this batch so the credential read does not sit on the
+              // pickup-to-first-word path as a sequential await. G1.4 still
+              // binds org + carrier number + callId; the extra check is
+              // "will a write actually land".
+              resolveLiveCrmSyncContext({
+                orgId: humanNumberOrgId,
+                humanNumber,
+                callId: dbCallId,
+              }),
             ]);
             callerMemoryFacts = callerMemoryResult;
+            crmSyncContext = resolvedCrmSync;
             resolvedFlags = effectiveFlagsResult;
             resolvedFlagsReady = true;
             persona = agentConfig.systemPrompt;
