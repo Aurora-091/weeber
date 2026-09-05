@@ -56,4 +56,4 @@ export function connectStt(
   return providers[provider](onTranscript, onFatalError, onStatsUpdate, onConnected, language);
 }
 
-export type { ConnectStt, SttConnection, SttProvider, SttStats, SttTranscriptHandler } from "./types";
+export type { ConnectStt, SttConnection, SttProvider } from "./types";

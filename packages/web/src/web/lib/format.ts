@@ -62,28 +62,6 @@ export function formatDateTime(input: Date | string | number, locale = "en-US"):
   }).format(date);
 }
 
-/** BCP-47 locale hint from the org's stored country code. Falls back to
- * "en-US" so Intl always has a valid locale — never crashes on unknown codes. */
-export function localeFromCountry(countryCode: string | null | undefined): string {
-  if (!countryCode) return "en-US";
-  const code = countryCode.toUpperCase();
-  const map: Record<string, string> = {
-    IN: "en-IN",
-    US: "en-US",
-    GB: "en-GB",
-    CA: "en-CA",
-    AU: "en-AU",
-    DE: "de-DE",
-    FR: "fr-FR",
-    ES: "es-ES",
-    IT: "it-IT",
-    JP: "ja-JP",
-    BR: "pt-BR",
-    MX: "es-MX",
-  };
-  return map[code] ?? "en-US";
-}
-
 /** Formatted money using the org's locale + currency. Falls back to INR
  * because that's Weeber's launch market — matches the existing home.tsx
  * default so nothing renders in a different currency by accident. */
@@ -102,16 +80,6 @@ export function formatMoney(
   } catch {
     return `${currency ?? "INR"} ${amount.toFixed(0)}`;
   }
-}
-
-/** Compact number ("1.2K", "3.4M") — used on stat cards where full precision
- * would push the number off a card. */
-export function formatCompactNumber(value: number | null | undefined, locale = "en-US"): string {
-  if (value == null || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat(locale, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
 }
 
 /**

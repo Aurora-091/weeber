@@ -94,5 +94,3 @@ export function createBookAppointmentTool(orgId: string | undefined) {
     },
   });
 }
-
-export const bookAppointment = createBookAppointmentTool(undefined);

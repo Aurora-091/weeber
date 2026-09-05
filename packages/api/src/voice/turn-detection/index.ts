@@ -3,10 +3,7 @@ import { HeuristicTurnDetector } from "./heuristic";
 import { withLatencyBudget } from "./budgeted";
 import { createCompositeTurnDetector } from "./composite";
 
-export type { TurnEndInput, TurnEndDecision, TurnEndDetector } from "./types";
-export { endsMidThought, HeuristicTurnDetector, HEURISTIC_DETECTOR_NAME } from "./heuristic";
-export { withLatencyBudget } from "./budgeted";
-export { createCompositeTurnDetector } from "./composite";
+export type { TurnEndDetector } from "./types";
 
 /**
  * Org feature flag (same pattern as EXPRESSIVE_DELIVERY_FLAG / backchannels):

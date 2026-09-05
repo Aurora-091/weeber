@@ -1,8 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound, SlidersHorizontal, Trash2, Share2, RefreshCw, CircleAlert as AlertCircle } from "lucide-react";
+import { Phone, Loader as Loader2, Search, Download, Plus, ShieldAlert, UserRound, SlidersHorizontal, Trash2, Share2, RefreshCw, CircleAlert as AlertCircle, KeyRound, Copy, Check, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { appFetch } from "../../lib/user-session";
+import { apiUrl } from "../../lib/api";
+import { wwwUrl } from "../../lib/domains";
+import { useCopy } from "../../lib/useCopy";
+import { useUser } from "../../components/app/user-shell";
 import { PageHeader } from "../../components/shell/page-header";
 import { EmptyState } from "../../components/shell/empty-state";
 import { SkeletonTable } from "../../components/shell/skeletons";
@@ -101,11 +105,20 @@ const SOURCE_LABEL: Record<LeadSource, string> = {
 
 const UNASSIGNED = "__unassigned__";
 
+type LeadApiKeyRow = {
+  id: number;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
+
 function formatWhen(iso: string | null) {
   return formatRelative(iso as string);
 }
 
 export function UserLeadsPage() {
+  const { me } = useUser();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [openLeadId, setOpenLeadId] = useState<number | null>(null);
@@ -200,6 +213,8 @@ export function UserLeadsPage() {
         }
       />
 
+      <LeadCaptureSection orgId={me.org.id} />
+
       <div className="mb-4 flex items-center gap-2">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -290,6 +305,174 @@ export function UserLeadsPage() {
         }}
       />
     </div>
+  );
+}
+
+function LeadCaptureSection({ orgId }: { orgId: string }) {
+  const queryClient = useQueryClient();
+  const { copy, copied } = useCopy({ message: "Copied to clipboard" });
+  const [label, setLabel] = useState("");
+  const [justCreated, setJustCreated] = useState<{ label: string; key: string } | null>(null);
+  const hostedFormUrl = wwwUrl(`/f/${orgId}`);
+  const ingestUrl = apiUrl("/api/leads/ingest");
+
+  const keys = useQuery<{ keys: LeadApiKeyRow[] }>({
+    queryKey: ["app-leads-api-keys"],
+    queryFn: async () => {
+      const res = await appFetch("/api/app/leads/api-keys");
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+  });
+
+  const createKey = useMutation({
+    mutationFn: async () => {
+      const res = await appFetch("/api/app/leads/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `Failed (${res.status})`);
+      }
+      return res.json() as Promise<{ id: number; label: string; key: string }>;
+    },
+    onSuccess: (data) => {
+      setJustCreated({ label: data.label, key: data.key });
+      setLabel("");
+      queryClient.invalidateQueries({ queryKey: ["app-leads-api-keys"] });
+      toast.success("Ingest key created");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const revokeKey = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await appFetch(`/api/app/leads/api-keys/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["app-leads-api-keys"] });
+      toast.success("Key revoked");
+    },
+    onError: () => toast.error("Couldn't revoke key — try again."),
+  });
+
+  const activeKeys = (keys.data?.keys ?? []).filter((k) => !k.revokedAt);
+
+  return (
+    <section className="card-weeber mb-6 space-y-6 p-5">
+      <div>
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <Share2 className="size-4 text-primary" aria-hidden />
+          Capture sources
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
+          Share your hosted form or send leads from a CRM, Zapier, or custom integration using an ingest API key.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Link2 className="size-3.5 text-muted-foreground" aria-hidden />
+          Hosted form
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="flex-1 min-w-[12rem] rounded-md border border-border bg-muted/30 px-3 py-2 text-xs font-mono break-all">
+            {hostedFormUrl}
+          </code>
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => copy(hostedFormUrl)}>
+            {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+            Copy link
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <KeyRound className="size-3.5 text-muted-foreground" aria-hidden />
+          Ingest API keys
+        </div>
+        <p className="text-xs text-muted-foreground max-w-2xl">
+          POST JSON to <code className="font-mono">{ingestUrl}</code> with{" "}
+          <code className="font-mono">Authorization: Bearer wlk_…</code> (or <code className="font-mono">X-Api-Key</code>).
+          Keys are org-scoped and revocable — safe to hand to a client form or Pipedream.
+        </p>
+
+        {justCreated && (
+          <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
+            <p className="text-sm font-medium mb-2">
+              New key for &ldquo;{justCreated.label}&rdquo; — copy it now, it won&apos;t be shown again:
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="flex-1 min-w-[12rem] text-xs font-mono bg-card border border-border rounded px-3 py-2 overflow-x-auto">
+                {justCreated.key}
+              </code>
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => copy(justCreated.key)}>
+                <Copy className="size-3.5" aria-hidden />
+                Copy key
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!label.trim()) return;
+            createKey.mutate();
+          }}
+        >
+          <div className="min-w-[12rem] flex-1 space-y-1">
+            <Label htmlFor="lead-key-label" className="text-xs">Label</Label>
+            <Input
+              id="lead-key-label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Website form"
+              className="h-9"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={!label.trim() || createKey.isPending}>
+            {createKey.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
+            Create key
+          </Button>
+        </form>
+
+        {keys.isLoading && <p className="text-xs text-muted-foreground">Loading keys…</p>}
+        {keys.isError && (
+          <p className="text-xs text-destructive">Couldn&apos;t load API keys.</p>
+        )}
+        {activeKeys.length > 0 && (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {activeKeys.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                <div>
+                  <div className="font-medium">{row.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Created {formatWhen(row.createdAt)}
+                    {row.lastUsedAt ? ` · Last used ${formatWhen(row.lastUsedAt)}` : ""}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  disabled={revokeKey.isPending}
+                  onClick={() => revokeKey.mutate(row.id)}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                  Revoke
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 

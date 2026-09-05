@@ -12,7 +12,7 @@ import { appPath } from "./route-base";
  *
  * `dashboard` mirrors Vocalist's per-vertical `dashboard.metrics` /
  * `dashboard.cards` config (see docs/DECISIONS.md "Setup modal, not a setup
- * page") — the Home page (pages/app/analytics.tsx) renders these instead of
+ * page") — the Home page (pages/app/home.tsx) renders these instead of
  * hardcoding Shopify-shaped stat cards.
  */
 export type VerticalDefinition = {

@@ -69,7 +69,6 @@ const VOICE_WS_PATHS: Record<TelephonyProvider, string> = {
 const TEST_CALL_WS_PATH = "/api/voice/test-call";
 
 /** Kept for any existing code that only knows about the Twilio path. */
-export const VOICE_WS_PATH = VOICE_WS_PATHS.twilio;
 
 /**
  * Async since 2026-07-17 (Exotel stream auth) — every other branch here

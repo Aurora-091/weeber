@@ -229,12 +229,10 @@ updated: 2026-08-20
   reference, so editing a workflow can change how an already-waiting or mid-call run proceeds. Proposes
   a draft → ready-to-test → tested → live → paused state machine. No product code changed.
 
-- **61 known dead-code findings are baselined, not fixed** (`tools/dead-code/knip-baseline.json`,
-  ADR-090): 4 unused files, 40 unused exports, 15 unused exported types, 2 duplicate exports. The
-  ratchet stops the number growing; it does not clean up. Notable entries worth a decision rather than
-  a shrug — all of `voice/workflows/index.ts` and `voice/turn-detection/index.ts` export unused,
-  `bookAppointment`, `readCredentials`/`deleteOrgCredentials`, six error classes in `utils/errors.ts`.
-  Each is either about to be wired or should be deleted; "baselined" is not an answer.
+- **Dead-code ratchet cleaned up (2026-09-05).** Knip baseline shrank from 60 → 2
+  (`tools/dead-code/knip-baseline.json`, ADR-090): deleted orphaned web files, trimmed barrel
+  re-exports, removed unused error classes and credential-vault helpers, and wired the leads ingest
+  API-key UI on the merchant Leads page. Only harness duplicate exports remain baselined.
 - **The test suite is blind at the seams.** 57 of 123 API test files use `mock.module`; exactly 1
   touches `db.insert(`. Unit density is high, integration coverage is near zero, and all eight
   wiring defects behind ADRs 073–088 lived in that gap. Adding unit tests does not close it.

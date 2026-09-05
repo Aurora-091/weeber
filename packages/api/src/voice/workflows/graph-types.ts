@@ -105,20 +105,3 @@ export const WORKFLOW_OUTCOMES = [
   "wrong-number",
   "default",
 ] as const;
-
-export type WorkflowBranch = (typeof WORKFLOW_OUTCOMES)[number];
-
-export const MERGE_TAGS = [
-  "customer_name",
-  "cart_value",
-  "currency",
-  "checkout_url",
-  "shop_name",
-  "attempt_number",
-  "discount_percent",
-  "discount_code",
-  "abandoned_checkout_url",
-  "cart_recovery_url",
-] as const;
-
-export type MergeTag = (typeof MERGE_TAGS)[number];

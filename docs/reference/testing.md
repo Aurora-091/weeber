@@ -196,7 +196,7 @@ deps-first rule above is enforced in CI, so the false-green-on-missing-deps fail
 `main`.
 
 **`dead-code` and `design-guard` are ratchets, and they are not tests.** Each diffs the repo against a
-committed baseline — `tools/dead-code/knip-baseline.json` (61 known findings) and
+committed baseline — `tools/dead-code/knip-baseline.json` (2 known findings: harness-only duplicates) and
 `tools/ui-guard/design-budget.json` — and fails only when a count goes **up**. Red means the change
 under review added the finding. Widening a baseline is a deliberate, reviewable edit; do not do it to
 unblock a push. `dead-code` runs `knip-bun` rather than `knip` because the node build dies with
