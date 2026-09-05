@@ -69,7 +69,6 @@ const app = new Hono()
           deepgram: Boolean(process.env.DEEPGRAM_API_KEY),
           elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
           cartesia: Boolean(process.env.CARTESIA_API_KEY),
-          groq: Boolean(process.env.GROQ_API_KEY),
           // Reported because Indic routing silently depends on it: both
           // resolveSttProvider (stt/index.ts) and resolveTtsProvider
           // (tts/index.ts) only switch a Hindi call onto Sarvam when this key

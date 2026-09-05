@@ -12,7 +12,7 @@ sequenceDiagram
     participant WS as voice/stream.ts<br/>(per-call WS state machine)
     participant STT as voice/stt/*.ts<br/>(Deepgram nova-3 / Sarvam Saaras / ElevenLabs Scribe v2 Realtime)
     participant Agent as voice/agent.ts<br/>(runVoiceAgentTurn)
-    participant LLM as voice/llm/*.ts<br/>(AI Gateway / Groq)
+    participant LLM as voice/llm/*.ts<br/>(AI Gateway)
     participant TTS as voice/tts/*.ts<br/>(ElevenLabs / Cartesia / Sarvam Bulbul)
     participant Tools as voice/tools/*.ts
 

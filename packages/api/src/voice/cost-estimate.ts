@@ -59,7 +59,7 @@ const TTS_RATE_PER_MIN_USD: Record<TtsProviderForCost, number> = {
 
 /** Flat blended estimate for the LLM leg — see the module doc comment for
  * why this isn't token-derived yet. Roughly in line with a typical
- * gpt-4o-mini/Groq-class model at conversational turn-taking cadence. */
+ * gpt-4o-mini-class model at conversational turn-taking cadence. */
 const LLM_FLAT_RATE_PER_MIN_USD_ESTIMATE = 0.006;
 
 function isTelephonyProviderForCost(v: string | null | undefined): v is TelephonyProviderForCost {

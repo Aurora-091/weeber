@@ -37,34 +37,37 @@ enough to have a second person's eyes on the approach before merging.
 
 ---
 
-## 2. 🔴 LLM-driven latency spikes — timeout-based failover (code shipped, not yet deployed)
+## 2. ✅ LLM-driven latency spikes — timeout-based bound (superseded by Groq removal, 2026-09-04)
 
-**Status: code is done locally, uncommitted. Needs review + deploy decision.**
+**Status: the transport-chain version of this fix (`f1dd786`) was removed along with Groq as an LLM
+provider — see ADR-121. The underlying fix survives in a different shape; re-read before assuming
+either the old chain or "no fix at all" describes current code.**
 
-Root cause (confirmed from `turn_latency` data): `llm_ttft_ms` — not TTS, not endpointing — drove
-p95 voice-to-voice latency to 4.7s and spikes to 13s. Traced to a 2026-08-27 Vercel AI Gateway
+Original root cause (confirmed from `turn_latency` data): `llm_ttft_ms` — not TTS, not endpointing —
+drove p95 voice-to-voice latency to 4.7s and spikes to 13s. Traced to a 2026-08-27 Vercel AI Gateway
 slowdown (`gateway/google/gemini-3.1-flash-lite` and `gateway/openai/gpt-5.4-mini` responses taking
-5-10s to first token). `LLM_TRANSPORT_FAILOVER` is already `true` in prod, but
-`streamWithTransportFailover` only failed over on a thrown error — a slow-but-successful response
-never triggered it.
+5-10s to first token). Confirmed via Railway (2026-09-04) that `LLM_TRANSPORT_FAILOVER` really was
+set in production — the "already `true` in prod" claim below checked out.
 
-**Fix already written** (uncommitted, in the working tree):
-- `packages/api/src/voice/llm/transport-stream.ts` — added `firstTokenTimeoutMs`, so a link that
-  produces nothing within the window (2.5s, matching `call-health.ts`'s existing
-  `LLM_TTFT_DEGRADED_MS`) is aborted and failed over, same as a thrown error. New
-  `TransportChainExhaustedError` when every link is exhausted.
-- `packages/api/src/voice/agent.ts` — wires the timeout through, only active when the transport
-  chain is non-empty (flag off ⇒ unchanged behavior). Catch block now returns `FALLBACK_REPLY`
-  instead of propagating a raw error when the chain is exhausted.
-- `packages/api/src/voice/llm/transport-chain.test.ts` — updated + 4 new tests, all passing.
-  Typecheck clean. Full suite diffed against baseline — zero new failures.
+**What changed on 2026-09-04 (Groq removal, ADR-121):** the transport-chain machinery this fix lived
+in (`voice/llm/transport-chain.ts`, `transport-stream.ts`, `LLM_TRANSPORT_FAILOVER`) was deleted
+because Groq — the platform's one non-gateway transport — was removed, leaving no second transport
+for a "chain" to fail over across. The first-token bound itself was judged worth keeping and was
+**generalized** into `agent.ts`: it now races the first chunk of a single `streamText` call against
+`FIRST_TOKEN_TIMEOUT_MS` (2.5s, unchanged) via a dedicated `AbortController`, falling back to
+`FALLBACK_REPLY` on timeout — same caller-facing guarantee, no chain to fail over into. See ADR-121's
+"Consequences" for the honest caveat: this is a *tighter* worst-case bound than the old
+sequentially-retried chain, but gives less total wall-clock time for a fallback model to succeed
+before giving up, and that trade was not measured, only reasoned through.
 
-**Before merging:** confirm on Railway prod whether `AI_GATEWAY_FALLBACK_MODELS` actually contains
-a `direct:groq/...` entry. There's an unresolved discrepancy — the test file's own comment claims
-production's value is `"openai/gpt-5.4-mini,groq/llama-3.3-70b-versatile"` (no `direct:` prefix,
-meaning the chain never actually leaves the gateway), but that contradicts what was reported back
-during this session. Worth 30 seconds on the Railway dashboard before assuming the fix fully
-bypasses the gateway rather than just bounding the wait.
+**Still open, carried into ADR-121's rollout checklist (was this item's original blocker):**
+confirm on the Railway dashboard what `AI_GATEWAY_FALLBACK_MODELS` actually contains in production —
+the connected Railway app in this session could read variable *names* but not *values*, so the
+original discrepancy (test-file comment claiming `"openai/gpt-5.4-mini,groq/llama-3.3-70b-versatile"`,
+no `direct:` prefix, vs. what was reported back in the session that added the fix) is still
+unresolved. It matters differently now: any `direct:`/`gateway:`-prefixed entry left over from the
+deleted parser having once understood it needs stripping back to a plain model id, since nothing
+reads that prefix anymore and the gateway would otherwise receive it as a literal, bogus model id.
 
 ---
 

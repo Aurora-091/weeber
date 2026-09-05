@@ -20,7 +20,7 @@ against a source (an API query, a file, a doc) — nothing here is guessed.
 | Telephony | Twilio (platform + BYO), Plivo (BYO), Exotel (BYO, India) | Twilio: **confirmed "Full" account, status active** (queried Twilio's own API with production credentials, 2026-07-17) — not a trial account, no trial-specific caps apply. 4 real phone numbers provisioned. Plivo: real hangup/transfer wired this session, matches Plivo's documented API, not yet live-call-verified (no real account/call in this sandbox). Exotel: hangup/transfer intentionally NOT implemented — no confirmed REST endpoint for an already-connected call in Exotel's public docs. |
 | STT | Deepgram, Sarvam, ElevenLabs (Scribe v2 Realtime) | Per-agent configurable, cross-provider failover live (`voice/failover.ts`) — default chain deepgram → elevenlabs → sarvam. |
 | TTS | ElevenLabs, Cartesia, Sarvam | Per-agent configurable, cross-provider failover live — default chain cartesia → elevenlabs → sarvam. |
-| LLM | AI Gateway (model-agnostic) | **`LLM_PROVIDER=gateway`** as of 2026-07-17 (was `groq`) — switched specifically to activate cross-provider LLM failover (`AI_GATEWAY_FALLBACK_MODELS=openai/gpt-5.4-mini,groq/llama-3.3-70b-versatile`), verified live via `/api/health`: `activeModel` is now `gateway/google/gemini-3.1-flash-lite`. Trades away some of Groq's raw speed for real cross-vendor redundancy — a deliberate tradeoff, not free. |
+| LLM | AI Gateway (model-agnostic) | `gateway` is the only LLM provider — Groq was removed as a standalone/direct provider 2026-09-04 (ADR-121, superseding ADR-005/ADR-109). `AI_GATEWAY_FALLBACK_MODELS` can still list a `groq/<model>` id (the gateway forwards to Groq compute), just not as a direct, non-gateway transport. |
 | Email | Resend | Waitlist, auth emails. |
 | CRM integrations | HubSpot, Salesforce, GoHighLevel, Google Calendar | Resilient-fetch wrapped (timeout/retry/circuit-breaker), see `voice/integrations/*.ts`. |
 | Cross-repo contract | `weebersh` (separate Shopify OAuth/webhook bridge repo) | `WEEBERSH_APP_URL`/`WEEBER_INTERNAL_SECRET`. |
@@ -85,7 +85,7 @@ for the pooler-specific number at that time.
    (~10 calls total) doesn't justify the added complexity/cost yet. Revisit only if real signal
    shows one replica genuinely saturated — see "Scaling beyond one instance" below for the
    options already evaluated when that day comes.
-4. **Provider-side concurrency limits (unverified)** — Deepgram/ElevenLabs/Cartesia/Groq/AI Gateway
+4. **Provider-side concurrency limits (unverified)** — Deepgram/ElevenLabs/Cartesia/AI Gateway
    each have their own plan-tier concurrent-connection caps. Not checked this round — not
    inferable from an API key's presence, needs each provider's actual account/plan info.
 5. **Twilio's own concurrent-call ceiling (unverified)** — confirmed the account is "Full" (not

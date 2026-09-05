@@ -36,7 +36,7 @@ product where the dashboard, agents, tools, metrics, and terminology adapt to th
 | Backend | Bun + Hono + Drizzle (`packages/api`) | Railway (Pro, Singapore, 1 replica) |
 | Frontend | React + Vite + Tailwind (`packages/web`) | Vercel (Pro) |
 | DB | Postgres + `pgvector` + Auth | Supabase (Pro, Small compute, pooled 6543) |
-| LLM | Vercel AI Gateway (model-agnostic + failover); Groq alt | — |
+| LLM | Vercel AI Gateway (model-agnostic + failover) | — |
 | STT | Deepgram / Sarvam / ElevenLabs (per-agent, failover chain) | — |
 | TTS | Cartesia / ElevenLabs / Sarvam (per-agent, failover chain) | — |
 | Telephony | Twilio (platform + BYO), Plivo (BYO), Exotel (BYO, India) | — |

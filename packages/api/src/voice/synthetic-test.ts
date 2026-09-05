@@ -60,10 +60,7 @@ export type SyntheticTestResult = {
  * "passed" vacuously. `callerMustSay` (see synthetic-scenarios.ts) catches that
  * case; this override is how you fix it.
  */
-const CALLER_MODEL = resolveVoiceModel(
-  process.env.SYNTHETIC_CALLER_PROVIDER === "groq" ? "groq" : "gateway",
-  process.env.SYNTHETIC_CALLER_MODEL || "openai/gpt-5.4-mini",
-);
+const CALLER_MODEL = resolveVoiceModel("gateway", process.env.SYNTHETIC_CALLER_MODEL || "openai/gpt-5.4-mini");
 
 /** One caller-LLM turn — no tools, just plays the scripted persona given the
  * transcript so far (from the caller's point of view: agent turns are

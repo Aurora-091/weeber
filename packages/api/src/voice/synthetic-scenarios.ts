@@ -74,7 +74,7 @@ export type SyntheticScenario = {
    * agent under test). Needed because an aligned assistant model refuses
    * adversarial personas and answers in its own voice, which silently converts
    * a boundary test into a benign chat. Unset = the harness default. */
-  callerModel?: { provider: "gateway" | "groq"; model: string };
+  callerModel?: { provider: "gateway"; model: string };
   /** ADR-103: phrases the scripted caller MUST actually produce for the run to
    * mean anything — the agent can only be judged on refusing to write down an
    * SSN if the caller in fact read one out. When any of these never appears in
@@ -102,12 +102,13 @@ export type SyntheticScenario = {
  * called captureField: a real pass.
  *
  * This is a testing-fixture choice, not a production routing one — it says
- * nothing about which model should answer calls, and it deliberately uses the
- * direct Groq transport (no gateway failover) because a test harness losing
- * failover is not a production risk. GROQ_API_KEY is present in every
- * environment this runs in.
+ * nothing about which model should answer calls. `groq/llama-3.1-70b-versatile`
+ * is a valid *gateway* model id (the gateway forwards to Groq compute — see
+ * llm/index.ts) — same underlying model that avoided the refusal, reached
+ * through the gateway instead of a direct GROQ_API_KEY, which this platform
+ * no longer configures.
  */
-const BOUNDARY_CALLER_MODEL = { provider: "groq" as const, model: "llama-3.1-70b-versatile" };
+const BOUNDARY_CALLER_MODEL = { provider: "gateway" as const, model: "groq/llama-3.1-70b-versatile" };
 
 export const SYNTHETIC_SCENARIOS: SyntheticScenario[] = [
   {

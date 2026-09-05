@@ -53,7 +53,7 @@ service businesses.
 
 ## Technical Architecture
 
-- Voice pipeline: Twilio Media Stream → Deepgram STT (Nova-3) → LLM (AI Gateway/Groq)
+- Voice pipeline: Twilio Media Stream → Deepgram STT (Nova-3) → LLM (AI Gateway)
   → ElevenLabs/Cartesia TTS → back to Twilio
 - Latency: Sub-800ms first-response, real-time barge-in support
 - Backend: Bun/Hono server on Railway, Supabase Postgres

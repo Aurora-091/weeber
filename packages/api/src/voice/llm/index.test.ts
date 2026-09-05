@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { resolveLlmProvider, getActiveModelLabel, GROQ_MODEL, buildGatewayProviderOptions } from "./index";
+import { resolveLlmProvider, getActiveModelLabel, buildGatewayProviderOptions } from "./index";
 import { VOICE_AGENT_MODEL as GATEWAY_MODEL } from "../gateway";
 
 describe("resolveLlmProvider", () => {
@@ -8,25 +8,32 @@ describe("resolveLlmProvider", () => {
   });
 
   it("respects an explicit override", () => {
-    expect(resolveLlmProvider("groq")).toBe("groq");
     expect(resolveLlmProvider("gateway")).toBe("gateway");
+  });
+
+  it("fails open to gateway on an unrecognized LLM_PROVIDER value (e.g. a stale 'groq' left over from before its removal)", () => {
+    const original = process.env.LLM_PROVIDER;
+    process.env.LLM_PROVIDER = "groq";
+    try {
+      expect(resolveLlmProvider()).toBe("gateway");
+    } finally {
+      process.env.LLM_PROVIDER = original;
+    }
   });
 });
 
 describe("getActiveModelLabel", () => {
   it("uses the env-configured default model when no modelOverride is given", () => {
-    // Asserted against the actual resolved default (GATEWAY_MODEL/GROQ_MODEL,
-    // both env-overridable) rather than a hardcoded literal — a real
-    // AI_GATEWAY_MODEL/GROQ_MODEL value in packages/api/.env legitimately
-    // changes this deployment's default, and the test should track that
-    // instead of asserting a specific model name will always be it.
+    // Asserted against the actual resolved default (GATEWAY_MODEL, env-
+    // overridable) rather than a hardcoded literal — a real AI_GATEWAY_MODEL
+    // value in packages/api/.env legitimately changes this deployment's
+    // default, and the test should track that instead of asserting a
+    // specific model name will always be it.
     expect(getActiveModelLabel("gateway")).toBe(`gateway/${GATEWAY_MODEL}`);
-    expect(getActiveModelLabel("groq")).toBe(`groq/${GROQ_MODEL}`);
   });
 
   it("uses the modelOverride when one is given, per-agent (agent-frame.ts's llmModel)", () => {
     expect(getActiveModelLabel("gateway", "openai/gpt-5.4")).toBe("gateway/openai/gpt-5.4");
-    expect(getActiveModelLabel("groq", "some-other-groq-model")).toBe("groq/some-other-groq-model");
   });
 });
 
@@ -38,10 +45,6 @@ describe("buildGatewayProviderOptions — cross-provider LLM failover (recommend
   });
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
-  });
-
-  it("returns undefined for the groq provider — no native multi-model failover exists there", () => {
-    expect(buildGatewayProviderOptions("groq", ["openai/gpt-5.4-mini"])).toBeUndefined();
   });
 
   it("returns undefined when gateway is active but neither an override nor the env var is set", () => {

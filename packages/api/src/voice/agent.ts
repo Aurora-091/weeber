@@ -18,14 +18,7 @@ import {
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
 import { withDisclosure, resolveDisclosure } from "@weeber/compliance";
-import {
-  buildGatewayProviderOptions,
-  resolvePrimaryTransportLink,
-  modelForTransportLink,
-  formatActiveModelLabel,
-} from "./llm";
-import { resolveLlmTransportChain } from "./llm/transport-chain";
-import { streamWithTransportFailover, TransportChainExhaustedError } from "./llm/transport-stream";
+import { buildGatewayProviderOptions, resolveVoiceModel, getActiveModelLabel } from "./llm";
 import { db } from "../database";
 import { orgAgentConfigs, agentTemplates, orgs, type CapturedField } from "../database/schema";
 import { visibleTemplatesForOrg, loadVisibleTemplate } from "./template-visibility";
@@ -162,7 +155,7 @@ function buildCallControlBlock(
 
   // Every bullet below only ever tells the model to call a tool that's
   // actually in its `tools` list for this call — a strict-tool-calling
-  // provider (e.g. Groq) rejects the entire turn outright if the model
+  // provider rejects the entire turn outright if the model
   // attempts a tool name absent from the request, which previously turned
   // into a silent dead turn (or the model bailing and hanging up) any time
   // an agent had captureField/transferToHuman/flagGuardrailEvent unchecked
@@ -637,7 +630,7 @@ export type ResolvedAgentConfig = {
   promptInputs?: ComposeSystemPromptOptions;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   voiceId?: string;
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: "gateway";
   llmModel?: string;
   /** Undefined = every tool enabled. Only reaches `undefined` now when no template
    * resolved at all (self-hosted/no-tenant call, or an unrecognized persona key) — an
@@ -798,7 +791,7 @@ export async function resolveAgentConfig(opts: {
         promptSegments: composed.segments,
         ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
-        llmProvider: (config.llmProvider as "gateway" | "groq" | null) ?? undefined,
+        llmProvider: (config.llmProvider as "gateway" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? defaultToolsFallback(tmpl?.defaultTools),
         sttProvider: (config.sttProvider as "deepgram" | "sarvam" | "elevenlabs" | null) ?? undefined,
@@ -1453,7 +1446,7 @@ export function buildCallerMemoryBlock(callerMemory?: Record<string, CapturedFie
  * suffix is recomputed every turn rather than assumed unchanged.
  *
  * This is the seam `onUsage`'s doc comment already points to as the reason
- * Groq/OpenAI-class automatic prompt caching should already be landing
+ * OpenAI-class automatic prompt caching should already be landing
  * (stable text first, the per-turn-growing block last) — this just names
  * it. Deliberately NOT wired into any provider-specific caching API here;
  * that's a separate, later change.
@@ -1493,13 +1486,18 @@ export const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you sa
 // call anyway, but we want to recover gracefully well before that happens.
 const TURN_TIMEOUT_MS = 12_000;
 
-// 2026-09-02 latency fix — ceiling on waiting for a transport-chain link's
-// first token (see transport-stream.ts's doc comment for the incident this
-// closes). Matches call-health.ts's LLM_TTFT_DEGRADED_MS: reusing the number
-// the codebase already calls "too slow" rather than inventing a second
-// threshold for the same judgment. Only takes effect when the chain is
-// non-empty (LLM_TRANSPORT_FAILOVER on) — see the call site below.
-const FIRST_TOKEN_FAILOVER_TIMEOUT_MS = 2_500;
+// 2026-09-02 latency fix (kept post-Groq-removal, generalized to the single
+// gateway call): a link that never throws but is merely SLOW — production
+// data (2026-08-27 spike, retraced 2026-09-02) showed `llm_ttft_ms` up to
+// 9990ms on a gateway response that eventually streamed successfully — used
+// to just sit there for however long TURN_TIMEOUT_MS allowed. Bounding the
+// wait for the FIRST chunk specifically (not the whole turn) means a stalled
+// model gets a fallback reply in ~2.5s instead of up to 12s of dead air.
+// Matches call-health.ts's existing LLM_TTFT_DEGRADED_MS — reusing the
+// number the codebase already calls "too slow" rather than inventing a
+// second threshold for the same judgment. No effect once the first chunk has
+// arrived — see the call site below.
+const FIRST_TOKEN_TIMEOUT_MS = 2_500;
 
 /** One turn's token accounting, normalized across whatever subset of fields
  * the active provider actually reports — every field is best-effort. */
@@ -1508,7 +1506,7 @@ export interface TurnTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   /** Tokens served from the provider's automatic prompt cache, when reported
-   * (Groq and OpenAI-class models report this without any opt-in). */
+   * (OpenAI-class models report this without any opt-in). */
   cachedInputTokens?: number;
 }
 
@@ -1632,9 +1630,9 @@ export async function runVoiceAgentTurn({
   onLatency?: (ms: number, model: string) => void;
   /**
    * Reports this turn's token usage, including cache-read tokens when the
-   * provider reports them. Groq and OpenAI-class models cache a request's
-   * shared prefix automatically (no code required, no explicit opt-in) —
-   * this platform's system prompt is already structured for it, stable
+   * provider reports them. OpenAI-class models cache a request's shared
+   * prefix automatically (no code required, no explicit opt-in) — this
+   * platform's system prompt is already structured for it, stable
    * persona/context text first, the per-turn-growing "known facts" block
    * last (buildKnownFactsBlock) — so cache hits should already be
    * happening. Nothing measured that before this callback existed; it's the
@@ -1643,16 +1641,15 @@ export async function runVoiceAgentTurn({
    */
   onUsage?: (usage: TurnTokenUsage) => void;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: "gateway";
   /** Per-agent explicit model id override (agent-frame.ts's llmModel) — bypasses
    * the env-configured default for this provider while keeping the provider choice. */
   llmModel?: string;
   /** Cross-provider failover (2026-07-17) — AI Gateway model ids to add as
    * automatic fallbacks via providerOptions.gateway.models (native Vercel AI
-   * Gateway support — see llm/index.ts's buildGatewayProviderOptions). Only
-   * applies when the resolved provider is "gateway"; Groq has no equivalent
-   * multi-model failover today. Undefined = AI_GATEWAY_FALLBACK_MODELS env
-   * var (platform default), same fallback shape as every other override here. */
+   * Gateway support — see llm/index.ts's buildGatewayProviderOptions).
+   * Undefined = AI_GATEWAY_FALLBACK_MODELS env var (platform default), same
+   * fallback shape as every other override here. */
   llmFallbackModels?: string[];
   /** Per-agent tool subset (agent-frame.ts's toolsEnabled) — undefined = every tool. */
   enabledTools?: AvailableToolName[];
@@ -1737,108 +1734,69 @@ export async function runVoiceAgentTurn({
   const { stablePrefix, dynamicSuffix } = buildTurnPromptParts({ persona, workflowMetadata, callerMemory, capturedState });
   const systemPrompt = scrubSystemPrompt(stablePrefix + dynamicSuffix);
 
+  // Dedicated to the first-token bound below, kept separate from
+  // timeoutController (TURN_TIMEOUT_MS) so a first-token timeout can abort
+  // just this model call without the outer catch block reading it as "the
+  // whole turn exceeded its 12s ceiling" — those are two different facts.
+  const firstTokenAbort = new AbortController();
+  const modelSignal = AbortSignal.any([combinedSignal, firstTokenAbort.signal]);
+
   try {
-    /**
-     * ADR-109 — cross-transport LLM failover, dark behind LLM_TRANSPORT_FAILOVER.
-     *
-     * With the flag off `chain` is empty, `links` is the single primary link and
-     * `providerOptions` is exactly what it was before this ADR, so the gateway
-     * keeps doing its own native multi-model failover and this path is
-     * behaviourally unchanged.
-     *
-     * With the flag on we execute the chain, and `providerOptions` becomes
-     * undefined *on purpose*: every link is one concrete model, so handing the
-     * same list to the gateway as well would retry it at two layers and multiply
-     * one refusal by the turn's whole latency budget. That invariant is asserted
-     * in transport-chain.test.ts.
-     */
-    const primaryLink = resolvePrimaryTransportLink(llmProvider, llmModel);
-    const chain = resolveLlmTransportChain({ primary: primaryLink, override: llmFallbackModels });
-    const links = [primaryLink, ...chain];
-    // The result handle of whichever link actually produced output — the
-    // empty-turn diagnostics below must describe the model that ran, not the one
-    // that was asked first (ADR-107: a reading attributed to the wrong stage is
-    // worse than no reading).
-    //
-    // Typed by inference off `makeStream` rather than annotated as
-    // `ReturnType<typeof streamText>`: that bare form resolves its ToolSet
-    // parameter to the empty default, which is not assignable from the concrete
-    // tool set `buildVoiceTools` returns. Inferring keeps the tool types.
-    const makeStream = (link: typeof primaryLink, linkSignal: AbortSignal) =>
-      streamText({
-        model: modelForTransportLink(link),
-        providerOptions:
-          chain.length > 0 ? undefined : buildGatewayProviderOptions(llmProvider, llmFallbackModels),
-        system: systemPrompt,
-        messages: history,
-        tools: buildVoiceTools(
-          orgId,
-          enabledTools,
-          onSlowToolCall,
-          cartRecovery,
-          codOrder,
-          crmSync,
-          outboundText,
-          onLateToolResult,
-          isHeardInCall,
-          dispositionScheduling,
-        ),
-        stopWhen: stepCountIs(6),
-        abortSignal: linkSignal,
-        onStepFinish: (step) => {
-          for (const call of step.toolCalls ?? []) {
-            const toolResult = step.toolResults?.find((r) => r.toolCallId === call.toolCallId);
-            onToolCall?.(call.toolName, call.input, toolResult?.output);
-          }
-        },
-        // Observability-only (2026-08-20): SDK-native hook, fires once per
-        // tool invocation right after its execute() settles (success, thrown
-        // error, or — since withToolTimeout never throws — the graceful
-        // timeout marker read back below). Deliberately NOT derived from the
-        // onStepFinish loop above, which this leaves untouched: onToolCall's
-        // existing firing behavior (including for thrown/errored tool calls)
-        // must not change, and onToolExecutionEnd already carries everything
-        // needed (toolCallId, precise toolExecutionMs) without re-deriving it.
-        onToolExecutionEnd: onToolTelemetry
-          ? (event) => {
-              const completedAt = Date.now();
-              const success = event.toolOutput.type === "tool-result";
-              const timedOut = success && isTimedOutToolResult(event.toolOutput.output);
-              try {
-                onToolTelemetry({
-                  toolName: event.toolCall.toolName,
-                  toolCallId: event.toolCall.toolCallId,
-                  startedAt: completedAt - event.toolExecutionMs,
-                  completedAt,
-                  durationMs: event.toolExecutionMs,
-                  success: success && !timedOut,
-                  timedOut,
-                });
-              } catch (err) {
-                console.error("[voice-agent] onToolTelemetry callback threw", err);
-              }
-            }
-          : undefined,
-      });
-    let result: ReturnType<typeof makeStream> | undefined;
-    let activeLink = primaryLink;
-    const openLink = (link: typeof primaryLink, linkSignal: AbortSignal) => {
-      result = makeStream(link, linkSignal);
-      return result.textStream;
-    };
-    const textStream = streamWithTransportFailover<string>({
-      links,
-      open: openLink,
-      onLinkResolved: (link) => {
-        activeLink = link;
+    const result = streamText({
+      model: resolveVoiceModel(llmProvider, llmModel),
+      providerOptions: buildGatewayProviderOptions(llmProvider, llmFallbackModels),
+      system: systemPrompt,
+      messages: history,
+      tools: buildVoiceTools(
+        orgId,
+        enabledTools,
+        onSlowToolCall,
+        cartRecovery,
+        codOrder,
+        crmSync,
+        outboundText,
+        onLateToolResult,
+        isHeardInCall,
+        dispositionScheduling,
+      ),
+      stopWhen: stepCountIs(6),
+      abortSignal: modelSignal,
+      onStepFinish: (step) => {
+        for (const call of step.toolCalls ?? []) {
+          const toolResult = step.toolResults?.find((r) => r.toolCallId === call.toolCallId);
+          onToolCall?.(call.toolName, call.input, toolResult?.output);
+        }
       },
-      isAborted: () => combinedSignal.aborted,
-      signal: combinedSignal,
-      // Only bites when there's actually a chain to fail over across — with
-      // the flag off (chain.length === 0) this stays undefined and the single
-      // link waits exactly as long as it always has (up to TURN_TIMEOUT_MS).
-      firstTokenTimeoutMs: chain.length > 0 ? FIRST_TOKEN_FAILOVER_TIMEOUT_MS : undefined,
+      // Observability-only (2026-08-20): SDK-native hook, fires once per
+      // tool invocation right after its execute() settles (success, thrown
+      // error, or — since withToolTimeout never throws — the graceful
+      // timeout marker read back below). Deliberately NOT derived from the
+      // onStepFinish loop above, which this leaves untouched: onToolCall's
+      // existing firing behavior (including for thrown/errored tool calls)
+      // must not change, and onToolExecutionEnd already carries everything
+      // needed (toolCallId, precise toolExecutionMs) without re-deriving it.
+      onToolExecutionEnd: onToolTelemetry
+        ? (event) => {
+            const completedAt = Date.now();
+            const success = event.toolOutput.type === "tool-result";
+            const timedOut = success && isTimedOutToolResult(event.toolOutput.output);
+            try {
+              onToolTelemetry({
+                toolName: event.toolCall.toolName,
+                toolCallId: event.toolCall.toolCallId,
+                startedAt: completedAt - event.toolExecutionMs,
+                completedAt,
+                durationMs: event.toolExecutionMs,
+                success: success && !timedOut,
+                timedOut,
+              });
+            } catch (err) {
+              console.error("[voice-agent] onToolTelemetry callback threw", err);
+            }
+          }
+        : undefined,
     });
+    const textStream = result.textStream;
 
     let full = "";
     const calledToolNames: string[] = [];
@@ -1857,21 +1815,46 @@ export async function runVoiceAgentTurn({
         onTextDelta(text);
       },
     });
-    for await (const delta of textStream) {
+    const activeModelLabel = getActiveModelLabel(llmProvider, llmModel);
+
+    // Manual iterator drive (rather than `for await`) so only the FIRST
+    // chunk is raced against FIRST_TOKEN_TIMEOUT_MS — once a chunk has
+    // arrived, later ones wait as long as TURN_TIMEOUT_MS otherwise allows,
+    // same as before this fix existed.
+    const iterator = textStream[Symbol.asyncIterator]();
+    let next: IteratorResult<string>;
+    {
+      const firstChunk = iterator.next();
+      // A rejection from the losing side of the race below would otherwise
+      // be an unhandled rejection once the timeout branch returns.
+      firstChunk.catch(() => {});
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), FIRST_TOKEN_TIMEOUT_MS);
+      });
+      const raced = await Promise.race([firstChunk, timeout]);
+      clearTimeout(timer);
+      if (raced === "timeout") {
+        firstTokenAbort.abort();
+        void iterator.return?.().catch(() => {});
+        console.warn(
+          `[voice-agent] LLM produced no output within ${FIRST_TOKEN_TIMEOUT_MS}ms — using fallback reply`,
+          { model: activeModelLabel },
+        );
+        onTextDelta(FALLBACK_REPLY);
+        return FALLBACK_REPLY;
+      }
+      next = raced;
+    }
+    while (!next.done) {
       if (firstTokenAt === null) {
         firstTokenAt = Date.now();
-        // ADR-109: labelled with the link that actually spoke, not the one asked
-        // first — otherwise a fallback's TTFT is booked against the primary and
-        // the soak comparing the two transports measures nothing.
-        onLatency?.(firstTokenAt - turnStartedAt, formatActiveModelLabel(activeLink));
+        onLatency?.(firstTokenAt - turnStartedAt, activeModelLabel);
       }
-      guard.push(delta);
+      guard.push(next.value);
+      next = await iterator.next();
     }
     guard.flush();
-    // Computed once and reused by everything below — `activeLink` is the link
-    // that actually spoke, not the one asked first (ADR-109), so every
-    // downstream label, warning, and diagnostic describes the model that ran.
-    const activeModelLabel = formatActiveModelLabel(activeLink);
     const guardFindings = guard.findings();
     if (guardFindings.length > 0) {
       // Loud on purpose. A finding means a model tried to speak its own control
@@ -1942,16 +1925,6 @@ export async function runVoiceAgentTurn({
       onTextDelta(FALLBACK_REPLY);
       return FALLBACK_REPLY;
     }
-    // 2026-09-02 latency fix: every link in the transport chain failed (or
-    // timed out) before a first token. This is now a routine outcome of a
-    // bounded-latency design, not a bug — give the caller a fallback reply
-    // instead of an unhandled error killing the turn, but log loudly, since
-    // "every configured LLM link is unreachable" is still worth knowing about.
-    if (err instanceof TransportChainExhaustedError) {
-      console.error("[voice-agent] transport chain exhausted — using fallback reply", err);
-      onTextDelta(FALLBACK_REPLY);
-      return FALLBACK_REPLY;
-    }
     throw err;
   } finally {
     clearTimeout(timeout);
@@ -2008,7 +1981,7 @@ export function runVoiceAgentGreeting({
   /** Rolling facts from previous calls with this same number (ADR-023). */
   callerMemory?: Record<string, CapturedField>;
   /** Per-call override of the global LLM_PROVIDER — see session-store.ts. */
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: "gateway";
   /** Per-agent explicit model id override (agent-frame.ts's llmModel). */
   llmModel?: string;
   /** Cross-provider failover (2026-07-17) — see runVoiceAgentTurn's doc comment. */

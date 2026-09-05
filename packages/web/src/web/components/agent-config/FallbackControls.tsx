@@ -191,7 +191,7 @@ export function ModelFallbackList({
         ))}
         {value.length === 0 && (
           <li className="rounded-md border border-dashed border-border px-2.5 py-2 text-xs text-muted-foreground">
-            No fallback models set — only active on the AI Gateway provider (not Groq). Add one below.
+            No fallback models set. Add one below.
           </li>
         )}
       </ol>

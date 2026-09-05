@@ -58,7 +58,7 @@ packages/
 │           ├── synthetic-scenarios.ts # offline agent-behavior scenario harness (Five Bets P3)
 │           ├── stt/               # deepgram.ts, sarvam.ts, elevenlabs.ts — STT provider abstraction
 │           ├── tts/               # elevenlabs.ts, cartesia.ts, sarvam.ts — TTS provider abstraction
-│           ├── llm/               # AI Gateway / Groq provider abstraction
+│           ├── llm/               # AI Gateway provider abstraction
 │           ├── telephony-transport.ts   # Twilio/Plivo/Exotel wire-format abstraction
 │           ├── {twilio,plivo,exotel}-client.ts        # per-provider call control
 │           ├── {twilio,plivo,exotel}-provisioning.ts  # per-org sub-account/number provisioning
@@ -102,7 +102,7 @@ STT  (Deepgram nova-3, Sarvam Saaras, or ElevenLabs Scribe v2 Realtime for Indic
      stt/deepgram.ts / stt/sarvam.ts / stt/elevenlabs.ts, see docs/voice-quality/hindi-hinglish-voice-support.md)
         |  finalized transcript
         v
-LLM Agent (AI Gateway or Groq — voice/llm/, streamed, tool-calling, latency telemetry)
+LLM Agent (AI Gateway — voice/llm/, streamed, tool-calling, latency telemetry)
         |  streamed text tokens
         v
 TTS  (ElevenLabs, Cartesia, or Sarvam Bulbul — voice/tts/*.ts, output_format=mulaw/8000)

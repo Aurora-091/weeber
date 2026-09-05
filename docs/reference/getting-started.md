@@ -65,11 +65,9 @@ STT_PROVIDER=deepgram         # or "sarvam" or "elevenlabs"
 #   live-verification writeup (all 4 phases done 2026-07-16).
 ```
 
-**LLM provider (pick one, default is the AI Gateway):**
+**LLM provider (the AI Gateway is the only supported provider):**
 ```
-LLM_PROVIDER=gateway         # or "groq"
-GROQ_API_KEY=
-GROQ_MODEL=llama-3.3-70b-versatile
+LLM_PROVIDER=gateway
 ```
 
 **Optional:**

@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-08-20
+updated: 2026-09-04
 ---
 
 # Active context — what's happening right now
@@ -12,6 +12,19 @@ updated: 2026-08-20
 
 ## Current focus
 
+- **Groq removed as an LLM provider; ADR-005 and ADR-109 superseded by ADR-121 (2026-09-04).**
+  `LlmProvider` narrows to `"gateway"` (`voice/llm/index.ts`); `@ai-sdk/groq` dropped. ADR-109's
+  cross-transport failover machinery (`voice/llm/transport-chain.ts`, `transport-stream.ts`, the
+  `direct:groq/<model>` id scheme, `LLM_TRANSPORT_FAILOVER`) is deleted rather than kept for a
+  hypothetical future second transport — but its first-token timeout is **kept**, generalized to a
+  single gateway call (`agent.ts` races the first chunk against `FIRST_TOKEN_TIMEOUT_MS`, 2.5s,
+  no chain), because Railway confirmed `LLM_TRANSPORT_FAILOVER` was actually **live in production**
+  (shipped 2 days earlier as `f1dd786`, a real fix for a 2026-08-27 13s-latency-spike incident) —
+  not the dark/always-off flag ADR-109 described. **Still open, blocking rollout:** staging's
+  `LLM_PROVIDER` (confirmed `groq` per the entry below) must move to `gateway`; prod's
+  `AI_GATEWAY_FALLBACK_MODELS` actual value was never read (Railway's connected-app access returns
+  variable names only, not values) and needs a dashboard check for a stray `direct:`/`gateway:`-
+  prefixed entry the deleted parser can no longer interpret. Full detail in ADR-121.
 - **Doc-retirement rule written down as ADR-118; four finished trackers archived (2026-08-21).**
   The audit below made real archive-vs-delete-vs-rewrite choices and recorded none as a decision.
   ADR-118 is that record: retire a doc by its **class**, not its age or filename — evergreen

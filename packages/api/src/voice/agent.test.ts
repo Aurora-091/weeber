@@ -37,14 +37,14 @@ function unansweredFact(heard: string): CapturedField {
 }
 
 describe("toTurnTokenUsage", () => {
-  it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (Groq/OpenAI automatic caching)", () => {
-    const usage = toTurnTokenUsage("groq/llama-3.1-70b-versatile", {
+  it("extracts cache-read tokens from the AI SDK's inputTokenDetails shape (OpenAI-class automatic caching)", () => {
+    const usage = toTurnTokenUsage("gateway/openai/gpt-5.4-mini", {
       inputTokens: 2000,
       outputTokens: 40,
       inputTokenDetails: { textTokens: 500, cacheReadTokens: 1500 },
     });
     expect(usage).toEqual({
-      model: "groq/llama-3.1-70b-versatile",
+      model: "gateway/openai/gpt-5.4-mini",
       inputTokens: 2000,
       outputTokens: 40,
       cachedInputTokens: 1500,
@@ -766,16 +766,16 @@ describe("buildPreviewAgentConfig — Preview drawer's live/unsaved-form path", 
       personaPrompt: "test",
       voiceProvider: "elevenlabs",
       voiceId: "voice-abc",
-      llmProvider: "groq",
-      llmModel: "llama-3.1-70b-versatile",
+      llmProvider: "gateway",
+      llmModel: "openai/gpt-5.4",
       toolsEnabled: ["bookAppointment", "hangUp"],
       language: "hi",
     });
 
     expect(config.ttsProvider).toBe("elevenlabs");
     expect(config.voiceId).toBe("voice-abc");
-    expect(config.llmProvider).toBe("groq");
-    expect(config.llmModel).toBe("llama-3.1-70b-versatile");
+    expect(config.llmProvider).toBe("gateway");
+    expect(config.llmModel).toBe("openai/gpt-5.4");
     expect(config.enabledTools).toEqual(["bookAppointment", "hangUp"]);
     expect(config.language).toBe("hi");
   });

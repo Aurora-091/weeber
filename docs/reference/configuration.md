@@ -23,7 +23,7 @@ connected. A background sweep executes due retries on its own.
 
 Different Twilio numbers can run different behavior without touching code, via `NUMBER_CONFIG`:
 ```json
-{ "+15551234567": { "ttsProvider": "cartesia", "llmProvider": "groq", "maxDurationSeconds": 300 } }
+{ "+15551234567": { "ttsProvider": "cartesia", "llmProvider": "gateway", "maxDurationSeconds": 300 } }
 ```
 
 ## Agent tools

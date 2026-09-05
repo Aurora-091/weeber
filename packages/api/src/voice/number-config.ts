@@ -10,7 +10,7 @@
 export type NumberConfig = {
   persona?: string;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
-  llmProvider?: "gateway" | "groq";
+  llmProvider?: "gateway";
   maxDurationSeconds?: number;
   webhookUrl?: string;
   /** STT provider + language override — see agent-frame.ts. */

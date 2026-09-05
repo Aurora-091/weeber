@@ -169,7 +169,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let webhookUrl: string | null = null;
   let persona: string | undefined;
   let ttsProviderOverride: "elevenlabs" | "cartesia" | "sarvam" | undefined;
-  let llmProviderOverride: "gateway" | "groq" | undefined;
+  let llmProviderOverride: "gateway" | undefined;
   let sttProviderOverride: "deepgram" | "sarvam" | "elevenlabs" | undefined;
   let languageOverride: string | undefined;
   /** Cross-provider failover (2026-07-17) — per-agent override of the fallback
@@ -227,8 +227,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /**
    * Phase 0.1 (SOTA-fix-marathon, 2026-08-16) — same "what actually ran, not
    * what was configured" pattern as activeTtsProvider above, for the LLM.
-   * Set from onLatency's `model` param (ADR-109's formatActiveModelLabel —
-   * the link that actually spoke, post-failover), never from config. Fixes
+   * Set from onLatency's `model` param (llm/index.ts's getActiveModelLabel),
+   * never from config. Fixes
    * the gap audit-17's Addendum 2 named directly: `calls.llm_provider_used`
    * used to be `llmProviderOverride` verbatim, so every provider-comparison
    * conclusion drawn from it (including two inside that same audit) was
@@ -470,9 +470,9 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
       llmTtftMs?: number;
       ttsFirstByteMs?: number;
       voiceToVoiceMs?: number;
-      /** Phase 0.1: the transport/model that actually served this turn (ADR-109's
-       * formatActiveModelLabel) — undefined for the greeting turn or any turn
-       * whose onLatency never fired (aborted before a first token). */
+      /** Phase 0.1: the provider/model that actually served this turn
+       * (llm/index.ts's getActiveModelLabel) — undefined for the greeting turn
+       * or any turn whose onLatency never fired (aborted before a first token). */
       llmProviderUsed?: string;
       /** Phase 0.2: which STT signal ended this turn. Undefined for the greeting. */
       endpointSignal?: "speech_final" | "utterance_end";

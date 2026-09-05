@@ -273,15 +273,19 @@ updated: 2026-08-20
   `DATABASE_URL` (same Supabase project — was `wtqohdcghmxuujqyhlkz`, same pooler host, same db, same
   role), `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `SUPABASE_SERVICE_ROLE_KEY`,
   `ADMIN_API_KEY`, `WEEBER_INTERNAL_SECRET`, `WEEBER_CALLBACK_SECRET`, and every `PUBLIC_*_URL`. The only
-  meaningful difference is `LLM_PROVIDER` (staging `groq`, prod `gateway`, and only prod sets
-  `AI_GATEWAY_FALLBACK_MODELS`); the rest is Railway's own hostname/ID injection. Consequences worth
-  saying out loud: a call placed "on staging" dials from the production Twilio number, bills the
+  meaningful difference **as of that date** was `LLM_PROVIDER` (staging `groq`, prod `gateway`, and only
+  prod sets `AI_GATEWAY_FALLBACK_MODELS`); the rest is Railway's own hostname/ID injection. Consequences
+  worth saying out loud: a call placed "on staging" dials from the production Twilio number, bills the
   production Twilio account, and writes its `calls`/`guardrail_events`/DNC rows into the production
-  database; a credential leak on staging is a prod leak; and because staging runs a *different* LLM
-  provider than prod, it does not validate the model path either. So staging currently verifies little
-  beyond "the process boots." This must be fixed before a pilot merchant's data is in that database.
+  database; a credential leak on staging is a prod leak. So staging currently verifies little beyond
+  "the process boots." This must be fixed before a pilot merchant's data is in that database.
   (Also noise: `SUPABASE_KB_BUCKET` is set on staging only and is referenced nowhere in `packages/` —
   dead variable, safe to delete.)
+  **Update 2026-09-04 (ADR-121):** Groq was removed as an LLM provider platform-wide, so the
+  `LLM_PROVIDER` divergence this finding hinged on needs re-checking — staging's value (confirmed only
+  as still *present* via Railway, not readable) must move to `gateway` as part of that rollout. Once it
+  does, the two environments' *LLM* path converges, but the underlying finding — same database, same
+  Twilio account, same secrets — is unrelated to which LLM provider either one runs and stands regardless.
   **STALE POINTER (flagged 2026-08-20, not re-verified):** `wtqohdcghmxuujqyhlkz` is the pre-migration
   project — abandoned since the 2026-08-17 Supabase account migration (see `active-context.md`).
   Production now runs on `qghtkadxbtptvbfbmsdz`; a *separate* staging project `zbcrwexrqfmjxhewirgp` now

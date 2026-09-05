@@ -40,7 +40,6 @@ export const RECOMMENDED_LLM_MODELS = [
   { provider: "gateway" as const, model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
   { provider: "gateway" as const, model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },
   { provider: "gateway" as const, model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
-  { provider: "groq" as const, model: "llama-3.1-70b-versatile", label: "Llama 3.1 70B (fastest overall, Groq)" },
 ];
 
 export const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
@@ -122,7 +121,7 @@ export const AgentFrameSchema = z.object({
    * e.g. Deepgram STT (fast, English-strong) + Sarvam TTS (natural Hindi
    * voice) for a Hindi-first agent. Defaults to "deepgram" when unset. */
   sttProvider: z.enum(["deepgram", "sarvam", "elevenlabs"]).optional(),
-  llmProvider: z.enum(["gateway", "groq"]).optional(),
+  llmProvider: z.enum(["gateway"]).optional(),
   llmModel: z.string().min(1).max(200).optional(),
   /** Cross-provider failover (2026-07-17) — per-agent override of the
    * ordered list of providers tried after sttProvider/voiceProvider above

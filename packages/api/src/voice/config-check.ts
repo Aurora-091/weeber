@@ -43,9 +43,6 @@ export function assertVoiceConfig(): void {
   }
 
   const llmProvider = resolveLlmProvider();
-  if (llmProvider === "groq" && !process.env.GROQ_API_KEY) {
-    problems.push("LLM_PROVIDER=groq requires GROQ_API_KEY");
-  }
   if (llmProvider === "gateway" && !process.env.AI_GATEWAY_API_KEY) {
     problems.push("LLM_PROVIDER=gateway (default) requires AI_GATEWAY_API_KEY");
   }

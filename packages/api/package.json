@@ -20,7 +20,6 @@
     "call-quality:audit": "bun --env-file=../../.env run scripts/call-quality-audit.ts"
   },
   "dependencies": {
-    "@ai-sdk/groq": "^4.0.5",
     "@weeber/compliance": "*",
     "@sentry/bun": "^10.66.0",
     "ai": "^7.0.15",
