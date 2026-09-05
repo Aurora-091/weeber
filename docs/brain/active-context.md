@@ -12,13 +12,17 @@ updated: 2026-09-05
 
 ## Current focus
 
-- **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** After ADR-123, two India
-  test calls both conversed. Post-sale welcome closed with `setDisposition`+`hangUp` and no
-  spoken line; the empty-turn path still said "didn't catch that" then dropped. Appointment
-  setter failed later with TTS dead air (59 chars, 0 audio bytes) — a different defect.
-  **Do not judge the product from one agent.** Next after deploy: re-run *both* personas
-  (documents-never-arrived close on post-sale; a full appointment-setter conversation). Confirm
-  the close is silent hangup, not the apology. Dead air is still open.
+- **ADR-125: Cartesia must not wait three seconds to speak (2026-09-05).** The appointment-setter
+  DEAD AIR turn (59 LLM chars, 0 TTS bytes) matches Cartesia's omitted-field default of a 3000ms
+  text buffer. Adapter now sends `max_buffer_delay_ms: 180` on every continuation and
+  `flush: true` on `endTurn`. Socket reuse is still Phase C1 — handshake is late audio, not
+  silence; ADR-083 still forbids opening the socket before there is text. **Next after deploy:**
+  re-run *both* personas. Post-sale (ADR-124): silent hangup, not the hearing apology.
+  Appointment-setter: no `DEAD AIR` log on a short mid-call reply.
+
+- **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** Post-sale welcome closed with
+  `setDisposition`+`hangUp` and no spoken line; skip `FALLBACK_REPLY` when hangUp/transfer already
+  ran. Do not judge the product from one agent.
 
 - **ADR-123 shipped:** AMD no longer hijacks live India/test calls (`6e0094c`). Confirmed in
   the 13:14–13:23Z logs: no `amd-status-callback`.

@@ -214,7 +214,44 @@ describe("connectCartesiaTts — setTone (Expressive delivery, Tier 1, 2026-07-1
 
     const firstPayload = JSON.parse(ws.sent[ws.sent.length - 2]);
     const secondPayload = JSON.parse(ws.sent[ws.sent.length - 1]);
-    expect(firstPayload.generation_config).toEqual({ emotion: "calm" });
+    expect(payload.generation_config).toEqual({ emotion: "calm" });
     expect(secondPayload.generation_config).toEqual({ emotion: "calm" });
+  });
+});
+
+describe("connectCartesiaTts — managed buffer delay (ADR-125)", () => {
+  it("sends max_buffer_delay_ms on every continuation, never the 3000ms API default", async () => {
+    const { connectCartesiaTts, CARTESIA_MAX_BUFFER_DELAY_MS } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.sendText("Hello ");
+    conn.sendText("there.");
+
+    expect(CARTESIA_MAX_BUFFER_DELAY_MS).toBe(180);
+    expect(CARTESIA_MAX_BUFFER_DELAY_MS).toBeLessThan(1000);
+
+    const first = JSON.parse(ws.sent[0]);
+    const second = JSON.parse(ws.sent[1]);
+    expect(first.max_buffer_delay_ms).toBe(CARTESIA_MAX_BUFFER_DELAY_MS);
+    expect(second.max_buffer_delay_ms).toBe(CARTESIA_MAX_BUFFER_DELAY_MS);
+    expect(first.continue).toBe(true);
+    expect(first.flush).toBeUndefined();
+  });
+
+  it("endTurn flushes the context with continue:false and the same buffer delay", async () => {
+    const { connectCartesiaTts, CARTESIA_MAX_BUFFER_DELAY_MS } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.sendText("OK.");
+    conn.endTurn();
+
+    const end = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(end.transcript).toBe("");
+    expect(end.continue).toBe(false);
+    expect(end.flush).toBe(true);
+    expect(end.max_buffer_delay_ms).toBe(CARTESIA_MAX_BUFFER_DELAY_MS);
+    expect(end.context_id).toBe(JSON.parse(ws.sent[0]).context_id);
   });
 });
