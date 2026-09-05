@@ -157,4 +157,30 @@ describe("placeOutboundCall — the org must survive in the answer URL", () => {
     expect(lastTwilioCreate).toBeNull();
     expect(lastPlivoInput).toBeNull();
   });
+
+  it("requests async AMD on a US NANP dial — the environment AMD was built for", async () => {
+    orgRows = [{ id: "org-shop", outboundNumber: "+15559998888", telephonyProvider: "twilio" }];
+
+    await placeOutboundCall({ orgId: "org-shop", to: "+15557776666" });
+
+    expect(lastTwilioCreate!.machineDetection).toBe("DetectMessageEnd");
+    expect(lastTwilioCreate!.asyncAmd).toBe("true");
+  });
+
+  it("does not request AMD on an India number — Twilio's classifier false-positives mid-call (ADR-123)", async () => {
+    orgRows = [{ id: "org-shop", outboundNumber: "+15559998888", telephonyProvider: "twilio" }];
+
+    await placeOutboundCall({ orgId: "org-shop", to: "+917499291834" });
+
+    expect(lastTwilioCreate!.machineDetection).toBeUndefined();
+    expect(lastTwilioCreate!.asyncAmd).toBeUndefined();
+  });
+
+  it("honors amd: false even on NANP — dashboard test-call-phone must never steal the live stream", async () => {
+    orgRows = [{ id: "org-shop", outboundNumber: "+15559998888", telephonyProvider: "twilio" }];
+
+    await placeOutboundCall({ orgId: "org-shop", to: "+15557776666", amd: false });
+
+    expect(lastTwilioCreate!.machineDetection).toBeUndefined();
+  });
 });

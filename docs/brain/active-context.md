@@ -12,6 +12,12 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **ADR-123: the "different voice said sorry and hung up" was Twilio AMD (2026-09-05).**
+  ADR-122 worked (crmSync withheld, two real turns). Then async answering-machine detection
+  labelled a live India caller as a machine and Twilio `<Say>` stole the stream. Fix on
+  `cursor/amd-live-hijack-4d7f`. Next: deploy and re-run the same test-call-phone — AMD must not
+  fire.
+
 - **ADR-122: the "didn't catch that" loop was a first-token abort during `crmSync` (2026-09-05).**
   Railway logs: STT/TTS healthy; every user turn logged filler for `crmSync` and, in the same ms,
   `LLM produced no output within 2500ms`. No CRM connected → tool still registered → credential

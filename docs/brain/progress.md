@@ -12,6 +12,11 @@ updated: 2026-09-05
 
 ## Done (works end-to-end, real-verified)
 
+- **ADR-123 — Twilio AMD must not steal a live conversation (2026-09-05).** After ADR-122 a live
+  India test call conversed two turns, then Twilio AMD redirected to a default-voice "sorry we
+  missed you" hangup. AMD now defaults on for NANP only; test-call-phone sets `amd: false`; a
+  machine label is ignored once the caller has spoken.
+
 - **ADR-122 — first-token timeout vs tools (2026-09-05).** The live "I didn't catch that" loop was the
   2.5s LLM first-token abort killing an in-flight `crmSync` on orgs with no CRM, not STT. Deferred
   abort when a tool started this turn; `resolveLiveCrmSyncContext` withholds the tool without
