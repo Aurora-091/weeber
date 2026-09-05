@@ -121,6 +121,7 @@ opt-in `bun run test:coverage`; and the Playwright landing-page E2E is `cd packa
 | How the code is laid out + call pipeline | `architecture/README.md` + `architecture/*.md` |
 | Why a decision was made | `docs/decisions/README.md` → the specific ADR |
 | What shipped when | `docs/changelog/README.md` → the month |
+| Competitor agent prompting (Vapi/Retell/etc.) | `docs/product-strategy/competitor-agent-prompting-2026-09-05.md` + Weeber scorecard `competitor-agent-prompting-weeber-scorecard-2026-09-05.md` |
 | How something works today (evergreen) | `docs/reference/` |
 | Compliance / voice-quality / product-strategy deep dives | `docs/{compliance,voice-quality,product-strategy}/` |
 | Design system | `UI-DESIGN-BRIEF.md` |

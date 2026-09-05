@@ -12,6 +12,15 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **Competitor prompting note + Weeber scorecard (2026-09-05).** Vendor docs:
+  `docs/product-strategy/competitor-agent-prompting-2026-09-05.md`. Run against
+  our nine seeded runtimes:
+  `docs/product-strategy/competitor-agent-prompting-weeber-scorecard-2026-09-05.md`.
+  Hygiene matches; worst files are appointment-setter (`You're connected`) and
+  post-sale (`crmSync` + missing documents-not-received close). Cart-recovery and
+  policy-renewal are the internal gold standards. Persona edits not in that note
+  (STOP-AND-ASK).
+
 - **ADR-124: empty hangUp is not a hearing problem (2026-09-05).** After ADR-123, two India
   test calls both conversed. Post-sale welcome closed with `setDisposition`+`hangUp` and no
   spoken line; the empty-turn path still said "didn't catch that" then dropped. Appointment

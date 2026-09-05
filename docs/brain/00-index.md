@@ -1,7 +1,7 @@
 ---
 doc: brain-index
 status: evergreen
-updated: 2026-07-19
+updated: 2026-09-05
 ---
 
 # Brain index — task → files router
@@ -27,6 +27,7 @@ updated: 2026-07-19
 | **Placing a real test call / verifying anything end-to-end** | `../reference/live-call-test-protocol.md` (nine steps; **Step 0 — staging isolation — is blocking**, staging currently shares prod's Twilio account and Supabase database) → `../voice-quality/india-telephony.md` |
 | **A tool the agent can call** (new or changed schema) | `../decisions/adr-066-*.md` + `adr-069-*.md` (a tool acting on a real-world entity is bound server-side; the model never names the target) → `adr-064-*.md` (non-registration is the enforcement, not validation) → `packages/api/src/voice/tools/` → `buildVoiceTools` in `voice/agent.ts`. If the model has no legitimate source for a value, it must not be in the JSON Schema. |
 | **A new/changed agent persona** | `../agent-prompts/` (the persona files) → `project-brief.md` (STOP-AND-ASK #4) → `packages/api/src/database/seed.ts` (do NOT move the prompts folder — seed resolves it by relative path) |
+| **Competitor agent prompting / "should we write personas like Vapi/Retell?"** | `../product-strategy/competitor-agent-prompting-2026-09-05.md` → `../product-strategy/competitor-agent-prompting-weeber-scorecard-2026-09-05.md` (same checklist vs our nine runtimes) → `../decisions/adr-104-*.md` (runtime vs authoring) → `adr-106-*.md` (no markdown) → `adr-122-*.md` (do not order a withheld tool). The July `competitor-changelog-scan` is product shipping, not prompting. Do not copy numbered scripts or keyword compliance. |
 | **A new vertical** | `../decisions/adr-031-*.md` (vertical-agnostic seam) → `packages/web/src/web/lib/verticals.ts` → `agentTemplates` in `schema.ts`. Add rows, not code paths. |
 | **A new ecommerce platform** (Woo/BigCommerce/Dukaan) | `project-brief.md` (platform-agnostic rule) → the Shopify integration in `packages/api/src/integrations/shopify/` as the pattern → `../reference/contract.md` |
 | **Shopify integration / weebersh contract** | `../reference/contract.md` → `packages/api/src/integrations/shopify/` → remember to bump the contract version in BOTH repos |
