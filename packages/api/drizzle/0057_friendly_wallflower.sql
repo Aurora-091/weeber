@@ -1,0 +1,1 @@
+ALTER TABLE "org_agent_configs" ADD COLUMN "voice_ids_by_provider" jsonb;

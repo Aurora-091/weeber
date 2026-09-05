@@ -223,6 +223,8 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    * ADR-060 used to reject mid-call language switching.
    */
   let ttsVoiceIdProvider: TtsProvider | undefined;
+  /** Voice-pipeline hardening plan, Stage 5 — see tts-voice-identity.ts. */
+  let ttsVoiceIdsByProvider: Partial<Record<TtsProvider, string>> | undefined;
   let activeTtsProvider: TtsProvider | undefined;
   /**
    * Phase 0.1 (SOTA-fix-marathon, 2026-08-16) — same "what actually ran, not
@@ -298,6 +300,30 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   /** ADR-062: set once, so a greeting that runs more than once (rare re-prompt path) doesn't re-stamp disclosureFiredAt. */
   let disclosureFiredStamped = false;
   let history: ModelMessage[] = [];
+  /**
+   * Voice-pipeline hardening plan, Stage 2 (2026-09-05) — `history` grew
+   * every turn with no cap, so a long call's prompt (and TTFT/cost) grows
+   * without bound. Deliberately NOT a second summarization system: ADR-012
+   * already made structured `capturedState` (buildKnownFactsBlock) the
+   * call's ground truth precisely so nothing load-bearing depends on the raw
+   * transcript surviving — a windowed `history` only affects the model's
+   * verbatim recall of exact past phrasing, not the facts it already wrote
+   * down. Kept as a message count, not a turn count, since a tool-using turn
+   * can itself add several messages (tool calls/results) that a fixed
+   * turn-count cap would undercount.
+   *
+   * Dropped from the front in pairs so the window never starts on a dangling
+   * assistant message with no matching user turn before it — an odd cap
+   * would strand the model's own reply as the very first thing it "recalls",
+   * which reads as the agent having started the conversation itself.
+   */
+  const MAX_HISTORY_MESSAGES = 40;
+  function pushHistory(message: ModelMessage) {
+    history.push(message);
+    while (history.length > MAX_HISTORY_MESSAGES) {
+      history.splice(0, 2);
+    }
+  }
   /**
    * §3b: adaptive noise filter — created once per call, only when the
    * ADAPTIVE_NOISE_FILTER_FLAG org/global flag is on (resolved in the
@@ -623,6 +649,23 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
   let tts: TtsConnection | null = null;
   let turnAbortController: AbortController | null = null;
   let agentIsSpeaking = false;
+  /**
+   * Stage 1 (voice-pipeline hardening plan, 2026-09-05) — closes a race
+   * `AbortController` timing alone doesn't guarantee: `tts` and
+   * `agentIsSpeaking` are shared closure state reassigned across turns, not
+   * turn-scoped, so a delta or audio chunk that was already in flight when a
+   * barge-in fires can still resolve after the NEXT turn has been assigned
+   * as current — and every sink that reads `tts` (sendTtsTextWithTone) or
+   * writes to the caller (a TTS provider socket's onAudioChunk, which keeps
+   * firing until its close handshake actually completes) reads/writes
+   * whatever is current *at the moment it fires*, not at the moment its
+   * turn started. `turnEpoch` makes "am I still the current turn" a value
+   * comparison instead of a timing assumption: incremented once per
+   * `speak()` call (a fresh turn) AND immediately on barge-in (invalidating
+   * the interrupted turn before its next chunk can even arrive), and checked
+   * at every point stale data could otherwise reach the caller.
+   */
+  let turnEpoch = 0;
   /** Audio arriving after the Twilio "start" event but before the STT
    * provider/language is resolved (agentConfig lookup is async) — buffered
    * instead of dropped, then flushed the moment `stt` connects. Bounded so a
@@ -1479,7 +1522,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
    */
   function currentTtsVoice(): { provider: TtsProvider; voiceId: string | undefined } {
     const provider = activeTtsProvider ?? resolveTtsProvider(ttsProviderOverride, languageOverride);
-    return { provider, voiceId: voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, provider) };
+    return {
+      provider,
+      voiceId: voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, provider, ttsVoiceIdsByProvider),
+    };
   }
 
   /** Speaks a fixed line with no LLM call involved — used for the silence
@@ -1733,10 +1779,28 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     toneTagFilter.push(text);
   }
 
+  /**
+   * Stage 1 (turnEpoch) — the `onTextDelta` a `generate` callback hands to
+   * `runVoiceAgentTurn`/`runVoiceAgentGreeting`. `sendTtsTextWithTone` itself
+   * stays epoch-unaware (it's also used, harmlessly, by the cached-line/
+   * filler paths which are synchronous and never stale) — this wrapper is
+   * what keeps a delta from an interrupted turn from ever reaching it in the
+   * first place, one turn-index removed. See turnEpoch's doc comment.
+   */
+  function epochGuardedTextDelta(epoch: number) {
+    return (delta: string) => {
+      if (epoch !== turnEpoch) {
+        console.warn(`[voice] dropped a stale LLM text delta from turn epoch ${epoch} (current: ${turnEpoch})`);
+        return;
+      }
+      sendTtsTextWithTone(delta);
+    };
+  }
+
   /** Shared turn runner — used for both the opening greeting and normal replies. */
   async function speak(
     ws: Sendable,
-    generate: (signal: AbortSignal) => Promise<string>,
+    generate: (signal: AbortSignal, epoch: number) => Promise<string>,
     options?: {
       /** Misc-7: a cache hit — skip live TTS entirely and replay this
        * pre-synthesized audio as one outbound frame instead. */
@@ -1772,6 +1836,10 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     },
   ) {
     turnAbortController = new AbortController();
+    // This turn's identity — see turnEpoch's doc comment above. Every
+    // speak() call (greeting or reply) is a fresh turn, whether or not a
+    // barge-in already bumped the counter for the one it's replacing.
+    const epoch = ++turnEpoch;
     agentIsSpeaking = true;
     // Expressive delivery (2026-07-17) — fresh tone-tag state for this turn.
     toneTagFilter = newToneTagFilter();
@@ -1905,6 +1973,17 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
         let wrapper: TtsConnection | undefined;
         const real = connectTts(
           (base64Audio) => {
+            // Stage 1 (turnEpoch): a provider socket keeps firing messages
+            // until its close handshake actually completes, which can be
+            // after a barge-in already moved on to the next turn — dropped
+            // here, before any of this turn's latency bookkeeping below (a
+            // late chunk is not a truthful reading of the CURRENT turn's
+            // TTFB) and before it can reach the caller's ear as bleed-over
+            // from an answer they already interrupted.
+            if (epoch !== turnEpoch) {
+              console.warn(`[voice] dropped a stale TTS audio chunk from turn epoch ${epoch} (current: ${turnEpoch})`);
+              return;
+            }
             if (ttsFirstByteMs === undefined) {
               // ADR-107: same anchor correction as the per-turn metric below.
               // The call-level column had the identical defect — it was
@@ -1974,7 +2053,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             realTts = attemptTts(next, [...sentTextBuffer]);
           },
           attemptProvider,
-          voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider),
+          voiceIdForProvider(ttsVoiceIdOverride, ttsVoiceIdProvider, attemptProvider, ttsVoiceIdsByProvider),
           languageOverride,
           (word) => spokenWords.push(word),
           (ms) => {
@@ -2067,7 +2146,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let fullText = "";
     let wasInterrupted = false;
     try {
-      fullText = await generate(turnAbortController.signal);
+      fullText = await generate(turnAbortController.signal, epoch);
       // Expressive delivery (2026-07-17) — `fullText` is generate()'s own
       // complete return value, entirely separate from the streamed deltas
       // sendTtsTextWithTone already stripped above. Stripped here too so the
@@ -2193,7 +2272,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     }
 
     if (fullText) {
-      history.push({ role: "assistant", content: fullText });
+      pushHistory({ role: "assistant", content: fullText });
       logTranscript("agent", fullText, agentTranscriptSequence);
     }
 
@@ -2276,12 +2355,12 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     let fillerPlayedThisTurn = false;
     await speak(
       ws,
-      (signal) =>
+      (signal, epoch) =>
         runVoiceAgentTurn({
           history,
           persona,
           signal,
-          onTextDelta: (delta) => sendTtsTextWithTone(delta),
+          onTextDelta: epochGuardedTextDelta(epoch),
           onToolCall: (name, input, output) => void logToolCall(ws, name, input, output),
           onToolTelemetry: (event) => void persistToolCallLatency(event),
           onLatency: (ms, model) => {
@@ -2431,11 +2510,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
     const turnUsageRef: { value?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } } = {};
     await speak(
       ws,
-      (signal) =>
+      (signal, epoch) =>
         runVoiceAgentGreeting({
           persona,
           signal,
-          onTextDelta: (delta) => sendTtsTextWithTone(delta),
+          onTextDelta: epochGuardedTextDelta(epoch),
           onToolTelemetry: (event) => void persistToolCallLatency(event),
           capturedState,
           callerMemory: callerMemoryFacts,
@@ -2544,6 +2623,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
           const bargeIn = decideBargeIn({ agentIsSpeaking, text, priorStreak: bargeInStreak });
           bargeInStreak = bargeIn.nextStreak;
           if (bargeIn.fire) {
+            // Increment FIRST, before anything async — see turnEpoch's doc
+            // comment. This is what makes the interrupted turn's already-
+            // in-flight chunks stale immediately, rather than racing the
+            // abort/close calls below to see which one "wins."
+            turnEpoch++;
             if (streamSid) ws.send(transport.buildClear(streamSid));
             turnAbortController?.abort();
             tts?.close();
@@ -2665,7 +2749,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             );
           }
 
-          history.push({ role: "user", content: text });
+          pushHistory({ role: "user", content: text });
           // Not awaited (2026-08-12): this INSERT is cross-region in production
           // and sat directly inside the caller-perceived voice-to-voice gap. The
           // model reads `history`, not this table — see logTranscript.
@@ -3132,6 +3216,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             }
             llmModelOverride = agentConfig.llmModel;
             ttsVoiceIdOverride = agentConfig.voiceId;
+            ttsVoiceIdsByProvider = agentConfig.voiceIdsByProvider;
             // Per-agent frame config takes precedence over per-number config, which
             // takes precedence over the session override — matches the persona
             // resolution priority (org/agent-specific beats number-wide defaults).

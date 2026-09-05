@@ -211,7 +211,7 @@ describe("B4 — the reservation happens before generate(), not at log time (sou
     const { readFileSync } = await import("node:fs");
     const source = readFileSync(new URL("./stream.ts", import.meta.url), "utf8");
     const reserveIndex = source.indexOf("const agentTranscriptSequence = reserveTranscriptSequence();");
-    const generateIndex = source.indexOf("fullText = await generate(turnAbortController.signal);");
+    const generateIndex = source.indexOf("fullText = await generate(turnAbortController.signal, epoch);");
     expect(reserveIndex, "reservation call site should exist").toBeGreaterThan(-1);
     expect(generateIndex, "generate() call site should exist").toBeGreaterThan(-1);
     // The whole point: the sequence is locked in before the turn's content

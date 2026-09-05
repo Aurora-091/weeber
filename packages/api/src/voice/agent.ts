@@ -630,6 +630,8 @@ export type ResolvedAgentConfig = {
   promptInputs?: ComposeSystemPromptOptions;
   ttsProvider?: "elevenlabs" | "cartesia" | "sarvam";
   voiceId?: string;
+  /** Voice-pipeline hardening plan, Stage 5 — see tts-voice-identity.ts. */
+  voiceIdsByProvider?: Partial<Record<"elevenlabs" | "cartesia" | "sarvam", string>>;
   llmProvider?: "gateway";
   llmModel?: string;
   /** Undefined = every tool enabled. Only reaches `undefined` now when no template
@@ -791,6 +793,9 @@ export async function resolveAgentConfig(opts: {
         promptSegments: composed.segments,
         ttsProvider: (config.voiceProvider as "elevenlabs" | "cartesia" | "sarvam" | null) ?? undefined,
         voiceId: config.voiceId ?? undefined,
+        voiceIdsByProvider:
+          (config.voiceIdsByProvider as Partial<Record<"elevenlabs" | "cartesia" | "sarvam", string>> | null) ??
+          undefined,
         llmProvider: (config.llmProvider as "gateway" | null) ?? undefined,
         llmModel: config.llmModel ?? undefined,
         enabledTools: (config.toolsEnabled as AvailableToolName[] | null) ?? defaultToolsFallback(tmpl?.defaultTools),
@@ -923,6 +928,7 @@ export async function buildPreviewAgentConfig(
     promptSegments: composed.segments,
     ttsProvider: override.voiceProvider,
     voiceId: override.voiceId,
+    voiceIdsByProvider: override.voiceIdsByProvider,
     llmProvider: override.llmProvider,
     llmModel: override.llmModel,
     enabledTools: override.toolsEnabled,

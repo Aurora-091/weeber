@@ -599,6 +599,17 @@ export const orgAgentConfigs = pgTable("org_agent_configs", {
   toneStyle: text("tone_style"),
   voiceProvider: text("voice_provider"),
   voiceId: text("voice_id"),
+  // Voice-pipeline hardening plan, Stage 5 (2026-09-05) — closes the gap
+  // tts-voice-identity.ts's own doc comment names: `voiceId`/`voiceProvider`
+  // above are a pair for exactly ONE provider, so a TTS failover to a
+  // different provider always fell back to that provider's platform-default
+  // voice (safe — never a foreign, nonsense ID — but still a different
+  // person to the caller). This is the OPT-IN per-provider mapping
+  // `voiceIdForProvider` prefers when present: `{ cartesia: "...", sarvam:
+  // "..." }`, keyed by TtsProvider, every key optional. Null/absent for an
+  // agent that hasn't set it up — falls through to today's exact behavior,
+  // same fail-open pattern as sttFallbackOrder/llmFallbackModels below.
+  voiceIdsByProvider: jsonb("voice_ids_by_provider").$type<Partial<Record<"elevenlabs" | "cartesia" | "sarvam", string>>>(),
   language: text("language"),
   sttProvider: text("stt_provider"),
   llmProvider: text("llm_provider"),

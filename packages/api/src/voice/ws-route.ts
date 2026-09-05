@@ -33,6 +33,33 @@ type VoiceSocketData =
   | { kind: "voice"; handlers: ReturnType<typeof createVoiceStreamHandlers> }
   | { kind: "test-call"; handlers: ReturnType<typeof createTestCallStreamHandlers> };
 
+/**
+ * Voice-pipeline hardening plan, Stage 3 (2026-09-05) — deploy draining.
+ *
+ * This process holds live call state entirely in memory (see stream.ts's
+ * module doc comment on `createVoiceStreamHandlers`'s closure) — there is no
+ * reconnect path, so a deploy that kills the process mid-call drops that
+ * call to dead air. `isDraining`/`activeCallCount` are the two pieces
+ * server.ts needs to stop making that worse on every deploy: refuse new
+ * calls once a shutdown is requested, and know when it's actually safe to
+ * exit (every in-flight call has ended on its own) rather than guessing.
+ *
+ * Deliberately does NOT try to migrate or resume an in-flight call — that
+ * needs durable per-call state this architecture doesn't have (see the
+ * plan's Stage 6, not started). This is strictly "stop the bleeding on the
+ * *next* deploy," not a fix for the process dying uncontrolled.
+ */
+let isDraining = false;
+let activeCallCount = 0;
+
+export function beginDraining(): void {
+  isDraining = true;
+}
+
+export function getActiveCallCount(): number {
+  return activeCallCount;
+}
+
 const VOICE_WS_PATHS: Record<TelephonyProvider, string> = {
   twilio: "/api/voice/stream",
   plivo: "/api/voice/stream/plivo",
@@ -53,6 +80,18 @@ export const VOICE_WS_PATH = VOICE_WS_PATHS.twilio;
  */
 export async function tryUpgradeVoiceSocket(request: Request, server: { upgrade: Function }): Promise<boolean> {
   const url = new URL(request.url);
+
+  // Stage 3: refuse every new call/test-call socket once a shutdown has been
+  // requested — accepting one now just means dropping it seconds later when
+  // the process actually exits. `false` here falls through to server.ts's
+  // ordinary fetch handler, which 500s with "Build output not found" for a
+  // WS-upgrade request that matches no static file; Twilio/Plivo/Exotel each
+  // treat a non-101 response as the stream failing to start, same as any
+  // other unreachable-media-stream failure they already have to handle.
+  if (isDraining) {
+    console.warn(`[voice] rejecting new WS upgrade for ${url.pathname} — server is draining for shutdown`);
+    return false;
+  }
 
   if (url.pathname === TEST_CALL_WS_PATH) {
     const token = url.searchParams.get("token");
@@ -88,6 +127,11 @@ export async function tryUpgradeVoiceSocket(request: Request, server: { upgrade:
 
 export const voiceWebsocketHandlers = {
   open(ws: { send: (data: string) => void; close?: (code?: number, reason?: string) => void; data: VoiceSocketData }) {
+    // Stage 3: only real telephony calls ("voice") hold up a drain wait — a
+    // merchant's live test call in the Preview drawer is worth trying not to
+    // drop too, but it isn't worth delaying a deploy for, so only "voice"
+    // counts here even though both kinds are refused new upgrades above.
+    if (ws.data.kind === "voice") activeCallCount++;
     if (ws.data.kind === "test-call") {
       void ws.data.handlers.onOpen(ws);
       return;
@@ -103,6 +147,7 @@ export const voiceWebsocketHandlers = {
     void ws.data.handlers.onMessage(data, ws);
   },
   close(ws: { data: VoiceSocketData }) {
+    if (ws.data.kind === "voice") activeCallCount--;
     ws.data.handlers.onClose();
   },
 };

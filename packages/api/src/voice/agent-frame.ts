@@ -111,6 +111,12 @@ export const AgentFrameSchema = z.object({
   personaPrompt: z.string().min(1).max(8000).optional(),
   voiceProvider: z.enum(["elevenlabs", "cartesia", "sarvam"]).optional(),
   voiceId: z.string().min(1).max(200).optional(),
+  /** Voice-pipeline hardening plan, Stage 5: opt-in per-provider voice IDs so
+   * a TTS failover keeps the caller hearing the same person instead of that
+   * provider's platform-default voice — see tts-voice-identity.ts's doc
+   * comment. Every key optional; an agent that only sets `voiceId`/
+   * `voiceProvider` above keeps exactly today's fail-open behavior. */
+  voiceIdsByProvider: z.record(z.enum(["elevenlabs", "cartesia", "sarvam"]), z.string().min(1).max(200)).optional(),
   /** Free text (see RECOMMENDED_LANGUAGES above for curated options) — one
    * language drives both STT and TTS for the call. India has many more
    * languages than any single provider covers well, so this deliberately

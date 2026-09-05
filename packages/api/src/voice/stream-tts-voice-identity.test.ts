@@ -40,6 +40,10 @@ let lastOnTranscript:
 
 let agentFlags: Record<string, boolean> = {};
 let literalGreetingTemplate: string | undefined;
+/** Stage 5 (2026-09-05): opt-in per-provider voice mapping — see
+ * tts-voice-identity.ts. Undefined in every test above, so this file's
+ * existing coverage of the fail-open default is unaffected. */
+let voiceIdsByProvider: Partial<Record<string, string>> | undefined;
 
 function getTableName(table: unknown): string | undefined {
   if (!table) return undefined;
@@ -139,6 +143,7 @@ mock.module("./agent", () => ({
     // The pair that matters: a Cartesia voice ID belonging to Cartesia.
     ttsProvider: "cartesia",
     voiceId: "cartesia-voice-uuid",
+    voiceIdsByProvider,
     language: "en",
     literalGreetingTemplate,
   }),
@@ -191,6 +196,7 @@ beforeEach(() => {
   lastOnTranscript = null;
   agentFlags = {};
   literalGreetingTemplate = undefined;
+  voiceIdsByProvider = undefined;
   clearTtsCacheForTests();
 });
 
@@ -273,6 +279,47 @@ describe("TTS failover keeps one voice identity per call", () => {
     for (const call of ttsCalls) {
       expect(call).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid", language: "en" });
     }
+
+    handlers.onClose();
+  });
+});
+
+/**
+ * Voice-pipeline hardening plan, Stage 5 (2026-09-05) — an agent that opts
+ * into `voiceIdsByProvider` keeps a real, consistent voice across a failover
+ * instead of the fail-open default above (no ID => the fallback provider's
+ * platform-default voice, a different person to the caller).
+ */
+describe("TTS failover uses the Stage 5 per-provider voice map when an agent has configured one", () => {
+  it("hands the fallback provider its mapped voice ID instead of none at all", async () => {
+    voiceIdsByProvider = { cartesia: "cartesia-voice-uuid", elevenlabs: "el-mapped-voice" };
+    failingTtsProviders.add("cartesia");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    expect(ttsCalls.length).toBeGreaterThanOrEqual(2);
+    expect(ttsCalls[0]).toMatchObject({ provider: "cartesia", voiceId: "cartesia-voice-uuid" });
+    // Previously undefined (this file's first test) — now the agent's own
+    // configured ElevenLabs voice, not ElevenLabs' platform default.
+    expect(ttsCalls[1]).toMatchObject({ provider: "elevenlabs", voiceId: "el-mapped-voice" });
+
+    handlers.onClose();
+  });
+
+  it("falls back to no voice ID for a provider missing from the map, same as an agent with no map at all", async () => {
+    voiceIdsByProvider = { cartesia: "cartesia-voice-uuid" }; // no elevenlabs entry
+    failingTtsProviders.add("cartesia");
+
+    const handlers = createVoiceStreamHandlers("twilio");
+    const ws = fakeWs();
+    await handlers.onMessage(START_EVENT, ws);
+    await settle();
+
+    expect(ttsCalls[1]?.provider).toBe("elevenlabs");
+    expect(ttsCalls[1]?.voiceId).toBeUndefined();
 
     handlers.onClose();
   });

@@ -41,3 +41,29 @@ describe("voiceIdForProvider", () => {
     expect(voiceIdForProvider("a1b2c3-cartesia-uuid", undefined, "sarvam")).toBeUndefined();
   });
 });
+
+/**
+ * Voice-pipeline hardening plan, Stage 5 (2026-09-05) — an agent that opts
+ * into `voiceIdsByProvider` keeps a real, consistent identity across a TTS
+ * failover instead of falling back to whichever provider's platform-default
+ * voice. One agent's `voiceId`/`voiceProvider` is still exactly one pair for
+ * one provider (the primary); this mapping is the opt-in extension.
+ */
+describe("voiceIdForProvider — Stage 5 per-provider voice mapping", () => {
+  it("uses the mapped ID for the provider being attempted, even when it differs from the primary pair", () => {
+    const map = { cartesia: "cartesia-id", elevenlabs: "el-id", sarvam: "sarvam-speaker" };
+    expect(voiceIdForProvider("cartesia-id", "cartesia", "elevenlabs", map)).toBe("el-id");
+    expect(voiceIdForProvider("cartesia-id", "cartesia", "sarvam", map)).toBe("sarvam-speaker");
+  });
+
+  it("falls through to the single-provider pair for a provider missing from the map", () => {
+    const map = { cartesia: "cartesia-id" }; // no elevenlabs/sarvam entry
+    expect(voiceIdForProvider("cartesia-id", "cartesia", "cartesia", map)).toBe("cartesia-id");
+    expect(voiceIdForProvider("cartesia-id", "cartesia", "elevenlabs", map)).toBeUndefined();
+  });
+
+  it("behaves exactly as before Stage 5 when no map is configured at all", () => {
+    expect(voiceIdForProvider("a1b2c3-cartesia-uuid", "cartesia", "cartesia", undefined)).toBe("a1b2c3-cartesia-uuid");
+    expect(voiceIdForProvider("a1b2c3-cartesia-uuid", "cartesia", "elevenlabs", undefined)).toBeUndefined();
+  });
+});

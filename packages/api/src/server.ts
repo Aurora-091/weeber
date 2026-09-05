@@ -1,5 +1,5 @@
 import app from "./index";
-import { tryUpgradeVoiceSocket, voiceWebsocketHandlers } from "./voice/ws-route";
+import { tryUpgradeVoiceSocket, voiceWebsocketHandlers, beginDraining, getActiveCallCount } from "./voice/ws-route";
 import { tryUpgradeWaitlistSocket, waitlistWebsocketHandlers } from "./app/waitlist-ws";
 import { assertHipaaPreflight, startRetentionSweep } from "@weeber/compliance";
 import { callLogAdapter } from "./voice/compliance/adapters";
@@ -134,6 +134,58 @@ const server = Bun.serve({
 });
 
 console.log(`Web server listening on http://localhost:${server.port}`);
+
+/**
+ * Voice-pipeline hardening plan, Stage 3 (2026-09-05) — deploy draining.
+ *
+ * All live-call state lives in process memory (stream.ts's per-call
+ * closure) with no reconnect path, so every deploy previously dropped every
+ * in-flight call the instant Railway sent SIGTERM. This doesn't fix that
+ * architecturally (see the plan's Stage 6, not started) — it stops making
+ * it worse on every single deploy: refuse new calls immediately, then give
+ * whatever calls are already running a bounded window to end on their own
+ * (hangup, transfer, natural completion, or their own maxDurationSeconds
+ * cap) before exiting.
+ *
+ * `server.stop()` (no `closeActiveConnections` arg, defaulting to false)
+ * stops Bun from accepting new HTTP/WS connections but leaves already-
+ * upgraded sockets alone — `isDraining` (ws-route.ts) is the belt-and-
+ * suspenders app-level check for the same thing, checked before Bun's
+ * upgrade even happens, so a new call is refused with a clean 500 instead
+ * of accepted and then abandoned.
+ *
+ * KNOWN LIMITATION, not fixed here: this assumes Railway's actual SIGTERM
+ * grace period (before it escalates to SIGKILL) is longer than the wait
+ * below — that's a platform setting, not something this code controls, and
+ * has not been confirmed. If Railway's grace period is shorter, calls still
+ * get dropped, just no worse than before this change.
+ */
+const DRAIN_CHECK_INTERVAL_MS = 2_000;
+const DRAIN_MAX_WAIT_MS = 10 * 60 * 1000;
+
+let shuttingDown = false;
+process.on("SIGTERM", () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log("[server] SIGTERM received — draining: refusing new calls, waiting for in-flight calls to finish");
+  beginDraining();
+  server.stop();
+
+  const startedAt = Date.now();
+  const drainTimer = setInterval(() => {
+    const active = getActiveCallCount();
+    const waited = Date.now() - startedAt;
+    if (active === 0) {
+      clearInterval(drainTimer);
+      console.log("[server] drain complete — no active calls, exiting");
+      process.exit(0);
+    } else if (waited >= DRAIN_MAX_WAIT_MS) {
+      clearInterval(drainTimer);
+      console.warn(`[server] drain timed out after ${waited}ms with ${active} call(s) still active — exiting anyway`);
+      process.exit(0);
+    }
+  }, DRAIN_CHECK_INTERVAL_MS);
+});
 
 function getStaticFilePath(pathname: string) {
   const cleanPath = decodeURIComponent(pathname)

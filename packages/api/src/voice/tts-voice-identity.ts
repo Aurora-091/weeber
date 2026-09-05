@@ -40,6 +40,16 @@ import type { TtsProvider } from "./tts/types";
  * voice are literally different voices"). The same reasoning applies to
  * failover, which is why `stream.ts` keeps a failover sticky for the rest of
  * the call instead of flipping back to the primary provider on the next turn.
+ *
+ * Voice-pipeline hardening plan, Stage 5 (2026-09-05) — the fail-open default
+ * above (no ID => that provider's own platform voice) is *safe* but still
+ * changes who the caller thinks they're talking to on every failover, since
+ * each provider's default voice is a different person. `voiceIdsByProvider`
+ * (`org_agent_configs.voice_ids_by_provider`, optional/additive) is how an
+ * agent opts into a real, consistent identity across all three providers
+ * instead: an explicit ID *for the provider being attempted*, checked before
+ * falling through to the single-provider `voiceId`/`voiceIdProvider` pair
+ * above. An agent that hasn't configured it keeps exactly today's behavior.
  */
 export function voiceIdForProvider(
   /** The agent's configured voice ID (`agent-frame.ts`'s `voiceId`), if any. */
@@ -54,7 +64,11 @@ export function voiceIdForProvider(
   voiceIdProvider: TtsProvider | undefined,
   /** The provider we are about to open a connection to. */
   attemptProvider: TtsProvider,
+  /** Stage 5: optional per-provider mapping, checked first. */
+  voiceIdsByProvider?: Partial<Record<TtsProvider, string>>,
 ): string | undefined {
+  const mapped = voiceIdsByProvider?.[attemptProvider];
+  if (mapped) return mapped;
   if (!voiceId) return undefined;
   if (!voiceIdProvider) return undefined;
   return voiceIdProvider === attemptProvider ? voiceId : undefined;
