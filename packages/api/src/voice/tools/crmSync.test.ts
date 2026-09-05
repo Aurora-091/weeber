@@ -75,7 +75,7 @@ mock.module("../integrations/hubspot", () => ({
   },
 }));
 
-import { createCrmSyncTool, resolveCrmSyncContext, resolveLiveCrmSyncContext } from "./crmSync";
+import { createCrmSyncTool, narrowToolsForCrmAvailability, resolveCrmSyncContext, resolveLiveCrmSyncContext } from "./crmSync";
 
 function callTool(orgId: string, phoneNumber = "+15551234567", callId = 1) {
   const tool = createCrmSyncTool({ orgId, phoneNumber, callId });
@@ -298,5 +298,24 @@ describe("stream.ts registers crmSync only through resolveLiveCrmSyncContext (AD
   it("the start handler awaits the credential-aware resolver in the pickup batch", () => {
     expect(streamSource).toContain("resolveLiveCrmSyncContext({");
     expect(streamSource).not.toContain("crmSyncContext = resolveCrmSyncContext(");
+  });
+
+  it("narrows the prompt's tool list when CRM is withheld (ADR-127)", () => {
+    expect(streamSource).toContain("narrowToolsForCrmAvailability(enabledToolsOverride, Boolean(crmSyncContext))");
+  });
+});
+
+describe("narrowToolsForCrmAvailability", () => {
+  it("leaves the list alone when a CRM is connected", () => {
+    expect(narrowToolsForCrmAvailability(["crmSync", "hangUp"], true)).toEqual(["crmSync", "hangUp"]);
+  });
+
+  it("drops crmSync when no CRM is connected", () => {
+    expect(narrowToolsForCrmAvailability(["crmSync", "hangUp"], false)).toEqual(["hangUp"]);
+  });
+
+  it("does not materialize the catalog when crmSync was never on the saved list", () => {
+    expect(narrowToolsForCrmAvailability(["hangUp"], false)).toEqual(["hangUp"]);
+    expect(narrowToolsForCrmAvailability(undefined, true)).toBeUndefined();
   });
 });

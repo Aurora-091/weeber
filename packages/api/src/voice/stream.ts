@@ -21,7 +21,7 @@ import {
   type CartRecoveryDiscountContext,
 } from "./tools/offerCartRecoveryDiscount";
 import { resolveCodOrderContext, type CodOrderContext } from "./tools/confirmCodOrder";
-import { resolveLiveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
+import { narrowToolsForCrmAvailability, resolveLiveCrmSyncContext, type CrmSyncContext } from "./tools/crmSync";
 import { screenCapture, redactCaptureValue } from "./prohibited-capture";
 import { deriveGuardrailEventFields } from "./guardrail-events";
 import type { AvailableToolName } from "./agent-frame";
@@ -3254,6 +3254,11 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
               hasOrg: Boolean(humanNumberOrgId),
             });
             enabledToolsOverride = narrowToolsForTransferCapability(agentConfig.enabledTools, transferCapability);
+            // ADR-127: crmSync is withheld without credentials (ADR-122) the
+            // same way transfer is withheld without a number. Recompose the
+            // prompt from the list the model will actually get, or insurance
+            // personas keep ordering a sync on every turn.
+            enabledToolsOverride = narrowToolsForCrmAvailability(enabledToolsOverride, Boolean(crmSyncContext));
             if (!transferCapability.canTransfer && transferCapability.reason) {
               // Warned, not silent: on an insurance qualifier this is the
               // difference between a warm lead reaching a licensed advisor and
@@ -3291,7 +3296,7 @@ export function createVoiceStreamHandlers(provider: TelephonyProvider = "twilio"
             // string every later turn and the greeting read, and is assigned
             // rather than mutating `agentConfig`, which the preview/test-call
             // path shares.
-            if (persona && !transferCapability.canTransfer) {
+            if (persona && (!transferCapability.canTransfer || !crmSyncContext)) {
               const recomposed = agentConfig.promptInputs
                 ? composeSystemPrompt({ ...agentConfig.promptInputs, toolsEnabled: enabledToolsOverride }).text
                 : persona;

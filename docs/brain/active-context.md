@@ -12,6 +12,11 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **ADR-127: personas must not order withheld tools (2026-09-05).** Insurance runtimes no longer
+  require `crmSync` or announce "You're connected"; post-sale has a documents-not-received closing;
+  call control + `"start"` recompose match ADR-122 withhold. **Re-seed templates on deploy.**
+  An editor-pasted old persona is unchanged until saved.
+
 - **ADR-126: vendor pipeline signals (2026-09-05).** Wired unused Deepgram concat/`SpeechStarted`,
   Twilio/Plivo playback marks, Plivo `clearedAudio` ≠ hangup, Cartesia `cancel`, Exotel default
   mu-law. **Next after deploy:** live Twilio call — after a spoken turn the Media Stream should
