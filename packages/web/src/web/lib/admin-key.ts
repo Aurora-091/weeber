@@ -8,8 +8,6 @@
  *
  * The `adminHeaders()` helper picks the appropriate header based on what's available.
  */
-import { supabase } from "./supabase";
-
 const STORAGE_KEY = "vent_admin_key";
 
 export function getAdminKey(): string {
@@ -25,21 +23,6 @@ export function clearAdminKey() {
 }
 
 export function adminHeaders(): Record<string, string> {
-  const key = getAdminKey();
-  return key ? { "X-Weeber-Admin-Key": key } : {};
-}
-
-/**
- * Returns admin auth headers, preferring a Supabase session token over the
- * stored API key. Must be called at request time (not cached) since tokens expire.
- */
-export async function adminHeadersAsync(): Promise<Record<string, string>> {
-  if (supabase) {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) {
-      return { Authorization: `Bearer ${data.session.access_token}` };
-    }
-  }
   const key = getAdminKey();
   return key ? { "X-Weeber-Admin-Key": key } : {};
 }

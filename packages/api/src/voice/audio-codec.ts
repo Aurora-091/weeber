@@ -72,47 +72,9 @@ export function pcm16ToMulaw(pcm16: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Wrap raw PCM16LE bytes in a minimal 44-byte WAV header (mono). Some
- * providers (Sarvam STT) require a WAV container rather than bare PCM. */
-export function pcm16ToWav(pcm16: Uint8Array, sampleRate: number): Uint8Array {
-  const header = new ArrayBuffer(44);
-  const view = new DataView(header);
-  const dataSize = pcm16.length;
-
-  writeAscii(view, 0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeAscii(view, 8, "WAVE");
-  writeAscii(view, 12, "fmt ");
-  view.setUint32(16, 16, true); // fmt chunk size
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // byte rate (16-bit mono)
-  view.setUint16(32, 2, true); // block align
-  view.setUint16(34, 16, true); // bits per sample
-  writeAscii(view, 36, "data");
-  view.setUint32(40, dataSize, true);
-
-  const wav = new Uint8Array(44 + dataSize);
-  wav.set(new Uint8Array(header), 0);
-  wav.set(pcm16, 44);
-  return wav;
-}
-
-function writeAscii(view: DataView, offset: number, text: string) {
-  for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-}
-
 /** Convenience: Twilio mu-law chunk -> base64 raw PCM16LE, ready for JSON APIs
  * whose connection-level params declare the audio codec. Sarvam STT needs this
  * shape — per-frame WAV headers make a 20ms Twilio stream silently deaf. */
 export function mulawChunkToPcm16Base64(mulaw: Uint8Array): string {
   return Buffer.from(mulawToPcm16(mulaw)).toString("base64");
-}
-
-/** Convenience: Twilio mu-law chunk -> base64 WAV, ready to drop into a JSON message. */
-export function mulawChunkToWavBase64(mulaw: Uint8Array, sampleRate = 8000): string {
-  const pcm16 = mulawToPcm16(mulaw);
-  const wav = pcm16ToWav(pcm16, sampleRate);
-  return Buffer.from(wav).toString("base64");
 }

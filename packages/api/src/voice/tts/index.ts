@@ -63,4 +63,4 @@ export function connectTts(
   );
 }
 
-export type { ConnectTts, TtsConnection, TtsProvider } from "./types";
+export type { TtsConnection, TtsProvider } from "./types";

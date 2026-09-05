@@ -55,10 +55,10 @@ import { shouldBackchannel, BACKCHANNEL_FLAG, BACKCHANNEL_LINES } from "./backch
 import { decideBargeIn } from "./barge-in";
 import {
   createTurnDetector,
-  HeuristicTurnDetector,
   SEMANTIC_TURN_DETECTION_FLAG,
   type TurnEndDetector,
 } from "./turn-detection";
+import { HeuristicTurnDetector } from "./turn-detection/heuristic";
 import { getTelephonyTransport, type TelephonyProvider } from "./telephony-transport";
 import { estimateCallCostCents } from "./cost-estimate";
 import { db } from "../database";

@@ -1,7 +1,7 @@
 ---
 doc: active-context
 status: LIVE — update every session you do meaningful work
-updated: 2026-09-04
+updated: 2026-09-05
 ---
 
 # Active context — what's happening right now
@@ -11,6 +11,9 @@ updated: 2026-09-04
 > finish meaningful work, update the three sections below and move anything shipped into `progress.md`.
 
 ## Current focus
+
+- **Stale FE/BE audit landed (2026-09-05).** Knip baseline 60 → 2 (harness duplicates only).
+  Leads page now exposes hosted form URL + ingest API keys. See `docs/changelog/2026-09.md`.
 
 - **Groq removed as an LLM provider; ADR-005 and ADR-109 superseded by ADR-121 (2026-09-04).**
   `LlmProvider` narrows to `"gateway"` (`voice/llm/index.ts`); `@ai-sdk/groq` dropped. ADR-109's

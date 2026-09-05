@@ -22,13 +22,6 @@ export async function readCredential(orgId: string, field: string): Promise<stri
 }
 
 /**
- * Removes all vault-stored credentials for an org (used on org deletion).
- */
-export async function deleteOrgCredentials(orgId: string): Promise<void> {
-  await db.execute(sql`SELECT public.delete_org_credentials(${orgId})`);
-}
-
-/**
  * Removes a SINGLE vault-stored credential field for an org. Used when a
  * telephony provider is reset/torn down: the org row's plaintext columns get
  * nulled, so the matching vault entry must be cleared too — otherwise the
@@ -38,21 +31,6 @@ export async function deleteOrgCredentials(orgId: string): Promise<void> {
  */
 export async function deleteCredential(orgId: string, field: string): Promise<void> {
   await db.execute(sql`SELECT public.delete_org_credential(${orgId}, ${field})`);
-}
-
-/**
- * Reads multiple credential fields for an org in a single round-trip.
- * Returns a record of field -> value (null if not found).
- */
-export async function readCredentials(
-  orgId: string,
-  fields: string[],
-): Promise<Record<string, string | null>> {
-  const result: Record<string, string | null> = {};
-  for (const field of fields) {
-    result[field] = await readCredential(orgId, field);
-  }
-  return result;
 }
 
 export const TWILIO_FIELDS = {
@@ -81,9 +59,6 @@ export const TELEPHONY_VAULT_FIELDS = {
   plivo: [PLIVO_FIELDS.authId, PLIVO_FIELDS.authToken],
   exotel: [EXOTEL_FIELDS.sid, EXOTEL_FIELDS.apiKey, EXOTEL_FIELDS.apiToken],
 } as const;
-
-export const CRM_PROVIDERS = ["gohighlevel", "salesforce", "hubspot"] as const;
-export const CALENDAR_PROVIDERS = ["google_calendar"] as const;
 
 /**
  * Which credential fields each `orgIntegrations` provider actually uses (audit

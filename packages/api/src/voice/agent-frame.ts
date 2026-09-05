@@ -33,17 +33,7 @@ export const AVAILABLE_TOOL_NAMES = [
 
 export type AvailableToolName = (typeof AVAILABLE_TOOL_NAMES)[number];
 
-/** Curated starting points, not an exhaustive/enforced list — llmModel and
- * voiceId both accept free text too, so a new gateway model or a new
- * provider voice doesn't need a code change to use. */
-export const RECOMMENDED_LLM_MODELS = [
-  { provider: "gateway" as const, model: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini (balanced, gateway)" },
-  { provider: "gateway" as const, model: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (cheapest/fastest, gateway)" },
-  { provider: "gateway" as const, model: "openai/gpt-5.4", label: "GPT-5.4 (strongest, gateway)" },
-];
-
 export const TONE_STYLES = ["friendly", "formal", "playful", "empathetic", "concise"] as const;
-export type ToneStyle = (typeof TONE_STYLES)[number];
 
 /** Curated starting points for `language`, not an exhaustive/enforced list —
  * the field accepts free text too, so a language neither provider has

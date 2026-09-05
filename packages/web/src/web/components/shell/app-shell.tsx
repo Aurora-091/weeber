@@ -37,9 +37,6 @@ const SidebarContext = createContext<{ collapsed: boolean; toggle: () => void }>
   collapsed: false,
   toggle: () => {},
 });
-export function useSidebar() {
-  return useContext(SidebarContext);
-}
 
 /**
  * Per-page opt-in to a full-bleed content area. The shell stays mounted while
