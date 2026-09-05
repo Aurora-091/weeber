@@ -12,6 +12,11 @@ updated: 2026-09-05
 
 ## Done (works end-to-end, real-verified)
 
+- **ADR-126 — vendor pipeline signals wired (2026-09-05).** Deepgram concat + SpeechStarted streak,
+  Twilio/Plivo playback marks, Plivo `clearedAudio` not stop, Cartesia cancel on barge-in, Exotel
+  default mu-law. Unit tests; live Twilio mark/barge-in re-test still required. Plivo/Exotel have
+  never had a real account call.
+
 - **ADR-125 — Cartesia managed buffer set to 180ms (2026-09-05).** Code + unit tests; live
   appointment-setter re-test still required before calling the dead-air turn closed.
 
@@ -223,9 +228,10 @@ updated: 2026-09-05
 
 - **TTS dead air with spoken transcript (2026-09-05, appointment-setter).** Live log:
   `DEAD AIR on turn 5: the LLM produced 59 chars but TTS never emitted a single audio byte`.
-  ADR-125 sets Cartesia's buffer delay; not yet live-verified. If it still fires after deploy,
-  next suspects are the tone-tag filter (ADR-101), a mid-call agent `PUT`, or a socket that
-  never opened. Reproduce on appointment-setter, not post-sale.
+  ADR-125 sets Cartesia's buffer delay; ADR-126 adds Cartesia `cancel` + playback marks. Neither
+  is live-verified. If DEAD AIR still fires after deploy, next suspects are the tone-tag filter
+  (ADR-101), a mid-call agent `PUT`, or a socket that never opened. Reproduce on
+  appointment-setter, not post-sale.
 
 - **No `humanTransferNumber` on the demo org** (`org_a21984fe-…`). Every insurance test call
   logs `transferToHuman withheld`. Ops: set it on the agent or in Settings. Not a code bug.

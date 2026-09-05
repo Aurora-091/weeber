@@ -138,6 +138,9 @@ export const connectCartesiaTts: ConnectTts = (onAudioChunk, onDone, onError, vo
     endTurn() {
       send(generationMessage("", false, true));
     },
+    cancel() {
+      send({ context_id: contextId, cancel: true });
+    },
     close() {
       closedIntentionally = true;
       if (opened) ws.close();

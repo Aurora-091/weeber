@@ -15,6 +15,13 @@ export type SttTranscriptHandler = (params: {
    * downstream despite differing by up to 700ms (audit-13 §5.1). Undefined
    * on providers with no such dual-signal concept (Sarvam, ElevenLabs). */
   endpointSignal?: "speech_final" | "utterance_end";
+  /**
+   * Deepgram `vad_events` (`SpeechStarted` / `SpeechEnded`). Empty-text
+   * events — not a transcript. Used so barge-in can start counting before
+   * the first interim words arrive. Undefined on providers that have no VAD
+   * stream (Sarvam, ElevenLabs).
+   */
+  vad?: "speech_started" | "speech_ended";
 }) => void;
 
 export type SttStats = {

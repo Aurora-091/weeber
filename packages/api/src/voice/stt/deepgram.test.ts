@@ -160,6 +160,51 @@ describe("connectDeepgram — A1b VAD/endpointing audit", () => {
     expect(onTranscript).toHaveBeenCalledTimes(1);
   });
 
+  test("speech_final concatenates prior is_final chunks (Deepgram long-utterance shape)", () => {
+    const events: Array<{ text: string; isFinal: boolean; speechFinal: boolean; endpointSignal?: string }> = [];
+    connectDeepgram((e) => events.push(e));
+    open();
+
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: false,
+        channel: { alternatives: [{ transcript: "yeah so my credit card number is two two" }] },
+      }),
+    });
+    lastSocket!.emit("message", {
+      data: JSON.stringify({
+        type: "Results",
+        is_final: true,
+        speech_final: true,
+        channel: { alternatives: [{ transcript: "two two three three three three" }] },
+      }),
+    });
+
+    const finals = events.filter((e) => e.speechFinal);
+    expect(finals).toHaveLength(1);
+    expect(finals[0]).toEqual({
+      text: "yeah so my credit card number is two two two two three three three three",
+      isFinal: true,
+      speechFinal: true,
+      endpointSignal: "speech_final",
+    });
+  });
+
+  test("SpeechStarted is forwarded as a vad event, not a transcript", () => {
+    const onTranscript = mock(() => {});
+    connectDeepgram(onTranscript);
+    open();
+    lastSocket!.emit("message", { data: JSON.stringify({ type: "SpeechStarted", timestamp: 1.2 }) });
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: "",
+      isFinal: false,
+      speechFinal: false,
+      vad: "speech_started",
+    });
+  });
+
   test("interim (non-final) results are passed through but never populate the fallback buffer", () => {
     const onTranscript = mock(() => {});
     connectDeepgram(onTranscript);

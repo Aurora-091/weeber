@@ -12,6 +12,12 @@ updated: 2026-09-05
 
 ## Current focus
 
+- **ADR-126: vendor pipeline signals (2026-09-05).** Wired unused Deepgram concat/`SpeechStarted`,
+  Twilio/Plivo playback marks, Plivo `clearedAudio` ≠ hangup, Cartesia `cancel`, Exotel default
+  mu-law. **Next after deploy:** live Twilio call — after a spoken turn the Media Stream should
+  echo `mark`; barge-in should `clear` + Cartesia cancel, not a Plivo hangup. Still cascade.
+  Socket reuse remains Phase C1 (ADR-083).
+
 - **ADR-125: Cartesia must not wait three seconds to speak (2026-09-05).** The appointment-setter
   DEAD AIR turn (59 LLM chars, 0 TTS bytes) matches Cartesia's omitted-field default of a 3000ms
   text buffer. Adapter now sends `max_buffer_delay_ms: 180` on every continuation and

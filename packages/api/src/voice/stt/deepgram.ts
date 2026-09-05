@@ -141,6 +141,11 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
       try {
         const msg = JSON.parse(event.data as string);
 
+        if (msg.type === "SpeechStarted") {
+          onTranscript({ text: "", isFinal: false, speechFinal: false, vad: "speech_started" });
+          return;
+        }
+
         // A1b: VAD-driven fallback for when `speech_final` never fires on a
         // genuinely finished utterance — replay whatever final text has
         // accumulated since the last confirmed speech_final as a synthetic
@@ -157,15 +162,27 @@ export const connectDeepgram: ConnectStt = (onTranscript, onFatalError, onStatsU
         if (msg.type !== "Results") return;
         const alt = msg.channel?.alternatives?.[0];
         const text: string = alt?.transcript ?? "";
-        if (!text) return;
-
         const isFinal = Boolean(msg.is_final);
         const speechFinal = Boolean(msg.speech_final);
-        if (isFinal) {
-          pendingFinalText = speechFinal ? "" : `${pendingFinalText} ${text}`.trim();
+
+        // Deepgram: long utterances emit several is_final chunks with
+        // speech_final still false, then a last Results whose transcript is
+        // often only the tail. Concatenate before declaring the turn done
+        // (ADR-126). Interims still pass through unchanged for barge-in.
+        if (speechFinal) {
+          const full = `${pendingFinalText} ${text}`.trim();
+          pendingFinalText = "";
+          if (!full) return;
+          onTranscript({ text: full, isFinal: true, speechFinal: true, endpointSignal: "speech_final" });
+          return;
         }
 
-        onTranscript({ text, isFinal, speechFinal, endpointSignal: speechFinal ? "speech_final" : undefined });
+        if (!text) return;
+        if (isFinal) {
+          pendingFinalText = `${pendingFinalText} ${text}`.trim();
+        }
+
+        onTranscript({ text, isFinal, speechFinal: false });
       } catch (err) {
         console.error("[deepgram] failed to parse message", err);
       }

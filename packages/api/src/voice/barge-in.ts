@@ -50,6 +50,13 @@ export type BargeInDecisionInput = {
    * own resetting this to 0 whenever the agent stops speaking, the utterance
    * ends, or a barge-in has just fired. */
   priorStreak: number;
+  /**
+   * Deepgram SpeechStarted (ADR-126). Counts as one short-fragment hit —
+   * never fires barge-in by itself (a cough still trips VAD). Combined with
+   * a following short interim it cuts in one Deepgram frame earlier than
+   * waiting for two transcripts.
+   */
+  vad?: "speech_started";
 };
 
 export type BargeInDecision = {
@@ -66,6 +73,14 @@ export type BargeInDecision = {
  * now? Unit-testable without the audio/STT path — see barge-in.test.ts.
  */
 export function decideBargeIn(i: BargeInDecisionInput): BargeInDecision {
+  if (i.vad === "speech_started") {
+    if (!i.agentIsSpeaking) return { fire: false, nextStreak: 0 };
+    const streak = i.priorStreak + 1;
+    if (streak >= BARGE_IN_STREAK_REQUIRED) {
+      return { fire: true, nextStreak: 0 };
+    }
+    return { fire: false, nextStreak: streak };
+  }
   const trimmed = i.text.trim();
   if (!i.agentIsSpeaking || trimmed.length === 0) {
     return { fire: false, nextStreak: 0 };

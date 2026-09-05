@@ -254,4 +254,19 @@ describe("connectCartesiaTts — managed buffer delay (ADR-125)", () => {
     expect(end.max_buffer_delay_ms).toBe(CARTESIA_MAX_BUFFER_DELAY_MS);
     expect(end.context_id).toBe(JSON.parse(ws.sent[0]).context_id);
   });
+
+  it("cancel sends Cartesia's context cancel flag on the same context_id", async () => {
+    const { connectCartesiaTts } = await import("./cartesia");
+    const conn = connectCartesiaTts(() => {}, undefined, undefined, "voice-abc", undefined);
+    const ws = MockWebSocket.instances[0];
+    ws.emitOpen();
+    conn.sendText("Hello.");
+    conn.cancel!();
+
+    const cancel = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(cancel).toEqual({
+      context_id: JSON.parse(ws.sent[0]).context_id,
+      cancel: true,
+    });
+  });
 });

@@ -1,3 +1,23 @@
+## Status update (2026-09-05): unused wire events + Exotel default codec (ADR-126)
+
+Re-read Twilio Media Streams, Plivo Audio Streaming, and Exotel Voicebot applet docs against the
+adapter. Changes in `telephony-transport.ts` / `stream.ts`:
+
+- **Twilio `mark` / Plivo `checkpoint`→`playedStream`:** now sent after a spoken turn. Silence and
+  closing-line wait still cap on `estimateRemainingPlaybackMs` if the ack is late or the provider
+  has no mark (Exotel).
+- **Plivo `clearedAudio`:** previously parsed as `stop` (would hang up after barge-in). Now
+  `{ type: "cleared" }` and ignored as a stream-end.
+- **Exotel codec:** Voicebot applet **defaults to `audio/x-mulaw;rate=8000`**. The 2026-07-12 note
+  below that Exotel always sends/expects linear16 was wrong for the default applet. We pass μ-law
+  through unless `start` negotiates L16/`linear16`. Fresh adapter per call so codec state cannot
+  race.
+
+No live Plivo/Exotel call has been placed from this sandbox; Twilio mark/barge-in still needs a
+live re-test after deploy.
+
+---
+
 ## Status update (2026-07-12, later same day): real call transport built — and a correction
 
 Live protocol docs were pulled directly from Plivo and Exotel (not assumed) while building this, and
