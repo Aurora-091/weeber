@@ -29,13 +29,15 @@ ADR-115 already recomposed when transfer was blocked. It did not recompose when
 
 **Decision:**
 
-1. **Call control names `crmSync` only when `toolsEnabled` includes it.**
-   Unspecified or absent → "there is no CRM logging tool." Do not treat
-   `toolsEnabled === undefined` as "every tool including CRM" — credentials are
-   a second gate.
+1. **Call control names `crmSync` with the same `undefined` = every tool
+   convention as transfer and capture.** A present list without `crmSync` →
+   "there is no CRM logging tool." Credentials are **not** inferred here —
+   they are a second gate on `"start"` (point 2). Treating `undefined` as
+   "no CRM" lied on calls where the tool was actually registered.
 2. **`narrowToolsForCrmAvailability` + recompose** on `"start"`, same seam as
    transfer: if there is no `crmSyncContext`, drop `crmSync` from the list the
-   prompt is built from.
+   prompt is built from so an unspecified catalog does not keep instructing a
+   sync.
 3. **HangUp requires speech.** Call control: never hangUp with no spoken words;
    if no scripted closing fits, speak one short honest sentence then hangUp.
 4. **Seeded runtimes:** no `crmSync`; no "You're connected"; transfer is

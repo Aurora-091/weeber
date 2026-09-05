@@ -1306,14 +1306,17 @@ describe("composeSystemPrompt — one composition path, segmented", () => {
     expect(withoutFlag.text).not.toContain("flagGuardrailEvent");
   });
 
-  it("names crmSync only when toolsEnabled includes it (ADR-127)", () => {
+  it("names crmSync when the list includes it or is unspecified; omits it when the list is present without it (ADR-127)", () => {
     const withCrm = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp", "crmSync"] });
     const withoutCrm = composeSystemPrompt({ ...base, toolsEnabled: ["hangUp"] });
     const unspecified = composeSystemPrompt(base);
     expect(withCrm.text).toContain("call crmSync once");
     expect(withoutCrm.text).not.toContain("crmSync");
     expect(withoutCrm.text).toContain("There is no CRM logging tool on this call");
-    expect(unspecified.text).not.toContain("crmSync");
+    // `undefined` means every tool, same as transfer/capture. Live CRM-withhold
+    // recomposes from a narrowed list so this branch does not survive on a
+    // call with no credentials.
+    expect(unspecified.text).toContain("call crmSync once");
   });
 
   it("indents the call-control block consistently — no line carries stray template indentation", () => {

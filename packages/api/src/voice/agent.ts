@@ -142,7 +142,9 @@ function buildCallControlBlock(
   const canMarkUnanswered = hasTool("markFieldUnanswered");
   const canTransfer = hasTool("transferToHuman");
   const canFlagGuardrail = hasTool("flagGuardrailEvent");
-  const canCrmSync = Boolean(enabledTools?.includes("crmSync"));
+  // Same `undefined` = every tool convention as transfer/capture. When CRM is
+  // actually withheld, stream.ts narrows the list and recomposes (ADR-127).
+  const canCrmSync = hasTool("crmSync");
 
   const topicStrictness = guardrails?.topicBoundaryStrictness ?? "medium";
   const injectionSensitivity = guardrails?.injectionSensitivity ?? "medium";
